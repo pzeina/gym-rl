@@ -3,6 +3,7 @@ from __future__ import annotations
 import random
 from collections import deque
 from dataclasses import dataclass
+from typing import SupportsFloat
 
 import gymnasium as gym
 import numpy as np
@@ -74,7 +75,7 @@ class QLearningAgent:
         self,
         state: np.ndarray,
         action: int,
-        reward: float,
+        reward: SupportsFloat,
         next_state: np.ndarray,
         *,
         done: bool = False
@@ -96,7 +97,7 @@ class QLearningAgent:
             self,
             state: np.ndarray,
             action: int,
-            reward: float,
+            reward: SupportsFloat,
             next_state: np.ndarray,
             *,
             done: bool = False

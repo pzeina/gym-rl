@@ -13,7 +13,7 @@ from mili_env.envs.classes.robot_base import Actions
 from mili_env.envs.visualization import GradientLossVisualization
 
 
-def save_periodic_model(agent, episode, base_model_path) -> None: # noqa: ANN001
+def save_periodic_model(agent, episode: int, base_model_path: Path) -> None: # noqa: ANN001
     """Save the model to a temporary file and replace the main model file."""
     temp_model_path = base_model_path.with_name(f"{base_model_path.stem}_temp{base_model_path.suffix}")
 
@@ -44,7 +44,7 @@ config = AgentConfig(
     hidden_size=256,
 )
 
-model_path = Path("model/qlearning_model.pth")
+model_path = Path(__file__).resolve().parent / "model/qlearning_model.pth"
 env_terrain = gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array")
 env = RecordEpisodeStatistics(env_terrain, buffer_length=n_episodes)
 
@@ -92,10 +92,10 @@ for episode in tqdm(range(n_episodes)):
         )
 
         # Remember the experience
-        agent.remember(state, action.value, reward, next_state, terminated)
+        agent.remember(state, action.value, reward, next_state, done=terminated)
 
         # Train short memory
-        agent.train_short_memory(state, action.value, reward, next_state, terminated)
+        agent.train_short_memory(state, action.value, reward, next_state, done=terminated)
 
         # Update observations
         obs = next_obs
