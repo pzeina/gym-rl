@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-import pygame
-
-import numpy as np
-import torch
 from enum import Enum
 
-from mili_env.envs.classes.terrain import GameMap, Terrain, EmptyTerrain, ObstacleTerrain
+import numpy as np
+import pygame
+import torch
+
+from mili_env.envs.classes.terrain import EmptyTerrain, GameMap, ObstacleTerrain, Terrain
 
 
 class Actions(Enum):
@@ -18,8 +18,10 @@ class Actions(Enum):
     ROTATE_RIGHT = 4
 
     @classmethod
-    def count(cls):
+    def count(cls) -> int:
+        """Get the number of actions."""
         return len(cls.__members__)
+
 
 @dataclass
 class RobotAttributes:
@@ -34,6 +36,7 @@ class RobotAttributes:
     speed_efficiency: float = 10.0
     ammunition_efficiency: float = 0.1
 
+
 @dataclass
 class RobotPosition:
     """Data class to store robot position."""
@@ -46,6 +49,7 @@ class RobotPosition:
     target_width: int
     target_height: int
 
+
 @dataclass
 class RobotConstraints:
     """Data class to store robot constraint parameters."""
@@ -55,7 +59,7 @@ class RobotConstraints:
     max_speed_forward: float = 1.0
     max_speed_backward: float = -0.2
     max_angular_speed: float = np.pi / 4
-        
+
     max_health: float = 100.0
     max_energy: float = 100.0
     max_ammunition: float = 100.0
@@ -77,11 +81,13 @@ class RobotState:
 
     def update_position(self, new_x: float, new_y: float, new_angle: float) -> None:
         """Update the robot's position."""
-        self.x = new_x
-        self.y = new_y
-        self.angle = new_angle
+        self.x: float = new_x
+        self.y: float = new_y
+        self.angle: float = new_angle
 
-    def update_target(self, new_target_x: int, new_target_y: int, new_target_width: int, new_target_height: int) -> None:
+    def update_target(
+        self, new_target_x: int, new_target_y: int, new_target_width: int, new_target_height: int
+    ) -> None:
         """Update the robot's target position."""
         self.target_x = new_target_x
         self.target_y = new_target_y
@@ -91,11 +97,11 @@ class RobotState:
     def get_energy(self) -> float:
         """Get the robot's energy."""
         return self.attributes.energy
-    
+
     def get_health(self) -> float:
         """Get the robot's health."""
         return self.attributes.health
-    
+
     def get_ammunition(self) -> float:
         """Get the robot's ammunition."""
         return self.attributes.ammunition
@@ -115,16 +121,17 @@ class RobotState:
     def is_alive(self) -> bool:
         """Check if the robot is still alive."""
         return self.attributes.health > 0
-    
+
     def has_energy(self) -> bool:
         """Check if the robot has energy remaining."""
         return self.attributes.energy > 0
 
     def is_at_target(self) -> bool:
         """Check if the robot has reached its target zone."""
-        return (self.target_x - self.target_width // 2 <= self.x < self.target_x + self.target_width // 2 and
-                self.target_y - self.target_height // 2 <= self.y < self.target_y + self.target_height)
-
+        return (
+            self.target_x - self.target_width // 2 <= self.x < self.target_x + self.target_width // 2
+            and self.target_y - self.target_height // 2 <= self.y < self.target_y + self.target_height
+        )
 
     def consume_ammunition(self, amount: float) -> None:
         """Reduce the robot's ammunition by a specified amount."""
@@ -158,7 +165,7 @@ class RobotState:
             ],
             dtype=torch.float32,
         ).unsqueeze(0)
-    
+
     def get_size(self) -> tuple:
         """Get the size of the state tensor."""
         return self.encode().shape
@@ -166,6 +173,8 @@ class RobotState:
 
 class RobotBase:
     """Base class for robots."""
+
+    CUT_RAY_THRESHOLD: float = 1.8
 
     def __init__(
         self,
@@ -177,7 +186,9 @@ class RobotBase:
         """Initialize the robot with its position and attributes."""
         self.state: RobotState = RobotState(position, attributes)
         self.vision_map: np.ndarray = np.full(
-            (2 * int(constraints.vision_range) + 1, 2 * int(constraints.vision_range) + 1), EmptyTerrain(), dtype=Terrain
+            (2 * int(constraints.vision_range) + 1, 2 * int(constraints.vision_range) + 1),
+            EmptyTerrain(),
+            dtype=Terrain,
         )
         self.game_map: GameMap = game_map
         self.vision_range: float = constraints.vision_range
@@ -189,7 +200,6 @@ class RobotBase:
         self.max_energy: float = constraints.max_energy
         self.max_ammunition: float = constraints.max_ammunition
         self.rays = self.compute_vision_rays()
-
 
     def move(self, action: Actions) -> float:
         """Move the robot based on the chosen action."""
@@ -211,7 +221,7 @@ class RobotBase:
         else:
             error_message = "Invalid action"
             raise ValueError(error_message)
-        
+
         # Keep the angle within the range [0, 2*pi]
         new_angle = (new_angle + 2 * np.pi) % (2 * np.pi)
 
@@ -221,27 +231,27 @@ class RobotBase:
 
         new_x = max(0, min(self.game_map.width - 1, new_x))
         new_y = max(0, min(self.game_map.height - 1, new_y))
-        
+
         self.state.update_position(new_x, new_y, new_angle)
 
         self.rays = self.compute_vision_rays()
         self.update_vision_map()
 
         return np.sqrt((self.state.target_x - self.state.x) ** 2 + (self.state.target_y - self.state.y) ** 2)
-    
+
     def get_health(self) -> float:
         """Get the robot's health."""
         return self.state.get_health()
-    
+
     def get_energy(self) -> float:
         """Get the robot's energy."""
         return self.state.get_energy()
-    
+
     def get_ammunition(self) -> float:
         """Get the robot's ammunition."""
         return self.state.get_ammunition()
 
-    def get_vision_map(self) -> np.ndarray[Terrain]:
+    def get_vision_map(self) -> np.ndarray:
         """Get the robot's vision map."""
         return self.vision_map
 
@@ -260,11 +270,11 @@ class RobotBase:
     def get_state(self) -> RobotState:
         """Get the robot's current state."""
         return self.state
-    
+
     def get_game_map(self) -> GameMap:
         """Get the game map."""
         return self.game_map
-    
+
     def get_game_map_size(self) -> tuple[int, int, int]:
         """Get the size of the game map."""
         terrain: Terrain = self.game_map.get_terrain(0, 0)
@@ -279,11 +289,13 @@ class RobotBase:
         rays: list = []
         x, y, direction = self.state.x, self.state.y, self.state.angle
         # Increase the density of rays in the direction the robot is facing
-        angles = np.concatenate([
-            np.linspace(direction - np.pi / 4, direction + np.pi / 4, 32),  # Higher density in front
-            np.linspace(direction + np.pi / 4, direction + 3 * np.pi / 4, 16),  # Medium density on sides
-            np.linspace(direction - 3 * np.pi / 4, direction - np.pi / 4, 16)  # Medium density on sides
-        ])
+        angles = np.concatenate(
+            [
+                np.linspace(direction - np.pi / 4, direction + np.pi / 4, 32),  # Higher density in front
+                np.linspace(direction + np.pi / 4, direction + 3 * np.pi / 4, 16),  # Medium density on sides
+                np.linspace(direction - 3 * np.pi / 4, direction - np.pi / 4, 16),  # Medium density on sides
+            ]
+        )
 
         for angle in angles:
             angle_diff = np.abs(
@@ -300,7 +312,7 @@ class RobotBase:
                     terrain_visibility = self.game_map.get_terrain(new_x, new_y).get_properties().visibility
                     if terrain_visibility < 1.0:
                         reduction += 1 - terrain_visibility
-                        if reduction >= 1.8:
+                        if reduction >= self.CUT_RAY_THRESHOLD:
                             length = step
                             break
                 else:
@@ -342,23 +354,20 @@ class RobotBase:
     def encode_state(self) -> torch.Tensor:
         """Encode the state properties into a tensor."""
         return self.state.encode()
-    
+
     def get_state_size(self) -> tuple:
         """Get the size of the state tensor."""
         return self.state.get_size()
-
 
     def encode_vision_map(self) -> torch.Tensor:
         """Encode the vision map into a tensor."""
         encoded_map = np.array(
             [terrain.encode_properties() for row in self.vision_map for terrain in row if terrain is not None],
-            dtype=np.float32
+            dtype=np.float32,
         )
         return torch.tensor(encoded_map, dtype=torch.float32).unsqueeze(0)
-    
-    def render_status_bars(
-        self, screen: pygame.Surface, x: int, y: int, width: int, height: int
-    ) -> None:
+
+    def render_status_bars(self, screen: pygame.Surface, x: int, y: int, width: int, height: int) -> None:
         """Render health, energy, and ammunition bars on the screen."""
         font = pygame.font.SysFont(None, 24)
 
@@ -366,23 +375,22 @@ class RobotBase:
         health_ratio = self.state.attributes.health / self.max_health
         pygame.draw.rect(screen, (255, 0, 0), (x, y, width * health_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y, width, height), 2)
-        health_label = font.render("Health", True, (255, 255, 255))
+        health_label = font.render("Health", antialias=True, color=(255, 255, 255))
         screen.blit(health_label, (x, y))
 
         # Energy bar
         energy_ratio = self.state.attributes.energy / self.max_energy
         pygame.draw.rect(screen, (0, 255, 0), (x, y + height + 5, width * energy_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y + height + 5, width, height), 2)
-        energy_label = font.render("Energy", True, (255, 255, 255))
+        energy_label = font.render("Energy", antialias=True, color=(255, 255, 255))
         screen.blit(energy_label, (x, y + height + 5))
 
         # Ammunition bar
         ammunition_ratio = self.state.attributes.ammunition / self.max_ammunition
         pygame.draw.rect(screen, (0, 0, 255), (x, y + 2 * (height + 5), width * ammunition_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y + 2 * (height + 5), width, height), 2)
-        ammunition_label = font.render("Ammunition", True, (255, 255, 255))
+        ammunition_label = font.render("Ammunition", antialias=True, color=(255, 255, 255))
         screen.blit(ammunition_label, (x, y + 2 * (height + 5)))
-
 
     def render_vision_rays(self, screen: pygame.Surface, cell_size: int) -> None:
         """Render vision rays on the screen."""
@@ -395,7 +403,6 @@ class RobotBase:
             start_pos = (x, y)
             end_pos = (end_x, end_y)
             pygame.draw.line(screen, (255, 0, 0), start_pos, end_pos, 1)
-
 
     def render_robot(self, screen: pygame.Surface, cell_size: int) -> None:
         """Render the robot on the screen as an arrow-like object."""

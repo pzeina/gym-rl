@@ -1,17 +1,24 @@
-import gymnasium as gym
-from gymnasium import spaces
-import pygame
-import numpy as np
-from mili_env.envs.classes.terrain import Terrain, GameMap
-from mili_env.envs.classes.robot_base import RobotPosition, RobotAttributes, RobotConstraints, RobotBase, Actions
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Any, ClassVar
+
+import gymnasium as gym
+import numpy as np
+import pygame
+from gymnasium import spaces
+
+from mili_env.envs.classes.robot_base import Actions, RobotAttributes, RobotBase, RobotConstraints, RobotPosition
+from mili_env.envs.classes.terrain import GameMap, Terrain
 from mili_env.envs.visualization import AgentEnvInteractionVisualization as Visualization
 
 
 class TerrainWorldEnv(gym.Env):
-    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
+    """Custom environment for the terrain world."""
+    custom_metadata: ClassVar[dict[str, Any]] = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
 
-    def __init__(self, render_mode=None, target_zone_size: int = 20) -> None:
+    def __init__(self, render_mode: str | None = None, target_zone_size: int = 20) -> None:
+        """Initialize the environment."""
         self.max_window_size: int = 512  # The maximum size of the PyGame window
         self.panel_width: int = 256  # Width of the right panel
         self.target_zone_size: int = target_zone_size  # Size of the target zone
@@ -36,32 +43,32 @@ class TerrainWorldEnv(gym.Env):
         # i.e. MultiDiscrete([size, size]).
         self.observation_space = spaces.Dict(
             {
-                "position": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,), dtype=float),
-                "direction": spaces.Box(0, 6.29, shape=(1,), dtype=float),
-                "target": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,), dtype=int),
+                "position": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,)),
+                "direction": spaces.Box(0, 6.29, shape=(1,)),
+                "target": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,)),
             }
         )
 
         # Populate the action space with the possible actions
         self.action_space = spaces.Discrete(Actions.count())
 
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
         self.window = None
         self.clock = None
-        self.fps = self.metadata["render_fps"]
+        self.fps = self.custom_metadata["render_fps"]
         self.zoom_factor = 1.0
 
     def create_robot(self) -> None:
         """Create the robot object."""
-
         # Define the target zone
         self._target_zone_center = self.np_random.integers(0, [self.width, self.height], size=2, dtype=int)
-        self._target_zone = np.array([
-            self._target_zone_center - self.target_zone_size // 2,
-            self._target_zone_center + self.target_zone_size // 2
-        ])
+        self._target_zone = np.array(
+            [
+                self._target_zone_center - self.target_zone_size // 2,
+                self._target_zone_center + self.target_zone_size // 2,
+            ]
+        )
         self._target_zone = np.clip(self._target_zone, 0, [self.width - 1, self.height - 1])
 
         # Choose the agent's location uniformly at random and ensure it is not inside the target zone
@@ -72,61 +79,54 @@ class TerrainWorldEnv(gym.Env):
 
         # Create robot position and attributes using the random values
         initial_position = RobotPosition(
-            x=agent_location[0], 
-            y=agent_location[1], 
-            angle=0, 
-            target_x=self._target_zone_center[0], 
-            target_y=self._target_zone_center[1], 
-            target_width=self.target_zone_size, 
-            target_height=self.target_zone_size
+            x=agent_location[0],
+            y=agent_location[1],
+            angle=0,
+            target_x=self._target_zone_center[0],
+            target_y=self._target_zone_center[1],
+            target_width=self.target_zone_size,
+            target_height=self.target_zone_size,
         )
         initial_attributes = RobotAttributes(
-            health=100.0, 
-            energy=100.0, 
+            health=100.0,
+            energy=100.0,
             ammunition=100.0,
             health_efficiency=1.0,
             energy_efficiency=10.0,
             speed_efficiency=5.0,
-            ammunition_efficiency=1.0
+            ammunition_efficiency=1.0,
         )
-        constraints = RobotConstraints(    
-            vision_range = 30.0,
-            communication_range = 30.0,
-            max_speed_forward = 1.0,
-            max_speed_backward = -0.2,
-            max_angular_speed = np.pi / 4,
+        constraints = RobotConstraints(
+            vision_range=30.0,
+            communication_range=30.0,
+            max_speed_forward=1.0,
+            max_speed_backward=-0.2,
+            max_angular_speed=np.pi / 4,
             max_health=100.0,
             max_energy=100.0,
-            max_ammunition=100.0
+            max_ammunition=100.0,
         )
         self.robot = RobotBase(
-            position=initial_position, 
-            attributes=initial_attributes, 
-            game_map=self.game_map, 
-            constraints=constraints
+            position=initial_position, attributes=initial_attributes, game_map=self.game_map, constraints=constraints
         )
-
 
     def _get_obs(self) -> dict:
         return {
-            "position": np.array(self.robot.get_position(), dtype=float),
-            "direction": np.array(self.robot.get_direction(), dtype=float),
-            "target": np.array(self.robot.get_target(), dtype=int)
+            "position": np.array(self.robot.get_position()),
+            "direction": np.array(self.robot.get_direction()),
+            "target": np.array(self.robot.get_target()),
         }
 
     def _get_info(self) -> dict:
         return {
-            "distance": np.linalg.norm(
-                np.array(self.robot.get_position()) - self._target_zone_center, ord=1
-            ),
+            "distance": np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
             "health": self.robot.get_health(),
             "energy": self.robot.get_energy(),
-            "ammunition": self.robot.get_ammunition()
+            "ammunition": self.robot.get_ammunition(),
         }
 
-    def reset(self, seed=None, options=None) -> dict:
-
-        super().reset(seed=seed)
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple: # noqa: D102
+        super().reset(seed=seed, options=options)
 
         self.create_robot()
 
@@ -138,8 +138,7 @@ class TerrainWorldEnv(gym.Env):
 
         return observation, info
 
-    def step(self, action: Actions) -> tuple:
-
+    def step(self, action: Actions) -> tuple: # noqa: D102
         # Check if the new location is traversable
         position = self.robot.get_position()
         terrain: Terrain = self.game_map.get_terrain(position[0], position[1])
@@ -158,9 +157,7 @@ class TerrainWorldEnv(gym.Env):
             self.robot.state.consume_energy(0.1)
 
         # Calculate the distance to the target
-        distance_to_target = np.linalg.norm(
-            np.array(self.robot.get_position()) - self._target_zone_center, ord=1
-        )
+        distance_to_target = np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)
 
         # Check if the agent is within the target zone
         success = self.robot.state.is_at_target()
@@ -170,9 +167,7 @@ class TerrainWorldEnv(gym.Env):
         reward = self.robot.get_energy() - distance_to_target
         if success:
             reward += self.robot.get_energy() + 0.25 * self.robot.get_ammunition() + 0.25 * self.robot.get_health()
-        elif not self.robot.state.is_alive():
-            reward -= 100
-        elif not self.robot.state.has_energy():
+        elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
             reward -= 100
 
         # Update visualization
@@ -186,11 +181,13 @@ class TerrainWorldEnv(gym.Env):
 
         return observation, reward, terminated, False, info
 
-    def render(self):
+    def render(self) -> None: # noqa: D102
         if self.render_mode == "rgb_array":
             return self._render_frame()
+        return None
 
     def _render_frame(self) -> None:
+        """Render the PyGame window."""
         if self.window is None and self.render_mode == "human":
             pygame.init()
             pygame.display.init()
@@ -202,13 +199,14 @@ class TerrainWorldEnv(gym.Env):
         canvas = pygame.Surface((self.window_width, self.window_height))
 
         # Render the game map
-        self.game_map.render(canvas, cell_size=self.cell_size * self.zoom_factor)
+        zoomed_cell_size: int = int(self.cell_size * self.zoom_factor)
+        self.game_map.render(canvas, cell_size=zoomed_cell_size)
 
         # Render the robot
-        self.robot.render_robot(canvas, cell_size=self.cell_size * self.zoom_factor)
+        self.robot.render_robot(canvas, cell_size=zoomed_cell_size)
 
         self.robot.render_status_bars(canvas, 10, 10, 200, 20)
-        self.robot.render_vision_rays(canvas, self.cell_size * self.zoom_factor)
+        self.robot.render_vision_rays(canvas, zoomed_cell_size)
 
         # Draw the target zone
         pygame.draw.rect(
@@ -216,9 +214,12 @@ class TerrainWorldEnv(gym.Env):
             (255, 0, 0),
             pygame.Rect(
                 self._target_zone[0] * self.cell_size * self.zoom_factor,
-                (self.target_zone_size * self.cell_size * self.zoom_factor, self.target_zone_size * self.cell_size * self.zoom_factor),
+                (
+                    self.target_zone_size * self.cell_size * self.zoom_factor,
+                    self.target_zone_size * self.cell_size * self.zoom_factor,
+                ),
             ),
-            width=3
+            width=3,
         )
 
         # Draw the FPS slider
@@ -229,21 +230,18 @@ class TerrainWorldEnv(gym.Env):
 
         # Get the vision map and render it in the right panel
         vision_map: np.ndarray = self.robot.get_vision_map()
-        self.render_vision_map(vision_map, canvas, self.game_map.width * self.cell_size * self.zoom_factor, 70)
+        zoomed_coordinates: int = int(self.game_map.width * self.cell_size * self.zoom_factor)
+        self.render_vision_map(vision_map, canvas, zoomed_coordinates, 70)
 
         if self.render_mode == "human":
-            self.window.blit(canvas, canvas.get_rect())
+            if self.window is not None:
+                self.window.blit(canvas, canvas.get_rect())
             pygame.event.pump()
             pygame.display.update()
-            self.clock.tick(self.fps)
+            if self.clock is not None:
+                self.clock.tick(self.fps)
 
-    def render_vision_map(
-        self, 
-        vision_map: np.ndarray,
-        canvas: pygame.Surface, 
-        x: int, 
-        y: int
-    ) -> None:
+    def render_vision_map(self, vision_map: np.ndarray, canvas: pygame.Surface, x: int, y: int) -> None:
         """Render the vision map on the screen."""
         cell_size = self.cell_size * self.zoom_factor
         for i, row in enumerate(vision_map):
@@ -252,11 +250,15 @@ class TerrainWorldEnv(gym.Env):
                     color = terrain.get_color()
                     pygame.draw.rect(canvas, color, (x + j * cell_size, y + i * cell_size, cell_size, cell_size))
 
-
-    def _draw_fps_slider(self, canvas: pygame.Surface, max_fps: int = 200) -> None:
+    def _draw_fps_slider(
+            self,
+            canvas: pygame.Surface,
+            max_fps: int = 200
+    ) -> None:
+        """Draw the FPS slider on the screen."""
         # Draw the FPS slider
         font = pygame.font.Font(None, 24)
-        label = font.render(f"FPS: {self.fps}", True, (255, 255, 255))
+        label = font.render(f"FPS: {self.fps}", antialias=True, color=(255, 255, 255))
         canvas.blit(label, (self.window_width - self.panel_width + 10, 10))
 
         slider_rect = pygame.Rect(self.window_width - self.panel_width + 10, 40, 200, 20)
@@ -277,9 +279,7 @@ class TerrainWorldEnv(gym.Env):
         font = pygame.font.Font(None, 24)
         position = self.robot.get_position()
         terrain = self.game_map.get_terrain(position[0], position[1])
-        distance_to_target = np.linalg.norm(
-            np.array(position) - self._target_zone_center, ord=1
-        )
+        distance_to_target = np.linalg.norm(np.array(position) - self._target_zone_center, ord=1)
 
         debug_info = [
             f"Position: ({position[0]:.2f}, {position[1]:.2f})",
@@ -293,10 +293,11 @@ class TerrainWorldEnv(gym.Env):
         ]
 
         for i, info in enumerate(debug_info):
-            label = font.render(info, True, (255, 255, 255))
+            label = font.render(info, antialias=True, color=(255, 255, 255))
             canvas.blit(label, (self.window_width - self.panel_width + 10, 200 + i * 30))
 
     def handle_keys(self) -> None:
+        """Handle the PyGame key events."""
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
             self.step(Actions.FORWARD)
@@ -310,6 +311,7 @@ class TerrainWorldEnv(gym.Env):
             self.zoom_factor = 2.0 if self.zoom_factor == 1.0 else 1.0
 
     def close(self) -> None:
+        """Close the PyGame window."""
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()

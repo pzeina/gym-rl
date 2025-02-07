@@ -54,7 +54,6 @@ class TerrainProperties:
     altitude: float = 0.0
     occupancy: TroopType = TroopType.EMPTY
 
-
     def encode(self) -> torch.Tensor:
         """Encode the terrain properties into a tensor."""
         occupancy = self.occupancy.encode()
@@ -85,11 +84,11 @@ class Terrain(ABC):
     def get_type_level(self) -> int:
         """Return the level of the terrain type."""
         return self.properties.type_level
-    
+
     def get_movement_speed(self) -> float:
         """Return the movement speed of the terrain."""
         return self.properties.movement_speed
-    
+
     def get_movement_cost(self) -> float:
         """Return the movement cost of the terrain."""
         return 1.0 / self.properties.movement_speed
@@ -97,15 +96,14 @@ class Terrain(ABC):
     def to_string(self) -> str:
         """Convert terrain to string representation."""
         return f"{self.terrain_type.value},{self.properties.type_level}"
-    
+
     def encode_properties(self) -> torch.Tensor:
         """Encode the terrain properties into a tensor."""
         return self.properties.encode()
-    
+
     def get_encode_size(self) -> int:
         """Return the size of the encoded terrain properties."""
         return len(self.encode_properties())
-    
 
     @staticmethod
     def from_string(terrain_str: str) -> Optional["Terrain"]:
@@ -146,7 +144,7 @@ class EmptyTerrain(Terrain):
     def get_color(self) -> tuple[int, int, int]:
         """Return RGB color for rendering."""
         return (255, 255, 255)
-    
+
 
 class ObstacleTerrain(Terrain):
     """Obstacle terrain."""
@@ -170,13 +168,15 @@ class ObstacleTerrain(Terrain):
         """Return RGB color for rendering."""
         return (255, 0, 0)
 
+
 class Forest(Terrain):
     """Forest terrain with density levels 0-9."""
+    MAX_FOREST_DENSITY: int = 9
 
     def __init__(self, density: int) -> None:
         """Initialize forest terrain with density level."""
         self.terrain_type = TerrainType.FOREST
-        if not 0 <= density <= 9:
+        if not 0 <= density <= self.MAX_FOREST_DENSITY:
             msg = "Forest density must be between 0 and 9."
             raise ValueError(msg)
         self.properties = TerrainProperties(
@@ -199,18 +199,21 @@ class Forest(Terrain):
 class Water(Terrain):
     """Water terrain with depth levels 0-4."""
 
+    MAX_WATER_DEPTH: int = 4
+    MAX_TRAVERSABLE_DEPTH: int = 3
+
     def __init__(self, depth: int) -> None:
         """Initialize water terrain with depth level."""
-        if not 0 <= depth <= 4:
+        if not 0 <= depth <= self.MAX_WATER_DEPTH:
             msg = "Water depth must be between 0 and 4."
             raise ValueError(msg)
         self.terrain_type = TerrainType.WATER
         self.properties = TerrainProperties(
             type_level=depth,
             occupancy=TroopType.EMPTY,
-            movement_speed=1- (depth * 0.2),
+            movement_speed=1 - (depth * 0.2),
             visibility=1.0,
-            traversable=depth < 3,
+            traversable=depth < self.MAX_TRAVERSABLE_DEPTH,
         )
 
     def get_color(self) -> tuple[int, int, int]:
@@ -221,11 +224,12 @@ class Water(Terrain):
 
 class Road(Terrain):
     """Road terrain with quality levels 0-3."""
+    MAX_ROAD_QUALITY: int = 3
 
     def __init__(self, quality: int) -> None:
         """Initialize road terrain with quality level."""
-        if not 0 <= quality <= 3:
-            msg = "Road quality must be between 0 and 3."
+        if not 0 <= quality <= self.MAX_ROAD_QUALITY:
+            msg = f"Road quality must be between 0 and {self.MAX_ROAD_QUALITY}."
             raise ValueError(msg)
         self.density = quality
         self.terrain_type = TerrainType.ROAD
@@ -249,11 +253,13 @@ class Road(Terrain):
 
 class GameMap:
     """Represents the game's terrain map."""
+    ALTITUDE_CHANGE_THRESHOLD: float = 0.2
 
-    def __init__(self, width: int = 100, height: int = 100) -> None:
+    def __init__(self, width: int = 100, height: int = 100, cell_size: int = 10) -> None:
         """Initialize the game map with dimensions."""
         self.width: int = width
         self.height: int = height
+        self.cell_size: int = cell_size
         self.terrain: np.ndarray = np.empty((height, width), dtype=Terrain)
         self.altitude: np.ndarray = np.zeros((height, width))  # Added altitude map
 
@@ -273,11 +279,7 @@ class GameMap:
         # Apply slight smoothing
         self.altitude = gaussian_filter(self.altitude, sigma=1.0)
 
-    def generate_forest_zones(
-            self, num_zones: int = 10, 
-            min_zone_size: int = 20, 
-            max_zone_size: int = 50
-        ) -> None:
+    def generate_forest_zones(self, num_zones: int = 10, min_zone_size: int = 20, max_zone_size: int = 50) -> None:
         """Generate forest zones with coherent density."""
 
         def flood_fill(x: int, y: int, density: int) -> None:
@@ -304,7 +306,7 @@ class GameMap:
                         if (
                             0 <= new_x < self.width
                             and 0 <= new_y < self.height
-                            and abs(self.altitude[y, x] - self.altitude[new_y, new_x]) < 0.2
+                            and abs(self.altitude[y, x] - self.altitude[new_y, new_x]) < self.ALTITUDE_CHANGE_THRESHOLD
                         ):
                             queue.append((new_x, new_y))
 
@@ -333,8 +335,9 @@ class GameMap:
 
     def generate_roads(self, num_roads: int = 3) -> None:
         """Generate roads avoiding water and extreme altitude changes."""
+        deviation: float = 0.5
         for _ in range(num_roads):
-            if random.random() < 0.5:
+            if random.random() < deviation:
                 x, y = 0, random.randint(10, self.height - 10)
                 dx, dy = 1, 0
             else:
@@ -353,10 +356,13 @@ class GameMap:
                     # Only place road if:
                     # 1. Not water
                     # 2. Altitude change is not too steep
-                    if not isinstance(terrain, Water) and abs(next_altitude - current_altitude) < 0.2:
+                    if (
+                        not isinstance(terrain, Water) and
+                        abs(next_altitude - current_altitude) < self.ALTITUDE_CHANGE_THRESHOLD
+                    ):
                         self.terrain[y, x] = Road(random.randint(2, 3))
 
-                if random.random() < 0.2:
+                if random.random() < self.ALTITUDE_CHANGE_THRESHOLD:
                     if dx == 0:
                         x += random.choice([-1, 1])
                     else:
@@ -418,7 +424,7 @@ class GameMap:
                     properties_map[y, x] = terrain.encode_properties()
         return properties_map
 
-    def get_movement_speed_map(self) -> np.ndarray[float]:
+    def get_movement_speed_map(self) -> np.ndarray:
         """Generate a movement speed matrix for pathfinding."""
         speed_map = np.zeros((self.height, self.width), dtype=float)
         for y in range(self.height):
@@ -428,7 +434,7 @@ class GameMap:
                     speed_map[y, x] = terrain.get_properties().movement_speed
         return speed_map
 
-    def get_visibility_map(self) -> np.ndarray[float]:
+    def get_visibility_map(self) -> np.ndarray:
         """Generate a visibility matrix for AI."""
         visibility_map = np.zeros((self.height, self.width), dtype=float)
         for y in range(self.height):
@@ -440,10 +446,10 @@ class GameMap:
 
     def get_terrain(self, x: float, y: float) -> Terrain:
         """Return the terrain object at the specified coordinates."""
-        x: int = int(np.floor(x))
-        y: int = int(np.floor(y))
+        x_terrain: int = int(np.floor(x))
+        y_terrain: int = int(np.floor(y))
 
-        return self.terrain[y, x]
+        return self.terrain[y_terrain, x_terrain]
 
     def render(self, screen: pygame.Surface, cell_size: int) -> None:
         """Render the terrain map to a PyGame surface."""
@@ -485,7 +491,7 @@ class GameRenderer:
                         pass
 
             self.screen.fill((0, 0, 0))
-            self.game_map.render(self.screen)
+            self.game_map.render(self.screen, cell_size=10)
             pygame.display.flip()
             self.clock.tick(60)
 

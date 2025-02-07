@@ -3,10 +3,12 @@ from gymnasium.spaces import Discrete
 
 
 class DiscreteActions(gym.ActionWrapper):
-    def __init__(self, env, disc_to_cont):
+    """Action wrapper that converts discrete actions to continuous actions."""
+    def __init__(self, env: gym.Env, disc_to_cont) -> None: # noqa: ANN001
+        """Initialize the discrete action wrapper."""
         super().__init__(env)
         self.disc_to_cont = disc_to_cont
         self.action_space = Discrete(len(disc_to_cont))
 
-    def action(self, act):
-        return self.disc_to_cont[act]
+    def action(self, action) -> int: # noqa: ANN001, D102
+        return self.disc_to_cont[action]

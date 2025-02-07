@@ -1,14 +1,21 @@
-from dataclasses import dataclass
-from mili_env.envs.classes.model import Linear_QNet, QTrainer
-import numpy as np
-import gymnasium as gym
-from collections import deque
+from __future__ import annotations
+
 import random
+from collections import deque
+from dataclasses import dataclass
+
+import gymnasium as gym
+import numpy as np
 import torch
+
+from mili_env.envs.classes.model import Linear_QNet, QTrainer
+from mili_env.envs.visualization import GradientLossVisualization  # noqa: TC001
+
 
 @dataclass
 class AgentConfig:
     """Data class to store agent's configuration parameters."""
+
     learning_rate: float
     initial_epsilon: float
     epsilon_decay: float
@@ -20,11 +27,32 @@ class AgentConfig:
 
 
 class QLearningAgent:
-    def __init__(self, env: gym.Env, config: AgentConfig, visualization=None) -> None:
+    """Reinforcement Learning agent using Q-learning with a neural network model."""
+    def __init__(
+            self,
+            env: gym.Env,
+            config: AgentConfig,
+            visualization: GradientLossVisualization | None = None
+    ) -> None:
         """Initialize a Reinforcement Learning agent with a neural network model."""
         self.env = env
         self.config = config
-        self.model = Linear_QNet(env.observation_space['position'].shape[0] + env.observation_space['direction'].shape[0] + env.observation_space['target'].shape[0], config.hidden_size, env.action_space.n)
+
+        position_shape = env.observation_space["position"].shape[0] # type: ignore # noqa: PGH003
+        direction_shape = env.observation_space["direction"].shape[0] # type: ignore # noqa: PGH003
+        target_shape = env.observation_space["target"].shape[0] # type: ignore # noqa: PGH003
+
+        if isinstance(env.action_space, gym.spaces.Discrete):
+            action_space_size = env.action_space.n
+        else:
+            msg = "Action space must be of type gym.spaces.Discrete"
+            raise TypeError(msg)
+
+        self.model = Linear_QNet(
+            position_shape + direction_shape + target_shape,
+            config.hidden_size,
+            int(action_space_size)
+        )
 
         self.trainer = QTrainer(self.model, config.learning_rate, config.discount_factor, visualization)
         self.memory = deque(maxlen=config.memory_size)
@@ -34,14 +62,23 @@ class QLearningAgent:
 
     def get_action(self, state: np.ndarray) -> int:
         """Choose an action based on the state using an epsilon-greedy policy."""
-        if np.random.rand() < self.epsilon:
+        rng = np.random.default_rng()
+        if rng.random() < self.epsilon:
             return self.env.action_space.sample()
-        else:
-            state = torch.tensor(state, dtype=torch.float)
-            with torch.no_grad():
-                return torch.argmax(self.model(state)).item()
+        state_tensor = torch.tensor(state, dtype=torch.float)
+        with torch.no_grad():
+            action = torch.argmax(self.model(state_tensor)).item()
+        return int(action)
 
-    def remember(self, state, action, reward, next_state, done) -> None:
+    def remember(
+        self,
+        state: np.ndarray,
+        action: int,
+        reward: float,
+        next_state: np.ndarray,
+        *,
+        done: bool = False
+    ) -> None:
         """Store the experience in memory."""
         self.memory.append((state, action, reward, next_state, done))
 
@@ -55,7 +92,15 @@ class QLearningAgent:
         states, actions, rewards, next_states, dones = zip(*mini_batch)
         self.trainer.train_step(states, actions, rewards, next_states, dones)
 
-    def train_short_memory(self, state, action, reward, next_state, done) -> None:
+    def train_short_memory(
+            self,
+            state: np.ndarray,
+            action: int,
+            reward: float,
+            next_state: np.ndarray,
+            *,
+            done: bool = False
+        ) -> None:
         """Train the model using a single experience."""
         self.trainer.train_step(state, action, reward, next_state, done)
 
@@ -63,10 +108,10 @@ class QLearningAgent:
         """Decay the epsilon value for the epsilon-greedy policy."""
         self.epsilon = max(self.final_epsilon, self.epsilon - self.epsilon_decay)
 
-    def save_model(self, file_name='model.pth') -> None:
+    def save_model(self, file_name: str = "model.pth") -> None:
         """Save the model to a file."""
         self.model.save(file_name)
 
-    def load_model(self, file_name='model.pth') -> None:
+    def load_model(self, file_name: str = "model.pth") -> None:
         """Load the model from a file."""
         self.model.load(file_name)

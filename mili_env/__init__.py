@@ -1,3 +1,8 @@
+"""mili_env package.
+
+This package contains custom environments for the Gymnasium framework.
+"""
+
 from gymnasium.envs.registration import register
 
 register(
