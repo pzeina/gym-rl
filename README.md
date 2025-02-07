@@ -1,3 +1,12 @@
+# mili_env
+
+A Gymnasium environment for 2D autonomous agents
+
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
+[![static analysis workflow](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/)
+[![test workflow](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/)
+
+
 # Gymnasium Examples
 Some simple examples of Gymnasium environments and wrappers.
 For some explanations of these examples, see the [Gymnasium documentation](https://gymnasium.farama.org).
