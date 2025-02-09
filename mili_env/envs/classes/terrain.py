@@ -171,6 +171,7 @@ class ObstacleTerrain(Terrain):
 
 class Forest(Terrain):
     """Forest terrain with density levels 0-9."""
+
     MAX_FOREST_DENSITY: int = 9
 
     def __init__(self, density: int) -> None:
@@ -224,6 +225,7 @@ class Water(Terrain):
 
 class Road(Terrain):
     """Road terrain with quality levels 0-3."""
+
     MAX_ROAD_QUALITY: int = 3
 
     def __init__(self, quality: int) -> None:
@@ -253,6 +255,7 @@ class Road(Terrain):
 
 class GameMap:
     """Represents the game's terrain map."""
+
     ALTITUDE_CHANGE_THRESHOLD: float = 0.2
 
     def __init__(self, width: int = 100, height: int = 100, cell_size: int = 10) -> None:
@@ -357,8 +360,8 @@ class GameMap:
                     # 1. Not water
                     # 2. Altitude change is not too steep
                     if (
-                        not isinstance(terrain, Water) and
-                        abs(next_altitude - current_altitude) < self.ALTITUDE_CHANGE_THRESHOLD
+                        not isinstance(terrain, Water)
+                        and abs(next_altitude - current_altitude) < self.ALTITUDE_CHANGE_THRESHOLD
                     ):
                         self.terrain[y, x] = Road(random.randint(2, 3))
 

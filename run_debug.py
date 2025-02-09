@@ -11,12 +11,13 @@ from mili_env.envs.terrain_world import TerrainWorldEnv
 
 class DebugAgentEnv(TerrainWorldEnv):
     """Debug Agent environment for manual control and debugging."""
+
     def __init__(self, render_mode: str | None = None, target_zone_size: int = 20) -> None:
         """Initialize the Debug Agent environment."""
         super().__init__(render_mode, target_zone_size)
         self.zoom_factor = 1.0
 
-    def step(self, action: Actions) -> tuple: # noqa: D102
+    def step(self, action: int | np.ndarray) -> tuple:  # noqa: D102
         # Override step to handle manual control
         position = self.robot.get_position()
         terrain = self.game_map.get_terrain(position[0], position[1])
@@ -42,7 +43,7 @@ class DebugAgentEnv(TerrainWorldEnv):
         elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
             reward -= 10
 
-        self.visualization.update(reward, distance_to_target, action.value)
+        self.visualization.update(reward, distance_to_target, np.int64(action), random_flag=np.bool(False))
 
         observation = self._get_obs()
         info = self._get_info()
@@ -52,7 +53,7 @@ class DebugAgentEnv(TerrainWorldEnv):
 
         return observation, reward, terminated, False, info
 
-    def render(self) -> None: # noqa: D102
+    def render(self) -> None:  # noqa: D102
         if self.render_mode == "human":
             self._render_frame()
 
@@ -117,16 +118,16 @@ class DebugAgentEnv(TerrainWorldEnv):
             label = font.render(info, antialias=True, color=(255, 255, 255))
             canvas.blit(label, (self.window_width - self.panel_width + 10, 100 + i * 30))
 
-    def handle_keys(self) -> None: # noqa: D102
+    def handle_keys(self) -> None:  # noqa: D102
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
-            self.step(Actions.FORWARD)
+            self.step(Actions.FORWARD.value)
         elif keys[pygame.K_DOWN]:
-            self.step(Actions.BACKWARD)
+            self.step(Actions.BACKWARD.value)
         elif keys[pygame.K_LEFT]:
-            self.step(Actions.ROTATE_LEFT)
+            self.step(Actions.ROTATE_LEFT.value)
         elif keys[pygame.K_RIGHT]:
-            self.step(Actions.ROTATE_RIGHT)
+            self.step(Actions.ROTATE_RIGHT.value)
         elif keys[pygame.K_z]:
             self.zoom_factor = 2.0 if self.zoom_factor == 1.0 else 1.0
 
@@ -142,7 +143,7 @@ class DebugAgentEnv(TerrainWorldEnv):
                     if event.key == pygame.K_ESCAPE:
                         running = False
                     if event.key == pygame.K_SPACE:
-                        self.step(random.choice(list(Actions)))
+                        self.step(random.choice(list(Actions)).value)
 
             self.handle_keys()
             self.render()

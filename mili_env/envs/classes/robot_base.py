@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from enum import Enum
 
@@ -6,6 +8,8 @@ import pygame
 import torch
 
 from mili_env.envs.classes.terrain import EmptyTerrain, GameMap, ObstacleTerrain, Terrain
+
+PI_OVER_4 = np.pi / 4
 
 
 class Actions(Enum):
@@ -58,7 +62,7 @@ class RobotConstraints:
     communication_range: float = 10.0
     max_speed_forward: float = 1.0
     max_speed_backward: float = -0.2
-    max_angular_speed: float = np.pi / 4
+    max_angular_speed: float = PI_OVER_4
 
     max_health: float = 100.0
     max_energy: float = 100.0
@@ -201,9 +205,14 @@ class RobotBase:
         self.max_ammunition: float = constraints.max_ammunition
         self.rays = self.compute_vision_rays()
 
-    def move(self, action: Actions) -> float:
+    def move(self, action: int | np.ndarray) -> float | np.ndarray:
         """Move the robot based on the chosen action."""
-        # Define actions: 0 = move forward, 1 = move backward, 2 = turn left, 3 = turn right
+        if isinstance(action, np.ndarray):
+            return np.array([self._move_single(Actions(a)) for a in action])
+        return self._move_single(Actions(action))
+
+    def _move_single(self, action: Actions) -> float:
+        """Move the robot based on a single action."""
         dx, dy = 0, 0
         new_angle = self.state.angle
         if action == Actions.IDLE:
@@ -259,9 +268,23 @@ class RobotBase:
         """Get the robot's current position."""
         return self.state.x, self.state.y
 
+    def get_terrain_coordinates(self) -> tuple[int, int]:
+        """Get the robot's current terrain coordinates."""
+        return int(np.floor(self.state.x)), int(np.floor(self.state.y))
+
     def get_direction(self) -> float:
         """Get the robot's current direction."""
         return self.state.angle
+
+    def get_target_direction(self) -> float:
+        """Get the robot's target direction."""
+        target_x, target_y = self.get_target()
+        return np.arctan2(target_y - self.state.y, target_x - self.state.x)
+
+    def get_distance_to_target(self) -> float:
+        """Get the robot's distance to the target."""
+        target_x, target_y = self.get_target()
+        return np.sqrt((target_x - self.state.x) ** 2 + (target_y - self.state.y) ** 2)
 
     def get_target(self) -> tuple[int, int]:
         """Get the robot's target position."""
@@ -291,9 +314,9 @@ class RobotBase:
         # Increase the density of rays in the direction the robot is facing
         angles = np.concatenate(
             [
-                np.linspace(direction - np.pi / 4, direction + np.pi / 4, 32),  # Higher density in front
-                np.linspace(direction + np.pi / 4, direction + 3 * np.pi / 4, 16),  # Medium density on sides
-                np.linspace(direction - 3 * np.pi / 4, direction - np.pi / 4, 16),  # Medium density on sides
+                np.linspace(direction - PI_OVER_4, direction + PI_OVER_4, 32),  # Higher density in front
+                np.linspace(direction + PI_OVER_4, direction + 3 * PI_OVER_4, 16),  # Medium density on sides
+                np.linspace(direction - 3 * PI_OVER_4, direction - PI_OVER_4, 16),  # Medium density on sides
             ]
         )
 
@@ -321,7 +344,7 @@ class RobotBase:
             rays.append((angle, length))
         return rays
 
-    def communicate(self, other_robot: "RobotBase") -> bool:
+    def communicate(self, other_robot: RobotBase) -> bool:
         """Check if another robot is within communication range."""
         x, y = self.state.x, self.state.y
         other_robot_x, other_robot_y = other_robot.get_position()

@@ -11,6 +11,7 @@ from gymnasium import spaces
 
 class Actions(Enum):
     """The possible actions in the GridWorld environment."""
+
     right = 0
     up = 1
     left = 2
@@ -73,7 +74,7 @@ class GridWorldEnv(gym.Env):
         """Return the L1 distance between the agent and the target."""
         return {"distance": np.linalg.norm(self._agent_location - self._target_location, ord=1)}
 
-    def reset(self, *, seed = None, options = None) -> tuple: # noqa: ANN001, D102
+    def reset(self, *, seed=None, options=None) -> tuple:  # noqa: ANN001, D102
         # We need the following line to seed self.np_random
         super().reset(seed=seed, options=options)
 
@@ -94,7 +95,7 @@ class GridWorldEnv(gym.Env):
 
         return observation, info
 
-    def step(self, action: int) -> tuple: # noqa: D102
+    def step(self, action: int) -> tuple:  # noqa: D102
         # Map the action (element of {0,1,2,3}) to the direction we walk in
         direction = self._action_to_direction[action]
         # We use `np.clip` to make sure we don't leave the grid
@@ -110,7 +111,7 @@ class GridWorldEnv(gym.Env):
 
         return observation, reward, terminated, False, info
 
-    def render(self): # noqa: D102, ANN201
+    def render(self):  # noqa: D102, ANN201
         if self.render_mode == "rgb_array":
             return self._render_frame()
         return None
@@ -176,7 +177,7 @@ class GridWorldEnv(gym.Env):
         # rgb_array
         return np.transpose(np.array(pygame.surfarray.pixels3d(canvas)), axes=(1, 0, 2))
 
-    def close(self) -> None: # noqa: D102
+    def close(self) -> None:  # noqa: D102
         if self.window is not None:
             pygame.display.quit()
             pygame.quit()

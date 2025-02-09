@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -12,10 +12,13 @@ from mili_env.envs.classes.robot_base import Actions, RobotAttributes, RobotBase
 from mili_env.envs.classes.terrain import GameMap, Terrain
 from mili_env.envs.visualization import AgentEnvInteractionVisualization as Visualization
 
+PI_OVER_4: float = np.pi / 4
+
 
 class TerrainWorldEnv(gym.Env):
     """Custom environment for the terrain world."""
-    custom_metadata: ClassVar[dict[str, Any]] = {"render_modes": ["human", "rgb_array"], "render_fps": 50}
+
+    metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}  # noqa: RUF012
 
     def __init__(self, render_mode: str | None = None, target_zone_size: int = 20) -> None:
         """Initialize the environment."""
@@ -36,16 +39,19 @@ class TerrainWorldEnv(gym.Env):
         self.create_robot()
 
         # Initialize visualization
-        self.visualization = Visualization(self.window_width, self.window_height, self.panel_width)
+        self.visualization = Visualization(self.window_width, self.window_height, self.panel_width, np.bool(False))
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2,
         # i.e. MultiDiscrete([size, size]).
         self.observation_space = spaces.Dict(
             {
-                "position": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,)),
-                "direction": spaces.Box(0, 6.29, shape=(1,)),
-                "target": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,)),
+                "position": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,), dtype=np.float64),
+                "target_position": spaces.Box(0, max(self.width, self.height) - 1, shape=(2,), dtype=np.int64),
+                "distance": spaces.Box(0.0, np.sqrt(self.width**2 + self.height**2), shape=(), dtype=np.float64),
+                "direction": spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64),
+                "target_direction": spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float64),
+                "energy": spaces.Box(0.0, self.robot.max_energy, shape=(), dtype=np.float64),
             }
         )
 
@@ -56,7 +62,7 @@ class TerrainWorldEnv(gym.Env):
 
         self.window = None
         self.clock = None
-        self.fps = self.custom_metadata["render_fps"]
+        self.fps = self.metadata["render_fps"]
         self.zoom_factor = 1.0
 
     def create_robot(self) -> None:
@@ -101,7 +107,7 @@ class TerrainWorldEnv(gym.Env):
             communication_range=30.0,
             max_speed_forward=1.0,
             max_speed_backward=-0.2,
-            max_angular_speed=np.pi / 4,
+            max_angular_speed=PI_OVER_4,
             max_health=100.0,
             max_energy=100.0,
             max_ammunition=100.0,
@@ -111,21 +117,51 @@ class TerrainWorldEnv(gym.Env):
         )
 
     def _get_obs(self) -> dict:
+        """Get the observation of the environment."""
+        direction: float = self.robot.get_direction()
+        target_direction: float = self.robot.get_target_direction()
+        cos_direction, sin_direction = np.cos(direction), np.sin(direction)
+        cos_target_direction, sin_target_direction = np.cos(target_direction), np.sin(target_direction)
         return {
-            "position": np.array(self.robot.get_position()),
-            "direction": np.array(self.robot.get_direction()),
-            "target": np.array(self.robot.get_target()),
+            "position": np.array(self.robot.get_position(), dtype=float),
+            "target_position": np.array(self.robot.get_target(), dtype=int),
+            "distance": np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
+            "direction": np.array((cos_direction, sin_direction), dtype=float),
+            "target_direction": np.array((cos_target_direction, sin_target_direction), dtype=float),
+            "energy": self.robot.get_energy(),
         }
 
     def _get_info(self) -> dict:
+        """Get the information of the environment."""
         return {
             "distance": np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
             "health": self.robot.get_health(),
             "energy": self.robot.get_energy(),
             "ammunition": self.robot.get_ammunition(),
+            "reward_dist": -np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
+            "reward_ctrl": -self.robot.get_energy(),
         }
 
-    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple: # noqa: D102
+    def _get_reward(self) -> np.floating[Any]:
+        """Get the reward of the environment."""
+        reward: float = -1
+        if self.robot.state.is_at_target():
+            reward += self.robot.get_energy() + 0.25 * self.robot.get_ammunition() + 0.25 * self.robot.get_health()
+        elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
+            reward -= self.robot.max_energy + 0.25 * self.robot.max_ammunition + 0.25 * self.robot.max_health
+        return np.float64(reward)
+
+    def _get_terminates(self) -> np.bool_[Any]:
+        """Check if the environment terminates."""
+        return np.bool_(
+            self.robot.state.is_at_target() or not self.robot.state.is_alive() or not self.robot.state.has_energy()
+        )
+
+    def _get_truncates(self) -> np.bool_[Any]:
+        """Check if the environment truncates."""
+        return np.bool(False)
+
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple:  # noqa: D102
         super().reset(seed=seed, options=options)
 
         self.create_robot()
@@ -138,41 +174,33 @@ class TerrainWorldEnv(gym.Env):
 
         return observation, info
 
-    def step(self, action: Actions) -> tuple: # noqa: D102
+    def _single_step(self, action: int) -> tuple:
+        """Execute a single step in the environment."""
         # Check if the new location is traversable
         position = self.robot.get_position()
         terrain: Terrain = self.game_map.get_terrain(position[0], position[1])
 
         self.robot.move(action)
 
-        if action in [Actions.FORWARD, Actions.BACKWARD]:
+        if action in [Actions.FORWARD.value, Actions.BACKWARD.value]:
             # if terrain.get_properties().traversable:
             movement_cost = terrain.get_movement_cost()
             self.robot.state.consume_energy(movement_cost)
-        elif action in [Actions.ROTATE_LEFT, Actions.ROTATE_RIGHT]:
+        elif action in [Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]:
             # Minimal energy consumption when rotating
             self.robot.state.consume_energy(0.15)
-        elif action == Actions.IDLE:
+        elif action == Actions.IDLE.value:
             # Minimal energy consumption when staying with no movement
             self.robot.state.consume_energy(0.1)
 
         # Calculate the distance to the target
-        distance_to_target = np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)
+        distance_to_target = np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)  # noqa: F841
 
         # Check if the agent is within the target zone
         success = self.robot.state.is_at_target()
         terminated = success or not self.robot.state.is_alive() or not self.robot.state.has_energy()
 
-        # Reward based on the distance to the target
-        reward = self.robot.get_energy() - distance_to_target
-        if success:
-            reward += self.robot.get_energy() + 0.25 * self.robot.get_ammunition() + 0.25 * self.robot.get_health()
-        elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
-            reward -= 100
-
-        # Update visualization
-        self.visualization.update(reward, distance_to_target, action.value)
-
+        reward = self._get_reward()
         observation = self._get_obs()
         info = self._get_info()
 
@@ -181,7 +209,41 @@ class TerrainWorldEnv(gym.Env):
 
         return observation, reward, terminated, False, info
 
-    def render(self) -> None: # noqa: D102
+    def _consume_energy(self, action: int | np.ndarray, terrain: Terrain) -> None:
+        if isinstance(action, np.ndarray):
+            for single_action in action:
+                self._consume_energy(single_action, terrain)
+        elif action in [Actions.FORWARD.value, Actions.BACKWARD.value]:
+            movement_cost = terrain.get_movement_cost()
+            self.robot.state.consume_energy(movement_cost)
+        elif action in [Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]:
+            self.robot.state.consume_energy(0.15)
+        elif action == Actions.IDLE.value:
+            self.robot.state.consume_energy(0.1)
+
+    def step(self, action: int | np.ndarray) -> tuple:  # noqa: D102
+        position: tuple[float, float] = self.robot.get_position()
+        terrain: Terrain = self.game_map.get_terrain(position[0], position[1])
+
+        self.robot.move(action)
+        self._consume_energy(action, terrain)
+
+        observation = self._get_obs()
+        reward = self._get_reward()
+        terminated = self._get_terminates()
+        truncated = self._get_truncates()
+        info = self._get_info()
+
+        # Update visualization
+        distance_to_target = np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)
+        self.visualization.update(reward, distance_to_target, np.int64(action), self.visualization.random_flag)
+
+        if self.render_mode == "human":
+            self._render_frame()
+
+        return observation, reward, terminated, truncated, info
+
+    def render(self) -> None:  # noqa: D102
         if self.render_mode == "rgb_array":
             return self._render_frame()
         return None
@@ -250,11 +312,11 @@ class TerrainWorldEnv(gym.Env):
                     color = terrain.get_color()
                     pygame.draw.rect(canvas, color, (x + j * cell_size, y + i * cell_size, cell_size, cell_size))
 
-    def _draw_fps_slider(
-            self,
-            canvas: pygame.Surface,
-            max_fps: int = 200
-    ) -> None:
+    def update_random_flag(self, *, random_flag: np.bool_[Any]) -> None:
+        """Update the random flag in the visualization."""
+        self.visualization.random_flag = random_flag
+
+    def _draw_fps_slider(self, canvas: pygame.Surface, max_fps: int = 200) -> None:
         """Draw the FPS slider on the screen."""
         # Draw the FPS slider
         font = pygame.font.Font(None, 24)
@@ -300,13 +362,13 @@ class TerrainWorldEnv(gym.Env):
         """Handle the PyGame key events."""
         keys = pygame.key.get_pressed()
         if keys[pygame.K_UP]:
-            self.step(Actions.FORWARD)
+            self.step(Actions.FORWARD.value)
         elif keys[pygame.K_DOWN]:
-            self.step(Actions.BACKWARD)
+            self.step(Actions.BACKWARD.value)
         elif keys[pygame.K_LEFT]:
-            self.step(Actions.ROTATE_LEFT)
+            self.step(Actions.ROTATE_LEFT.value)
         elif keys[pygame.K_RIGHT]:
-            self.step(Actions.ROTATE_RIGHT)
+            self.step(Actions.ROTATE_RIGHT.value)
         elif keys[pygame.K_z]:
             self.zoom_factor = 2.0 if self.zoom_factor == 1.0 else 1.0
 
