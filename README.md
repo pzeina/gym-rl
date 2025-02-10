@@ -6,6 +6,19 @@ A Gymnasium 2D-environment for agents trained with Reinforcement Learning
 [![static analysis workflow](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/)
 [![test workflow](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/)
 
+# Usage
+
+Prepare the environment:
+```shell
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Train the agent:
+```shell
+python train.py
+```
 
 # Gymnasium Examples
 Some simple examples of Gymnasium environments and wrappers.
