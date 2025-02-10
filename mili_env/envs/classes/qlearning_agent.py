@@ -22,8 +22,8 @@ class AgentConfig:
     final_epsilon: float
     discount_factor: float = 0.95
     memory_size: int = 100_000
-    batch_size: int = 8  # 64
-    batch_num: int = 1  # 10
+    batch_size: int = 256
+    batch_num: int = 10
     hidden_size: int = 256
     decay_factor: float = 0.995  # Add decay factor for exponential decay
 
