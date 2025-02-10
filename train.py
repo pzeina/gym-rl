@@ -1,3 +1,4 @@
+import argparse
 import signal
 import sys
 from pathlib import Path
@@ -50,11 +51,18 @@ config = AgentConfig(
 
 model_path = Path(__file__).resolve().parent / "model/qlearning_model.pth"
 
+# parse arguments and get visualization flag
+parser = argparse.ArgumentParser(description="Train a Q-learning agent.")
+parser.add_argument("--visualization", action="store_true", help="Enable gradient loss visualization.")
+args = parser.parse_args()
+
+VISUALIZATION = args.visualization
+
 
 # Create vectorized environments
 def make_env() -> gym.Env:
     """Create a new environment instance."""
-    env = gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array")
+    env = gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array", visualization=VISUALIZATION)
     return ReacherRewardWrapper(env, reward_dist_weight=1.0, reward_ctrl_weight=0.1)
 
 
@@ -63,7 +71,7 @@ envs = SyncVectorEnv([make_env for _ in range(num_envs)])
 favoured_actions = [Actions.FORWARD.value, Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]
 
 # Initialize visualizations
-visualization = GradientLossVisualization(512, 196)
+visualization = GradientLossVisualization(512, 196) if VISUALIZATION else None
 
 agent = QLearningAgent(envs, config, favoured_actions, visualization)
 

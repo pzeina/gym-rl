@@ -20,7 +20,9 @@ class TerrainWorldEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}  # noqa: RUF012
 
-    def __init__(self, render_mode: str | None = None, target_zone_size: int = 20) -> None:
+    def __init__(
+        self, render_mode: str | None = None, target_zone_size: int = 20, *, visualization: bool = False
+    ) -> None:
         """Initialize the environment."""
         self.max_window_size: int = 512  # The maximum size of the PyGame window
         self.panel_width: int = 256  # Width of the right panel
@@ -39,7 +41,10 @@ class TerrainWorldEnv(gym.Env):
         self.create_robot()
 
         # Initialize visualization
-        self.visualization = Visualization(self.window_width, self.window_height, self.panel_width, np.bool(False))
+        if visualization:
+            self.visualization = Visualization(self.window_width, self.window_height, self.panel_width, np.bool(False))
+        else:
+            self.visualization = None
 
         # Observations are dictionaries with the agent's and the target's location.
         # Each location is encoded as an element of {0, ..., `size`}^2,
@@ -236,7 +241,8 @@ class TerrainWorldEnv(gym.Env):
 
         # Update visualization
         distance_to_target = np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)
-        self.visualization.update(reward, distance_to_target, np.int64(action), self.visualization.random_flag)
+        if self.visualization:
+            self.visualization.update(reward, distance_to_target, np.int64(action), self.visualization.random_flag)
 
         if self.render_mode == "human":
             self._render_frame()
@@ -314,7 +320,8 @@ class TerrainWorldEnv(gym.Env):
 
     def update_random_flag(self, *, random_flag: np.bool_[Any]) -> None:
         """Update the random flag in the visualization."""
-        self.visualization.random_flag = random_flag
+        if self.visualization:
+            self.visualization.random_flag = random_flag
 
     def _draw_fps_slider(self, canvas: pygame.Surface, max_fps: int = 200) -> None:
         """Draw the FPS slider on the screen."""
