@@ -22,8 +22,8 @@ class AgentConfig:
     final_epsilon: float
     discount_factor: float = 0.95
     memory_size: int = 100_000
-    batch_size: int = 8
-    batch_num: int = 10
+    batch_size: int = 8  # 64
+    batch_num: int = 1  # 10
     hidden_size: int = 256
     decay_factor: float = 0.995  # Add decay factor for exponential decay
 
@@ -94,14 +94,14 @@ class QLearningAgent:
         rng = np.random.default_rng()
 
         if rng.random() < self.epsilon:
-            actions = [self.env.action_space.sample() for _ in range(states.shape[0])]
-            random_picks = [True] * states.shape[0]
+            actions = self.env.action_space.sample()
+            random_picks = np.array([True] * states.shape[0])
         else:
             state_tensor = torch.tensor(states, dtype=torch.float)
             with torch.no_grad():
                 output = self.model(state_tensor)
                 actions = torch.argmax(output, dim=1).numpy()
-                random_picks = [False] * states.shape[0]
+                random_picks = np.array([False] * states.shape[0])
 
         return np.array(actions), np.array(random_picks)
 
@@ -113,31 +113,26 @@ class QLearningAgent:
 
     def train_long_memory(self) -> None:
         """Train the model using a batch of experiences from memory."""
-        if len(self.memory) < self.config.batch_size:
-            mini_batch = random.sample(self.memory, len(self.memory))
-        else:
-            mini_batch = random.sample(self.memory, self.config.batch_size)
-
-        states, actions, rewards, next_states, dones = zip(*mini_batch)
-        actions = np.array(actions, dtype=np.int64).squeeze()
-        self.trainer.train_step(states, actions, rewards, next_states, dones)
-
+        if len(self.memory) < self.config.batch_size * self.config.batch_num:
+            return
         # Train on multiple batches to improve learning
         for _ in range(self.config.batch_num):  # Train on multiple batches
-            if len(self.memory) < self.config.batch_size:
-                mini_batch = random.sample(self.memory, len(self.memory))
-            else:
-                mini_batch = random.sample(self.memory, self.config.batch_size)
+            mini_batch = random.sample(self.memory, self.config.batch_size)
 
             states, actions, rewards, next_states, dones = zip(*mini_batch)
+            states = np.concatenate(states)
+            next_states = np.concatenate(next_states)
+            actions = np.concatenate(actions)
+            rewards = np.concatenate(rewards)
+            dones = np.concatenate(dones)
             self.trainer.train_step(states, actions, rewards, next_states, dones)
 
     def train_short_memory(
         self,
-        states: np.ndarray | list[np.ndarray],
+        states: np.ndarray,
         actions: np.ndarray,
         rewards: np.ndarray,
-        next_states: np.ndarray | list[np.ndarray],
+        next_states: np.ndarray,
         dones: np.ndarray,
     ) -> None:
         """Train the model using a batch of experiences."""

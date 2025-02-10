@@ -88,13 +88,6 @@ class QTrainer:
         reward = torch.tensor(np.array(reward), dtype=torch.float).to(device)
         done = torch.tensor(np.array(done), dtype=torch.bool).to(device)
 
-        if len(state.shape) == 1:
-            state = torch.unsqueeze(state, 0)
-            next_state = torch.unsqueeze(next_state, 0)
-            action = torch.unsqueeze(action, 0)
-            reward = torch.unsqueeze(reward, 0)
-            done = torch.unsqueeze(done, 0)
-
         pred = self.model(state)
         target = pred.clone()
         q_new = reward + self.gamma * torch.max(self.model(next_state), dim=1)[0] * (~done)
