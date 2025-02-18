@@ -3,6 +3,7 @@ import os
 import signal
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,8 @@ if N_ENVS is None:
     N_ENVS = 4
 num_envs = N_ENVS  # Number of parallel environments
 start_epsilon = 0.25
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 config = AgentConfig(
     learning_rate=0.01,
     initial_epsilon=0.25,
@@ -48,7 +51,7 @@ config = AgentConfig(
     batch_num=10,
     hidden_size=64,
     decay_factor=0.8,  # Add decay factor for exponential decay
-    update_frequency=1,  # After how many episodes the model should be updated
+    update_frequency=1,
     subsampling_fraction=0.2,
     optimization_steps=5,
     likelihood_ratio_clipping=0.2,
@@ -58,7 +61,7 @@ config = AgentConfig(
     l2_regularization=0.0,
     entropy_regularization=0.0,
     name="agent",
-    device=None,
+    device=device,
     parallel_interactions=1,
     seed=42,
     execution=None,
@@ -91,18 +94,12 @@ favoured_actions = [Actions.FORWARD.value, Actions.ROTATE_LEFT.value, Actions.RO
 visualization = GradientLossVisualization(512, 196) if VISUALIZATION else None
 
 agent = QLearningAgent(envs, config, favoured_actions, visualization)
-
-# Check if GPU is available and set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 agent.policy_model.to(device)
 
 # Load the model if it exists and is valid
 if model_path.exists():
-    try:
+    with suppress(OSError, ValueError, RuntimeError):
         agent.load_model(str(model_path))
-        agent.policy_model.to(device)  # Ensure the model is moved to the correct device after loading
-    except (OSError, ValueError, RuntimeError):
-        pass
 
 
 # Handle interruptions gracefully

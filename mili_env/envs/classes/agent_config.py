@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import torch
+
+TORCH_CPU = torch.device("cpu")
+
 
 @dataclass
 class AgentConfig:
@@ -28,7 +32,7 @@ class AgentConfig:
     l2_regularization: float = 0.0
     entropy_regularization: float = 0.0
     name: str = "agent"
-    device: str | None = None
+    device: torch.device = TORCH_CPU
     parallel_interactions: int = 1
     seed: int = 42
     execution: Any = None

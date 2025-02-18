@@ -163,10 +163,10 @@ class QLearningAgent:
             actions = self.env.action_space.sample()
             random_picks = np.array([True] * states.shape[0])
         else:
-            state_tensor = torch.tensor(states, dtype=torch.float)
+            state_tensor = torch.tensor(states, dtype=torch.float).to(self.config.device)
             with torch.no_grad():
                 output = self.policy_model(state_tensor)
-                actions = torch.argmax(output, dim=1).numpy()
+                actions = torch.argmax(output, dim=1).cpu().numpy()  # Move to CPU before converting to numpy
                 random_picks = np.array([False] * states.shape[0])
 
         return np.array(actions), np.array(random_picks)
@@ -217,6 +217,10 @@ class QLearningAgent:
         """Load the model from a file."""
         self.policy_model.load(file_name)
         self.target_model.load(file_name.replace("policy", "target"))
+
+        # Ensure the model is moved to the correct device after loading
+        self.policy_model.to(self.config.device)
+        self.target_model.to(self.config.device)
 
     def update_model(self) -> None:
         """Update the model based on the update frequency."""
