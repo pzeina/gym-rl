@@ -1,7 +1,10 @@
 import argparse
+import os
 import signal
 import sys
+import time
 from pathlib import Path
+from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -12,10 +15,9 @@ from tqdm import tqdm
 from mili_env.envs.classes.qlearning_agent import AgentConfig, QLearningAgent
 from mili_env.envs.classes.robot_base import Actions
 from mili_env.envs.visualization import GradientLossVisualization
-from mili_env.wrappers.reacher_weighted_reward import ReacherRewardWrapper
 
 
-def save_periodic_model(agent, episode: int, base_model_path: Path) -> None:  # noqa: ANN001
+def save_periodic_model(agent: QLearningAgent, episode: int, base_model_path: Path) -> None:  # noqa: ARG001
     """Save the model to a temporary file and replace the main model file."""
     temp_model_path = base_model_path.with_name(f"{base_model_path.stem}_temp{base_model_path.suffix}")
 
@@ -23,19 +25,18 @@ def save_periodic_model(agent, episode: int, base_model_path: Path) -> None:  # 
     temp_model_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Save to temporary file
-    agent.save_model(temp_model_path)
+    agent.save_model(str(temp_model_path))
 
     # Replace the main model file
     temp_model_path.replace(base_model_path)
 
-    # Annotate the file with the episode number
-    with Path.open(base_model_path.with_suffix(".txt"), "a") as f:
-        f.write(f"Model saved at episode {episode}\n")
-
 
 # Hyperparameters
-n_episodes = 1_000
-num_envs = 4  # Number of parallel environments
+n_episodes = 100_000
+N_ENVS = os.cpu_count()  # print(f"Number of CPUs: {N_ENVS}")
+if N_ENVS is None:
+    N_ENVS = 4
+num_envs = N_ENVS  # Number of parallel environments
 start_epsilon = 0.25
 config = AgentConfig(
     learning_rate=0.01,
@@ -47,6 +48,23 @@ config = AgentConfig(
     batch_num=10,
     hidden_size=64,
     decay_factor=0.8,  # Add decay factor for exponential decay
+    update_frequency=1,  # After how many episodes the model should be updated
+    subsampling_fraction=0.2,
+    optimization_steps=5,
+    likelihood_ratio_clipping=0.2,
+    estimate_terminal=False,
+    exploration=0.0,
+    variable_noise=0.0,
+    l2_regularization=0.0,
+    entropy_regularization=0.0,
+    name="agent",
+    device=None,
+    parallel_interactions=1,
+    seed=42,
+    execution=None,
+    saver=None,
+    summarizer=None,
+    recorder=None,
 )
 
 model_path = Path(__file__).resolve().parent / "model/qlearning_model.pth"
@@ -62,11 +80,10 @@ VISUALIZATION = args.visualization
 # Create vectorized environments
 def make_env() -> gym.Env:
     """Create a new environment instance."""
-    env = gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array", visualization=VISUALIZATION)
-    return ReacherRewardWrapper(env, reward_dist_weight=1.0, reward_ctrl_weight=0.1)
+    return gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array", visualization=VISUALIZATION)
 
 
-envs = SyncVectorEnv([make_env for _ in range(num_envs)])
+envs = SyncVectorEnv([make_env for _ in range(N_ENVS)])
 
 favoured_actions = [Actions.FORWARD.value, Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]
 
@@ -77,13 +94,13 @@ agent = QLearningAgent(envs, config, favoured_actions, visualization)
 
 # Check if GPU is available and set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-agent.model.to(device)
+agent.policy_model.to(device)
 
 # Load the model if it exists and is valid
 if model_path.exists():
     try:
         agent.load_model(str(model_path))
-        agent.model.to(device)  # Ensure the model is moved to the correct device after loading
+        agent.policy_model.to(device)  # Ensure the model is moved to the correct device after loading
     except (OSError, ValueError, RuntimeError):
         pass
 
@@ -92,6 +109,26 @@ if model_path.exists():
 def save_model_and_exit(_signum, _frame):  # noqa: ANN001, ANN201, D103
     save_periodic_model(agent, -1, model_path)
     sys.exit(0)
+
+
+log_file_path = model_path.with_name(f"training_log_{int(time.time())}.csv")
+
+
+def write_log_entry(episode: int, avg_reward: np.floating[Any], avg_length: np.floating[Any]) -> None:
+    """Write the episode statistics to a log file."""
+    log_entry = f"{episode + 1},{avg_reward:.2f},{avg_length:.2f}\n"
+
+    # Ensure directory exists
+    log_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write header if file does not exist
+    if not log_file_path.exists():
+        with log_file_path.open("w") as log_file:
+            log_file.write("Episode,Average Reward,Average Length\n")
+
+    # Append log entry
+    with log_file_path.open("a") as log_file:
+        log_file.write(log_entry)
 
 
 signal.signal(signal.SIGINT, save_model_and_exit)
@@ -137,8 +174,8 @@ for episode in tqdm(range(n_episodes)):
             if env_terminated:
                 episode_terminated[i] = True
 
-    # Train long memory
-    agent.train_long_memory()
+    # Update model based on update frequency
+    agent.update_model()
 
     # Decay epsilon
     agent.decay_epsilon()
@@ -146,7 +183,9 @@ for episode in tqdm(range(n_episodes)):
     # Display episode statistics
     avg_reward = np.mean(episode_rewards)
     avg_length = np.mean(episode_lengths)
-    print(f"Episode {episode + 1}/{n_episodes} - Average Reward: {avg_reward:.2f}, Average Length: {avg_length:.2f}")  # noqa: T201
+
+    # Write episode statistics
+    write_log_entry(episode, avg_reward, avg_length)
 
     # Save periodically
     if (episode + 1) % 10 == 0:
