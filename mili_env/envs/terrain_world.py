@@ -133,7 +133,7 @@ class TerrainWorldEnv(gym.Env):
             "distance": np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
             "direction": np.array((cos_direction, sin_direction), dtype=float),
             "target_direction": np.array((cos_target_direction, sin_target_direction), dtype=float),
-            "energy": self.robot.get_energy(),
+            "energy": np.array(self.robot.get_energy(), dtype=float),
         }
 
     def _get_info(self) -> dict:
@@ -143,17 +143,18 @@ class TerrainWorldEnv(gym.Env):
             "health": self.robot.get_health(),
             "energy": self.robot.get_energy(),
             "ammunition": self.robot.get_ammunition(),
-            "reward_dist": -np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1),
-            "reward_ctrl": -self.robot.get_energy(),
+            "reward_dist": -np.linalg.norm(np.array(self.robot.get_position()) - self._target_zone_center, ord=1)
+            * 0.01,
+            "reward_ctrl": -1,
         }
 
     def _get_reward(self) -> np.floating[Any]:
         """Get the reward of the environment."""
         reward: float = -1
         if self.robot.state.is_at_target():
-            reward += self.robot.get_energy() + 0.25 * self.robot.get_ammunition() + 0.25 * self.robot.get_health()
+            reward = self.robot.get_energy() + 0.25 * self.robot.get_health() + 0.125 * self.robot.get_ammunition()
         elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
-            reward -= self.robot.max_energy + 0.25 * self.robot.max_ammunition + 0.25 * self.robot.max_health
+            reward -= self.robot.max_energy + 0.25 * self.robot.max_health + 0.125 * self.robot.max_ammunition
         return np.float64(reward)
 
     def _get_terminates(self) -> np.bool_[Any]:

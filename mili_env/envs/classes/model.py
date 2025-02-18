@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import numpy as np
 import torch
-from torch import nn, optim
-
-from mili_env.envs.visualization import GradientLossVisualization  # noqa: TC001
+from torch import nn
 
 
 class Linear_QNet(nn.Module):  # noqa: N801
@@ -56,53 +53,3 @@ class Linear_QNet(nn.Module):  # noqa: N801
         model_folder_path = Path(__file__).resolve().parent.parent
         file_path = model_folder_path / file_name
         self.load_state_dict(torch.load(file_path))
-
-
-class QTrainer:
-    """Q-learning trainer class to train the Q-learning model."""
-
-    def __init__(
-        self, model: nn.Module, lr: float, gamma: float, visualization: GradientLossVisualization | None = None
-    ) -> None:
-        """Initialize the Q-learning trainer with a model, learning rate, and discount factor."""
-        self.lr: float = lr
-        self.gamma: float = gamma
-        self.model: nn.Module = model
-        self.optimizer = optim.Adam(model.parameters(), lr=self.lr)
-        self.criterion = nn.MSELoss()
-        self.visualization: GradientLossVisualization | None = visualization
-
-    def train_step(
-        self,
-        state,  # noqa: ANN001
-        action,  # noqa: ANN001
-        reward,  # noqa: ANN001
-        next_state,  # noqa: ANN001
-        done,  # noqa: ANN001
-    ) -> None:
-        """Train the model using a single experience."""
-        device = next(self.model.parameters()).device  # Get the device of the model
-        state = torch.tensor(np.array(state), dtype=torch.float).to(device)
-        next_state = torch.tensor(np.array(next_state), dtype=torch.float).to(device)
-        action = torch.tensor(np.array(action), dtype=torch.long).to(device)
-        reward = torch.tensor(np.array(reward), dtype=torch.float).to(device)
-        done = torch.tensor(np.array(done), dtype=torch.bool).to(device)
-
-        pred = self.model(state)
-        target = pred.clone()
-        q_new = reward + self.gamma * torch.max(self.model(next_state), dim=1)[0] * (~done)
-        target[range(len(action)), action] = q_new
-
-        self.optimizer.zero_grad()
-        loss = self.criterion(target, pred)
-        loss.backward()
-
-        # Track gradients
-        if self.visualization:
-            self.visualization.track_gradients(self.model)
-
-        self.optimizer.step()
-
-        # Track loss
-        if self.visualization:
-            self.visualization.track_loss(loss.item())
