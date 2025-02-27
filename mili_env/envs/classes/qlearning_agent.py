@@ -38,19 +38,19 @@ class QLearningAgent:
 
         def train_step(
             self,
-            state,  # noqa: ANN001
-            action,  # noqa: ANN001
-            reward,  # noqa: ANN001
-            next_state,  # noqa: ANN001
-            done,  # noqa: ANN001
+            _state: np.ndarray,
+            _action: np.ndarray,
+            _reward: np.ndarray,
+            _next_state: np.ndarray,
+            _done: np.ndarray,
         ) -> None:
             """Train the model using a single experience."""
             device = next(self.policy_model.parameters()).device  # Get the device of the model
-            state = torch.tensor(np.array(state), dtype=torch.float).to(device)
-            next_state = torch.tensor(np.array(next_state), dtype=torch.float).to(device)
-            action = torch.tensor(np.array(action), dtype=torch.long).to(device)
-            reward = torch.tensor(np.array(reward), dtype=torch.float).to(device)
-            done = torch.tensor(np.array(done), dtype=torch.bool).to(device)
+            state = torch.tensor(np.array(_state), dtype=torch.float).to(device)
+            next_state = torch.tensor(np.array(_next_state), dtype=torch.float).to(device)
+            action = torch.tensor(np.array(_action), dtype=torch.long).to(device)
+            reward = torch.tensor(np.array(_reward), dtype=torch.float).to(device)
+            done = torch.tensor(np.array(_done), dtype=torch.bool).to(device)
 
             pred = self.policy_model(state)
             target = pred.clone()
@@ -79,11 +79,11 @@ class QLearningAgent:
             if self.config.subsampling_fraction < 1.0:
                 rng = np.random.default_rng()
                 indices = rng.choice(len(states), int(len(states) * self.config.subsampling_fraction), replace=False)
-                states = states[indices]
-                actions = actions[indices]
-                rewards = rewards[indices]
-                next_states = next_states[indices]
-                dones = dones[indices]
+                states: np.ndarray = states[indices]
+                actions: np.ndarray = actions[indices]
+                rewards: np.ndarray = rewards[indices]
+                next_states: np.ndarray = next_states[indices]
+                dones: np.ndarray = dones[indices]
 
             for _ in range(self.config.optimization_steps):
                 self.train_step(states, actions, rewards, next_states, dones)
