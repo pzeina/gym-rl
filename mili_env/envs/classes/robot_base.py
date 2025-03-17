@@ -279,7 +279,7 @@ class RobotBase:
     def get_target_direction(self) -> float:
         """Get the robot's target direction."""
         target_x, target_y = self.get_target()
-        return np.arctan2(target_y - self.state.y, target_x - self.state.x)
+        return np.arctan2(target_y - self.state.y, target_x - self.state.x) % (2 * np.pi)  # angle_rad
 
     def get_distance_to_target(self) -> float:
         """Get the robot's distance to the target."""
@@ -398,21 +398,21 @@ class RobotBase:
         health_ratio = self.state.attributes.health / self.max_health
         pygame.draw.rect(screen, (255, 0, 0), (x, y, width * health_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y, width, height), 2)
-        health_label = font.render("Health", antialias=True, color=(255, 255, 255))
+        health_label = font.render("Health", True, (255, 255, 255))  # noqa: FBT003
         screen.blit(health_label, (x, y))
 
         # Energy bar
         energy_ratio = self.state.attributes.energy / self.max_energy
         pygame.draw.rect(screen, (0, 255, 0), (x, y + height + 5, width * energy_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y + height + 5, width, height), 2)
-        energy_label = font.render("Energy", antialias=True, color=(255, 255, 255))
+        energy_label = font.render("Energy", True, (255, 255, 255))  # noqa: FBT003
         screen.blit(energy_label, (x, y + height + 5))
 
         # Ammunition bar
         ammunition_ratio = self.state.attributes.ammunition / self.max_ammunition
         pygame.draw.rect(screen, (0, 0, 255), (x, y + 2 * (height + 5), width * ammunition_ratio, height))
         pygame.draw.rect(screen, (255, 255, 255), (x, y + 2 * (height + 5), width, height), 2)
-        ammunition_label = font.render("Ammunition", antialias=True, color=(255, 255, 255))
+        ammunition_label = font.render("Ammunition", True, (255, 255, 255))  # noqa: FBT003
         screen.blit(ammunition_label, (x, y + 2 * (height + 5)))
 
     def render_vision_rays(self, screen: pygame.Surface, cell_size: int) -> None:
