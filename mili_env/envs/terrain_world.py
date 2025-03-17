@@ -156,7 +156,12 @@ class TerrainWorldEnv(gym.Env):
         if self.robot.state.is_at_target():
             reward = self.robot.get_energy() + 0.25 * self.robot.get_health() + 0.125 * self.robot.get_ammunition()
         elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
-            reward -= self.robot.max_energy + 0.25 * self.robot.max_health + 0.125 * self.robot.max_ammunition
+            reward -= (
+                self.robot.get_distance_to_target()
+                + 0.5 * self.robot.max_energy
+                + 0.25 * self.robot.max_health
+                + 0.125 * self.robot.max_ammunition
+            )
         return np.float64(reward)
 
     def _get_terminates(self) -> np.bool_:
