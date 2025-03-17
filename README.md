@@ -15,10 +15,29 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+In case you encounter an issue with box2d, like `Failed to build box2d-py`, you can try installing the necessary system dependencies with:
+
+For Ubuntu/Debian:
+```shell
+sudo apt update
+sudo apt install -y python3-dev python3-pip build-essential swig
+```
+
+For MacOS:
+```shell
+brew install swig
+```
+
 Train the agent:
 ```shell
 python train.py
 ```
+
+Or in the background:
+```shell
+nohup python train.py > model/mylog.txt 2>&1 &
+```
+
 
 # Gymnasium Examples
 Some simple examples of Gymnasium environments and wrappers.

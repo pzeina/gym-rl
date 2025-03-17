@@ -1,10 +1,9 @@
-import argparse
 import os
 import signal
 import sys
 import time
+from contextlib import suppress
 from pathlib import Path
-from typing import Any
 
 import gymnasium as gym
 import numpy as np
@@ -12,53 +11,55 @@ import torch
 from gymnasium.vector import SyncVectorEnv
 from tqdm import tqdm
 
+import utils
 from mili_env.envs.classes.qlearning_agent import AgentConfig, QLearningAgent
 from mili_env.envs.classes.robot_base import Actions
-from mili_env.envs.visualization import GradientLossVisualization
+from mili_env.envs.metrics import GradientLossTracker
+
+# Empêche la mise en veille sur macOS et Linux
+# Safe list of commands for shell execution
+safe_commands = ["caffeinate", "xset"]
 
 
-def save_periodic_model(agent: QLearningAgent, episode: int, base_model_path: Path) -> None:  # noqa: ARG001
-    """Save the model to a temporary file and replace the main model file."""
-    temp_model_path = base_model_path.with_name(f"{base_model_path.stem}_temp{base_model_path.suffix}")
+# Function to validate command
+def is_safe_command(command: str) -> bool:
+    """Check if the command is safe to execute."""
+    return command in safe_commands
 
-    # Ensure directory exists
-    temp_model_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save to temporary file
-    agent.save_model(str(temp_model_path))
+if os.name == "posix":
+    import subprocess
 
-    # Replace the main model file
-    temp_model_path.replace(base_model_path)
-
+    subprocess.Popen("caffeinate" if "darwin" in sys.platform else "xset s off -dpms", shell=True)  # noqa: S602
 
 # Hyperparameters
-n_episodes = 100_000
-N_ENVS = os.cpu_count()  # print(f"Number of CPUs: {N_ENVS}")
-if N_ENVS is None:
-    N_ENVS = 4
-num_envs = N_ENVS  # Number of parallel environments
-start_epsilon = 0.25
+n_episodes = 50_000
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 config = AgentConfig(
     learning_rate=0.01,
-    initial_epsilon=0.25,
-    final_epsilon=0.05,
+    decay_learning_rate=0.995,
+    initial_epsilon=0.05,
+    final_epsilon=0.01,
     discount_factor=0.95,
     memory_size=100_000,
-    batch_size=64,
+    batch_size=1024,
     batch_num=10,
-    hidden_size=64,
-    decay_factor=0.8,  # Add decay factor for exponential decay
-    update_frequency=1,  # After how many episodes the model should be updated
+    hidden_size=512,
+    decay_epsilon=0.995,  # Add decay factor for exponential decay of epsi
+    update_frequency=5,
     subsampling_fraction=0.2,
     optimization_steps=5,
     likelihood_ratio_clipping=0.2,
-    estimate_terminal=False,
-    exploration=0.0,
-    variable_noise=0.0,
-    l2_regularization=0.0,
-    entropy_regularization=0.0,
+    estimate_terminal=False,  # not used
+    exploration=0.0,  # not used
+    variable_noise=0.0,  # not used
+    l2_regularization=0.0,  # not used
+    entropy_regularization=0.0,  # not used
+    dummy_phase=1000,
+    dummy_policy_decay=0.95,
     name="agent",
-    device=None,
+    device=device,
     parallel_interactions=1,
     seed=42,
     execution=None,
@@ -67,129 +68,170 @@ config = AgentConfig(
     recorder=None,
 )
 
-model_path = Path(__file__).resolve().parent / "model/qlearning_model.pth"
 
-# parse arguments and get visualization flag
-parser = argparse.ArgumentParser(description="Train a Q-learning agent.")
-parser.add_argument("--visualization", action="store_true", help="Enable gradient loss visualization.")
-args = parser.parse_args()
+args = utils.parse_args()
 
-VISUALIZATION = args.visualization
+TRACK_GRAD = args.track_grad.lower() in ("true", "1", "t", "y", "yes")
+PLOT_GRAD = args.plot_grad.lower() in ("true", "1", "t", "y", "yes")
+N_ENVS = args.parallel
+RENDER_MODE = args.render_mode.lower()
+num_envs = N_ENVS  # Number of parallel environments
+MODEL_PATH = args.pretrained_model if args.pretrained_model else None
+if RENDER_MODE not in ("rgb_array", "human"):
+    error_msg = "The render mode must be either 'rgb_array' or 'human'."
+    raise ValueError(error_msg)
 
 
 # Create vectorized environments
 def make_env() -> gym.Env:
     """Create a new environment instance."""
-    return gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array", visualization=VISUALIZATION)
+    return gym.make("mili_env/TerrainWorld-v0", render_mode=RENDER_MODE, visualization=PLOT_GRAD)
 
 
 envs = SyncVectorEnv([make_env for _ in range(N_ENVS)])
 
 favoured_actions = [Actions.FORWARD.value, Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]
 
-# Initialize visualizations
-visualization = GradientLossVisualization(512, 196) if VISUALIZATION else None
 
-agent = QLearningAgent(envs, config, favoured_actions, visualization)
-
-# Check if GPU is available and set device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+agent = QLearningAgent(
+    envs,
+    config,
+    favoured_actions,
+    visualization=GradientLossTracker(512, 196, graphs=PLOT_GRAD) if TRACK_GRAD else None,
+)
+if MODEL_PATH:
+    with suppress(OSError, ValueError, RuntimeError):
+        agent.load_model(str(MODEL_PATH))
 agent.policy_model.to(device)
-
-# Load the model if it exists and is valid
-if model_path.exists():
-    try:
-        agent.load_model(str(model_path))
-        agent.policy_model.to(device)  # Ensure the model is moved to the correct device after loading
-    except (OSError, ValueError, RuntimeError):
-        pass
 
 
 # Handle interruptions gracefully
 def save_model_and_exit(_signum, _frame):  # noqa: ANN001, ANN201, D103
-    save_periodic_model(agent, -1, model_path)
+    utils.save_periodic_model(agent, -1, model_path)
     sys.exit(0)
 
 
-log_file_path = model_path.with_name(f"training_log_{int(time.time())}.csv")
-
-
-def write_log_entry(episode: int, avg_reward: np.floating[Any], avg_length: np.floating[Any]) -> None:
-    """Write the episode statistics to a log file."""
-    log_entry = f"{episode + 1},{avg_reward:.2f},{avg_length:.2f}\n"
-
-    # Ensure directory exists
-    log_file_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write header if file does not exist
-    if not log_file_path.exists():
-        with log_file_path.open("w") as log_file:
-            log_file.write("Episode,Average Reward,Average Length\n")
-
-    # Append log entry
-    with log_file_path.open("a") as log_file:
-        log_file.write(log_entry)
+exp_timestamp = int(time.time())
+model_path = Path(__file__).resolve().parent / f"model/qlearning_model_{exp_timestamp}.pth"
+log_file_path = model_path.with_name(f"training_log_{exp_timestamp}.csv")
+print(f"Model path: {model_path}")  # noqa: T201
+print(f"Log file path: {log_file_path}")  # noqa: T201
 
 
 signal.signal(signal.SIGINT, save_model_and_exit)
 signal.signal(signal.SIGTERM, save_model_and_exit)
 
+timing_metrics_path = model_path.with_name(f"timing_metrics_{exp_timestamp}.csv")
+
+# When using vectorized environments (like SyncVectorEnv), Gymnasium automatically
+#  resets only the individual environments that terminate, while others keep
+#  running. You do not need to manually reset them after each episode.
+obs, info = envs.reset()
+
+episode_rewards_tmp = np.zeros(num_envs)
+episode_lengths_tmp = np.zeros(num_envs, dtype=int)
+
 # Training loop
 for episode in tqdm(range(n_episodes)):
-    obs, info = envs.reset()
-    episode_terminated = [False] * num_envs
-    episode_rewards = np.zeros(num_envs)
-    episode_lengths = np.zeros(num_envs)
+    # Initialize episode metrics
+    episode_logs = {
+        "episode": episode,
+        "episode_length": 0,
+        "episode_total_reward": 0.0,
+        "episode_avg_reward": 0.0,
+        "grad_value": 0.0,
+        "loss_value": 0.0,
+        "train_time": 0.0,
+        "env_step_time": 0.0,
+        "reward_time": 0.0,
+        "action_selection_time": 0.0,
+        "others_time": 0.0,
+    }
 
-    # Play one episode
-    while not all(episode_terminated):
+    step_count: int = 0
 
-        def process_obs(obs: np.ndarray) -> np.ndarray:
-            """Process the observations into a 2D numpy array where each row is the state of an environment."""
-            if isinstance(envs, SyncVectorEnv):
-                return np.concatenate([obs[key].reshape(num_envs, -1) for key in obs], axis=1)
-            env_processed = [value.flatten() for key in obs for value in obs[key]]
-            return np.array(env_processed)
+    def process_obs(obs: np.ndarray) -> np.ndarray:
+        """Process the observations into a 2D numpy array where each row is the state of an environment."""
+        if isinstance(envs, SyncVectorEnv):
+            return np.concatenate([obs[key].reshape(num_envs, -1) for key in obs], axis=1)
+        env_processed = [value.flatten() for key in obs for value in obs[key]]
+        return np.array(env_processed)
 
+    # Play one episode (until first termination)
+    while True:
+        start_time = time.time()
+
+        # Action selection
+        action_selection_start = time.time()
         states = process_obs(obs)
-        actions, random_picks = agent.get_action(states)
+        actions = agent.get_action(states)
+        episode_logs["action_selection_time"] += time.time() - action_selection_start
+
+        # Environment step
+        env_step_start = time.time()
         next_obs, rewards, terminated, truncated, infos = envs.step(actions)
+        episode_logs["env_step_time"] += time.time() - env_step_start
+
+        # Reward calculation
+        reward_start = time.time()
         next_states = process_obs(next_obs)
+        episode_logs["reward_time"] += time.time() - reward_start
 
         # Remember the experiences
+        remember_start = time.time()
         agent.remember(states, actions, rewards, next_states, terminated)
+        episode_logs["others_time"] += time.time() - remember_start
 
         # Train short memory
+        train_start = time.time()
         agent.train_short_memory(states, actions, rewards, next_states, terminated)
+        episode_logs["train_time"] += time.time() - train_start
 
         # Update observations
         obs = next_obs
 
+        # Record gradient and loss
+        grad_value, loss_value = agent.get_grad_loss_values()
+        episode_logs["grad_value"] += grad_value
+        episode_logs["loss_value"] += loss_value
+
         # Update episode statistics
-        episode_rewards += rewards
-        episode_lengths += 1
+        episode_rewards_tmp += rewards
+        episode_lengths_tmp += np.ones(num_envs, dtype=int)
 
-        # Update episode_terminated
-        for i, env_terminated in enumerate(terminated):
-            if env_terminated:
-                episode_terminated[i] = True
+        step_count += 1
 
-    # Update model based on update frequency
+        # Check if any environments has terminated
+        if any(terminated):
+            terminated_envs = np.where(terminated)[0]
+            for terminated_env in terminated_envs:
+                episode_logs["episode_length"] = episode_lengths_tmp[terminated_env]
+                episode_logs["episode_total_reward"] = episode_rewards_tmp[terminated_env]
+                episode_logs["episode_avg_reward"] = (
+                    episode_rewards_tmp[terminated_env] / episode_lengths_tmp[terminated_env]
+                )
+                episode_logs["grad_value"] /= step_count
+                episode_logs["loss_value"] /= step_count
+
+                # Reset the terminated environment's statistics
+                episode_rewards_tmp[terminated_env] = 0.0
+                episode_lengths_tmp[terminated_env] = 0
+
+            break
+
+    # Train long memory
     agent.update_model()
 
     # Decay epsilon
-    agent.decay_epsilon()
-
-    # Display episode statistics
-    avg_reward = np.mean(episode_rewards)
-    avg_length = np.mean(episode_lengths)
+    agent.decay_epsilon_f()
+    agent.decay_lr()
 
     # Write episode statistics
-    write_log_entry(episode, avg_reward, avg_length)
+    utils.write_log_entry(log_file_path, episode_logs)
 
     # Save periodically
     if (episode + 1) % 10 == 0:
-        save_periodic_model(agent, episode, model_path)
+        utils.save_periodic_model(agent, episode, model_path)
 
 # Save the final model
-save_periodic_model(agent, n_episodes, model_path)
+utils.save_periodic_model(agent, n_episodes, model_path)
