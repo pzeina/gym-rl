@@ -44,6 +44,9 @@ class QLearningAgent(BaseAgent):
             self.grad_value: float = 0.0
             self.loss_value: float = 0.0
 
+            self.policy_model.to(self.config.device)
+            self.target_model.to(self.config.device)
+
         def train_step(
             self,
             _state: np.ndarray,
