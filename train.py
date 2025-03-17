@@ -37,7 +37,7 @@ n_episodes = 50_000
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 config = AgentConfig(
-    learning_rate=0.01,
+    learning_rate=0.05,
     decay_learning_rate=0.995,
     initial_epsilon=0.05,
     final_epsilon=0.01,
