@@ -137,12 +137,12 @@ class QLearningAgent(BaseAgent):
             return dummy_get_action(states)
 
         rng = np.random.default_rng()
-        alea = rng.random()
 
+        alea = rng.random()
         if alea < self.dummy_frequency:
             return dummy_get_action(states)
-        alea = rng.random()
 
+        alea = rng.random()
         if alea < self.epsilon:
             actions = self.env.action_space.sample()
         else:
