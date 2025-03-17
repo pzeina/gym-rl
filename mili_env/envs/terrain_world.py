@@ -43,7 +43,7 @@ class TerrainWorldEnv(gym.Env):
 
         # Initialize visualization
         if visualization:
-            self.visualization = Visualization(self.window_width, self.window_height, self.panel_width, np.bool(False))
+            self.visualization = Visualization(self.window_width, self.window_height, self.panel_width, np.bool_(False))  # noqa: FBT003
         else:
             self.visualization = None
 
@@ -128,9 +128,9 @@ class TerrainWorldEnv(gym.Env):
         target_direction: float = self.robot.get_target_direction()
         return {
             "position": np.asarray(self.robot.get_position(), dtype=np.float64),
-            "target_position": np.array(self.robot.get_target(), dtype=int),
+            "target_position": np.array(self.robot.get_target(), dtype=np.int64),
             "distance": np.asarray(
-                np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1),
+                np.linalg.norm(self.robot.get_position() - self._target_zone_center, ord=1),
                 dtype=np.float64,
             ),
             "direction": np.asarray(direction, dtype=np.float64),
@@ -159,15 +159,15 @@ class TerrainWorldEnv(gym.Env):
             reward -= self.robot.max_energy + 0.25 * self.robot.max_health + 0.125 * self.robot.max_ammunition
         return np.float64(reward)
 
-    def _get_terminates(self) -> np.bool_[Any]:
+    def _get_terminates(self) -> np.bool_:
         """Check if the environment terminates."""
         return np.bool_(
             self.robot.state.is_at_target() or not self.robot.state.is_alive() or not self.robot.state.has_energy()
         )
 
-    def _get_truncates(self) -> np.bool_[Any]:
+    def _get_truncates(self) -> np.bool_:
         """Check if the environment truncates."""
-        return np.bool(False)
+        return np.bool_(False)  # noqa: FBT003
 
     def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple:  # noqa: D102
         super().reset(seed=seed, options=options)
@@ -322,7 +322,7 @@ class TerrainWorldEnv(gym.Env):
                     color = terrain.get_color()
                     pygame.draw.rect(canvas, color, (x + j * cell_size, y + i * cell_size, cell_size, cell_size))
 
-    def update_random_flag(self, *, random_flag: np.bool_[Any]) -> None:
+    def update_random_flag(self, *, random_flag: np.bool_) -> None:
         """Update the random flag in the visualization."""
         if self.visualization:
             self.visualization.random_flag = random_flag
