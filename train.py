@@ -13,7 +13,6 @@ from tqdm import tqdm
 
 import utils
 from mili_env.envs.classes.qlearning_agent import AgentConfig, QLearningAgent
-from mili_env.envs.classes.robot_base import Actions
 from mili_env.envs.metrics import GradientLossTracker
 
 # Empêche la mise en veille sur macOS et Linux
@@ -45,7 +44,7 @@ config = AgentConfig(
     memory_size=100_000,
     batch_size=1024,
     batch_num=10,
-    hidden_size=512,
+    hidden_size=264,
     decay_epsilon=0.995,  # Add decay factor for exponential decay of epsi
     update_frequency=5,
     subsampling_fraction=0.2,
@@ -90,13 +89,10 @@ def make_env() -> gym.Env:
 
 envs = SyncVectorEnv([make_env for _ in range(N_ENVS)])
 
-favoured_actions = [Actions.FORWARD.value, Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]
-
 
 agent = QLearningAgent(
     envs,
     config,
-    favoured_actions,
     visualization=GradientLossTracker(512, 196, graphs=PLOT_GRAD) if TRACK_GRAD else None,
 )
 if MODEL_PATH:
