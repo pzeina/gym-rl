@@ -104,7 +104,6 @@ class QLearningAgent(BaseAgent):
         self,
         env: gym.Env | SyncVectorEnv,
         config: AgentConfig,
-        favored_actions: list[int] | None = None,
         visualization: GradientLossTracker | None = None,
     ) -> None:
         """Initialize a Reinforcement Learning agent with a neural network model."""
@@ -114,12 +113,8 @@ class QLearningAgent(BaseAgent):
         obs_size = self._calculate_observation_size(env)
         action_space_size = self._get_action_space_size(env)
 
-        self.policy_model = Linear_QNet(
-            obs_size, config.hidden_size, int(action_space_size), favored_actions=favored_actions
-        )
-        self.target_model = Linear_QNet(
-            obs_size, config.hidden_size, int(action_space_size), favored_actions=favored_actions
-        )
+        self.policy_model = Linear_QNet(obs_size, config.hidden_size, int(action_space_size))
+        self.target_model = Linear_QNet(obs_size, config.hidden_size, int(action_space_size))
         self.target_model.load_state_dict(
             self.policy_model.state_dict()
         )  # Initialize target model with policy model weights
