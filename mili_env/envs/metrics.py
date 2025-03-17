@@ -327,6 +327,8 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
             continue
 
         metric_df = pd.read_csv(csv_file)
+        # Retain only the last 100 episodes
+        metric_df = metric_df.iloc[-100:]
         subplot_idx = 0
 
         # Plot time metrics
