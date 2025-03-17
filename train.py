@@ -32,7 +32,7 @@ if os.name == "posix":
     subprocess.Popen("caffeinate" if "darwin" in sys.platform else "xset s off -dpms", shell=True)  # noqa: S602
 
 # Hyperparameters
-n_episodes = 50_000
+n_episodes = 10_000
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 config = AgentConfig(
@@ -199,6 +199,10 @@ for episode in tqdm(range(n_episodes)):
 
         # Check if any environments has terminated
         if any(terminated):
+            list_not_to_average = ["episode", "episode_length", "episode_total_reward", "episode_avg_reward"]
+            for key in episode_logs:
+                if key not in list_not_to_average:
+                    episode_logs[key] /= step_count
             terminated_envs = np.where(terminated)[0]
             for terminated_env in terminated_envs:
                 episode_logs["episode_length"] = episode_lengths_tmp[terminated_env]
@@ -206,8 +210,6 @@ for episode in tqdm(range(n_episodes)):
                 episode_logs["episode_avg_reward"] = (
                     episode_rewards_tmp[terminated_env] / episode_lengths_tmp[terminated_env]
                 )
-                episode_logs["grad_value"] /= step_count
-                episode_logs["loss_value"] /= step_count
 
                 # Reset the terminated environment's statistics
                 episode_rewards_tmp[terminated_env] = 0.0
