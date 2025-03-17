@@ -12,6 +12,8 @@ import pandas as pd
 from numpy import floating
 
 if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
     from torch import nn
 
 
@@ -193,6 +195,118 @@ class GradientLossTracker(BaseVisualization):
         plt.pause(0.001)
 
 
+def get_column_categories(metric_df: pd.DataFrame) -> tuple[list[str], list[str]]:
+    """Sépare les colonnes temporelles des autres métriques.
+
+    Args:
+        metric_df: DataFrame contenant les métriques
+
+    Returns:
+        tuple: (colonnes temporelles, autres colonnes)
+    """
+    time_columns = [col for col in metric_df.columns if "time" in col.lower()]
+    other_columns = [col for col in metric_df.columns if col not in time_columns and col != "Episode"]
+    return time_columns, other_columns
+
+
+def setup_plot_layout(time_columns: list[str], other_columns: list[str]) -> tuple[Figure, list]:
+    """Crée la mise en page des sous-graphiques.
+
+    Args:
+        time_columns: Liste des colonnes temporelles
+        other_columns: Liste des autres colonnes
+
+    Returns:
+        tuple: (figure, axes)
+    """
+    all_columns = ["Time Metrics"] if time_columns else []
+    all_columns += other_columns
+
+    num_subplots = len(all_columns)
+    ncols = 2  # Two columns
+    nrows = math.ceil(num_subplots / ncols)  # Number of rows needed
+
+    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(8, 8), constrained_layout=True)
+    return fig, axes.flatten() if num_subplots > 1 else [axes]
+
+
+def plot_time_metrics(ax: Axes, metric_df: pd.DataFrame, time_columns: list[str]) -> None:
+    """Dessine les métriques temporelles sous forme de barres empilées.
+
+    Args:
+        ax: Axe matplotlib sur lequel dessiner
+        metric_df: DataFrame contenant les métriques
+        time_columns: Liste des colonnes temporelles
+    """
+    ax.clear()
+
+    # Compute cumulative sum for stacked bars
+    bottom = None
+    colors = plt.colormaps.get_cmap("viridis")(np.linspace(0, 1, len(time_columns)))
+
+    for col, color in zip(time_columns, colors):
+        ax.bar(metric_df["Episode"], metric_df[col], bottom=bottom, label=col, color=color, alpha=0.8)
+        bottom = metric_df[col] if bottom is None else bottom + metric_df[col]
+
+    ax.set_title("Cumulative Time Metrics")
+    ax.set_xlabel("Episode")
+    ax.set_ylabel("Time (s)")
+    ax.legend()
+
+
+def get_color_mapping(values: np.ndarray) -> list:
+    """Crée un mapping de couleurs basé sur les valeurs (vert pour positif, rouge pour négatif).
+
+    Args:
+        values: Tableau des valeurs à représenter
+
+    Returns:
+        list: Liste des couleurs RGB pour chaque valeur
+    """
+    max_abs_val = np.max(np.abs(values)) if len(values) > 0 else 1
+    max_abs_val = max(max_abs_val, 1)  # Éviter division par zéro
+
+    colors = []
+    for val in values:
+        if val >= 0:
+            intensity = min(abs(val) / max_abs_val * 0.8 + 0.2, 1.0)
+            colors.append((0, intensity, 0))
+        else:
+            intensity = min(abs(val) / max_abs_val * 0.8 + 0.2, 1.0)
+            colors.append((intensity, 0, 0))
+
+    return colors
+
+
+def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str) -> None:
+    """Dessine une métrique sous forme de nuage de points avec gradient de couleur.
+
+    Args:
+        ax: Axe matplotlib sur lequel dessiner
+        metric_df: DataFrame contenant les métriques
+        column: Nom de la colonne à représenter
+    """
+    ax.clear()
+
+    # Convertir en array numpy pour éviter les problèmes avec ExtensionArray
+    values = np.array(metric_df[column].tolist())
+    episodes = np.array(metric_df["Episode"].tolist())
+
+    # Obtenir les couleurs pour chaque point
+    colors = get_color_mapping(values)
+
+    # Tracer le nuage de points
+    ax.scatter(episodes, values, c=colors, alpha=0.5, s=20)
+
+    # Ajouter une ligne de tendance
+    if len(episodes) > 1:
+        ax.plot(episodes, values, linestyle="-", color="gray", alpha=0.3, linewidth=1)
+
+    ax.set_title(column)
+    ax.set_xlabel("Episode")
+    ax.set_ylabel(column)
+
+
 def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.csv") -> None:
     """Continuously updates the plot with new CSV data."""
     plt.ion()  # Turn on interactive mode
@@ -203,22 +317,8 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
         raise FileNotFoundError(error_msg)
 
     metric_df = pd.read_csv(csv_file)
-
-    # Separate "time" columns from others
-    time_columns = [col for col in metric_df.columns if "time" in col.lower()]
-    other_columns = [col for col in metric_df.columns if col not in time_columns and col != "Episode"]
-
-    # Group "time" metrics into one subplot
-    all_columns = ["Time Metrics"] if time_columns else []
-    all_columns += other_columns
-
-    num_subplots = len(all_columns)
-    ncols = 2  # Two columns
-    nrows = math.ceil(num_subplots / ncols)  # Number of rows needed
-
-    # Create a persistent figure with reduced width
-    fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(8, 8), constrained_layout=True)
-    axes = axes.flatten() if num_subplots > 1 else [axes]  # Ensure axes is always a list
+    time_columns, other_columns = get_column_categories(metric_df)
+    fig, axes = setup_plot_layout(time_columns, other_columns)
 
     while True:
         csv_file = get_latest_csv(directory, filename)
@@ -227,36 +327,16 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
             continue
 
         metric_df = pd.read_csv(csv_file)
-
         subplot_idx = 0
 
-        # 1️⃣ Plot cumulative time metrics as stacked bars
+        # Plot time metrics
         if time_columns:
-            ax = axes[subplot_idx]
-            ax.clear()
-
-            # Compute cumulative sum for stacked bars
-            bottom = None
-            colors = plt.colormaps.get_cmap("viridis")(np.linspace(0, 1, len(time_columns)))  # Generate unique colors
-
-            for col, color in zip(time_columns, colors):
-                ax.bar(metric_df["Episode"], metric_df[col], bottom=bottom, label=col, color=color, alpha=0.8)
-                bottom = metric_df[col] if bottom is None else bottom + metric_df[col]  # Stack bars
-
-            ax.set_title("Cumulative Time Metrics")
-            ax.set_xlabel("Episode")
-            ax.set_ylabel("Time (s)")
-            ax.legend()
+            plot_time_metrics(axes[subplot_idx], metric_df, time_columns)
             subplot_idx += 1
 
-        # 2️⃣ Plot all other columns separately
+        # Plot other metrics
         for col in other_columns:
-            ax = axes[subplot_idx]
-            ax.clear()
-            ax.plot(metric_df["Episode"], metric_df[col], linestyle="-", color="tab:blue")  # No markers
-            ax.set_title(col)
-            ax.set_xlabel("Episode")
-            ax.set_ylabel(col)
+            plot_metric_scatter(axes[subplot_idx], metric_df, col)
             subplot_idx += 1
 
         # Hide extra subplots (if any)
@@ -264,8 +344,8 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
             axes[i].set_visible(False)
 
         plt.tight_layout()
-        fig.canvas.draw()  # Redraw figure without popping
-        fig.canvas.flush_events()  # Process UI events smoothly
+        fig.canvas.draw()
+        fig.canvas.flush_events()
         time.sleep(2)  # Refresh every 2 seconds
 
 
