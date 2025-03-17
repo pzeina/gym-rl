@@ -33,6 +33,12 @@ Train the agent:
 python train.py
 ```
 
+Or in the background:
+```shell
+nohup python train.py > model/mylog.txt 2>&1 &
+```
+
+
 # Gymnasium Examples
 Some simple examples of Gymnasium environments and wrappers.
 For some explanations of these examples, see the [Gymnasium documentation](https://gymnasium.farama.org).
