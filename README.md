@@ -72,3 +72,16 @@ cd mili_env
 pip install -e .
 ```
 
+## Training
+
+ A few suggestions:
+
+   1. Increase epsilon, the exploration rate. This will cause the agent to take random actions more often, preventing it from getting stuck. You want epsilon to decay over time as the agent learns, but keep it high enough during training.
+
+   2. Implement epsilon-greedy action selection instead of just epsilon-random. With epsilon-greedy, the agent chooses the action with the highest Q-value (what it thinks is the optimal action) (1-epsilon) % of the time. The remaining epsilon% of the time it chooses a random action. This balances exploitation of current knowledge and exploration of new options.
+
+   3. Use entropy bonuses or weight decay on Q-values. This nudges the agent to consider multiple good options instead of settling on just one suboptimal choice.
+
+   4. Consider using a reward shaping function to incentivize the agent taking actions that lead it to less explored states. This stealthily guides the agent's exploration without directly forcing random actions.
+
+Exploration is key to deep reinforcement learning, so getting this right will help your agent reach its full potential. Good luck! 
