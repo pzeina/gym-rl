@@ -130,6 +130,14 @@ class QLearningAgent(BaseAgent):
         self.dummy_frequency: float = 1.0
         self.update_counter = 0  # Initialize update counter
 
+    def get_epsilon(self) -> float:
+        """Get the epsilon value for the epsilon-greedy policy."""
+        return self.epsilon
+
+    def get_learning_rate(self) -> float:
+        """Get the learning rate of the optimizer."""
+        return self.trainer.lr
+
     def get_grad_loss_values(self) -> tuple[float, float]:
         """Get the gradient value."""
         return self.trainer.grad_value, self.trainer.loss_value

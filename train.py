@@ -38,8 +38,8 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 config = AgentConfig(
     learning_rate=0.05,
     decay_learning_rate=0.995,
-    initial_epsilon=0.05,
-    final_epsilon=0.01,
+    initial_epsilon=0.75,
+    final_epsilon=0.05,
     discount_factor=0.95,
     memory_size=100_000,
     batch_size=1024,
@@ -135,6 +135,8 @@ for episode in tqdm(range(n_episodes)):
         "episode_length": 0,
         "episode_total_reward": 0.0,
         "episode_avg_reward": 0.0,
+        "learning_rate": 0.0,
+        "epsilon": 0.0,
         "grad_value": 0.0,
         "loss_value": 0.0,
         "train_time": 0.0,
@@ -210,6 +212,10 @@ for episode in tqdm(range(n_episodes)):
                 episode_logs["episode_avg_reward"] = (
                     episode_rewards_tmp[terminated_env] / episode_lengths_tmp[terminated_env]
                 )
+
+                # Record learning rate and epsilon
+                episode_logs["learning_rate"] = agent.get_learning_rate()
+                episode_logs["epsilon"] = agent.get_epsilon()
 
                 # Reset the terminated environment's statistics
                 episode_rewards_tmp[terminated_env] = 0.0
