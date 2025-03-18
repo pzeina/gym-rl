@@ -296,11 +296,7 @@ def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str) -> None:
     colors = get_color_mapping(values)
 
     # Tracer le nuage de points
-    ax.scatter(episodes, values, c=colors, alpha=0.5, s=20, label=column)
-
-    # Ajouter une ligne de tendance
-    if len(episodes) > 1:
-        ax.plot(episodes, values, linestyle="-", color="gray", alpha=0.3, linewidth=1, label=f"{column} Trend")
+    ax.scatter(episodes, values, c=colors, alpha=0.5, s=12, label=column)
 
     ax.set_title(column)
     ax.set_xlabel("Episode")
