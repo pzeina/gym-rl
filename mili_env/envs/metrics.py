@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import math
 import time
 from collections import deque
@@ -230,13 +231,14 @@ def setup_plot_layout(time_columns: list[str], other_columns: list[str]) -> tupl
     return fig, axes.flatten() if num_subplots > 1 else [axes]
 
 
-def plot_time_metrics(ax: Axes, metric_df: pd.DataFrame, time_columns: list[str]) -> None:
+def plot_time_metrics(ax: Axes, metric_df: pd.DataFrame, time_columns: list[str], threshold: float) -> None:
     """Dessine les métriques temporelles sous forme de barres empilées.
 
     Args:
         ax: Axe matplotlib sur lequel dessiner
         metric_df: DataFrame contenant les métriques
         time_columns: Liste des colonnes temporelles
+        threshold: Seuil pour clipper les valeurs
     """
     ax.clear()
 
@@ -245,8 +247,9 @@ def plot_time_metrics(ax: Axes, metric_df: pd.DataFrame, time_columns: list[str]
     colors = plt.colormaps.get_cmap("viridis")(np.linspace(0, 1, len(time_columns)))
 
     for col, color in zip(time_columns, colors):
-        ax.bar(metric_df["Episode"], metric_df[col], bottom=bottom, label=col, color=color, alpha=0.8)
-        bottom = metric_df[col] if bottom is None else bottom + metric_df[col]
+        values = np.clip(metric_df[col], -threshold, threshold)
+        ax.bar(metric_df["Episode"], values, bottom=bottom, label=col, color=color, alpha=0.8)
+        bottom = values if bottom is None else bottom + values
 
     ax.set_title("Cumulative Time Metrics")
     ax.set_xlabel("Episode")
@@ -278,18 +281,19 @@ def get_color_mapping(values: np.ndarray) -> list:
     return colors
 
 
-def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str) -> None:
+def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str, threshold: float) -> None:
     """Dessine une métrique sous forme de nuage de points avec gradient de couleur.
 
     Args:
         ax: Axe matplotlib sur lequel dessiner
         metric_df: DataFrame contenant les métriques
         column: Nom de la colonne à représenter
+        threshold: Seuil pour clipper les valeurs
     """
     ax.clear()
 
     # Convertir en array numpy pour éviter les problèmes avec ExtensionArray
-    values = np.array(metric_df[column].tolist())
+    values = np.clip(np.array(metric_df[column].tolist()), -threshold, threshold)
     episodes = np.array(metric_df["Episode"].tolist())
 
     # Obtenir les couleurs pour chaque point
@@ -304,7 +308,13 @@ def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str) -> None:
     ax.legend(loc="upper right")  # Fixed legend location
 
 
-def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.csv", *, once: bool = False) -> None:
+def plot_csv(
+    directory: Path = Path("model/"),
+    filename: str = "training_log_*.csv",
+    *,
+    once: bool = False,
+    threshold: float = 1e3,
+) -> None:
     """Continuously updates the plot with new CSV data."""
     plt.ion()  # Turn on interactive mode
 
@@ -328,12 +338,12 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
 
         # Plot time metrics
         if time_columns:
-            plot_time_metrics(axes[subplot_idx], metric_df, time_columns)
+            plot_time_metrics(axes[subplot_idx], metric_df, time_columns, threshold)
             subplot_idx += 1
 
         # Plot other metrics
         for col in other_columns:
-            plot_metric_scatter(axes[subplot_idx], metric_df, col)
+            plot_metric_scatter(axes[subplot_idx], metric_df, col, threshold)
             subplot_idx += 1
 
         # Hide extra subplots (if any)
@@ -358,4 +368,10 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
 
 
 if __name__ == "__main__":
-    plot_csv(once=True)
+    # Parse args to get the once flag
+    parser = argparse.ArgumentParser(description="Plot CSV data.")
+    parser.add_argument("--once", action="store_true", help="Run the plotting once and exit.")
+    args = parser.parse_args()
+
+    once_flag = args.once
+    plot_csv(once=once_flag)
