@@ -13,7 +13,8 @@ class AgentConfig:
     """Data class to store agent's configuration parameters."""
 
     learning_rate: float
-    decay_learning_rate: float
+    final_lr: float
+    decay_lr: float
     initial_epsilon: float
     final_epsilon: float
     discount_factor: float = 0.95

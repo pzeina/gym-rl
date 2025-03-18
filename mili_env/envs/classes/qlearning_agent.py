@@ -204,8 +204,9 @@ class QLearningAgent(BaseAgent):
 
     def decay_lr(self) -> None:
         """Decay the learning rate of the optimizer."""
+        self.trainer.lr = max(self.config.final_lr, self.trainer.lr * self.config.decay_lr)
         for param_group in self.trainer.optimizer.param_groups:
-            param_group["lr"] = max(self.config.decay_learning_rate * param_group["lr"], 1e-6)
+            param_group["lr"] = self.trainer.lr
 
     def save_model(self, file_name: str = "policy_model.pth") -> None:
         """Save the model to a file."""
