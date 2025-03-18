@@ -251,7 +251,7 @@ def plot_time_metrics(ax: Axes, metric_df: pd.DataFrame, time_columns: list[str]
     ax.set_title("Cumulative Time Metrics")
     ax.set_xlabel("Episode")
     ax.set_ylabel("Time (s)")
-    ax.legend()
+    ax.legend(loc="upper right")  # Fixed legend location
 
 
 def get_color_mapping(values: np.ndarray) -> list:
@@ -296,18 +296,19 @@ def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str) -> None:
     colors = get_color_mapping(values)
 
     # Tracer le nuage de points
-    ax.scatter(episodes, values, c=colors, alpha=0.5, s=20)
+    ax.scatter(episodes, values, c=colors, alpha=0.5, s=20, label=column)
 
     # Ajouter une ligne de tendance
     if len(episodes) > 1:
-        ax.plot(episodes, values, linestyle="-", color="gray", alpha=0.3, linewidth=1)
+        ax.plot(episodes, values, linestyle="-", color="gray", alpha=0.3, linewidth=1, label=f"{column} Trend")
 
     ax.set_title(column)
     ax.set_xlabel("Episode")
     ax.set_ylabel(column)
+    ax.legend(loc="upper right")  # Fixed legend location
 
 
-def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.csv") -> None:
+def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.csv", *, once: bool = False) -> None:
     """Continuously updates the plot with new CSV data."""
     plt.ion()  # Turn on interactive mode
 
@@ -327,8 +328,6 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
             continue
 
         metric_df = pd.read_csv(csv_file)
-        # Retain only the last 100 episodes
-        metric_df = metric_df.iloc[-100:]
         subplot_idx = 0
 
         # Plot time metrics
@@ -345,11 +344,22 @@ def plot_csv(directory: Path = Path("model/"), filename: str = "training_log_*.c
         for i in range(subplot_idx, len(axes)):
             axes[i].set_visible(False)
 
-        plt.tight_layout()
+        # plt.tight_layout() slow down the rendering
         fig.canvas.draw()
         fig.canvas.flush_events()
+
+        # Extract identifier from CSV filename
+        identifier = csv_file.stem.split("_")[-1]
+
+        # Save the plot with the same identifier in the same directory as the CSV file
+        plot_path = csv_file.parent / f"plot_{identifier}.png"
+        plt.savefig(plot_path)
+
         time.sleep(2)  # Refresh every 2 seconds
+
+        if once:
+            break
 
 
 if __name__ == "__main__":
-    plot_csv()
+    plot_csv(once=True)
