@@ -33,10 +33,9 @@ class QLearningAgent(BaseAgent):
             visualization: GradientLossTracker | None = None,
         ) -> None:
             """Initialize the Q-learning trainer with a model, target model, learning rate, and discount factor."""
-            self.lr: float = config.learning_rate
             self.policy_model: nn.Module = policy_model
             self.target_model: nn.Module = target_model
-            self.optimizer = optim.Adam(policy_model.parameters(), lr=self.lr)
+            self.optimizer = optim.Adam(policy_model.parameters(), lr=config.learning_rate)
             self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=config.decay_lr)
             self.criterion = nn.MSELoss()
             self.visualization: GradientLossTracker | None = visualization
@@ -140,7 +139,7 @@ class QLearningAgent(BaseAgent):
 
     def get_learning_rate(self) -> float:
         """Get the learning rate of the optimizer."""
-        return self.trainer.lr
+        return self.trainer.optimizer.param_groups[0]["lr"]
 
     def get_grad_loss_values(self) -> tuple[float, float]:
         """Get the gradient value."""
