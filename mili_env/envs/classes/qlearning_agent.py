@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -11,6 +12,7 @@ from torch import nn, optim
 from mili_env.envs.classes.agent_config import AgentConfig  # noqa: TC001
 from mili_env.envs.classes.base_agent import BaseAgent
 from mili_env.envs.classes.dummy_agent import get_action as dummy_get_action
+from mili_env.envs.classes.logger import Logger
 from mili_env.envs.classes.model import Linear_QNet
 from mili_env.envs.metrics import GradientLossTracker  # noqa: TC001
 
@@ -40,6 +42,9 @@ class QLearningAgent(BaseAgent):
             self.criterion = nn.MSELoss()
             self.visualization: GradientLossTracker | None = visualization
             self.config: AgentConfig = config
+
+            log_file_path = Path(__file__).resolve().parent / "../../../model/trainer_log.csv"
+            self.logger: Logger = Logger(log_file_path)
 
             self.grad_value: float = 0.0
             self.loss_value: float = 0.0
@@ -85,6 +90,19 @@ class QLearningAgent(BaseAgent):
                 self.visualization.show()
 
             self.optimizer.step()
+
+            for i in range(len(state)):
+                self.logger.log_step(
+                    _state[i],
+                    _action[i],
+                    _reward[i],
+                    _next_state[i],
+                    _done[i],
+                    pred[i, _action[i]].item(),
+                    q_target[i].item(),
+                    pred[i].cpu().detach().numpy(),
+                    _done[i],
+                )
 
         def optimize(self, batch: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
             """Optimize the model using a batch of experiences."""
@@ -226,3 +244,5 @@ class QLearningAgent(BaseAgent):
 
         if self.update_counter % self.config.update_frequency == 0:
             self.target_model.load_state_dict(self.policy_model.state_dict())  # Update target model
+
+        self.trainer.logger.write_logs()
