@@ -330,7 +330,7 @@ def plot_csv(
     while True:
         csv_file = get_latest_csv(directory, filename)
         if not csv_file:
-            time.sleep(2)
+            time.sleep(3)
             continue
 
         metric_df = pd.read_csv(csv_file)
@@ -361,7 +361,7 @@ def plot_csv(
         plot_path = csv_file.parent / f"plot_{identifier}.png"
         plt.savefig(plot_path)
 
-        time.sleep(2)  # Refresh every 2 seconds
+        time.sleep(5)  # Refresh every 5 seconds
 
         if once:
             break
