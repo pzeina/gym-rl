@@ -229,7 +229,6 @@ for episode in tqdm(range(n_episodes)):
 
     # Decay epsilon
     agent.decay_epsilon_f()
-    agent.decay_lr()
 
     # Write episode statistics
     utils.write_log_entry(log_file_path, episode_logs)

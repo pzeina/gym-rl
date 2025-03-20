@@ -37,6 +37,7 @@ class QLearningAgent(BaseAgent):
             self.policy_model: nn.Module = policy_model
             self.target_model: nn.Module = target_model
             self.optimizer = optim.Adam(policy_model.parameters(), lr=self.lr)
+            self.scheduler = optim.lr_scheduler.ExponentialLR(self.optimizer, gamma=config.decay_lr)
             self.criterion = nn.MSELoss()
             self.visualization: GradientLossTracker | None = visualization
             self.config: AgentConfig = config
@@ -102,6 +103,9 @@ class QLearningAgent(BaseAgent):
 
             for _ in range(self.config.optimization_steps):
                 self.train_step(states, actions, rewards, next_states, dones)
+
+            # Step the scheduler after each optimization step
+            self.scheduler.step()
 
     def __init__(
         self,
@@ -201,12 +205,6 @@ class QLearningAgent(BaseAgent):
         """Decay the epsilon value for the epsilon-greedy policy."""
         self.epsilon = max(self.final_epsilon, self.epsilon * self.decay_epsilon)
         self.dummy_frequency *= self.config.dummy_policy_decay
-
-    def decay_lr(self) -> None:
-        """Decay the learning rate of the optimizer."""
-        self.trainer.lr = max(self.config.final_lr, self.trainer.lr * self.config.decay_lr)
-        for param_group in self.trainer.optimizer.param_groups:
-            param_group["lr"] = self.trainer.lr
 
     def save_model(self, file_name: str = "policy_model.pth") -> None:
         """Save the model to a file."""
