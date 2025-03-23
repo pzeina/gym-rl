@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import math
 import time
 from collections import deque
@@ -10,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from numpy import floating
 
 if TYPE_CHECKING:
@@ -308,9 +310,9 @@ def plot_metric_scatter(ax: Axes, metric_df: pd.DataFrame, column: str, threshol
     ax.legend(loc="upper right")  # Fixed legend location
 
 
-def plot_csv(
+def plot_episode_data(
     directory: Path = Path("model/"),
-    filename: str = "training_log_*.csv",
+    filename: str = "episode_log_*.csv",
     *,
     once: bool = False,
     threshold: float = 1e3,
@@ -367,6 +369,98 @@ def plot_csv(
             break
 
 
+def plot_agent_data(  # noqa: PLR0915
+    directory: Path = Path("model/"), filename: str = "agent_log_*.csv", *, once: bool = False
+) -> None:
+    """Plot agent data from a CSV file."""
+    plt.ion()  # Turn on interactive mode
+
+    csv_file = get_latest_csv(directory, filename)
+    if not csv_file:
+        error_msg = f"No CSV files found in {directory} with filename {filename}."
+        raise FileNotFoundError(error_msg)
+
+    while True:
+        # Load CSV
+        dataframe = pd.read_csv(csv_file)
+
+        # Convert string representations of lists to actual lists
+        dataframe["State"] = dataframe["State"].apply(ast.literal_eval)
+        dataframe["Next State"] = dataframe["Next State"].apply(ast.literal_eval)
+        dataframe["Q_Values"] = dataframe["Q_Values"].apply(ast.literal_eval)
+
+        # Extract relevant features
+        dataframe["Agent Position"] = dataframe["State"].apply(lambda x: x[0])
+        dataframe["Target Position"] = dataframe["State"].apply(lambda x: x[1])
+        dataframe["Distance to Target"] = dataframe["State"].apply(lambda x: x[2])
+        dataframe["Agent Direction"] = dataframe["State"].apply(lambda x: x[5])
+        dataframe["Target Direction"] = dataframe["State"].apply(lambda x: x[6])
+        dataframe["Agent Energy"] = dataframe["State"].apply(lambda x: x[7])
+        dataframe["Action"] = dataframe["Action"].astype(int)
+
+        # Extract Q-values for each action
+        q_values = np.array(dataframe["Q_Values"].tolist()).T
+        action_labels = ["Idle", "Forward", "Backward", "Turn Right", "Turn Left"]
+
+        # Create subplots
+        fig, axes = plt.subplots(3, 2, figsize=(14, 12))
+
+        # 1. Agent and Target Position Scatter
+        axes[0, 0].scatter(dataframe.index, dataframe["Agent Position"], label="Agent Position", alpha=0.7)
+        axes[0, 0].scatter(dataframe.index, dataframe["Target Position"], label="Target Position", alpha=0.7)
+        axes[0, 0].set_title("Agent & Target Positions Over Time")
+        axes[0, 0].set_xlabel("Step")
+        axes[0, 0].set_ylabel("Position")
+        axes[0, 0].legend()
+
+        # 2. Distance to Target Over Time
+        sns.lineplot(x=dataframe.index, y=dataframe["Distance to Target"], ax=axes[0, 1], color="red")
+        axes[0, 1].set_title("Distance to Target Over Time")
+        axes[0, 1].set_xlabel("Step")
+        axes[0, 1].set_ylabel("Distance")
+
+        # 3. Agent & Target Direction Over Time
+        axes[1, 0].plot(dataframe.index, dataframe["Agent Direction"], label="Agent Direction", color="blue")
+        axes[1, 0].plot(dataframe.index, dataframe["Target Direction"], label="Target Direction", color="green")
+        axes[1, 0].set_title("Agent & Target Direction")
+        axes[1, 0].set_xlabel("Step")
+        axes[1, 0].set_ylabel("Direction (Angle)")
+        axes[1, 0].legend()
+
+        # 4. Agent Energy Over Time
+        sns.lineplot(x=dataframe.index, y=dataframe["Agent Energy"], ax=axes[1, 1], color="purple")
+        axes[1, 1].set_title("Agent Energy Level Over Time")
+        axes[1, 1].set_xlabel("Step")
+        axes[1, 1].set_ylabel("Energy")
+
+        # 5. Action Distribution
+        sns.countplot(x=dataframe["Action"], ax=axes[2, 0], palette="Set2", hue=dataframe["Action"], legend=False)
+        axes[2, 0].set_xticklabels(action_labels)
+        axes[2, 0].set_title("Action Distribution")
+        axes[2, 0].set_xlabel("Actions")
+        axes[2, 0].set_ylabel("Count")
+
+        # 6. Q-Values per Action Over Time
+        for i, label in enumerate(action_labels):
+            axes[2, 1].plot(dataframe.index, q_values[i], label=label)
+        axes[2, 1].set_title("Q-Values Over Time")
+        axes[2, 1].set_xlabel("Step")
+        axes[2, 1].set_ylabel("Q-Value")
+        axes[2, 1].legend()
+
+        # Extract identifier from CSV filename
+        identifier = csv_file.stem.split("_")[-1]
+
+        # Save the plot with the same identifier in the same directory as the CSV file
+        plot_path = csv_file.parent / f"plot_agent_{identifier}.png"
+        plt.savefig(plot_path)
+
+        if once:
+            break
+
+        time.sleep(5)  # Refresh every 5 seconds
+
+
 if __name__ == "__main__":
     # Parse args to get the once flag
     parser = argparse.ArgumentParser(description="Plot CSV data.")
@@ -374,4 +468,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     once_flag = args.once
-    plot_csv(once=once_flag)
+
+    plot_episode_data(once=once_flag)
+    # plot_agent_data(once=once_flag) # noqa: ERA001

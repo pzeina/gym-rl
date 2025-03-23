@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -26,6 +27,8 @@ class AgentConfig:
     update_frequency: int = 5  # Update frequency for target network
     subsampling_fraction: float = 0.2
     optimization_steps: int = 5
+    grad_clip_window: int = 100
+    grad_clip_max: float = 100.0
     likelihood_ratio_clipping: float = 0.2
     estimate_terminal: bool = False
     critessing: Any = None
@@ -43,3 +46,4 @@ class AgentConfig:
     saver: Any = None
     summarizer: Any = None
     recorder: Any = None
+    trainer_log_file: Path = Path()

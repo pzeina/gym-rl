@@ -14,6 +14,7 @@ from tqdm import tqdm
 import utils
 from mili_env.envs.classes.qlearning_agent import AgentConfig, QLearningAgent
 from mili_env.envs.metrics import GradientLossTracker
+from mili_env.wrappers.reacher_exp_decay_reward import ReacherRewardWrapper
 
 # Empêche la mise en veille sur macOS et Linux
 # Safe list of commands for shell execution
@@ -35,22 +36,28 @@ if os.name == "posix":
 n_episodes = 10_000
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+exp_timestamp = int(time.time())
+model_path = Path(__file__).resolve().parent / f"model/qlearning_model_{exp_timestamp}.pth"
+log_file_path = model_path.with_name(f"episode_log_{exp_timestamp}.csv")
+trainer_log_file = model_path.with_name(f"agent_log_{exp_timestamp}.csv")
+print(f"Model path: {model_path}")  # noqa: T201
+
 config = AgentConfig(
-    learning_rate=0.1,
-    final_lr=0.01,
+    learning_rate=0.01,
+    final_lr=0.001,
     decay_lr=0.9998,
-    initial_epsilon=0.75,
+    initial_epsilon=0.5,
     final_epsilon=0.02,
     discount_factor=0.95,
     memory_size=100_000,
-    batch_size=1024,
-    batch_num=50,
+    batch_size=256,
+    batch_num=20,
     hidden_size=512,
-    decay_epsilon=0.9995,  # Add decay factor for exponential decay of epsi
-    update_frequency=5,
-    subsampling_fraction=0.2,
+    decay_epsilon=0.9992,  # Add decay factor for exponential decay of epsi
+    update_frequency=4,
+    subsampling_fraction=0.8,
     optimization_steps=1,
-    likelihood_ratio_clipping=0.2,
+    likelihood_ratio_clipping=0.2,  # not used
     estimate_terminal=False,  # not used
     exploration=0.0,  # not used
     variable_noise=0.0,  # not used
@@ -66,6 +73,7 @@ config = AgentConfig(
     saver=None,
     summarizer=None,
     recorder=None,
+    trainer_log_file=trainer_log_file,
 )
 
 
@@ -81,11 +89,16 @@ if RENDER_MODE not in ("rgb_array", "human"):
     error_msg = "The render mode must be either 'rgb_array' or 'human'."
     raise ValueError(error_msg)
 
+wrappers = []
+
 
 # Create vectorized environments
 def make_env() -> gym.Env:
     """Create a new environment instance."""
-    return gym.make("mili_env/TerrainWorld-v0", render_mode=RENDER_MODE, visualization=PLOT_GRAD)
+    env = gym.make("mili_env/TerrainWorld-v0", render_mode=RENDER_MODE, visualization=PLOT_GRAD)
+    wrapped_env = ReacherRewardWrapper(env, decay_factor=0.9, history_length=20)
+    wrappers.append(wrapped_env)  # Store wrapper for later reference
+    return wrapped_env
 
 
 envs = SyncVectorEnv([make_env for _ in range(N_ENVS)])
@@ -101,18 +114,15 @@ if MODEL_PATH:
         agent.load_model(str(MODEL_PATH))
 agent.policy_model.to(device)
 
+# Register agent with all wrappers
+for wrapper in wrappers:
+    wrapper.set_agent(agent)
+
 
 # Handle interruptions gracefully
 def save_model_and_exit(_signum, _frame):  # noqa: ANN001, ANN201, D103
     utils.save_periodic_model(agent, -1, model_path)
     sys.exit(0)
-
-
-exp_timestamp = int(time.time())
-model_path = Path(__file__).resolve().parent / f"model/qlearning_model_{exp_timestamp}.pth"
-log_file_path = model_path.with_name(f"training_log_{exp_timestamp}.csv")
-print(f"Model path: {model_path}")  # noqa: T201
-print(f"Log file path: {log_file_path}")  # noqa: T201
 
 
 signal.signal(signal.SIGINT, save_model_and_exit)
@@ -171,28 +181,25 @@ for episode in tqdm(range(n_episodes)):
         next_obs, rewards, terminated, truncated, infos = envs.step(actions)
         episode_logs["env_step_time"] += time.time() - env_step_start
 
-        # Reward calculation
-        reward_start = time.time()
-        next_states = process_obs(next_obs)
-        episode_logs["reward_time"] += time.time() - reward_start
+        thisisfalse = False
+        if thisisfalse:
+            # Reward calculation
+            reward_start = time.time()
+            next_states = process_obs(next_obs)
+            episode_logs["reward_time"] += time.time() - reward_start
 
-        # Remember the experiences
-        remember_start = time.time()
-        agent.remember(states, actions, rewards, next_states, terminated)
-        episode_logs["others_time"] += time.time() - remember_start
+            # Remember the experiences
+            remember_start = time.time()
+            agent.remember(states, actions, rewards, next_states, terminated)
+            episode_logs["others_time"] += time.time() - remember_start
 
-        # Train short memory
-        train_start = time.time()
-        agent.train_short_memory(states, actions, rewards, next_states, terminated)
-        episode_logs["train_time"] += time.time() - train_start
+            # Train short memory
+            train_start = time.time()
+            agent.train_short_memory(states, actions, rewards, next_states, terminated)
+            episode_logs["train_time"] += time.time() - train_start
 
         # Update observations
         obs = next_obs
-
-        # Record gradient and loss
-        grad_value, loss_value = agent.get_grad_loss_values()
-        episode_logs["grad_value"] += grad_value
-        episode_logs["loss_value"] += loss_value
 
         # Update episode statistics
         episode_rewards_tmp += rewards

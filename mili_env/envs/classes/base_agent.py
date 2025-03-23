@@ -17,6 +17,10 @@ class BaseAgent:
         self.env = env
         self._validate_observation_space(env)
 
+    def _register_action(self, action: np.ndarray) -> None:
+        """Register the action taken by the agent."""
+        self.action = action
+
     def _validate_observation_space(self, env: gym.Env | SyncVectorEnv) -> None:
         """Validate the observation space of the environment."""
         if not isinstance(env.observation_space, gym.spaces.Dict):

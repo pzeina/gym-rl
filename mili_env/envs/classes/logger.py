@@ -20,6 +20,8 @@ class Logger:
             writer = csv.writer(log_file)
             writer.writerow(
                 [
+                    "Gradient",
+                    "Loss",
                     "State",
                     "Action",
                     "Reward",
@@ -34,6 +36,8 @@ class Logger:
 
     def log_step(  # noqa: PLR0913
         self,
+        gradient: float,
+        loss: float,
         state: np.ndarray,
         action: int,
         reward: float,
@@ -47,6 +51,8 @@ class Logger:
         """Log the details of a training step."""
         self.logs.append(
             [
+                gradient,
+                loss,
                 state.tolist(),
                 action,
                 reward,

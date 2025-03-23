@@ -97,7 +97,7 @@ for episode in tqdm(range(n_episodes)):
         # Action selection
         action_selection_start = time.time()
         states = process_obs(obs)
-        actions, random_picks = agent.get_action(states)
+        actions = agent.get_action(states)
         episode_timing["action_selection_time"] += time.time() - action_selection_start
 
         # Environment step

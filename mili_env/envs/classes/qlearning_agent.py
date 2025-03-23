@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import random
 from collections import deque
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -43,7 +42,7 @@ class QLearningAgent(BaseAgent):
             self.visualization: GradientLossTracker | None = visualization
             self.config: AgentConfig = config
 
-            log_file_path = Path(__file__).resolve().parent / "../../../model/trainer_log.csv"
+            log_file_path = config.trainer_log_file
             self.logger: Logger = Logger(log_file_path)
 
             self.grad_value: float = 0.0
@@ -51,6 +50,10 @@ class QLearningAgent(BaseAgent):
 
             self.policy_model.to(self.config.device)
             self.target_model.to(self.config.device)
+
+            # Initialize gradient tracking
+            self.gradients = deque(maxlen=config.grad_clip_window)
+            self.default_max_grad = torch.tensor(config.grad_clip_max, dtype=torch.float, device=self.config.device)
 
         def train_step(
             self,
@@ -89,10 +92,29 @@ class QLearningAgent(BaseAgent):
                 self.loss_value = self.visualization.track_loss(loss.item())
                 self.visualization.show()
 
+            # Track gradients
+            self.gradients.append(self.grad_value)
+            sliding_avg_grad = torch.tensor(np.mean(self.gradients), dtype=torch.float, device=self.config.device)
+            max_grad = torch.min(self.default_max_grad, sliding_avg_grad)
+
+            # Clip gradients
+            for param in self.policy_model.parameters():
+                if param.grad is not None:
+                    param.grad.data = torch.clamp(param.grad.data, -max_grad, max_grad)
+
+            # Get gradients for logging
+            gradients = [
+                param.grad.data.cpu().numpy() for param in self.policy_model.parameters() if param.grad is not None
+            ]
+            _avg_grad = float(np.mean([np.mean(np.abs(grad)) for grad in gradients]))
+            _loss = loss.item()
+
             self.optimizer.step()
 
             for i in range(len(state)):
                 self.logger.log_step(
+                    _loss,
+                    _avg_grad,
                     _state[i],
                     _action[i],
                     _reward[i],
@@ -111,12 +133,14 @@ class QLearningAgent(BaseAgent):
             # Subsampling
             if self.config.subsampling_fraction < 1.0:
                 rng = np.random.default_rng()
-                indices = rng.choice(len(states), int(len(states) * self.config.subsampling_fraction), replace=False)
-                states: np.ndarray = states[indices]
-                actions: np.ndarray = actions[indices]
-                rewards: np.ndarray = rewards[indices]
-                next_states: np.ndarray = next_states[indices]
-                dones: np.ndarray = dones[indices]
+                subsample_indices = rng.choice(
+                    len(states), int(len(states) * self.config.subsampling_fraction), replace=False
+                )
+                states = np.asarray([states[i] for i in subsample_indices])
+                actions = np.asarray([actions[i] for i in subsample_indices])
+                rewards = np.asarray([rewards[i] for i in subsample_indices])
+                next_states = np.asarray([next_states[i] for i in subsample_indices])
+                dones = np.asarray([dones[i] for i in subsample_indices])
 
             for _ in range(self.config.optimization_steps):
                 self.train_step(states, actions, rewards, next_states, dones)
@@ -166,13 +190,17 @@ class QLearningAgent(BaseAgent):
     def get_action(self, states: np.ndarray) -> np.ndarray:
         """Choose actions based on the states using an epsilon-greedy policy."""
         if self.config.dummy_phase > self.update_counter:
-            return dummy_get_action(states)
+            action = dummy_get_action(states)
+            self._register_action(action)
+            return action
 
         rng = np.random.default_rng()
 
         alea = rng.random()
         if alea < self.dummy_frequency:
-            return dummy_get_action(states)
+            action = dummy_get_action(states)
+            self._register_action(action)
+            return action
 
         alea = rng.random()
         if alea < self.epsilon:
@@ -183,6 +211,7 @@ class QLearningAgent(BaseAgent):
                 output = self.policy_model(state_tensor)
                 actions = torch.argmax(output, dim=1).cpu().numpy()  # Move to CPU before converting to numpy
 
+        self._register_action(actions)
         return np.array(actions)
 
     def remember(
@@ -193,18 +222,12 @@ class QLearningAgent(BaseAgent):
 
     def train_long_memory(self) -> None:
         """Train the model using a batch of experiences from memory."""
-        if len(self.memory) < self.config.batch_size * self.config.batch_num:
-            return
+        batch_num = min(self.config.batch_num, len(self.memory) // self.config.batch_size)
         # Train on multiple batches to improve learning
-        for _ in range(self.config.batch_num):  # Train on multiple batches
+        for _ in range(batch_num):  # Train on multiple batches
             mini_batch = random.sample(self.memory, self.config.batch_size)
 
             states, actions, rewards, next_states, dones = zip(*mini_batch)
-            states = np.concatenate(states)
-            next_states = np.concatenate(next_states)
-            actions = np.concatenate(actions)
-            rewards = np.concatenate(rewards)
-            dones = np.concatenate(dones)
             self.trainer.optimize((states, actions, rewards, next_states, dones))
 
     def train_short_memory(
