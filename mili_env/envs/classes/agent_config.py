@@ -36,7 +36,8 @@ class AgentConfig:
     variable_noise: float = 0.0
     l2_regularization: float = 0.0
     entropy_regularization: float = 0.0
-    dummy_phase: int = 1000
+    dummy_phase: int = 10
+    dummy_recurrence: int = 100
     dummy_policy_decay: float = 0.95
     name: str = "agent"
     device: torch.device = TORCH_CPU

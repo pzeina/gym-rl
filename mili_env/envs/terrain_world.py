@@ -26,7 +26,7 @@ class TerrainWorldEnv(gym.Env):
     ) -> None:
         """Initialize the environment."""
         self.max_window_size: int = 512  # The maximum size of the PyGame window
-        self.panel_width: int = 256  # Width of the right panel
+        self.panel_width: int = 320  # Width of the right panel
         self.target_zone_size: int = target_zone_size  # Size of the target zone
 
         # Load the terrain map
@@ -36,7 +36,7 @@ class TerrainWorldEnv(gym.Env):
 
         # Calculate the window size to ensure square pixels
         self.cell_size = min(self.max_window_size // self.width, self.max_window_size // self.height)
-        self.window_width = self.cell_size * self.width + self.panel_width
+        self.window_width = self.cell_size * (self.width + self.panel_width)
         self.window_height = self.cell_size * self.height
 
         self.create_robot()
@@ -109,7 +109,7 @@ class TerrainWorldEnv(gym.Env):
             ammunition_efficiency=1.0,
         )
         constraints = RobotConstraints(
-            vision_range=30.0,
+            vision_range=100.0,
             communication_range=30.0,
             max_speed_forward=1.0,
             max_speed_backward=0.2,
@@ -259,7 +259,7 @@ class TerrainWorldEnv(gym.Env):
 
     # def render(self) -> None:
     #     if self.render_mode == "rgb_array":
-    #         return self._render_frame()       # noqa: ERA001
+    #         return self._render_frame() # noqa: ERA001
     #     return None                           # noqa: ERA001
 
     def _render_frame(self, action: int | np.ndarray, *, draw_fps_glider: bool = False) -> None:
@@ -275,14 +275,14 @@ class TerrainWorldEnv(gym.Env):
         canvas = pygame.Surface((self.window_width, self.window_height))
 
         # Render the game map
-        zoomed_cell_size: int = int(self.cell_size * self.zoom_factor)
-        self.game_map.render(canvas, cell_size=zoomed_cell_size)
+        # Removed zoom zoomed_cell_size: int = int(self.cell_size * self.zoom_factor)
+        self.game_map.render(canvas, cell_size=self.cell_size)
 
         # Render the robot
-        self.robot.render_robot(canvas, cell_size=zoomed_cell_size)
+        self.robot.render_robot(canvas, cell_size=self.cell_size)
 
         self.robot.render_status_bars(canvas, 10, 10, 200, 20)
-        self.robot.render_vision_rays(canvas, zoomed_cell_size)
+        self.robot.render_vision_rays(canvas, self.cell_size, boundaries=(self.width, self.height))
 
         # Draw the target zone
         pygame.draw.rect(
@@ -307,8 +307,8 @@ class TerrainWorldEnv(gym.Env):
 
         # Get the vision map and render it in the right panel
         vision_map: np.ndarray = self.robot.get_vision_map()
-        zoomed_coordinates: int = int(self.game_map.width * self.cell_size * self.zoom_factor)
-        self.render_vision_map(vision_map, canvas, zoomed_coordinates, 70)
+        # Removed zoom: zoomed_coordinates: int = int(self.game_map.width * self.cell_size * self.zoom_factor)
+        self.render_vision_map(vision_map, canvas, self.game_map.width * self.cell_size, 0)
 
         if self.render_mode == "human":
             if self.window is not None:
@@ -320,7 +320,7 @@ class TerrainWorldEnv(gym.Env):
 
     def render_vision_map(self, vision_map: np.ndarray, canvas: pygame.Surface, x: int, y: int) -> None:
         """Render the vision map on the screen."""
-        cell_size = self.cell_size * self.zoom_factor
+        cell_size = self.cell_size  # * self.zoom_factor
         for i, row in enumerate(vision_map):
             for j, terrain in enumerate(row):
                 if terrain is not None:
@@ -373,7 +373,7 @@ class TerrainWorldEnv(gym.Env):
 
         for i, info in enumerate(debug_info):
             label = font.render(info, True, (255, 255, 255))  # noqa: FBT003
-            canvas.blit(label, (self.window_width - self.panel_width + 10, 200 + i * 30))
+            canvas.blit(label, (self.width * self.cell_size * 2 - 100, 80 + i * 30))
 
     def handle_keys(self) -> tuple:
         """Handle the PyGame key events."""

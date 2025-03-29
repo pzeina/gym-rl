@@ -43,7 +43,41 @@ class QLearningAgent(BaseAgent):
             self.config: AgentConfig = config
 
             log_file_path = config.trainer_log_file
-            self.logger: Logger = Logger(log_file_path)
+            self.logger: Logger = Logger(
+                log_file_path,
+                keys=["Loss", "AvgGrad", "State", "Action", "Reward", "NextState", "Done", "QPred", "QTarget"],
+                graphs=[
+                    {
+                        "x": None,
+                        "y": ["QPred"],
+                        "vectorized": True,
+                        "split": True,
+                        "split_labels": ["Idle", "Forward", "Backward", "Left", "Right"],
+                        "mark_occurrence": ["Done"],
+                    },
+                    {"x": None, "y": ["QTarget", "Reward"], "vectorized": True, "mark_occurrence": ["Done"]},
+                    {
+                        "x": None,
+                        "y": ["State"],
+                        "vectorized": True,
+                        "split": True,
+                        "split_labels": [
+                            "Pos-X",
+                            "Pos-Y",
+                            "Target-X",
+                            "Target-Y",
+                            "Distance",
+                            "Direction",
+                            "Target Angle",
+                            "Energy",
+                        ],
+                        "mark_occurrence": ["Done"],
+                    },
+                    {"x": None, "y": ["Action"], "vectorized": True, "mark_occurrence": ["Done"]},
+                    {"x": None, "y": ["AvgGrad", "Loss"], "vectorized": False},
+                ],
+                static_keys={"Type": "QL-Agent"},
+            )
 
             self.grad_value: float = 0.0
             self.loss_value: float = 0.0
@@ -62,12 +96,13 @@ class QLearningAgent(BaseAgent):
             _reward: np.ndarray,
             _next_state: np.ndarray,
             _done: np.ndarray,
+            *,
+            from_memory: bool = False,
         ) -> None:
             """Train the model using a single experience."""
             device = next(self.policy_model.parameters()).device  # Get the device of the model
             state = torch.tensor(np.array(_state), dtype=torch.float).to(device)
             next_state = torch.tensor(np.array(_next_state), dtype=torch.float).to(device)
-            action = torch.tensor(np.array(_action), dtype=torch.long).to(device)
             reward = torch.tensor(np.array(_reward), dtype=torch.float).to(device)
             done = torch.tensor(np.array(_done), dtype=torch.bool).to(device)
 
@@ -75,12 +110,25 @@ class QLearningAgent(BaseAgent):
             target = pred.clone()
             with torch.no_grad():
                 q_next = self.target_model(next_state)
-                q_target = reward + self.config.discount_factor * torch.max(q_next, dim=1)[0] * (~done)
-            target[range(len(action)), action] = (
-                q_target  # Updating the Target Q-values only for the specific actions taken.
-                # This ensures that the loss is computed only for the actions that were actually taken,
-                #  and the Q-values for other actions remain unchanged.
-            )
+                batched = q_next.ndim > 2  # noqa: PLR2004
+                if batched:
+                    q_target = torch.zeros(q_next.shape[0], q_next.shape[1], device=device)
+                    for i in range(q_next.shape[0]):
+                        max_q = q_next[i].max(dim=-1)
+                        q_target[i, :] = reward[i] + self.config.discount_factor * max_q.values * (~done[i])
+
+                        # Updating the Target Q-values only for the specific actions taken.
+                        # This ensures that the loss is computed only for the actions that were actually taken,
+                        #  and the Q-values for other actions remain unchanged.
+                        target[i, :, max_q.indices] = q_target[i, :]
+                else:
+                    max_q = q_next.max(dim=1)
+                    q_target = reward + self.config.discount_factor * max_q.values * (~done)
+
+                    # Updating the Target Q-values only for the specific actions taken.
+                    # This ensures that the loss is computed only for the actions that were actually taken,
+                    #  and the Q-values for other actions remain unchanged.
+                    target[:, max_q.indices] = q_target
 
             self.optimizer.zero_grad()
             loss = self.criterion(pred, target)
@@ -111,20 +159,19 @@ class QLearningAgent(BaseAgent):
 
             self.optimizer.step()
 
-            for i in range(len(state)):
-                self.logger.log_step(
-                    _loss,
-                    _avg_grad,
-                    _state[i],
-                    _action[i],
-                    _reward[i],
-                    _next_state[i],
-                    _done[i],
-                    pred[i, _action[i]].item(),
-                    q_target[i].item(),
-                    pred[i].cpu().detach().numpy(),
-                    _done[i],
-                )
+            if not from_memory:
+                logs_dict = {
+                    "Loss": _loss,
+                    "AvgGrad": _avg_grad,
+                    "State": _state,  # _state[i],
+                    "Action": _action,  # _action[i],
+                    "Reward": _reward,  # _reward[i],
+                    "NextState": _next_state,  # _next_state[i],
+                    "Done": _done,  # _done[i],
+                    "QPred": pred.cpu().detach().numpy(),  # pred[i, _action[i]].item(),
+                    "QTarget": q_target.cpu().detach().numpy(),  # q_target[i].item(), pred[i].cpu().detach().numpy(),
+                }
+                self.logger.log_entry(logs_dict)
 
         def optimize(self, batch: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
             """Optimize the model using a batch of experiences."""
@@ -143,7 +190,7 @@ class QLearningAgent(BaseAgent):
                 dones = np.asarray([dones[i] for i in subsample_indices])
 
             for _ in range(self.config.optimization_steps):
-                self.train_step(states, actions, rewards, next_states, dones)
+                self.train_step(states, actions, rewards, next_states, dones, from_memory=True)
 
             # Step the scheduler after each optimization step
             self.scheduler.step()
@@ -189,7 +236,7 @@ class QLearningAgent(BaseAgent):
 
     def get_action(self, states: np.ndarray) -> np.ndarray:
         """Choose actions based on the states using an epsilon-greedy policy."""
-        if self.config.dummy_phase > self.update_counter:
+        if self.update_counter % self.config.dummy_recurrence < self.config.dummy_phase:
             action = dummy_get_action(states)
             self._register_action(action)
             return action
@@ -268,4 +315,4 @@ class QLearningAgent(BaseAgent):
         if self.update_counter % self.config.update_frequency == 0:
             self.target_model.load_state_dict(self.policy_model.state_dict())  # Update target model
 
-        self.trainer.logger.write_logs()
+        self.trainer.logger.update_logs()

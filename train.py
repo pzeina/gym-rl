@@ -48,13 +48,13 @@ config = AgentConfig(
     decay_lr=0.9998,
     initial_epsilon=0.5,
     final_epsilon=0.02,
-    discount_factor=0.95,
+    discount_factor=0.9,
     memory_size=100_000,
     batch_size=256,
     batch_num=20,
     hidden_size=512,
-    decay_epsilon=0.9992,  # Add decay factor for exponential decay of epsi
-    update_frequency=4,
+    decay_epsilon=0.999,  # Add decay factor for exponential decay of epsi
+    update_frequency=10,
     subsampling_fraction=0.8,
     optimization_steps=1,
     likelihood_ratio_clipping=0.2,  # not used
@@ -63,7 +63,8 @@ config = AgentConfig(
     variable_noise=0.0,  # not used
     l2_regularization=0.0,  # not used
     entropy_regularization=0.0,  # not used
-    dummy_phase=1,
+    dummy_phase=2,
+    dummy_recurrence=100,
     dummy_policy_decay=0.95,
     name="agent",
     device=device,
@@ -93,12 +94,13 @@ wrappers = []
 
 
 # Create vectorized environments
-def make_env() -> gym.Env:
+def make_env(*, wrapper: bool = False) -> gym.Env:
     """Create a new environment instance."""
     env = gym.make("mili_env/TerrainWorld-v0", render_mode=RENDER_MODE, visualization=PLOT_GRAD)
-    wrapped_env = ReacherRewardWrapper(env, decay_factor=0.9, history_length=20)
-    wrappers.append(wrapped_env)  # Store wrapper for later reference
-    return wrapped_env
+    if wrapper:
+        env = ReacherRewardWrapper(env, decay_factor=0.75, history_length=10)
+        wrappers.append(env)  # Store wrapper for later reference
+    return env
 
 
 envs = SyncVectorEnv([make_env for _ in range(N_ENVS)])
@@ -181,8 +183,8 @@ for episode in tqdm(range(n_episodes)):
         next_obs, rewards, terminated, truncated, infos = envs.step(actions)
         episode_logs["env_step_time"] += time.time() - env_step_start
 
-        thisisfalse = False
-        if thisisfalse:
+        thisistrue = True
+        if thisistrue:
             # Reward calculation
             reward_start = time.time()
             next_states = process_obs(next_obs)

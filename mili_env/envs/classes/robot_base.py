@@ -58,7 +58,7 @@ class RobotPosition:
 class RobotConstraints:
     """Data class to store robot constraint parameters."""
 
-    vision_range: float = 10.0
+    vision_range: float = 100.0
     communication_range: float = 10.0
     max_speed_forward: float = 1.0
     max_speed_backward: float = -0.2
@@ -327,21 +327,29 @@ class RobotBase:
             direction_factor = 1 - angle_diff / np.pi  # Direction factor based on angle difference
             length: int = int(np.floor(self.vision_range * direction_factor))
             reduction: float = 0.0
+            ray_length: int = 0
 
             for step in range(1, length + 1):
+                last_x = int(x + (step - 1) * np.cos(angle))
+                last_y = int(y + (step - 1) * np.sin(angle))
                 new_x = int(x + step * np.cos(angle))
                 new_y = int(y + step * np.sin(angle))
-                if 0 <= new_x < self.game_map.width and 0 <= new_y < self.game_map.height:
-                    terrain_visibility = self.game_map.get_terrain(new_x, new_y).get_properties().visibility
-                    if terrain_visibility < 1.0:
-                        reduction += 1 - terrain_visibility
-                        if reduction >= self.CUT_RAY_THRESHOLD:
-                            length = step
-                            break
-                else:
-                    length = step
+
+                if new_x == last_x and new_y == last_y:
+                    continue
+                inbound = 0 <= new_x < self.game_map.width and 0 <= new_y < self.game_map.height
+
+                terrain_visibility = (
+                    self.game_map.get_terrain(new_x, new_y).get_properties().visibility if inbound else 1.0
+                )
+                reduction += 1.0 - terrain_visibility
+
+                if reduction >= self.CUT_RAY_THRESHOLD:
                     break
-            rays.append((angle, length))
+
+                ray_length = step
+
+            rays.append((angle, ray_length))
         return rays
 
     def communicate(self, other_robot: RobotBase) -> bool:
@@ -415,16 +423,21 @@ class RobotBase:
         ammunition_label = font.render("Ammunition", True, (255, 255, 255))  # noqa: FBT003
         screen.blit(ammunition_label, (x, y + 2 * (height + 5)))
 
-    def render_vision_rays(self, screen: pygame.Surface, cell_size: int) -> None:
+    def render_vision_rays(self, screen: pygame.Surface, cell_size: int, boundaries: tuple[int, int]) -> None:
         """Render vision rays on the screen."""
         x = self.state.x * cell_size + cell_size // 2
         y = self.state.y * cell_size + cell_size // 2
 
         for angle, length in self.get_vision_rays():
-            end_x = x + int(length * np.cos(angle))
-            end_y = y + int(length * np.sin(angle))
+            end_x = x + length * np.cos(angle) * cell_size
+            end_y = y + length * np.sin(angle) * cell_size
             start_pos = (x, y)
             end_pos = (end_x, end_y)
+            # clamp the end position to the boundaries
+            end_pos = (
+                max(0, min(end_pos[0], boundaries[0] * cell_size)),
+                max(0, min(end_pos[1], boundaries[1] * cell_size)),
+            )
             pygame.draw.line(screen, (255, 0, 0), start_pos, end_pos, 1)
 
     def render_robot(self, screen: pygame.Surface, cell_size: int) -> None:

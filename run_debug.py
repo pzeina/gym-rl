@@ -30,8 +30,10 @@ class DebugAgentEnv(TerrainWorldEnv):
                     if event.key == pygame.K_SPACE:
                         self.step(random.choice(list(Actions)).value)
 
-            self.handle_keys()
-            self.render()
+            _, _, terminated, truncated, _ = self.handle_keys()
+
+            if terminated or truncated:
+                self.reset()
 
         pygame.quit()
 
