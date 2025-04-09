@@ -20,11 +20,12 @@ if TYPE_CHECKING:
     from torch import nn
 
 
-def get_latest_csv(directory: Path, filename: str) -> Path | None:
+def get_latest_csv(directory: Path, filename: str) -> Path:
     """Finds the most recent CSV file based on timestamp in filename."""
     csv_files = list(directory.glob(filename))
     if not csv_files:
-        return None  # No CSV files found
+        msg = f"No CSV files found in {directory} matching {filename}"
+        raise FileNotFoundError(msg)
 
     # Extract timestamp from filename and sort by newest
     return max(csv_files, key=lambda x: int(x.stem.split("_")[-1]))
@@ -109,15 +110,15 @@ class AgentEnvInteractionVisualization(BaseVisualization):
         random_rewards = [self.rewards[i] for i in random_indices]
         self.axs[self.idx_ax].plot(random_indices, random_rewards, "ro", markersize=4, label="Random Action")
         # put the legend outside the plot, below the x-axis
-        self.axs[self.idx_ax].legend(loc="upper center", bbox_to_anchor=(0.5, -0.05), shadow=True, ncol=1)
+        self.axs[self.idx_ax].legend(loc="upper right", bbox_to_anchor=(0.5, -0.05), shadow=True, ncol=1)
 
         self.idx_ax += 1
         self.axs[self.idx_ax].cla()
         self._plot_actions()
 
-        # self.axs[self.idx_ax].cla()                                # noqa: ERA001
-        # self.axs[self.idx_ax].plot(self.errors, label="Errors")    # noqa: ERA001
-        # self.axs[self.idx_ax].legend()                             # noqa: ERA001
+        # self.axs[self.idx_ax].cla()
+        # self.axs[self.idx_ax].plot(self.errors, label="Errors")
+        # self.axs[self.idx_ax].legend()
 
         plt.draw()
         plt.pause(0.001)
@@ -470,4 +471,4 @@ if __name__ == "__main__":
     once_flag = args.once
 
     plot_episode_data(once=once_flag)
-    # plot_agent_data(once=once_flag) # noqa: ERA001
+    # plot_agent_data(once=once_flag)

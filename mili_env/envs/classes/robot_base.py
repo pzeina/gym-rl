@@ -277,7 +277,7 @@ class RobotBase:
         return self.state.angle
 
     def get_target_direction(self) -> float:
-        """Get the robot's target direction."""
+        """Get the robot's target direction in radians [0, 2pi]."""
         target_x, target_y = self.get_target()
         return np.arctan2(target_y - self.state.y, target_x - self.state.x) % (2 * np.pi)  # angle_rad
 

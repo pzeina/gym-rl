@@ -14,7 +14,7 @@ from tqdm import tqdm
 import utils
 from mili_env.envs.classes.qlearning_agent import AgentConfig, QLearningAgent
 from mili_env.envs.metrics import GradientLossTracker
-from mili_env.wrappers.reacher_exp_decay_reward import ReacherRewardWrapper
+from mili_env.wrappers.normalize_reward import RewardNormalizeWrapper
 
 # Empêche la mise en veille sur macOS et Linux
 # Safe list of commands for shell execution
@@ -43,8 +43,8 @@ trainer_log_file = model_path.with_name(f"agent_log_{exp_timestamp}.csv")
 print(f"Model path: {model_path}")  # noqa: T201
 
 config = AgentConfig(
-    learning_rate=0.01,
-    final_lr=0.001,
+    learning_rate=0.1,
+    final_lr=0.005,
     decay_lr=0.9998,
     initial_epsilon=0.5,
     final_epsilon=0.02,
@@ -52,10 +52,10 @@ config = AgentConfig(
     memory_size=100_000,
     batch_size=256,
     batch_num=20,
-    hidden_size=512,
+    hidden_size=256,
     decay_epsilon=0.999,  # Add decay factor for exponential decay of epsi
     update_frequency=10,
-    subsampling_fraction=0.8,
+    subsampling_fraction=0.5,
     optimization_steps=1,
     likelihood_ratio_clipping=0.2,  # not used
     estimate_terminal=False,  # not used
@@ -63,8 +63,8 @@ config = AgentConfig(
     variable_noise=0.0,  # not used
     l2_regularization=0.0,  # not used
     entropy_regularization=0.0,  # not used
-    dummy_phase=2,
-    dummy_recurrence=100,
+    dummy_phase=1,
+    dummy_recurrence=4,
     dummy_policy_decay=0.95,
     name="agent",
     device=device,
@@ -98,7 +98,8 @@ def make_env(*, wrapper: bool = False) -> gym.Env:
     """Create a new environment instance."""
     env = gym.make("mili_env/TerrainWorld-v0", render_mode=RENDER_MODE, visualization=PLOT_GRAD)
     if wrapper:
-        env = ReacherRewardWrapper(env, decay_factor=0.75, history_length=10)
+        env = RewardNormalizeWrapper(env, scale_factor=0.01, clip_range=(-1.0, 1.0))
+        # env = ReacherRewardWrapper(env, decay_factor=0.75, history_length=10)
         wrappers.append(env)  # Store wrapper for later reference
     return env
 
@@ -110,15 +111,16 @@ agent = QLearningAgent(
     envs,
     config,
     visualization=GradientLossTracker(512, 196, graphs=PLOT_GRAD) if TRACK_GRAD else None,
+    logger_mode="wp",
 )
 if MODEL_PATH:
     with suppress(OSError, ValueError, RuntimeError):
         agent.load_model(str(MODEL_PATH))
 agent.policy_model.to(device)
 
-# Register agent with all wrappers
-for wrapper in wrappers:
-    wrapper.set_agent(agent)
+# # Register agent with all wrappers
+# for wrapper in wrappers:
+#     wrapper.set_agent(agent)
 
 
 # Handle interruptions gracefully

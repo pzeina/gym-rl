@@ -104,7 +104,7 @@ class TerrainWorldEnv(gym.Env):
             energy=100.0,
             ammunition=100.0,
             health_efficiency=1.0,
-            energy_efficiency=2.0,
+            energy_efficiency=1.0,
             speed_efficiency=5.0,
             ammunition_efficiency=1.0,
         )
@@ -138,6 +138,26 @@ class TerrainWorldEnv(gym.Env):
             "energy": np.asarray(self.robot.get_energy(), dtype=np.float64),
         }
 
+    def _normalize_observation(self, observation: dict) -> dict:
+        """Normalize the observation values to be between 0 and 1."""
+        for key, value in observation.items():
+            if key in ["position", "target_position"]:
+                # Normalize position and target position
+                observation[key] = np.asarray(value / np.array([self.width, self.height]))
+            elif key == "distance":
+                # Normalize distance
+                observation[key] = np.asarray(value / np.sqrt(self.width**2 + self.height**2))
+            elif key in ["direction", "target_direction"]:
+                # Normalize direction
+                observation[key] = np.asarray(value / (2 * np.pi))
+            elif key == "energy":
+                # Normalize energy
+                observation[key] = np.asarray(value / self.robot.max_energy)
+            else:
+                msg = f"Unknown observation key: {key}"
+                raise ValueError(msg)
+        return observation
+
     def _get_info(self) -> dict:
         """Get the information of the environment."""
         return {
@@ -145,24 +165,40 @@ class TerrainWorldEnv(gym.Env):
             "health": np.asarray(self.robot.get_health()),
             "energy": np.asarray(self.robot.get_energy()),
             "ammunition": np.asarray(self.robot.get_ammunition()),
-            "reward_dist": -np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1)
-            * 0.01,
+            "reward_dist": -np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1),
             "reward_ctrl": -1,
         }
 
     def _get_reward(self) -> np.floating[Any]:
         """Get the reward of the environment."""
-        reward: float = -1
+        reward: float = float(-np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1))
         if self.robot.state.is_at_target():
-            reward = self.robot.get_energy() + 0.25 * self.robot.get_health() + 0.125 * self.robot.get_ammunition()
-        elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
-            reward -= (
-                self.robot.get_distance_to_target()
-                + 0.5 * self.robot.max_energy
-                + 0.25 * self.robot.max_health
-                + 0.125 * self.robot.max_ammunition
+            reward = TerrainWorldEnv.final_reward(
+                0, self.robot.get_energy(), self.robot.get_health(), self.robot.get_ammunition()
             )
-        return np.float64(reward)
+        elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
+            reward = -TerrainWorldEnv.final_reward(
+                self.robot.get_distance_to_target(),
+                self.robot.max_energy,
+                self.robot.max_health,
+                self.robot.max_ammunition,
+            )
+        return self._normalize_reward(np.float64(reward))
+
+    @staticmethod
+    def final_reward(distance: float, energy: float, health: float, ammunition: float) -> float:
+        """Calculate the final reward based on distance and attributes."""
+        # Calculate the final reward based on distance and attributes
+        return distance + 0.5 * energy + 0.25 * health + 0.125 * ammunition
+
+    def _normalize_reward(self, reward: np.floating[Any]) -> np.floating[Any]:
+        """Normalize the reward values to be between 0 and 1."""
+        # Normalize the reward
+        max_reward = TerrainWorldEnv.final_reward(
+            0, self.robot.max_energy, self.robot.max_health, self.robot.max_ammunition
+        )
+        normalized_reward = reward / max_reward
+        return np.float64(normalized_reward)
 
     def _get_terminates(self) -> np.bool_:
         """Check if the environment terminates."""
@@ -259,8 +295,8 @@ class TerrainWorldEnv(gym.Env):
 
     # def render(self) -> None:
     #     if self.render_mode == "rgb_array":
-    #         return self._render_frame() # noqa: ERA001
-    #     return None                           # noqa: ERA001
+    #         return self._render_frame()
+    #     return None
 
     def _render_frame(self, action: int | np.ndarray, *, draw_fps_glider: bool = False) -> None:
         """Render the PyGame window."""

@@ -32,6 +32,7 @@ class QLearningAgent(BaseAgent):
             target_model: nn.Module,
             config: AgentConfig,
             visualization: GradientLossTracker | None = None,
+            logger_mode: str = "wp",
         ) -> None:
             """Initialize the Q-learning trainer with a model, target model, learning rate, and discount factor."""
             self.policy_model: nn.Module = policy_model
@@ -46,6 +47,7 @@ class QLearningAgent(BaseAgent):
             self.logger: Logger = Logger(
                 log_file_path,
                 keys=["Loss", "AvgGrad", "State", "Action", "Reward", "NextState", "Done", "QPred", "QTarget"],
+                mode=logger_mode,
                 graphs=[
                     {
                         "x": None,
@@ -56,23 +58,23 @@ class QLearningAgent(BaseAgent):
                         "mark_occurrence": ["Done"],
                     },
                     {"x": None, "y": ["QTarget", "Reward"], "vectorized": True, "mark_occurrence": ["Done"]},
-                    {
-                        "x": None,
-                        "y": ["State"],
-                        "vectorized": True,
-                        "split": True,
-                        "split_labels": [
-                            "Pos-X",
-                            "Pos-Y",
-                            "Target-X",
-                            "Target-Y",
-                            "Distance",
-                            "Direction",
-                            "Target Angle",
-                            "Energy",
-                        ],
-                        "mark_occurrence": ["Done"],
-                    },
+                    # {
+                    #     "x": None,
+                    #     "y": ["State"],
+                    #     "vectorized": True,
+                    #     "split": True,
+                    #     "split_labels": [
+                    #         "Pos-X",
+                    #         "Pos-Y",
+                    #         "Target-X",
+                    #         "Target-Y",
+                    #         "Distance",
+                    #         "Direction",
+                    #         "Target Angle",
+                    #         "Energy",
+                    #     ],
+                    #     "mark_occurrence": ["Done"],
+                    # },
                     {"x": None, "y": ["Action"], "vectorized": True, "mark_occurrence": ["Done"]},
                     {"x": None, "y": ["AvgGrad", "Loss"], "vectorized": False},
                 ],
@@ -107,48 +109,54 @@ class QLearningAgent(BaseAgent):
             done = torch.tensor(np.array(_done), dtype=torch.bool).to(device)
 
             pred = self.policy_model(state)
-            target = pred.clone()
+            target = pred.clone().detach()
             with torch.no_grad():
                 q_next = self.target_model(next_state)
                 batched = q_next.ndim > 2  # noqa: PLR2004
                 if batched:
-                    q_target = torch.zeros(q_next.shape[0], q_next.shape[1], device=device)
-                    for i in range(q_next.shape[0]):
-                        max_q = q_next[i].max(dim=-1)
-                        q_target[i, :] = reward[i] + self.config.discount_factor * max_q.values * (~done[i])
+                    sample_nb_total = q_next.shape[0]
+                    q_target = torch.zeros(sample_nb_total, q_next.shape[1], device=device)
+                    for sample_idx in range(sample_nb_total):
+                        max_q = q_next[sample_idx].max(dim=-1)
+                        done_sample = done[sample_idx].float()
+                        q_target[sample_idx] = reward[sample_idx] + self.config.discount_factor * max_q.values * (
+                            1 - done_sample
+                        )
 
                         # Updating the Target Q-values only for the specific actions taken.
                         # This ensures that the loss is computed only for the actions that were actually taken,
                         #  and the Q-values for other actions remain unchanged.
-                        target[i, :, max_q.indices] = q_target[i, :]
+                        # Update only the Q-value for the action taken
+                        target[sample_idx, torch.arange(target.shape[1]), _action[sample_idx]] = q_target[sample_idx]
                 else:
                     max_q = q_next.max(dim=1)
-                    q_target = reward + self.config.discount_factor * max_q.values * (~done)
+                    max_q = q_next.max(dim=1)
+                    done = done.float()
+                    q_target = reward + self.config.discount_factor * max_q.values * (1 - done)
 
                     # Updating the Target Q-values only for the specific actions taken.
                     # This ensures that the loss is computed only for the actions that were actually taken,
                     #  and the Q-values for other actions remain unchanged.
-                    target[:, max_q.indices] = q_target
+                    # Update only the Q-value for the action taken
+                    target[torch.arange(target.shape[0]), _action] = q_target
 
             self.optimizer.zero_grad()
             loss = self.criterion(pred, target)
             loss.backward()
+
+            # Track gradients
+            self.gradients.append(self.grad_value)
+            sliding_avg_grad = torch.tensor(np.mean(self.gradients), dtype=torch.float, device=self.config.device)
+            max_grad = torch.max(self.default_max_grad, sliding_avg_grad).item()
+
+            # Clip gradients
+            torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), max_norm=max_grad)
 
             # Track metrics
             if self.visualization:
                 self.grad_value = self.visualization.track_gradients(self.policy_model)
                 self.loss_value = self.visualization.track_loss(loss.item())
                 self.visualization.show()
-
-            # Track gradients
-            self.gradients.append(self.grad_value)
-            sliding_avg_grad = torch.tensor(np.mean(self.gradients), dtype=torch.float, device=self.config.device)
-            max_grad = torch.min(self.default_max_grad, sliding_avg_grad)
-
-            # Clip gradients
-            for param in self.policy_model.parameters():
-                if param.grad is not None:
-                    param.grad.data = torch.clamp(param.grad.data, -max_grad, max_grad)
 
             # Get gradients for logging
             gradients = [
@@ -200,6 +208,7 @@ class QLearningAgent(BaseAgent):
         env: gym.Env | SyncVectorEnv,
         config: AgentConfig,
         visualization: GradientLossTracker | None = None,
+        logger_mode: str = "wp",
     ) -> None:
         """Initialize a Reinforcement Learning agent with a neural network model."""
         super().__init__(env)
@@ -214,7 +223,9 @@ class QLearningAgent(BaseAgent):
             self.policy_model.state_dict()
         )  # Initialize target model with policy model weights
 
-        self.trainer = self.QTrainer(self.policy_model, self.target_model, config, visualization)
+        self.trainer = self.QTrainer(
+            self.policy_model, self.target_model, config, visualization, logger_mode=logger_mode
+        )
         self.memory = deque(maxlen=config.memory_size)
         self.epsilon = config.initial_epsilon
         self.final_epsilon = config.final_epsilon
@@ -258,7 +269,7 @@ class QLearningAgent(BaseAgent):
                 output = self.policy_model(state_tensor)
                 actions = torch.argmax(output, dim=1).cpu().numpy()  # Move to CPU before converting to numpy
 
-        self._register_action(actions)
+        # Not used self._register_action(actions)
         return np.array(actions)
 
     def remember(
@@ -274,7 +285,7 @@ class QLearningAgent(BaseAgent):
         for _ in range(batch_num):  # Train on multiple batches
             mini_batch = random.sample(self.memory, self.config.batch_size)
 
-            states, actions, rewards, next_states, dones = zip(*mini_batch)
+            states, actions, rewards, next_states, dones = map(np.array, zip(*mini_batch))
             self.trainer.optimize((states, actions, rewards, next_states, dones))
 
     def train_short_memory(

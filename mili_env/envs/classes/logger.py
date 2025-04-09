@@ -4,6 +4,7 @@ import csv
 import threading
 import time
 import uuid
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -14,7 +15,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
-    from pathlib import Path
 
     from matplotlib.axes import Axes
 
@@ -29,7 +29,7 @@ class Logger:
         graphs: list[dict[str, Any]] | None = None,
         static_keys: dict[str, Any] | None = None,
         mode: str = "wp",
-        window_size: int = 2000,
+        window_size: int = 400,
     ) -> None:
         """Initialize the logger.
 
@@ -128,7 +128,7 @@ class Logger:
         self.ani = FuncAnimation(self.fig, self._plot_logs, interval=1000, cache_frame_data=False)  # type: ignore # noqa: PGH003
         plt.show(block=False)  # Non-blocking show
 
-    def _dynamic_reader(self, interval: float = 1.0) -> None:
+    def _dynamic_reader(self, interval: float = 1.0) -> None:  # noqa: PLR0912, C901
         """Dynamically read new data from the log file as it is written.
 
         Args:
@@ -142,11 +142,39 @@ class Logger:
                     # Move to the last read position
                     log_file.seek(last_position)
 
-                    # Read new lines
                     reader = csv.DictReader(log_file)
                     for row in reader:
-                        self.log_mem.append(dict(row))  # Append new data to log_mem
-                    self.log_mem = self.log_mem[-self.window_size :]
+                        # Convert values to floats or handle numpy arrays
+                        converted_row = {}
+                        for key, value in row.items():
+                            # Si c'est déjà un ndarray, le garder tel quel
+                            if isinstance(value, np.ndarray):
+                                converted_row[key] = value
+                            # Si c'est une chaîne de caractères, essayer différentes conversions
+                            elif isinstance(value, str):
+                                try:
+                                    # Essayer d'abord de convertir en float
+                                    converted_row[key] = float(value)
+                                except ValueError:
+                                    try:
+                                        # Essayer de convertir en array si c'est une représentation textuelle d'un array
+                                        clean_value = value.strip("[]").replace(",", " ")
+                                        array_values = [float(x) for x in clean_value.split()]
+                                        if len(array_values) > 1:
+                                            converted_row[key] = np.array(array_values)
+                                        else:
+                                            converted_row[key] = value
+                                    except (ValueError, TypeError):
+                                        converted_row[key] = value
+                            # Si c'est déjà un float ou un int, le garder
+                            elif isinstance(value, (int, float)):
+                                converted_row[key] = float(value)
+                            # Pour tous les autres types
+                            else:
+                                converted_row[key] = value
+
+                        self.log_mem.append(converted_row)
+                        self.log_mem = self.log_mem[-self.window_size :]  # Keep only the last window_size logs
 
                     # Update the last read position
                     last_position = log_file.tell()
@@ -229,7 +257,7 @@ class Logger:
 
     def _refresh_window(self) -> None:
         """Refresh the debug window."""
-        if self.fig:
+        if self.enable_plot and self.fig:
             self.fig.canvas.draw_idle()
             self.fig.canvas.flush_events()
 
@@ -465,3 +493,58 @@ class Logger:
                     ax_main_single_env.legend(loc="upper right")
 
         plt.tight_layout()
+
+
+if __name__ == "__main__":
+
+    def get_latest_csv(directory: Path, filename: str) -> Path:
+        """Finds the most recent CSV file based on timestamp in filename."""
+        csv_files = list(directory.glob(filename))
+        if not csv_files:
+            msg = f"No CSV files found in {directory} matching {filename}"
+            raise FileNotFoundError(msg)
+
+        # Extract timestamp from filename and sort by newest
+        return max(csv_files, key=lambda x: int(x.stem.split("_")[-1]))
+
+    # Run for a log reading
+    directory: Path = Path("model/")
+    filename: str = "agent_log_*.csv"
+    log_file_path: Path = get_latest_csv(directory, filename)
+
+    logger: Logger = Logger(
+        log_file_path,
+        keys=["Loss", "AvgGrad", "State", "Action", "Reward", "NextState", "Done", "QPred", "QTarget"],
+        mode="rp",
+        graphs=[
+            {
+                "x": None,
+                "y": ["QPred"],
+                "vectorized": True,
+                "split": True,
+                "split_labels": ["Idle", "Forward", "Backward", "Left", "Right"],
+                "mark_occurrence": ["Done"],
+            },
+            {"x": None, "y": ["QTarget", "Reward"], "vectorized": True, "mark_occurrence": ["Done"]},
+            {
+                "x": None,
+                "y": ["State"],
+                "vectorized": True,
+                "split": True,
+                "split_labels": [
+                    "Pos-X",
+                    "Pos-Y",
+                    "Target-X",
+                    "Target-Y",
+                    "Distance",
+                    "Direction",
+                    "Target Angle",
+                    "Energy",
+                ],
+                "mark_occurrence": ["Done"],
+            },
+            {"x": None, "y": ["Action"], "vectorized": True, "mark_occurrence": ["Done"]},
+            {"x": None, "y": ["AvgGrad", "Loss"], "vectorized": False},
+        ],
+        static_keys={"Type": "QL-Agent"},
+    )
