@@ -494,6 +494,9 @@ class Logger:
 
         plt.tight_layout()
 
+        output_filename = self.log_file_path.with_suffix(".png")
+        plt.savefig(output_filename, dpi=300, bbox_inches="tight")
+
 
 if __name__ == "__main__":
 
