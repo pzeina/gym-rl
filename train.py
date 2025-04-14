@@ -111,7 +111,7 @@ agent = QLearningAgent(
     envs,
     config,
     visualization=GradientLossTracker(512, 196, graphs=PLOT_GRAD) if TRACK_GRAD else None,
-    logger_mode="w",
+    logger_mode="",
 )
 if MODEL_PATH:
     with suppress(OSError, ValueError, RuntimeError):
