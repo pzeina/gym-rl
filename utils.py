@@ -76,5 +76,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--render-mode", type=str, default="rgb_array", help="Enable map visualization.")
     parser.add_argument("--parallel", type=int, default=os.cpu_count(), help="Number of parallel SyncVectorEnv.")
     parser.add_argument("--pretrained-model", type=str, default=None, help="Path to pretrained model.")
+    parser.add_argument(
+        "--resume-checkpoint", type=str, default=None, help="Path to checkpoint file to resume training from."
+    )
+    parser.add_argument("--checkpoint-interval", type=int, default=100, help="Save checkpoint every N episodes.")
+    parser.add_argument("--model-save-interval", type=int, default=10, help="Save model every N episodes.")
 
     return parser.parse_args()  # print(f"Number of CPUs: {N_ENVS}")

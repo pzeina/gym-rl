@@ -9,7 +9,7 @@ from mili_env.envs.classes.robot_base import Actions
 
 if TYPE_CHECKING:
     import gymnasium as gym
-    from gymnasium.vector import SyncVectorEnv
+    from gymnasium.vector import VectorEnv
 
 
 PI_OVER_8 = np.pi / 8
@@ -40,7 +40,7 @@ def get_action(state: np.ndarray) -> np.ndarray:
 class DummyAgent(BaseAgent):
     """Dummy agent using the shortest path to target (shortest distance)."""
 
-    def __init__(self, env: gym.Env | SyncVectorEnv) -> None:
+    def __init__(self, env: gym.Env | VectorEnv) -> None:
         """Initialize a Reinforcement Learning agent with a neural network model."""
         super().__init__(env)
 

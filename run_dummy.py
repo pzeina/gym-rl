@@ -6,7 +6,7 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 import torch
-from gymnasium.vector import SyncVectorEnv
+from gymnasium.vector import SyncVectorEnv, VectorEnv
 from tqdm import tqdm
 
 from mili_env.envs.classes.dummy_agent import DummyAgent
@@ -19,7 +19,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # parse arguments and get visualization flag
 parser = argparse.ArgumentParser(description="Train a Q-learning agent.")
-parser.add_argument("--visualization", type=str, default="false", help="Enable gradient loss visualization.")
+parser.add_argument("--visualization", type=str, default="true", help="Enable gradient loss visualization.")
 args = parser.parse_args()
 
 # Convert the visualization argument to a boolean
@@ -29,7 +29,7 @@ VISUALIZATION = args.visualization.lower() in ("true", "1", "t", "y", "yes")
 # Create vectorized environments
 def make_env() -> gym.Env:
     """Create a new environment instance."""
-    return gym.make("mili_env/TerrainWorld-v0", render_mode="rgb_array", visualization=VISUALIZATION)
+    return gym.make("mili_env/TerrainWorld-v0", render_mode="human", visualization=VISUALIZATION)
 
 
 envs = SyncVectorEnv([make_env for _ in range(num_envs)])
@@ -89,7 +89,7 @@ for episode in tqdm(range(n_episodes)):
 
         def process_obs(obs: np.ndarray) -> np.ndarray:
             """Process the observations into a 2D numpy array where each row is the state of an environment."""
-            if isinstance(envs, SyncVectorEnv):
+            if isinstance(envs, VectorEnv):
                 return np.concatenate([obs[key].reshape(num_envs, -1) for key in obs], axis=1)
             env_processed = [value.flatten() for key in obs for value in obs[key]]
             return np.array(env_processed)

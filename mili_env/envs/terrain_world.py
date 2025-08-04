@@ -22,15 +22,20 @@ class TerrainWorldEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 10}  # noqa: RUF012
 
     def __init__(
-        self, render_mode: str | None = None, target_zone_size: int = 20, *, visualization: bool = False
+        self,
+        render_mode: str | None = None,
+        target_zone_size: int = 20,
+        terrain_filename: str = "plain_terrain.csv",
+        *,
+        visualization: bool = False,
     ) -> None:
         """Initialize the environment."""
         self.max_window_size: int = 512  # The maximum size of the PyGame window
-        self.panel_width: int = 320  # Width of the right panel
+        self.panel_width: int = 128  # Width of the right panel
         self.target_zone_size: int = target_zone_size  # Size of the target zone
 
         # Load the terrain map
-        self.game_map = GameMap.load_from_csv(Path(__file__).parent / "data" / "terrain.csv")
+        self.game_map = GameMap.load_from_csv(Path(__file__).parent / "data" / terrain_filename)
         self.width: int = self.game_map.width
         self.height: int = self.game_map.height
 
@@ -171,7 +176,8 @@ class TerrainWorldEnv(gym.Env):
 
     def _get_reward(self) -> np.floating[Any]:
         """Get the reward of the environment."""
-        reward: float = float(-np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1))
+        reward: float = -self.robot.get_distance_to_target()
+        # float(-np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1))
         if self.robot.state.is_at_target():
             reward = TerrainWorldEnv.final_reward(
                 0, self.robot.get_energy(), self.robot.get_health(), self.robot.get_ammunition()
@@ -298,7 +304,9 @@ class TerrainWorldEnv(gym.Env):
     #         return self._render_frame()
     #     return None
 
-    def _render_frame(self, action: int | np.ndarray, *, draw_fps_glider: bool = False) -> None:
+    def _render_frame(
+        self, action: int | np.ndarray, *, show_vision_map: bool = False, draw_fps_glider: bool = False
+    ) -> None:
         """Render the PyGame window."""
         if self.window is None and self.render_mode == "human":
             pygame.init()
@@ -341,10 +349,11 @@ class TerrainWorldEnv(gym.Env):
         # Draw debug information
         self._draw_debug_info(canvas, action)
 
-        # Get the vision map and render it in the right panel
-        vision_map: np.ndarray = self.robot.get_vision_map()
-        # Removed zoom: zoomed_coordinates: int = int(self.game_map.width * self.cell_size * self.zoom_factor)
-        self.render_vision_map(vision_map, canvas, self.game_map.width * self.cell_size, 0)
+        if show_vision_map:
+            # Get the vision map and render it in the right panel
+            vision_map: np.ndarray = self.robot.get_vision_map()
+            # Removed zoom: zoomed_coordinates: int = int(self.game_map.width * self.cell_size * self.zoom_factor)
+            self.render_vision_map(vision_map, canvas, self.game_map.width * self.cell_size, 0)
 
         if self.render_mode == "human":
             if self.window is not None:

@@ -112,12 +112,15 @@ class Terrain(ABC):
             terrain_type, level = terrain_str.split(",")
             level = int(level)
 
-            if terrain_type == TerrainType.FOREST.value:
-                return Forest(level)
-            if terrain_type == TerrainType.WATER.value:
-                return Water(level)
-            if terrain_type == TerrainType.ROAD.value:
-                return Road(level)
+            match terrain_type:
+                case TerrainType.UNKNOWN.value:
+                    return EmptyTerrain()
+                case TerrainType.FOREST.value:
+                    return Forest(level)
+                case TerrainType.WATER.value:
+                    return Water(level)
+                case TerrainType.ROAD.value:
+                    return Road(level)
         except ValueError:
             error = f"Invalid terrain string: {terrain_str}"
             raise ValueError(error) from None
@@ -263,7 +266,8 @@ class GameMap:
         self.width: int = width
         self.height: int = height
         self.cell_size: int = cell_size
-        self.terrain: np.ndarray = np.empty((height, width), dtype=Terrain)
+        self.terrain: np.ndarray = np.full((height, width), Forest(0), dtype=Terrain)
+        # np.empty((height, width), dtype=Terrain)
         self.altitude: np.ndarray = np.zeros((height, width))  # Added altitude map
 
     def generate_altitude_map(self, scale: float = 50.0, octaves: float = 6) -> None:
@@ -335,6 +339,12 @@ class GameMap:
 
         # 5. Generate roads
         self.generate_roads()
+
+    def generate_plain_map(self) -> None:
+        """Generate a plain terrain map."""
+        # Altitude map is default zero
+
+        # Fill terrain with
 
     def generate_roads(self, num_roads: int = 3) -> None:
         """Generate roads avoiding water and extreme altitude changes."""
@@ -505,6 +515,13 @@ def main() -> None:
     """Example usage of the terrain system."""
     parser = argparse.ArgumentParser(description="Terrain system")
     parser.add_argument("--load", type=str, help="Load the map from the specified file")
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=["random", "plain"],
+        help="Set the mode for the terrain generation",
+        default="random",
+    )
     args = parser.parse_args()
 
     if args.load:
@@ -513,7 +530,13 @@ def main() -> None:
     else:
         # Create new random map
         game_map = GameMap(100, 100)
-        game_map.generate_random_map()
+        if args.mode == "plain":
+            game_map.generate_plain_map()
+        elif args.mode == "random":
+            game_map.generate_random_map()
+        else:
+            msg = "Invalid mode. Use 'random' or 'plain'."
+            raise ValueError(msg)
 
         # Save the map
         maps_dir = Path(__file__).resolve().parent / "maps"

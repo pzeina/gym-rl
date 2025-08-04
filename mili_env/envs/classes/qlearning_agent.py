@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import random
 from collections import deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -17,7 +18,7 @@ from mili_env.envs.metrics import GradientLossTracker  # noqa: TC001
 
 if TYPE_CHECKING:
     import gymnasium as gym
-    from gymnasium.vector import SyncVectorEnv
+    from gymnasium.vector import VectorEnv
 
 
 class QLearningAgent(BaseAgent):
@@ -34,7 +35,20 @@ class QLearningAgent(BaseAgent):
             visualization: GradientLossTracker | None = None,
             logger_mode: str = "wp",
         ) -> None:
-            """Initialize the Q-learning trainer with a model, target model, learning rate, and discount factor."""
+            """Initializes the Q-learning agent with the given models, configuration, visualization, logging options.
+
+            Args:
+                policy_model (nn.Module): The neural network model used for policy estimation (Q-network).
+                target_model (nn.Module): The target neural network model for stable Q-learning updates.
+                config (AgentConfig): Configuration object containing agent and training hyperparameters.
+                visualization (GradientLossTracker | None, optional): Optional visualization tool for tracking gradients
+                and loss.
+                  Defaults to None.
+                logger_mode (str, optional): Mode for the logger (e.g., write/append). Defaults to "wp".
+
+            Initializes optimizer, learning rate scheduler, loss criterion, logging, and gradient tracking.
+            Moves models to the specified device.
+            """
             self.policy_model: nn.Module = policy_model
             self.target_model: nn.Module = target_model
             self.optimizer = optim.Adam(policy_model.parameters(), lr=config.learning_rate)
@@ -44,41 +58,45 @@ class QLearningAgent(BaseAgent):
             self.config: AgentConfig = config
 
             log_file_path = config.trainer_log_file
-            self.logger: Logger = Logger(
-                log_file_path,
-                keys=["Loss", "AvgGrad", "State", "Action", "Reward", "NextState", "Done", "QPred", "QTarget"],
-                mode=logger_mode,
-                graphs=[
-                    {
-                        "x": None,
-                        "y": ["QPred"],
-                        "vectorized": True,
-                        "split": True,
-                        "split_labels": ["Idle", "Forward", "Backward", "Left", "Right"],
-                        "mark_occurrence": ["Done"],
-                    },
-                    {"x": None, "y": ["QTarget", "Reward"], "vectorized": True, "mark_occurrence": ["Done"]},
-                    # {
-                    #     "x": None,
-                    #     "y": ["State"],
-                    #     "vectorized": True,
-                    #     "split": True,
-                    #     "split_labels": [
-                    #         "Pos-X",
-                    #         "Pos-Y",
-                    #         "Target-X",
-                    #         "Target-Y",
-                    #         "Distance",
-                    #         "Direction",
-                    #         "Target Angle",
-                    #         "Energy",
-                    #     ],
-                    #     "mark_occurrence": ["Done"],
-                    # },
-                    {"x": None, "y": ["Action"], "vectorized": True, "mark_occurrence": ["Done"]},
-                    {"x": None, "y": ["AvgGrad", "Loss"], "vectorized": False},
-                ],
-                static_keys={"Type": "QL-Agent"},
+            self.logger: Logger | None = (
+                None
+                if config.disable_logs
+                else Logger(
+                    log_file_path,
+                    keys=["Loss", "AvgGrad", "State", "Action", "Reward", "NextState", "Done", "QPred", "QTarget"],
+                    mode=logger_mode,
+                    graphs=[
+                        {
+                            "x": None,
+                            "y": ["QPred"],
+                            "vectorized": True,
+                            "split": True,
+                            "split_labels": ["Idle", "Forward", "Backward", "Left", "Right"],
+                            "mark_occurrence": ["Done"],
+                        },
+                        {"x": None, "y": ["QTarget", "Reward"], "vectorized": True, "mark_occurrence": ["Done"]},
+                        # {
+                        #     "x": None,
+                        #     "y": ["State"],
+                        #     "vectorized": True,
+                        #     "split": True,
+                        #     "split_labels": [
+                        #         "Pos-X",
+                        #         "Pos-Y",
+                        #         "Target-X",
+                        #         "Target-Y",
+                        #         "Distance",
+                        #         "Direction",
+                        #         "Target Angle",
+                        #         "Energy",
+                        #     ],
+                        #     "mark_occurrence": ["Done"],
+                        # },
+                        {"x": None, "y": ["Action"], "vectorized": True, "mark_occurrence": ["Done"]},
+                        {"x": None, "y": ["AvgGrad", "Loss"], "vectorized": False},
+                    ],
+                    static_keys={"Type": "QL-Agent"},
+                )
             )
 
             self.grad_value: float = 0.0
@@ -100,7 +118,7 @@ class QLearningAgent(BaseAgent):
             _done: np.ndarray,
             *,
             from_memory: bool = False,
-        ) -> None:
+        ) -> dict:
             """Train the model using a single experience."""
             device = next(self.policy_model.parameters()).device  # Get the device of the model
             state = torch.tensor(np.array(_state), dtype=torch.float).to(device)
@@ -179,7 +197,10 @@ class QLearningAgent(BaseAgent):
                     "QPred": pred.cpu().detach().numpy(),  # pred[i, _action[i]].item(),
                     "QTarget": q_target.cpu().detach().numpy(),  # q_target[i].item(), pred[i].cpu().detach().numpy(),
                 }
-                self.logger.log_entry(logs_dict)
+                if self.logger:
+                    self.logger.log_entry(logs_dict)
+
+            return {"grad": _avg_grad, "loss": _loss}
 
         def optimize(self, batch: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]) -> None:
             """Optimize the model using a batch of experiences."""
@@ -205,7 +226,7 @@ class QLearningAgent(BaseAgent):
 
     def __init__(
         self,
-        env: gym.Env | SyncVectorEnv,
+        env: gym.Env | VectorEnv,
         config: AgentConfig,
         visualization: GradientLossTracker | None = None,
         logger_mode: str = "wp",
@@ -295,9 +316,9 @@ class QLearningAgent(BaseAgent):
         rewards: np.ndarray,
         next_states: np.ndarray,
         dones: np.ndarray,
-    ) -> None:
+    ) -> dict:
         """Train the model using a batch of experiences."""
-        self.trainer.train_step(states, actions, rewards, next_states, dones)
+        return self.trainer.train_step(states, actions, rewards, next_states, dones)
 
     def decay_epsilon_f(self) -> None:
         """Decay the epsilon value for the epsilon-greedy policy."""
@@ -318,6 +339,151 @@ class QLearningAgent(BaseAgent):
         self.policy_model.to(self.config.device)
         self.target_model.to(self.config.device)
 
+    def save_checkpoint(self, checkpoint_path: str = "checkpoint.pth") -> None:
+        """Save a complete training checkpoint including models, optimizer state, and training parameters.
+
+        Args:
+            checkpoint_path (str): Path to save the checkpoint file. Defaults to "checkpoint.pth".
+        """
+        # Ensure directory exists
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+
+        checkpoint = {
+            "policy_model_state_dict": self.policy_model.state_dict(),
+            "target_model_state_dict": self.target_model.state_dict(),
+            "optimizer_state_dict": self.trainer.optimizer.state_dict(),
+            "scheduler_state_dict": self.trainer.scheduler.state_dict(),
+            "memory": list(self.memory),  # Convert deque to list for serialization
+            "epsilon": self.epsilon,
+            "final_epsilon": self.final_epsilon,
+            "decay_epsilon": self.decay_epsilon,
+            "dummy_frequency": self.dummy_frequency,
+            "update_counter": self.update_counter,
+            "gradients": list(self.trainer.gradients),  # Convert deque to list for serialization
+            "grad_value": self.trainer.grad_value,
+            "loss_value": self.trainer.loss_value,
+            "config": self.config,  # Save the configuration as well
+        }
+
+        torch.save(checkpoint, checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}")  # noqa: T201
+
+    def save_checkpoint_silent(self, checkpoint_path: str = "checkpoint.pth") -> None:
+        """Save a complete training checkpoint silently without output messages.
+
+        Args:
+            checkpoint_path (str): Path to save the checkpoint file. Defaults to "checkpoint.pth".
+        """
+        # Ensure directory exists
+        Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
+
+        checkpoint = {
+            "policy_model_state_dict": self.policy_model.state_dict(),
+            "target_model_state_dict": self.target_model.state_dict(),
+            "optimizer_state_dict": self.trainer.optimizer.state_dict(),
+            "scheduler_state_dict": self.trainer.scheduler.state_dict(),
+            "memory": list(self.memory),  # Convert deque to list for serialization
+            "epsilon": self.epsilon,
+            "final_epsilon": self.final_epsilon,
+            "decay_epsilon": self.decay_epsilon,
+            "dummy_frequency": self.dummy_frequency,
+            "update_counter": self.update_counter,
+            "gradients": list(self.trainer.gradients),  # Convert deque to list for serialization
+            "grad_value": self.trainer.grad_value,
+            "loss_value": self.trainer.loss_value,
+            "config": self.config,  # Save the configuration as well
+        }
+
+        torch.save(checkpoint, checkpoint_path)
+
+    def load_checkpoint(self, checkpoint_path: str = "checkpoint.pth") -> None:
+        """Load a complete training checkpoint to restore training state.
+
+        Args:
+            checkpoint_path (str): Path to the checkpoint file to load. Defaults to "checkpoint.pth".
+        """
+        checkpoint = torch.load(checkpoint_path, map_location=self.config.device)
+
+        # Restore model states
+        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
+        self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+
+        # Restore optimizer and scheduler states
+        self.trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.trainer.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        # Restore training parameters
+        self.memory = deque(checkpoint["memory"], maxlen=self.config.memory_size)
+        self.epsilon = checkpoint["epsilon"]
+        self.final_epsilon = checkpoint["final_epsilon"]
+        self.decay_epsilon = checkpoint["decay_epsilon"]
+        self.dummy_frequency = checkpoint["dummy_frequency"]
+        self.update_counter = checkpoint["update_counter"]
+
+        # Restore trainer state
+        self.trainer.gradients = deque(checkpoint["gradients"], maxlen=self.config.grad_clip_window)
+        self.trainer.grad_value = checkpoint["grad_value"]
+        self.trainer.loss_value = checkpoint["loss_value"]
+
+        # Ensure models are on the correct device
+        self.policy_model.to(self.config.device)
+        self.target_model.to(self.config.device)
+
+        print(f"Checkpoint loaded from {checkpoint_path}")  # noqa: T201
+        print(f"Resumed training at update counter: {self.update_counter}")  # noqa: T201
+        print(f"Current epsilon: {self.epsilon:.4f}")  # noqa: T201
+        print(f"Memory size: {len(self.memory)}")  # noqa: T201
+
+    def load_checkpoint_silent(self, checkpoint_path: str = "checkpoint.pth") -> None:
+        """Load a complete training checkpoint silently without output messages.
+
+        Args:
+            checkpoint_path (str): Path to the checkpoint file to load. Defaults to "checkpoint.pth".
+        """
+        checkpoint = torch.load(checkpoint_path, map_location=self.config.device)
+
+        # Restore model states
+        self.policy_model.load_state_dict(checkpoint["policy_model_state_dict"])
+        self.target_model.load_state_dict(checkpoint["target_model_state_dict"])
+
+        # Restore optimizer and scheduler states
+        self.trainer.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.trainer.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+
+        # Restore training parameters
+        self.memory = deque(checkpoint["memory"], maxlen=self.config.memory_size)
+        self.epsilon = checkpoint["epsilon"]
+        self.final_epsilon = checkpoint["final_epsilon"]
+        self.decay_epsilon = checkpoint["decay_epsilon"]
+        self.dummy_frequency = checkpoint["dummy_frequency"]
+        self.update_counter = checkpoint["update_counter"]
+
+        # Restore trainer state
+        self.trainer.gradients = deque(checkpoint["gradients"], maxlen=self.config.grad_clip_window)
+        self.trainer.grad_value = checkpoint["grad_value"]
+        self.trainer.loss_value = checkpoint["loss_value"]
+
+        # Ensure models are on the correct device
+        self.policy_model.to(self.config.device)
+        self.target_model.to(self.config.device)
+
+    def save_periodic_checkpoint(self, episode: int, checkpoint_dir: str = "checkpoints") -> None:
+        """Save a periodic checkpoint with episode information.
+
+        Args:
+            episode (int): Current episode number
+            checkpoint_dir (str): Directory to save checkpoints. Defaults to "checkpoints".
+        """
+        # Create checkpoint directory if it doesn't exist
+        Path(checkpoint_dir).mkdir(parents=True, exist_ok=True)
+
+        checkpoint_path = Path(checkpoint_dir) / f"checkpoint_episode_{episode + 1}.pth"
+        self.save_checkpoint(str(checkpoint_path))
+
+        # Also save as latest checkpoint for easy resuming
+        latest_checkpoint_path = Path(checkpoint_dir) / "latest_checkpoint.pth"
+        self.save_checkpoint(str(latest_checkpoint_path))
+
     def update_model(self) -> None:
         """Update the model based on the update frequency."""
         self.update_counter += 1
@@ -326,4 +492,5 @@ class QLearningAgent(BaseAgent):
         if self.update_counter % self.config.update_frequency == 0:
             self.target_model.load_state_dict(self.policy_model.state_dict())  # Update target model
 
-        self.trainer.logger.update_logs()
+        if self.trainer.logger:
+            self.trainer.logger.update_logs()

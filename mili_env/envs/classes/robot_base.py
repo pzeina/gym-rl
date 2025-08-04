@@ -10,6 +10,7 @@ import torch
 from mili_env.envs.classes.terrain import EmptyTerrain, GameMap, ObstacleTerrain, Terrain
 
 PI_OVER_4 = np.pi / 4
+EPSILON_ANGLE = 1e-3
 
 
 class Actions(Enum):
@@ -73,7 +74,22 @@ class RobotState:
     """Class to manage the state of the robot."""
 
     def __init__(self, position: RobotPosition, attributes: RobotAttributes) -> None:
-        """Initialize the robot's state with position, target, health, and energy."""
+        """Initialize the robot's state with position, target, health, and energy.
+
+        Args:
+            position: Robot position containing coordinates, angle, and target information
+            attributes: Robot attributes containing health, energy, and ammunition values
+
+        Attributes:
+            x (float): Robot's x-coordinate in the game map
+            y (float): Robot's y-coordinate in the game map
+            angle (float): Robot's orientation angle in radians, range [0, 2π]
+            target_x (int): Target zone's x-coordinate
+            target_y (int): Target zone's y-coordinate
+            target_width (int): Width of the target zone
+            target_height (int): Height of the target zone
+            attributes (RobotAttributes): Robot's health, energy, and ammunition attributes
+        """
         self.x = position.x
         self.y = position.y
         self.angle = position.angle
@@ -209,7 +225,8 @@ class RobotBase:
         """Move the robot based on the chosen action."""
         if isinstance(action, np.ndarray):
             return np.array([self._move_single(Actions(a)) for a in action])
-        return self._move_single(Actions(action))
+        # return self._move_single(Actions(action))
+        return self._move_single_discrete(Actions(action))
 
     def _move_single(self, action: Actions) -> float:
         """Move the robot based on a single action."""
@@ -237,6 +254,47 @@ class RobotBase:
         movement_speed = self.game_map.get_terrain(self.state.x, self.state.y).get_properties().movement_speed
         new_x = self.state.x + dx * movement_speed * self.state.attributes.speed_efficiency
         new_y = self.state.y + dy * movement_speed * self.state.attributes.speed_efficiency
+
+        new_x = max(0, min(self.game_map.width - 1, new_x))
+        new_y = max(0, min(self.game_map.height - 1, new_y))
+
+        self.state.update_position(new_x, new_y, new_angle)
+
+        self.rays = self.compute_vision_rays()
+        self.update_vision_map()
+
+        return np.sqrt((self.state.target_x - self.state.x) ** 2 + (self.state.target_y - self.state.y) ** 2)
+
+    def _move_single_discrete(self, action: Actions) -> float:
+        """Move the robot based on a single action."""
+        dx, dy = 0, 0
+        new_angle = self.state.angle
+        if action == Actions.IDLE:
+            dx, dy = 0, 0
+        elif action in [Actions.FORWARD, Actions.BACKWARD]:
+            if np.cos(self.state.angle) > EPSILON_ANGLE:
+                dx = 1
+            elif np.cos(self.state.angle) < -EPSILON_ANGLE:
+                dx = -1
+            if np.sin(self.state.angle) > EPSILON_ANGLE:
+                dy = 1
+            elif np.sin(self.state.angle) < -EPSILON_ANGLE:
+                dy = -1
+            if action == Actions.BACKWARD:
+                dx, dy = -dx, -dy
+        elif action == Actions.ROTATE_LEFT:
+            new_angle -= self.max_angular_speed
+        elif action == Actions.ROTATE_RIGHT:
+            new_angle += self.max_angular_speed
+        else:
+            error_message = "Invalid action"
+            raise ValueError(error_message)
+
+        # Keep the angle within the range [0, 2*pi]
+        new_angle = (new_angle + 2 * np.pi) % (2 * np.pi)
+
+        new_x = self.state.x + dx
+        new_y = self.state.y + dy
 
         new_x = max(0, min(self.game_map.width - 1, new_x))
         new_y = max(0, min(self.game_map.height - 1, new_y))

@@ -48,3 +48,4 @@ class AgentConfig:
     summarizer: Any = None
     recorder: Any = None
     trainer_log_file: Path = Path()
+    disable_logs: bool = True
