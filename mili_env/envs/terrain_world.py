@@ -196,8 +196,9 @@ class TerrainWorldEnv(gym.Env):
             )
         else:
             # Default progress reward
-            return np.float64(TerrainWorldEnv.step_reward(distance_var, angle_var, energy_var, health_var))
-        return self._normalize_reward(np.float64(reward))
+            reward = np.float64(TerrainWorldEnv.step_reward(distance_var, angle_var, energy_var, health_var))
+        # return self._normalize_reward(np.float64(reward))
+        return np.float64(reward)
 
     @staticmethod
     def final_reward(distance: float, energy: float, health: float, ammunition: float) -> float:
