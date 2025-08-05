@@ -12,7 +12,7 @@ import torch
 from gymnasium.vector import AsyncVectorEnv, SyncVectorEnv, VectorEnv  # type:ignore  # noqa: PGH003, F401
 
 # from mili_env.wrappers.normalize_reward import RewardNormalizeWrapper
-from gymnasium.wrappers.vector import ClipReward, NormalizeReward
+from gymnasium.wrappers.vector import ClipReward, NormalizeReward  # type:ignore  # noqa: PGH003, F401
 from tqdm import tqdm
 
 import utils
@@ -106,8 +106,8 @@ def main() -> None:  # noqa: C901, PLR0915
         return gym.make("mili_env/TerrainWorld-v0", render_mode=__render_mode, visualization=__plot_grad)
 
     envs = AsyncVectorEnv([make_env for _ in range(__num_envs)])
-    envs = NormalizeReward(envs)  # Built-in vectorized wrapper to Normalize the Rewards
-    envs = ClipReward(envs, min_reward=-1.0, max_reward=1.0)  # Clip rewards to the range [-1.0, 1.0]
+    # envs = NormalizeReward(envs)  # Built-in vectorized wrapper to Normalize the Rewards
+    # envs = ClipReward(envs, min_reward=-1.0, max_reward=1.0)  # Clip rewards to the range [-1.0, 1.0]
 
     agent = QLearningAgent(
         envs,
