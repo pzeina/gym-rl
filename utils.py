@@ -24,6 +24,7 @@ def write_log_entry(log_file_path: Path, metrics: dict) -> None:
     required_keys = {
         "episode",
         "episode_length",
+        "episode_final_reward",
         "episode_total_reward",
         "episode_avg_reward",
         "learning_rate",
@@ -42,7 +43,7 @@ def write_log_entry(log_file_path: Path, metrics: dict) -> None:
         raise ValueError(error_msg)
 
     log_entry = (
-        f"{metrics['episode'] + 1}, {metrics['episode_total_reward']:.2f}, "
+        f"{metrics['episode'] + 1}, {metrics['episode_final_reward']:.2f}, {metrics['episode_total_reward']:.2f}, "
         f"{metrics['episode_avg_reward']:.4f}, {metrics['episode_length']}, "
         f"{metrics['learning_rate']:.6f}, {metrics['epsilon']:.6f}, "
         f"{metrics['grad_value']:.4f}, {metrics['loss_value']:.4f}, "
@@ -58,7 +59,7 @@ def write_log_entry(log_file_path: Path, metrics: dict) -> None:
     if not log_file_path.exists():
         with log_file_path.open("w") as log_file:
             log_file.write(
-                "Episode, Total Reward, Average Reward, Length, "
+                "Episode, Final Reward, Total Reward, Average Reward, Length, "
                 "Learning Rate, Epsilon, Gradient, Loss, "
                 "Train Time, Env Step Time, Reward Time, Action Selection Time, Others Time\n"
             )
