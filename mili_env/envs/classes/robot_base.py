@@ -331,13 +331,21 @@ class RobotBase:
         return int(np.floor(self.state.x)), int(np.floor(self.state.y))
 
     def get_direction(self) -> float:
-        """Get the robot's current direction."""
+        """Get the robot's current direction in radians [0, 2pi]."""
         return self.state.angle
 
     def get_target_direction(self) -> float:
         """Get the robot's target direction in radians [0, 2pi]."""
         target_x, target_y = self.get_target()
         return np.arctan2(target_y - self.state.y, target_x - self.state.x) % (2 * np.pi)  # angle_rad
+
+    def get_angle_to_target(self) -> float:
+        """Get the robot's unsigned angle difference to the target in radians, between 0 and π."""
+        robot_direction = self.get_direction()
+        target_direction = self.get_target_direction()
+
+        diff = abs(target_direction - robot_direction) % (2 * np.pi)
+        return min(diff, 2 * np.pi - diff)
 
     def get_distance_to_target(self) -> float:
         """Get the robot's distance to the target."""

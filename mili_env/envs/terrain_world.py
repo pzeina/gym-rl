@@ -166,29 +166,37 @@ class TerrainWorldEnv(gym.Env):
     def _get_info(self) -> dict:
         """Get the information of the environment."""
         return {
-            "distance": np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1),
+            "angle_to_target": self.robot.get_angle_to_target(),
+            "distance": self.robot.get_distance_to_target(),
             "health": np.asarray(self.robot.get_health()),
             "energy": np.asarray(self.robot.get_energy()),
             "ammunition": np.asarray(self.robot.get_ammunition()),
-            "reward_dist": -np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1),
-            "reward_ctrl": -1,
+            # "reward_dist": -np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1),
+            # "reward_ctrl": -1
         }
 
-    def _get_reward(self) -> np.floating[Any]:
+    def _get_reward(
+        self, distance_var: float, angle_var: float, energy_var: float, health_var: float
+    ) -> np.floating[Any]:
         """Get the reward of the environment."""
-        reward: float = -self.robot.get_distance_to_target()
         # float(-np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1))
+
         if self.robot.state.is_at_target():
+            # Mission complete
             reward = TerrainWorldEnv.final_reward(
                 0, self.robot.get_energy(), self.robot.get_health(), self.robot.get_ammunition()
             )
         elif not self.robot.state.is_alive() or not self.robot.state.has_energy():
+            # Mission failed
             reward = -TerrainWorldEnv.final_reward(
                 self.robot.get_distance_to_target(),
                 self.robot.max_energy,
                 self.robot.max_health,
                 self.robot.max_ammunition,
             )
+        else:
+            # Default progress reward
+            return np.float64(TerrainWorldEnv.step_reward(distance_var, angle_var, energy_var, health_var))
         return self._normalize_reward(np.float64(reward))
 
     @staticmethod
@@ -196,6 +204,13 @@ class TerrainWorldEnv(gym.Env):
         """Calculate the final reward based on distance and attributes."""
         # Calculate the final reward based on distance and attributes
         return distance + 0.5 * energy + 0.25 * health + 0.125 * ammunition
+
+    @staticmethod
+    def step_reward(distance_var: float, angle_var: float, energy_var: float, health_var: float) -> float:
+        """Calculate the by-step reward based on distance/angle-to-target, energy, and health variations."""
+        # Better to increase: energy, health
+        # Better to decrease: distance/angle-to-target
+        return -distance_var - (angle_var / np.pi) + energy_var + health_var
 
     def _normalize_reward(self, reward: np.floating[Any]) -> np.floating[Any]:
         """Normalize the reward values to be between 0 and 1."""
@@ -229,40 +244,49 @@ class TerrainWorldEnv(gym.Env):
 
         return observation, info
 
-    def _single_step(self, action: int) -> tuple:
-        """Execute a single step in the environment."""
-        # Check if the new location is traversable
-        position = self.robot.get_position()
-        terrain: Terrain = self.game_map.get_terrain(position[0], position[1])
+    # def _single_step(self, action: int) -> tuple:
+    #     """Execute a single step in the environment."""
+    #     # Check if the new location is traversable
+    #     prev_position = self.robot.get_position()
+    #     prev_info = self._get_info()
+    #     terrain: Terrain = self.game_map.get_terrain(prev_position[0], prev_position[1])
 
-        self.robot.move(action)
+    #     # Perform the action on the terrain and
+    #     # Update position, vision rays, etc.
+    #     self.robot.move(action)
 
-        if action in [Actions.FORWARD.value, Actions.BACKWARD.value]:
-            # if terrain.get_properties().traversable:
-            movement_cost = terrain.get_movement_cost()
-            self.robot.state.consume_energy(movement_cost)
-        elif action in [Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]:
-            # Minimal energy consumption when rotating
-            self.robot.state.consume_energy(0.15)
-        elif action == Actions.IDLE.value:
-            # Minimal energy consumption when staying with no movement
-            self.robot.state.consume_energy(0.1)
+    #     # Consume energy from
+    #     if action in [Actions.FORWARD.value, Actions.BACKWARD.value]:
+    #         # if terrain.get_properties().traversable:
+    #         movement_cost = terrain.get_movement_cost()
+    #         self.robot.state.consume_energy(movement_cost)
+    #     elif action in [Actions.ROTATE_LEFT.value, Actions.ROTATE_RIGHT.value]:
+    #         # Minimal energy consumption when rotating
+    #         self.robot.state.consume_energy(0.15)
+    #     elif action == Actions.IDLE.value:
+    #         # Minimal energy consumption when staying with no movement
+    #         self.robot.state.consume_energy(0.1)
 
-        # Calculate the distance to the target
-        distance_to_target = np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1)  # noqa: F841
+    #     # Calculate the distance to the target
+    #     # distance_to_target = np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1)
 
-        # Check if the agent is within the target zone
-        success = self.robot.state.is_at_target()
-        terminated = success or not self.robot.state.is_alive() or not self.robot.state.has_energy()
+    #     # Check if the agent is within the target zone
+    #     success = self.robot.state.is_at_target()
+    #     terminated = success or not self.robot.state.is_alive() or not self.robot.state.has_energy()
 
-        reward = self._get_reward()
-        observation = self._get_obs()
-        info = self._get_info()
+    #     observation = self._get_obs()
+    #     info = self._get_info()
 
-        if self.render_mode == "human":
-            self._render_frame(action)
+    #     distance_var = info["distance"] - prev_info["distance"]
+    #     energy_var = info["energy"] - prev_info["distance"]
+    #     angle_var = info["angle_to_target"] - prev_info["angle_to_target"]
 
-        return observation, reward, terminated, False, info
+    #     if self.render_mode == "human":
+    #         self._render_frame(action)
+
+    #     # reward = self._get_reward()
+
+    #     return observation, reward, terminated, False, info
 
     def _consume_energy(self, action: int | np.ndarray, terrain: Terrain) -> None:
         if isinstance(action, np.ndarray):
@@ -280,19 +304,32 @@ class TerrainWorldEnv(gym.Env):
         position: tuple[float, float] = self.robot.get_position()
         terrain: Terrain = self.game_map.get_terrain(position[0], position[1])
 
+        # Store previous information
+        prev_info = self._get_info()
+
         self.robot.move(action)
         self._consume_energy(action, terrain)
 
-        observation = self._get_obs()
-        reward = self._get_reward()
-        terminated = self._get_terminates()
-        truncated = self._get_truncates()
+        # Get current info
         info = self._get_info()
 
+        distance_var = info["distance"] - prev_info["distance"]
+        angle_var = info["angle_to_target"] - prev_info["angle_to_target"]
+        energy_var = info["energy"] - prev_info["distance"]
+        health_var = info["health"] - prev_info["health"]
+
+        # Get observation, rewar
+        observation = self._get_obs()
+        reward = self._get_reward(
+            distance_var=distance_var, angle_var=angle_var, energy_var=energy_var, health_var=health_var
+        )
+        terminated = self._get_terminates()
+        truncated = self._get_truncates()
+
         # Update visualization
-        distance_to_target = np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1)
+        # distance_to_target = np.linalg.norm(np.asarray(self.robot.get_position()) - self._target_zone_center, ord=1)
         if self.visualization:
-            self.visualization.update(reward, distance_to_target, np.int64(action), self.visualization.random_flag)
+            self.visualization.update(reward, info["distance"], np.int64(action), self.visualization.random_flag)
 
         if self.render_mode == "human":
             self._render_frame(action)

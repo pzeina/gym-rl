@@ -101,14 +101,9 @@ def main() -> None:  # noqa: C901, PLR0915
         raise ValueError(error_msg)
 
     # Create vectorized environments
-    # def make_env(*, wrapper: bool = False) -> gym.Env:
     def make_env() -> gym.Env:
         """Create a new environment instance."""
         return gym.make("mili_env/TerrainWorld-v0", render_mode=__render_mode, visualization=__plot_grad)
-        # if wrapper:
-        #     # env = RewardNormalizeWrapper(env, scale_factor=0.01, clip_range=(-1.0, 1.0))
-        #     env = ReacherRewardWrapper(env, decay_factor=0.75, history_length=10)
-        #     wrappers.append(env)  # Store wrapper for later reference
 
     envs = AsyncVectorEnv([make_env for _ in range(__num_envs)])
     envs = NormalizeReward(envs)  # Built-in vectorized wrapper to Normalize the Rewards
