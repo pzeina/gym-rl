@@ -52,7 +52,7 @@ def main() -> None:  # noqa: C901, PLR0915
     config = AgentConfig(
         learning_rate=0.1,
         final_lr=0.005,
-        decay_lr=1 - 1e-7,
+        decay_lr=1 - 1e-6,
         initial_epsilon=0.5,
         final_epsilon=0.01,
         discount_factor=0.9,
@@ -63,7 +63,7 @@ def main() -> None:  # noqa: C901, PLR0915
         decay_epsilon=0.999,  # Add decay factor for exponential decay of epsi
         update_frequency=10,
         subsampling_fraction=0.5,
-        optimization_steps=3,
+        optimization_steps=1,
         likelihood_ratio_clipping=0.2,  # not used
         estimate_terminal=False,  # not used
         exploration=0.0,  # not used
