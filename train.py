@@ -151,6 +151,7 @@ def main() -> None:  # noqa: C901, PLR0915
         episode_logs = {
             "episode": episode,
             "episode_length": 0,
+            "episode_final_reward": 0.0,
             "episode_total_reward": 0.0,
             "episode_avg_reward": 0.0,
             "learning_rate": 0.0,
@@ -216,13 +217,20 @@ def main() -> None:  # noqa: C901, PLR0915
 
             # Check if any environments has terminated
             if any(terminated):
-                list_not_to_average = ["episode", "episode_length", "episode_total_reward", "episode_avg_reward"]
+                list_not_to_average = [
+                    "episode",
+                    "episode_length",
+                    "episode_final_reward",
+                    "episode_total_reward",
+                    "episode_avg_reward",
+                ]
                 for key in episode_logs:
                     if key not in list_not_to_average:
                         episode_logs[key] /= step_count
                 terminated_envs = np.where(terminated)[0]
                 for terminated_env in terminated_envs:
                     episode_logs["episode_length"] = episode_lengths_tmp[terminated_env]
+                    episode_logs["episode_final_reward"] = rewards[terminated_env]
                     episode_logs["episode_total_reward"] = episode_rewards_tmp[terminated_env]
                     episode_logs["episode_avg_reward"] = (
                         episode_rewards_tmp[terminated_env] / episode_lengths_tmp[terminated_env]
@@ -252,7 +260,6 @@ def main() -> None:  # noqa: C901, PLR0915
             agent.save_periodic_checkpoint(episode, str(checkpoint_dir))
             print(f"Checkpoint saved at episode {episode + 1}")  # noqa: T201
         elif (episode + 1) % __model_save_interval == 0:  # Save models every N episodes (existing behavior)
-            utils.save_periodic_model(agent, episode, model_path)
             # Also save a silent checkpoint for quick recovery
             agent.save_checkpoint_silent(str(checkpoint_dir / "latest_quick_checkpoint.pth"))
 
