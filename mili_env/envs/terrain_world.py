@@ -7,7 +7,6 @@ import gymnasium as gym
 import numpy as np
 import pyglet
 from gymnasium import spaces
-from pyglet.window import key
 
 from mili_env.envs.classes.robot_base import Actions, RobotAttributes, RobotBase, RobotConstraints, RobotPosition
 from mili_env.envs.classes.terrain import GameMap, Terrain
@@ -390,19 +389,3 @@ class TerrainWorldEnv(gym.Env):
                 y=self.window_height - (80 + i * 30),
                 color=(255, 255, 255, 255), batch=batch
             )
-
-    def handle_keys(self, symbol: int) -> tuple:
-        """Handle pyglet key events."""
-        match symbol:
-            case key.UP:
-                return self.step(Actions.FORWARD.value)
-            case key.DOWN:
-                return self.step(Actions.BACKWARD.value)
-            case key.LEFT:
-                return self.step(Actions.ROTATE_LEFT.value)
-            case key.RIGHT:
-                return self.step(Actions.ROTATE_RIGHT.value)
-            case key.SPACE:
-                return self.step(Actions.IDLE.value)
-        msg = f"Unhandled key: {symbol}"
-        raise ValueError(msg)
