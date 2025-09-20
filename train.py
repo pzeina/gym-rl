@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
+import torch
 from gymnasium.spaces import Dict as gym_Dict
 from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common import logger as sb3_logger
@@ -40,12 +41,13 @@ def make_env(env_id: str = "mili_env/TerrainWorld-v0", seed: int = 0) -> Callabl
     return _init
 
 
-def create_algorithm(
+def create_algorithm( # noqa: PLR0913
     algorithm: str,
     env: VecNormalize,
     policy: str,
     tensorboard_log: str,
     hyperparams: dict[str, Any] | None = None,
+    device: str = "auto",
 ) -> PPO | DQN | A2C | SAC | TD3 | DDPG:
     """Create RL algorithm instance based on the specified algorithm type."""
     if hyperparams is None:
@@ -56,6 +58,7 @@ def create_algorithm(
         "policy": policy,
         "env": env,
         "tensorboard_log": tensorboard_log,
+        "device": device,
         "verbose": 1,
     }
 
@@ -80,7 +83,7 @@ def create_algorithm(
     return algorithm_class(**final_args)
 
 
-def main() -> None:
+def main() -> None: # noqa: PLR0915
     """Train a RL agent following SB3 RL tips and best practices.
 
     Implements key recommendations from:
@@ -143,6 +146,21 @@ def main() -> None:
     tb_log = str(model_dir / "tb")
     logger.info("TensorBoard logging enabled; writing logs to %s", tb_log)
 
+    # Device selection and availability check
+    if args.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        logger.info("Auto-selected device: %s", device)
+    else:
+        device = args.device
+        if device.startswith("cuda") and not torch.cuda.is_available():
+            logger.warning("CUDA requested but not available, falling back to CPU")
+            device = "cpu"
+
+    logger.info("Using device: %s", device)
+    if device.startswith("cuda"):
+        logger.info("CUDA device name: %s", torch.cuda.get_device_name())
+        logger.info("CUDA memory available: %.2f GB", torch.cuda.get_device_properties(0).total_memory / 1e9)
+
     # Hyperparameter optimization or default training
     if args.tune_hyperparams:
         logger.info("Starting hyperparameter optimization for %s", args.algorithm)
@@ -157,6 +175,7 @@ def main() -> None:
             policy=policy,
             tb_log=tb_log,
             algorithm_factory_func=create_algorithm,
+            device=device,
         )
 
         best_hyperparams = tune_hyperparameters(
@@ -178,6 +197,7 @@ def main() -> None:
         policy=policy,
         tensorboard_log=tb_log,
         hyperparams=hyperparams,
+        device=device,
     )
 
     logger.info("Created %s model with policy: %s", args.algorithm.upper(), policy)

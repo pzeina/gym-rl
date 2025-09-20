@@ -79,6 +79,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Name for the Optuna study (default: algorithm_timestamp)."
     )
+    
+    parser.add_argument(
+        "--device",
+        type=str,
+        default="auto",
+        choices=["auto", "cpu", "cuda", "cuda:0", "cuda:1"],
+        help="Device to use for training (auto, cpu, cuda, cuda:0, etc.)."
+    )
 
     parser.add_argument(
         "--parallel",

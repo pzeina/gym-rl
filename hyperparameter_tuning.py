@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import optuna
 import torch
@@ -17,6 +17,8 @@ from optuna.samplers import TPESampler
 from stable_baselines3.common.callbacks import EvalCallback
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from stable_baselines3.common.vec_env import VecNormalize
 
 logger = logging.getLogger(__name__)
@@ -194,6 +196,7 @@ class OptimizationConfig:
         policy: str,
         tb_log: str,
         algorithm_factory_func: Callable[..., Any],
+        device: str = "auto",
     ) -> None:
         """Initialize optimization configuration.
 
@@ -204,6 +207,7 @@ class OptimizationConfig:
             policy: Policy type ('MlpPolicy' or 'MultiInputPolicy')
             tb_log: TensorBoard log directory
             algorithm_factory_func: Function to create algorithm instances
+            device: Device to use for training (auto, cpu, cuda)
         """
         self.algorithm = algorithm
         self.env = env
@@ -211,6 +215,7 @@ class OptimizationConfig:
         self.policy = policy
         self.tb_log = tb_log
         self.algorithm_factory_func = algorithm_factory_func
+        self.device = device
 
 
 def _objective(trial: optuna.Trial, config: OptimizationConfig) -> float:
@@ -225,6 +230,7 @@ def _objective(trial: optuna.Trial, config: OptimizationConfig) -> float:
             policy=config.policy,
             tensorboard_log=config.tb_log,
             hyperparams=hyperparams,
+            device=config.device,
         )
 
         # Evaluation callback to get intermediate values for pruning
