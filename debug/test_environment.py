@@ -28,7 +28,7 @@ def test_environment_creation() -> bool:
 
     try:
         # Import the make_env function from train.py
-        from train import make_env  # noqa: PLC0415
+        from train import make_env
         logger.info("✓ make_env function imported successfully")
 
         # Create environment factory
@@ -71,8 +71,8 @@ def test_monitor_wrapper() -> bool:
     logger.info("🔍 Testing Monitor Wrapper...")
 
     try:
-        import gymnasium as gym  # noqa: PLC0415
-        from stable_baselines3.common.monitor import Monitor  # noqa: PLC0415
+        import gymnasium as gym
+        from stable_baselines3.common.monitor import Monitor
 
         # Test that Monitor wrapper works with our environment
         env = gym.make("mili_env/TerrainWorld-v0", render_mode=None)

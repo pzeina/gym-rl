@@ -4,12 +4,11 @@ import logging
 import time
 from multiprocessing import freeze_support
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
-import torch
 from gymnasium.spaces import Dict as gym_Dict
-from stable_baselines3 import PPO
+from stable_baselines3 import A2C, DDPG, DQN, PPO, SAC, TD3
 from stable_baselines3.common import logger as sb3_logger
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 from stable_baselines3.common.env_util import make_vec_env
@@ -18,6 +17,10 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 
 import mili_env  # ensure the package is imported so Gymnasium sees registered envs  # noqa: F401
 import utils
+from hyperparameter_tuning import OptimizationConfig, get_default_hyperparams, tune_hyperparameters
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -37,23 +40,64 @@ def make_env(env_id: str = "mili_env/TerrainWorld-v0", seed: int = 0) -> Callabl
     return _init
 
 
+def create_algorithm(
+    algorithm: str,
+    env: VecNormalize,
+    policy: str,
+    tensorboard_log: str,
+    hyperparams: dict[str, Any] | None = None,
+) -> PPO | DQN | A2C | SAC | TD3 | DDPG:
+    """Create RL algorithm instance based on the specified algorithm type."""
+    if hyperparams is None:
+        hyperparams = get_default_hyperparams(algorithm)
+
+    # Common arguments for all algorithms
+    common_args = {
+        "policy": policy,
+        "env": env,
+        "tensorboard_log": tensorboard_log,
+        "verbose": 1,
+    }
+
+    algorithm_classes = {
+        "ppo": PPO,
+        "dqn": DQN,
+        "a2c": A2C,
+        "sac": SAC,
+        "td3": TD3,
+        "ddpg": DDPG,
+    }
+
+    if algorithm not in algorithm_classes:
+        msg = f"Unsupported algorithm: {algorithm}"
+        raise ValueError(msg)
+
+    algorithm_class = algorithm_classes[algorithm]
+
+    # Merge common args with hyperparams
+    final_args = {**common_args, **hyperparams}
+
+    return algorithm_class(**final_args)
+
+
 def main() -> None:
-    """Train a PPO agent following SB3 RL tips and best practices.
+    """Train a RL agent following SB3 RL tips and best practices.
 
     Implements key recommendations from:
     https://stable-baselines3.readthedocs.io/en/master/guide/rl_tips.html
 
     - Proper environment normalization with VecNormalize
-    - Tuned hyperparameters for PPO
+    - Tuned hyperparameters for different algorithms
     - Parallel environments for better sample efficiency
     - Proper evaluation setup
+    - Optional automatic hyperparameter tuning with Optuna
     """
     args = utils.parse_args()
 
     timestamp = int(time.time())
     model_dir = Path(__file__).resolve().parent / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / f"ppo_mili_{timestamp}.zip"
+    model_path = model_dir / f"{args.algorithm}_mili_{timestamp}.zip"
 
     # Configure SB3 logger
     sb3_logger.configure(str(model_dir / "logs"))
@@ -99,48 +143,50 @@ def main() -> None:
     tb_log = str(model_dir / "tb")
     logger.info("TensorBoard logging enabled; writing logs to %s", tb_log)
 
-    # PPO with tuned hyperparameters following SB3 recommendations
-    # Custom policy kwargs for better network architecture
-    policy_kwargs = {
-        "net_arch": {"pi": [256, 256], "vf": [256, 256]},  # Separate networks for policy and value
-        "activation_fn": torch.nn.Tanh,  # Tanh activation often works better than ReLU for continuous control
-    }
+    # Hyperparameter optimization or default training
+    if args.tune_hyperparams:
+        logger.info("Starting hyperparameter optimization for %s", args.algorithm)
 
-    model = PPO(
-        policy=policy,
+        study_name = args.study_name or f"{args.algorithm}_{timestamp}"
+
+        # Create optimization configuration
+        config = OptimizationConfig(
+            algorithm=args.algorithm,
+            env=env,
+            eval_env=eval_env,
+            policy=policy,
+            tb_log=tb_log,
+            algorithm_factory_func=create_algorithm,
+        )
+
+        best_hyperparams = tune_hyperparameters(
+            config=config,
+            n_trials=args.n_trials,
+            study_name=study_name,
+        )
+
+        logger.info("Using optimized hyperparameters for final training")
+        hyperparams = best_hyperparams
+    else:
+        logger.info("Using default hyperparameters for %s", args.algorithm)
+        hyperparams = get_default_hyperparams(args.algorithm)
+
+    # Create the RL algorithm
+    model = create_algorithm(
+        algorithm=args.algorithm,
         env=env,
-        # Learning rate with linear schedule (common best practice)
-        learning_rate=3e-4,
-        # Number of steps to run for each environment per update
-        n_steps=2048,  # Good default for most tasks
-        # Minibatch size for SGD
-        batch_size=64,  # Should be factor of n_steps * n_envs
-        # Number of epochs when optimizing the surrogate loss
-        n_epochs=10,
-        # Clipping parameter for PPO
-        clip_range=0.2,
-        # GAE lambda parameter
-        gae_lambda=0.95,
-        # Value function coefficient for the loss calculation
-        vf_coef=0.5,
-        # Entropy coefficient for the loss calculation
-        ent_coef=0.0,
-        # Maximum value for the gradient clipping
-        max_grad_norm=0.5,
-        # Whether to use generalized advantage estimation (GAE)
-        use_sde=False,
-        # Custom network architecture
-        policy_kwargs=policy_kwargs,
-        # Log to tensorboard
+        policy=policy,
         tensorboard_log=tb_log,
-        verbose=1,
+        hyperparams=hyperparams,
     )
+
+    logger.info("Created %s model with policy: %s", args.algorithm.upper(), policy)
 
     # Callbacks following SB3 best practices
     checkpoint_cb = CheckpointCallback(
         save_freq=max(10000, n_envs * 1000),  # Save every 10k steps or 1k episodes
         save_path=str(model_dir),
-        name_prefix="ppo_checkpoint"
+        name_prefix=f"{args.algorithm}_checkpoint"
     )
 
     eval_cb = EvalCallback(
@@ -157,7 +203,8 @@ def main() -> None:
     total_timesteps = 1_000_000  # 1M timesteps is often good for many tasks
 
     logger.info("Starting training for %d timesteps with %d environments", total_timesteps, n_envs)
-    logger.info("PPO hyperparameters: lr=3e-4, n_steps=%d, batch_size=%d", 2048, 64)
+    logger.info("%s hyperparameters: %s", args.algorithm.upper(),
+                {k: v for k, v in hyperparams.items() if k != "policy_kwargs"})
 
     try:
         model.learn(

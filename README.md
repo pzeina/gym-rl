@@ -6,14 +6,28 @@ A Gymnasium 2D-environment for agents trained with Reinforcement Learning
 [![static analysis workflow](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/static-analysis.yaml/)
 [![test workflow](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/badge.svg)](https://github.com/BioDisCo/python-template/actions/workflows/test.yaml/)
 
+
 # Usage
 
+## Preliminary Check
+
+To verify that your environment is correctly set up, run the following command from the root of the repository:
 ```bash
-python debug/test_imports.py && echo "✅ Ready to train!"
+for f in debug/*.py; do  python $f || exit 1; done && python debug/test_imports.py && echo "✅ Ready to train!"
 ```
 
-ssh -L 16006:127.0.0.1:6006 olivier@my_server_ip
+## Via SSH Tunneling
+If you are running the training on a remote server and want to visualize the training process using TensorBoard, you can set up SSH port forwarding upon connecting to the server:
+```bash
+ssh -L 16006:127.0.0.1:6006 ai
+```
 
+Then, start TensorBoard on the remote server:
+```bash
+tensorboard --logdir models/tb --bind_all
+```
+
+## Running the Training Script
 
 Prepare the environment:
 ```shell

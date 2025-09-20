@@ -66,7 +66,7 @@ def test_old_vs_new_network_format() -> bool:
 
     except RuntimeError:
         logger.exception("✗ Network architecture test failed")
-        import traceback  # noqa: PLC0415
+        import traceback
         traceback.print_exc()
         return False
     else:
@@ -233,7 +233,7 @@ def test_train_py_configuration() -> bool:
 
     except RuntimeError:
         logger.exception("✗ train.py configuration test failed")
-        import traceback  # noqa: PLC0415
+        import traceback
         traceback.print_exc()
         return False
     else:

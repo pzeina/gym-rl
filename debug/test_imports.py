@@ -23,16 +23,16 @@ def test_basic_imports() -> bool:
     logger.info("🔍 Testing Basic Imports...")
 
     try:
-        import time  # noqa: PLC0415, F401
+        import time  # noqa: F401
         logger.info("✓ time")
 
-        import logging  # noqa: PLC0415, F401
+        import logging  # noqa: F401
         logger.info("✓ logging")
 
-        import warnings  # noqa: PLC0415, F401
+        import warnings  # noqa: F401
         logger.info("✓ warnings")
 
-        from pathlib import Path  # noqa: PLC0415, F401
+        from pathlib import Path  # noqa: F401
         logger.info("✓ pathlib.Path")
 
     except ImportError:
@@ -47,21 +47,21 @@ def test_stable_baselines3_imports() -> bool:
     logger.info("\n🔍 Testing Stable-Baselines3 Imports...")
 
     try:
-        from stable_baselines3 import PPO  # noqa: PLC0415, F401
+        from stable_baselines3 import PPO  # noqa: F401
         logger.info("✓ stable_baselines3.PPO")
 
-        from stable_baselines3.common.env_util import make_vec_env  # noqa: PLC0415, F401
+        from stable_baselines3.common.env_util import make_vec_env  # noqa: F401
         logger.info("✓ stable_baselines3.common.env_util.make_vec_env")
 
-        from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize  # noqa: PLC0415, F401
+        from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize  # noqa: F401
         logger.info("✓ stable_baselines3.common.vec_env.DummyVecEnv")
         logger.info("✓ stable_baselines3.common.vec_env.SubprocVecEnv")
         logger.info("✓ stable_baselines3.common.vec_env.VecNormalize")
 
-        from stable_baselines3.common.monitor import Monitor  # noqa: PLC0415, F401
+        from stable_baselines3.common.monitor import Monitor  # noqa: F401
         logger.info("✓ stable_baselines3.common.monitor.Monitor")
 
-        from stable_baselines3.common.callbacks import EvalCallback  # noqa: PLC0415, F401
+        from stable_baselines3.common.callbacks import EvalCallback  # noqa:F401
         logger.info("✓ stable_baselines3.common.callbacks.EvalCallback")
 
     except ImportError:
@@ -76,10 +76,10 @@ def test_torch_imports() -> bool:
     logger.info("\n🔍 Testing PyTorch Imports...")
 
     try:
-        import torch  # noqa: PLC0415
+        import torch
         logger.info("✓ torch (version: %s)", torch.__version__)
 
-        import torch.nn  # noqa: PLC0415
+        import torch.nn
         logger.info("✓ torch.nn")
 
         # Test specific activation functions used in train.py
@@ -98,7 +98,7 @@ def test_gymnasium_imports() -> bool:
     logger.info("\n🔍 Testing Gymnasium Imports...")
 
     try:
-        import gymnasium as gym  # noqa: PLC0415
+        import gymnasium as gym
         logger.info("✓ gymnasium (version: %s)", gym.__version__)
 
         # Test that we can create a basic environment
@@ -119,11 +119,11 @@ def test_custom_environment_imports() -> bool:
 
     try:
         # First, try to import the environment module to register it
-        import mili_env  # noqa: PLC0415, F401
+        import mili_env  # noqa: F401
         logger.info("✓ mili_env module imported")
 
         # Test custom environment registration
-        import gymnasium as gym  # noqa: PLC0415
+        import gymnasium as gym
         env = gym.make("mili_env/TerrainWorld-v0", render_mode=None)
         logger.info("✓ mili_env.TerrainWorld-v0 environment registered")
         env.close()
@@ -146,7 +146,7 @@ def test_train_py_imports() -> bool:
 
     try:
         # Import train module
-        import train  # noqa: PLC0415
+        import train
         logger.info("✓ train module imported")
 
         # Test specific functions
@@ -158,7 +158,7 @@ def test_train_py_imports() -> bool:
 
     except ImportError:
         logger.exception("✗ train.py import failed")
-        import traceback  # noqa: PLC0415
+        import traceback
         traceback.print_exc()
         return False
     else:
@@ -171,7 +171,7 @@ def test_utils_imports() -> bool:
     logger.info("🔍 Testing Utils Imports...")
 
     try:
-        import utils  # noqa: PLC0415
+        import utils
         logger.info("✓ utils module imported")
 
         # Test parse_args function
@@ -190,9 +190,9 @@ def test_version_compatibility() -> bool:
     logger.info("\n🔍 Testing Version Compatibility...")
 
     try:
-        import gymnasium  # noqa: PLC0415
-        import stable_baselines3  # noqa: PLC0415
-        import torch  # noqa: PLC0415
+        import gymnasium
+        import stable_baselines3
+        import torch
 
         logger.info("✓ stable-baselines3: %s", stable_baselines3.__version__)
         logger.info("✓ torch: %s", torch.__version__)
@@ -219,7 +219,7 @@ def test_gpu_availability() -> bool:
     logger.info("\n🔍 Testing GPU Availability...")
 
     try:
-        import torch  # noqa: PLC0415
+        import torch
 
         if torch.cuda.is_available():
             logger.info("✓ CUDA available with %d device(s)", torch.cuda.device_count())

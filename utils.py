@@ -1,5 +1,4 @@
 import argparse
-import os
 from pathlib import Path
 
 
@@ -55,16 +54,39 @@ def write_log_entry(log_file_path: Path, metrics: dict) -> None:
 
 def parse_args() -> argparse.Namespace:
     """Parse command-line arguments for training."""
-    parser = argparse.ArgumentParser(description="Train a Q-learning agent.")
-    parser.add_argument("--track-grad", type=str, default="true", help="Enable gradient and loss tracking.")
-    parser.add_argument("--plot-grad", type=str, default="false", help="Enable gradient and loss tracking.")
-    parser.add_argument("--render-mode", type=str, default="rgb_array", help="Enable map visualization.")
-    parser.add_argument("--parallel", type=int, default=os.cpu_count(), help="Number of parallel SyncVectorEnv.")
-    parser.add_argument("--pretrained-model", type=str, default=None, help="Path to pretrained model.")
+    parser = argparse.ArgumentParser(description="Train a reinforcement learning agent.")
     parser.add_argument(
-        "--resume-checkpoint", type=str, default=None, help="Path to checkpoint file to resume training from."
+        "--algorithm",
+        type=str,
+        default="ppo",
+        choices=["ppo", "dqn", "a2c", "sac", "td3", "ddpg"],
+        help="RL algorithm to use for training."
     )
-    parser.add_argument("--checkpoint-interval", type=int, default=100, help="Save checkpoint every N episodes.")
-    parser.add_argument("--model-save-interval", type=int, default=10, help="Save model every N episodes.")
+    parser.add_argument(
+        "--tune-hyperparams",
+        action="store_true",
+        help="Enable automatic hyperparameter tuning using Optuna."
+    )
+    parser.add_argument(
+        "--n-trials",
+        type=int,
+        default=100,
+        help="Number of hyperparameter optimization trials (only used with --tune-hyperparams)."
+    )
+    parser.add_argument(
+        "--study-name",
+        type=str,
+        default=None,
+        help="Name for the Optuna study (default: algorithm_timestamp)."
+    )
+
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        default=8,
+        help="Number of parallel environments to use for training."
+    )
+
+    parser.add_argument("--render-mode", type=str, default="rgb_array", help="Enable map visualization.")
 
     return parser.parse_args()  # print(f"Number of CPUs: {N_ENVS}")
