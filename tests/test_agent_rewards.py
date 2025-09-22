@@ -20,7 +20,7 @@ class TestAgentRewards(unittest.TestCase):
         """Test that environment returns proper reward structure."""
         # Execute a step to get rewards
         action_dict = {f"agent_{i}": Actions.IDLE.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, terminated, truncated, info = self.env.step(action_dict)
 
         # TerrainWorldEnv returns scalar reward, not per-agent dict
         assert isinstance(rewards, float)
@@ -34,10 +34,10 @@ class TestAgentRewards(unittest.TestCase):
         """Test centralized reward calculation."""
         # Get initial rewards
         action_dict = {f"agent_{i}": Actions.IDLE.value for i in range(self.env.num_agents)}
-        obs, rewards1, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards1, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Execute another step
-        obs, rewards2, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards2, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Rewards should be scalar values
         assert isinstance(rewards1, float)
@@ -71,7 +71,7 @@ class TestAgentRewards(unittest.TestCase):
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
 
         # Execute energy-consuming actions
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Should receive scalar reward
         assert isinstance(rewards, float)
@@ -89,7 +89,7 @@ class TestAgentRewards(unittest.TestCase):
 
         # Execute actions and check rewards
         action_dict = {f"agent_{i}": Actions.IDLE.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Should receive scalar reward
         assert isinstance(rewards, float)
@@ -104,7 +104,7 @@ class TestAgentRewards(unittest.TestCase):
 
         # Execute cooperative actions
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Should receive scalar reward
         assert isinstance(rewards, float)
@@ -118,7 +118,7 @@ class TestAgentRewards(unittest.TestCase):
         action_dict = {f"agent_{i}": Actions.IDLE.value for i in range(self.env.num_agents)}
 
         for _ in range(5):
-            obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+            _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
             rewards_history.append(rewards)  # rewards is now a scalar
 
         # Should have collected multiple reward sets
@@ -136,7 +136,7 @@ class TestAgentRewards(unittest.TestCase):
         """Test individual vs team reward components."""
         # Execute step to get rewards
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # TerrainWorldEnv returns scalar rewards, not per-agent
         assert isinstance(rewards, float)
@@ -159,7 +159,7 @@ class TestAgentRewards(unittest.TestCase):
 
             # Execute action
             action_dict = {f"agent_{i}": action.value for i in range(self.env.num_agents)}
-            obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+            _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
             action_rewards[action.name] = rewards  # rewards is now scalar
 
@@ -182,7 +182,7 @@ class TestAgentRewards(unittest.TestCase):
         for i in range(1, self.env.num_agents):
             action_dict[f"agent_{i}"] = Actions.IDLE.value
 
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Should receive scalar reward
         assert isinstance(rewards, float)
@@ -198,7 +198,7 @@ class TestAgentRewards(unittest.TestCase):
 
         # Execute actions
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # TerrainWorldEnv returns scalar reward
         assert isinstance(rewards, float)
@@ -211,7 +211,7 @@ class TestAgentRewards(unittest.TestCase):
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
 
         for _ in range(10):
-            obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+            _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
             all_rewards.append(rewards)  # rewards is now scalar
 
         # Rewards should be finite numbers
@@ -228,7 +228,7 @@ class TestAgentRewards(unittest.TestCase):
         action_dict = {f"agent_{i}": Actions.FORWARD.value for i in range(self.env.num_agents)}
 
         for _ in range(max_steps):
-            obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+            _obs, rewards, terminated, truncated, _info = self.env.step(action_dict)
 
             # Check reward structure - should be scalar
             assert isinstance(rewards, float)
@@ -252,7 +252,7 @@ class TestAgentRewards(unittest.TestCase):
 
         # Execute actions
         action_dict = {f"agent_{i}": Actions.IDLE.value for i in range(self.env.num_agents)}
-        obs, rewards, terminated, truncated, info = self.env.step(action_dict)
+        _obs, rewards, _terminated, _truncated, _info = self.env.step(action_dict)
 
         # Should receive scalar reward
         assert isinstance(rewards, float)

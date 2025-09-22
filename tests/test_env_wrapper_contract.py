@@ -16,7 +16,7 @@ class TestEnvWrapperContract(unittest.TestCase):
 
     def test_env_returns_scalar_and_global_flags(self):
         env = TerrainWorldEnv(num_agents=3, render_mode=None)
-        obs, info = env.reset()
+        _obs, _info = env.reset()
         # Single-step with idle actions
         actions = {f"agent_{i}": 0 for i in range(env.num_agents)}
         observation, reward, terminated, truncated, step_info = env.step(actions)
@@ -35,7 +35,7 @@ class TestEnvWrapperContract(unittest.TestCase):
     def test_wrapper_expands_scalar_to_per_agent(self):
         wrapper = TerrainWorldRLlibWrapper({"env_config": {"num_agents": 3, "render_mode": None}})
         # Reset wrapper (which calls the low-level env.reset internally)
-        obs, info = wrapper.reset()
+        _obs, _info = wrapper.reset()
 
         actions = {f"agent_{i}": 0 for i in range(wrapper.num_agents)}
         obs_step, rewards, terminated, truncated, step_info = wrapper.step(actions)

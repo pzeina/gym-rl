@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
+import gymnasium as gym
+import numpy as np
 import ray
 import torch
 from ray import tune
@@ -40,15 +42,12 @@ class TerrainWorldRLlibWrapper(MultiAgentEnv):
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
         """Initialize the wrapper with the underlying environment."""
-        import gymnasium as gym
-        import numpy as np
-
         # IMPORTANT: Ensure Gymnasium sees custom env registrations inside each Ray worker.
         # In remote actors, top-level imports of this module may not execute before class
         # construction (cloudpickle can deserialize classes without re-importing the module).
         # Explicitly import the package here so its gym.register() calls run in this process.
         try:
-            import mili_env as _  # noqa: F401
+            import mili_env as _  # noqa: F401, PLC0415
         except (ImportError, ModuleNotFoundError) as e:  # pragma: no cover - best-effort safety
             # Proceed; gym.make below will raise if registration is still missing.
             logger.warning("Failed to import mili_env in worker: %s", e)
@@ -90,7 +89,7 @@ class TerrainWorldRLlibWrapper(MultiAgentEnv):
         )
 
         # Expose mapping-style spaces expected by RLlib's vector multi-agent wrappers
-        self.observation_space = {aid: per_agent_box for aid in self.agent_ids}  # type: ignore[assignment]
+        self.observation_space = dict.fromkeys(self.agent_ids, per_agent_box)  # type: ignore[assignment]
         self.action_space = {aid: act_space.spaces[aid] for aid in self.agent_ids}  # type: ignore[assignment]
 
         # Cache dimensions for normalization
@@ -104,8 +103,6 @@ class TerrainWorldRLlibWrapper(MultiAgentEnv):
 
     def _process_obs(self, obs: dict[str, dict[str, Any]]) -> dict[str, Any]:
         """Flatten per-agent Dict observations to 1D float32 arrays for DQN compatibility."""
-        import numpy as np
-
         flattened: dict[str, Any] = {}
         for aid, aobs in obs.items():
             # Extract observation components (skip agent_id for DQN compatibility)
@@ -344,20 +341,10 @@ def _create_ppo_config(
     config = config.callbacks(TrainingCallbacks)
     return config.debugging(log_level="INFO")
 
-
 def _create_dqn_config(
-    env_config: dict[str, Any],
-    multiagent_config: dict[str, Any],
-    hyperparams: dict[str, Any],
-    device: str,
+    env_config: dict, multiagent_config: dict, hyperparams: dict, device: str
 ) -> AlgorithmConfig:
     """Create DQN algorithm configuration."""
-    # Separate model config for new API stack
-    model_config = {
-        "fcnet_hiddens": [256, 256],
-        "fcnet_activation": "relu",
-    }
-
     config = DQNConfig()
     config = config.environment(
         env="terrain_world_rllib",
@@ -366,14 +353,43 @@ def _create_dqn_config(
     )
     config = config.multi_agent(**multiagent_config)
     config = config.framework("torch")
-    # Use new API stack with proper rl_module configuration
-    config = config.rl_module(model_config=model_config)
-    config = config.training(**hyperparams)
+    # Use old API stack for DQN to avoid replay buffer bugs
+    config = config.api_stack(
+        enable_rl_module_and_learner=False,
+        enable_env_runner_and_connector_v2=False,
+    )
+    # Configure rollouts (even old API stack uses new parameter names)
+    config = config.env_runners(
+        num_env_runners=2,
+        num_envs_per_env_runner=1,
+        rollout_fragment_length=4,
+        # Ensure local worker has an environment to infer spaces
+        create_env_on_local_worker=True,
+    )
+    # Extract training parameters that DQN's training() method accepts
+    training_params = {}
+    # Direct parameter mapping for DQN training() method
+    dqn_training_params = [
+        "lr", "train_batch_size", "target_network_update_freq",
+        "replay_buffer_config", "num_steps_sampled_before_learning_starts",
+        "epsilon", "tau", "num_atoms", "v_min", "v_max", "noisy",
+        "sigma0", "dueling", "hiddens", "double_q", "n_step",
+        "grad_clip", "adam_epsilon", "td_error_loss_fn", "training_intensity"
+    ]
+    for param in dqn_training_params:
+        if param in hyperparams:
+            training_params[param] = hyperparams[param]
+    # Apply training configuration
+    config = config.training(**training_params)
+    # Handle model configuration separately (not part of training() method)
+    if "model" in hyperparams:
+        config_dict = config.to_dict()
+        config_dict["model"] = hyperparams["model"]
+        config.update_from_dict(config_dict)
     config = config.env_runners(
         num_env_runners=2,
         num_envs_per_env_runner=1,
         num_cpus_per_env_runner=1,
-        # Ensure local worker has an environment to infer spaces
         create_env_on_local_worker=True,
     )
     config = config.resources(
@@ -381,7 +397,6 @@ def _create_dqn_config(
     )
     config = config.callbacks(TrainingCallbacks)
     return config.debugging(log_level="INFO")
-
 
 def _create_impala_config(
     env_config: dict[str, Any],
@@ -552,11 +567,19 @@ def run_training(args: object, config: AlgorithmConfig, model_dir: Path) -> None
     """Execute the main training loop."""
     algorithm = getattr(args, "algorithm", "PPO")
 
-    # Training configuration - use new API stack metric names
-    stop_criteria = {
-        "env_runners/num_env_steps_sampled_lifetime": getattr(args, "timesteps", 1_000_000),
-        "env_runners/num_episodes_lifetime": getattr(args, "episodes", 5_000),
-    }
+    # Training configuration - handle both old and new API stack metric names
+    if algorithm.lower() == "dqn":
+        # DQN uses old API stack, so use old metric names
+        stop_criteria = {
+            "timesteps_total": getattr(args, "timesteps", 1_000_000),
+            "episodes_total": getattr(args, "episodes", 5_000),
+        }
+    else:
+        # Other algorithms use new API stack metric names
+        stop_criteria = {
+            "env_runners/num_env_steps_sampled_lifetime": getattr(args, "timesteps", 1_000_000),
+            "env_runners/num_episodes_lifetime": getattr(args, "episodes", 5_000),
+        }
 
     # Checkpoint configuration - enable checkpoints for shorter runs
     timesteps = getattr(args, "timesteps", 1000)
@@ -566,6 +589,16 @@ def run_training(args: object, config: AlgorithmConfig, model_dir: Path) -> None
     )
 
     logger.info("Starting training with stop criteria: %s", stop_criteria)
+
+    # Handle metric names based on API stack
+    if algorithm.lower() == "dqn":
+        # DQN uses old API stack metrics
+        metric_columns = ["episode_reward_mean", "timesteps_total"]
+        best_metric = "episode_reward_mean"
+    else:
+        # Other algorithms use new API stack metrics
+        metric_columns = ["env_runners/episode_return_mean", "env_runners/num_env_steps_sampled_lifetime"]
+        best_metric = "env_runners/episode_return_mean"
 
     # Run training with Ray Tune
     results = tune.run(
@@ -577,15 +610,15 @@ def run_training(args: object, config: AlgorithmConfig, model_dir: Path) -> None
         storage_path=str(model_dir.parent),
         verbose=1,
         progress_reporter=tune.CLIReporter(
-            metric_columns=["env_runners/episode_return_mean", "env_runners/num_env_steps_sampled_lifetime"],
+            metric_columns=metric_columns,
             sort_by_metric=True,
         ),
         keep_checkpoints_num=5,  # Keep last 5 checkpoints
-        checkpoint_score_attr="env_runners/episode_return_mean",
+        checkpoint_score_attr=best_metric,
     )
 
     # Get the best trial
-    best_trial = results.get_best_trial("env_runners/episode_return_mean", "max")
+    best_trial = results.get_best_trial(best_metric, "max")
     if best_trial is None:
         logger.error("No trials completed successfully")
         return
@@ -632,7 +665,7 @@ def main() -> None:
 
     try:
         # Setup Ray and directories
-        timestamp, model_dir = setup_ray_and_directories(args)
+        _timestamp, model_dir = setup_ray_and_directories(args)
 
         # Register the environment
         register_env("terrain_world_rllib", TerrainWorldRLlibWrapper)

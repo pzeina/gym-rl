@@ -14,7 +14,7 @@ from ray.tune.registry import _global_registry
 # Import functions from train_rllib.py
 sys.path.append(str(Path(__file__).parent.parent))
 
-from ray_test_utils import setup_ray_for_test
+from tests.ray_test_utils import setup_ray_for_test
 from train_rllib import (
     TrainingCallbacks,
     create_algorithm_config,
