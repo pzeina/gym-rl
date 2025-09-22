@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Name for the Optuna study (default: algorithm_timestamp)."
     )
-    
+
     parser.add_argument(
         "--device",
         type=str,
@@ -96,5 +96,19 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument("--render-mode", type=str, default="rgb_array", help="Enable map visualization.")
+
+    # Training duration controls
+    parser.add_argument(
+        "--timesteps",
+        type=int,
+        default=1_000_000,
+        help="Total environment timesteps to train (Ray Tune stop criteria).",
+    )
+    parser.add_argument(
+        "--episodes",
+        type=int,
+        default=5_000,
+        help="Total episodes to train (Ray Tune stop criteria).",
+    )
 
     return parser.parse_args()  # print(f"Number of CPUs: {N_ENVS}")

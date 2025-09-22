@@ -13,6 +13,11 @@ from mili_env.envs.classes.terrain import EmptyTerrain, GameMap, ObstacleTerrain
 PI_OVER_4 = np.pi / 4
 EPSILON_ANGLE = 1e-3
 
+# Communication system constants
+CRITICAL_HEALTH_THRESHOLD = 30.0
+HELP_HEALTH_THRESHOLD = 50.0
+HELP_DISTANCE_MULTIPLIER = 2.0
+DEFAULT_ORDER_MAX_AGE = 30.0
 
 class Actions(Enum):
     """Enum class to define robot actions."""
@@ -27,6 +32,75 @@ class Actions(Enum):
     def count(cls) -> int:
         """Get the number of actions."""
         return len(cls.__members__)
+
+
+class MessageType(Enum):
+    """Enum class to define communication message types."""
+
+    STATUS_UPDATE = "status_update"      # Share current status (health, energy, ammo, position)
+    ALLY_SPOTTED = "ally_spotted"        # Report ally position
+    ENEMY_SPOTTED = "enemy_spotted"      # Report enemy position
+    ORDER_MOVE_TO = "order_move_to"      # Order to move to specific location
+    ORDER_FOLLOW = "order_follow"        # Order to follow specific agent
+    ORDER_ATTACK = "order_attack"        # Order to attack specific target
+    HELP_REQUEST = "help_request"        # Request assistance
+    FORMATION_KEEP = "formation_keep"    # Maintain formation command
+    RETREAT = "retreat"                  # Retreat order
+    REGROUP = "regroup"                  # Regroup at specific location
+
+
+class AgentRole(Enum):
+    """Enum class to define agent roles for command hierarchy."""
+
+    COMMANDER = "commander"    # Can give orders to all agents
+    LIEUTENANT = "lieutenant"  # Can give orders to subordinates
+    SOLDIER = "soldier"        # Follows orders from superiors
+    SCOUT = "scout"           # Specialized in reconnaissance
+    MEDIC = "medic"           # Specialized in support
+
+
+@dataclass
+class CommunicationMessage:
+    """Data class for communication messages between agents."""
+
+    sender_id: int                    # ID of the sending agent
+    receiver_id: int | None           # ID of receiving agent (None for broadcast)
+    message_type: MessageType         # Type of message
+    timestamp: float                  # When message was sent
+    content: dict                     # Message content
+    priority: int = 1                 # Message priority (1-5, 5 highest)
+
+    def __post_init__(self) -> None:
+        """Validate message content based on type."""
+        if self.message_type == MessageType.STATUS_UPDATE:
+            required_keys = {"position", "health", "energy", "ammunition"}
+            if not required_keys.issubset(self.content.keys()):
+                msg = f"STATUS_UPDATE requires keys: {required_keys}"
+                raise ValueError(msg)
+        elif self.message_type in [MessageType.ALLY_SPOTTED, MessageType.ENEMY_SPOTTED]:
+            required_keys = {"position", "agent_id"}
+            if not required_keys.issubset(self.content.keys()):
+                msg = f"{self.message_type.value} requires keys: {required_keys}"
+                raise ValueError(msg)
+        elif self.message_type == MessageType.ORDER_MOVE_TO:
+            required_keys = {"target_position"}
+            if not required_keys.issubset(self.content.keys()):
+                msg = f"ORDER_MOVE_TO requires keys: {required_keys}"
+                raise ValueError(msg)
+
+
+@dataclass
+class AgentState:
+    """Data class to represent the known state of an agent."""
+
+    agent_id: int
+    position: tuple[float, float]
+    health: float
+    energy: float
+    ammunition: float
+    last_seen: float
+    role: AgentRole = AgentRole.SOLDIER
+    is_ally: bool = True
 
 
 @dataclass
@@ -197,12 +271,14 @@ class RobotBase:
 
     CUT_RAY_THRESHOLD: float = 1.8
 
-    def __init__(
+    def __init__( # noqa: PLR0913
         self,
         position: RobotPosition,
         attributes: RobotAttributes,
         game_map: GameMap,
         constraints: RobotConstraints,
+        agent_id: int = 0,
+        role: AgentRole = AgentRole.SOLDIER,
     ) -> None:
         """Initialize the robot with its position and attributes."""
         self.state: RobotState = RobotState(position, attributes)
@@ -221,6 +297,16 @@ class RobotBase:
         self.max_energy: float = constraints.max_energy
         self.max_ammunition: float = constraints.max_ammunition
         self.rays = self.compute_vision_rays()
+
+        # Communication system components
+        self.agent_id: int = agent_id
+        self.role: AgentRole = role
+        self.known_agents: dict[int, AgentState] = {}  # Known states of other agents
+        self.message_inbox: list[CommunicationMessage] = []  # Received messages
+        self.message_outbox: list[CommunicationMessage] = []  # Messages to send
+        self.current_orders: list[CommunicationMessage] = []  # Active orders
+        self.communication_history: list[CommunicationMessage] = []  # Message history
+        self.last_communication_time: float = 0.0
 
     def move(self, action: int | np.ndarray) -> float | np.ndarray:
         """Move the robot based on the chosen action."""
@@ -307,13 +393,34 @@ class RobotBase:
 
         return np.sqrt((self.state.target_x - self.state.x) ** 2 + (self.state.target_y - self.state.y) ** 2)
 
+    def set_position(self, position: tuple[float, float]) -> None:
+        """Set the robot's position."""
+        new_x, new_y = position
+        new_x = max(0, min(self.game_map.width - 1, new_x))
+        new_y = max(0, min(self.game_map.height - 1, new_y))
+        self.state.update_position(new_x, new_y, self.state.angle)
+        self.rays = self.compute_vision_rays()
+        self.update_vision_map()
+
+    def set_health(self, health: float) -> None:
+        """Set the robot's health."""
+        self.state.attributes.health = max(0, min(self.max_health, health))
+
     def get_health(self) -> float:
         """Get the robot's health."""
         return self.state.get_health()
 
+    def set_energy(self, energy: float) -> None:
+        """Set the robot's energy."""
+        self.state.attributes.energy = max(0, min(self.max_energy, energy))
+
     def get_energy(self) -> float:
         """Get the robot's energy."""
         return self.state.get_energy()
+
+    def set_ammunition(self, ammunition: float) -> None:
+        """Set the robot's ammunition."""
+        self.state.attributes.ammunition = max(0, min(self.max_ammunition, ammunition))
 
     def get_ammunition(self) -> float:
         """Get the robot's ammunition."""
@@ -425,6 +532,292 @@ class RobotBase:
         other_robot_x, other_robot_y = other_robot.get_position()
         distance = np.sqrt((x - other_robot_x) ** 2 + (y - other_robot_y) ** 2)
         return distance <= self.communication_range
+
+    # ==================== Communication System Methods ====================
+
+    def send_message(self, message: CommunicationMessage) -> None:
+        """Add a message to the outbox for transmission."""
+        message.sender_id = self.agent_id
+        message.timestamp = self.last_communication_time
+        self.message_outbox.append(message)
+        self.communication_history.append(message)
+
+    def receive_message(self, message: CommunicationMessage) -> None:
+        """Receive a message and add it to the inbox."""
+        if message.receiver_id is None or message.receiver_id == self.agent_id:
+            self.message_inbox.append(message)
+
+            # Process orders automatically
+            if message.message_type in [
+                MessageType.ORDER_MOVE_TO,
+                MessageType.ORDER_FOLLOW,
+                MessageType.ORDER_ATTACK,
+                MessageType.FORMATION_KEEP,
+                MessageType.RETREAT,
+                MessageType.REGROUP
+            ]:
+                self._process_order(message)
+
+    def _process_order(self, order: CommunicationMessage) -> None:
+        """Process received orders based on hierarchy and role."""
+        # Check if sender has authority to give orders
+        if self._can_give_orders(order.sender_id):
+            self.current_orders.append(order)
+            # Remove conflicting orders
+            self._remove_conflicting_orders(order)
+
+    def report_ennemy_spotted(self, enemy_id: int, enemy_position: tuple[float, float]) -> None:
+        """Report spotted enemy to team."""
+        enemy_message = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=None,  # Broadcast
+            message_type=MessageType.ENEMY_SPOTTED,
+            timestamp=self.last_communication_time,
+            content={
+                "agent_id": enemy_id,
+                "position": enemy_position,
+                "spotted_at": self.last_communication_time,
+                "threat_level": "unknown"
+            },
+            priority=5  # High priority
+        )
+        self.send_message(enemy_message)
+
+    def _can_give_orders(self, sender_id: int) -> bool:
+        """Check if the sender has authority to give orders to this agent."""
+        if sender_id in self.known_agents:
+            sender_role = self.known_agents[sender_id].role
+
+            # Command hierarchy
+            role_hierarchy = {
+                AgentRole.COMMANDER: 5,
+                AgentRole.LIEUTENANT: 4,
+                AgentRole.SCOUT: 3,
+                AgentRole.MEDIC: 3,
+                AgentRole.SOLDIER: 2
+            }
+
+            sender_rank = role_hierarchy.get(sender_role, 0)
+            my_rank = role_hierarchy.get(self.role, 0)
+
+            return sender_rank > my_rank
+        return False
+
+    def _remove_conflicting_orders(self, new_order: CommunicationMessage) -> None:
+        """Remove orders that conflict with the new order."""
+        conflicting_types = {
+            MessageType.ORDER_MOVE_TO: [MessageType.ORDER_FOLLOW, MessageType.FORMATION_KEEP],
+            MessageType.ORDER_FOLLOW: [MessageType.ORDER_MOVE_TO, MessageType.FORMATION_KEEP],
+            MessageType.FORMATION_KEEP: [MessageType.ORDER_MOVE_TO, MessageType.ORDER_FOLLOW],
+            MessageType.RETREAT: [MessageType.ORDER_ATTACK, MessageType.ORDER_MOVE_TO],
+        }
+
+        if new_order.message_type in conflicting_types:
+            conflicts = conflicting_types[new_order.message_type]
+            self.current_orders = [
+                order for order in self.current_orders
+                if order.message_type not in conflicts
+            ]
+
+    def broadcast_status(self) -> CommunicationMessage:
+        """Create a status update message to broadcast to allies."""
+        status_message = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=None,  # Broadcast
+            message_type=MessageType.STATUS_UPDATE,
+            timestamp=self.last_communication_time,
+            content={
+                "position": self.get_position(),
+                "health": self.get_health(),
+                "energy": self.get_energy(),
+                "ammunition": self.get_ammunition(),
+                "role": self.role.value,
+                "target": self.get_target()
+            },
+            priority=2
+        )
+        self.send_message(status_message)
+        return status_message
+
+    def report_ally_spotted(self, ally_id: int, ally_position: tuple[float, float]) -> CommunicationMessage:
+        """Report spotted ally to team."""
+        ally_message = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=None,  # Broadcast
+            message_type=MessageType.ALLY_SPOTTED,
+            timestamp=self.last_communication_time,
+            content={
+                "agent_id": ally_id,
+                "position": ally_position,
+                "spotted_at": self.last_communication_time
+            },
+            priority=3
+        )
+        self.send_message(ally_message)
+        return ally_message
+
+    def report_enemy_spotted(self, enemy_id: int, enemy_position: tuple[float, float]) -> CommunicationMessage:
+        """Report spotted enemy to team."""
+        enemy_message = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=None,  # Broadcast
+            message_type=MessageType.ENEMY_SPOTTED,
+            timestamp=self.last_communication_time,
+            content={
+                "agent_id": enemy_id,
+                "position": enemy_position,
+                "spotted_at": self.last_communication_time,
+                "threat_level": "unknown"
+            },
+            priority=5  # High priority
+        )
+        self.send_message(enemy_message)
+        return enemy_message
+
+    def give_move_order(self, target_agent_id: int, target_position: tuple[float, float]) -> CommunicationMessage:
+        """Give a move order to another agent."""
+        move_order = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=target_agent_id,
+            message_type=MessageType.ORDER_MOVE_TO,
+            timestamp=self.last_communication_time,
+            content={
+                "target_position": target_position,
+                "urgency": "normal"
+            },
+            priority=4
+        )
+        self.send_message(move_order)
+        return move_order
+
+    def give_follow_order(self, target_agent_id: int, follow_agent_id: int) -> CommunicationMessage:
+        """Give a follow order to another agent."""
+        follow_order = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=target_agent_id,
+            message_type=MessageType.ORDER_FOLLOW,
+            timestamp=self.last_communication_time,
+            content={
+                "follow_agent_id": follow_agent_id,
+                "follow_distance": 5.0
+            },
+            priority=4
+        )
+        self.send_message(follow_order)
+        return follow_order
+
+    def request_help(self, help_type: str = "general") -> CommunicationMessage:
+        """Request help from nearby allies."""
+        help_request = CommunicationMessage(
+            sender_id=self.agent_id,
+            receiver_id=None,  # Broadcast
+            message_type=MessageType.HELP_REQUEST,
+            timestamp=self.last_communication_time,
+            content={
+                "help_type": help_type,
+                "position": self.get_position(),
+                "health": self.get_health(),
+                "energy": self.get_energy(),
+                "urgency": "high" if self.get_health() < CRITICAL_HEALTH_THRESHOLD else "normal"
+            },
+            priority=5  # High priority
+        )
+        self.send_message(help_request)
+        return help_request
+
+    def update_known_agent(self, agent_state: AgentState) -> None:
+        """Update the known state of another agent."""
+        self.known_agents[agent_state.agent_id] = agent_state
+
+    def get_known_agents(self) -> dict[int, AgentState]:
+        """Get all known agent states."""
+        return self.known_agents.copy()
+
+    def get_current_orders(self) -> list[CommunicationMessage]:
+        """Get current active orders."""
+        return self.current_orders.copy()
+
+    def process_messages(self, current_time: float) -> None:
+        """Process all messages in the inbox."""
+        self.last_communication_time = current_time
+
+        # Sort messages by priority (higher number = higher priority)
+        self.message_inbox.sort(key=lambda msg: msg.priority, reverse=True)
+
+        for message in self.message_inbox:
+            self._handle_message(message)
+
+        # Clear processed messages
+        self.message_inbox.clear()
+
+    def _handle_message(self, message: CommunicationMessage) -> None:
+        """Handle a specific message based on its type."""
+        if message.message_type == MessageType.STATUS_UPDATE:
+            self._handle_status_update(message)
+        elif message.message_type in [MessageType.ALLY_SPOTTED, MessageType.ENEMY_SPOTTED]:
+            self._handle_spotted_report(message)
+        elif message.message_type == MessageType.HELP_REQUEST:
+            self._handle_help_request(message)
+        # Orders are handled in _process_order method
+
+    def _handle_status_update(self, message: CommunicationMessage) -> None:
+        """Handle status update messages."""
+        agent_state = AgentState(
+            agent_id=message.sender_id,
+            position=message.content["position"],
+            health=message.content["health"],
+            energy=message.content["energy"],
+            ammunition=message.content["ammunition"],
+            last_seen=message.timestamp,
+            role=AgentRole(message.content.get("role", "soldier")),
+            is_ally=True
+        )
+        self.update_known_agent(agent_state)
+
+    def _handle_spotted_report(self, message: CommunicationMessage) -> None:
+        """Handle ally/enemy spotted reports."""
+        spotted_agent = AgentState(
+            agent_id=message.content["agent_id"],
+            position=message.content["position"],
+            health=100.0,  # Unknown
+            energy=100.0,  # Unknown
+            ammunition=100.0,  # Unknown
+            last_seen=message.content["spotted_at"],
+            is_ally=(message.message_type == MessageType.ALLY_SPOTTED)
+        )
+        self.update_known_agent(spotted_agent)
+
+    def _handle_help_request(self, message: CommunicationMessage) -> None:
+        """Handle help requests from other agents."""
+        if message.content.get("urgency") == "high":
+            # Prioritize helping agents in critical condition
+            requester_pos = message.content["position"]
+            my_pos = self.get_position()
+            distance = np.sqrt((my_pos[0] - requester_pos[0])**2 + (my_pos[1] - requester_pos[1])**2)
+
+            # If close enough and have resources, consider helping
+            if (distance <= self.communication_range * HELP_DISTANCE_MULTIPLIER
+                and self.get_health() > HELP_HEALTH_THRESHOLD):
+                # Could implement automatic help response logic here
+                pass
+
+    def clear_old_orders(self, max_age: float = 30.0) -> None:
+        """Clear orders older than max_age seconds."""
+        current_time = self.last_communication_time
+        self.current_orders = [
+            order for order in self.current_orders
+            if current_time - order.timestamp <= max_age
+        ]
+
+    def get_communication_stats(self) -> dict:
+        """Get communication system statistics."""
+        return {
+            "messages_sent": len(self.communication_history),
+            "active_orders": len(self.current_orders),
+            "known_agents": len(self.known_agents),
+            "role": self.role.value,
+            "last_communication": self.last_communication_time
+        }
 
     def update_vision_map(self) -> None:
         """Update the vision map with the terrain in the robot's vision range (using rays)."""

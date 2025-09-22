@@ -105,4 +105,18 @@ pip install -e .
 
    4. Consider using a reward shaping function to incentivize the agent taking actions that lead it to less explored states. This stealthily guides the agent's exploration without directly forcing random actions.
 
-Exploration is key to deep reinforcement learning, so getting this right will help your agent reach its full potential. Good luck! 
+Exploration is key to deep reinforcement learning, so getting this right will help your agent reach its full potential. Good luck!
+
+
+## Environment / RLlib wrapper contract
+
+Note: To maintain compatibility with Gymnasium's passive environment checker the low-level `TerrainWorldEnv` now returns a Gymnasium-style `step()` 5-tuple:
+
+- `(obs, reward, terminated, truncated, info)` where `reward` is a scalar `float` and `terminated`/`truncated` are global booleans. Observations and `info` remain per-agent dictionaries keyed by agent id.
+
+The `TerrainWorldRLlibWrapper` converts that scalar/global return at the environment boundary into the per-agent dictionaries expected by RLlib (e.g. `{agent_id: reward}` and per-agent dones with the special `"__all__"` key). The wrapper is tolerant of older behavior where the low-level env returned per-agent dicts directly.
+
+Running the focused RLlib wrapper test (example):
+```bash
+pytest tests/test_rllib_wrapper.py::TestRLlibWrapper::test_cooperative_rewards -q
+```
