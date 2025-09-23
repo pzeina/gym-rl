@@ -1,16 +1,24 @@
 from __future__ import annotations
 
+import contextlib
+import inspect
+import json
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
-
-import numpy as np
-import pyglet
+from typing import TYPE_CHECKING, Any
 
 import gymnasium as gym
+import numpy as np
+import pyglet
 from gymnasium.spaces import Box, Dict, Discrete
+
 from mili_env.envs.classes.robot_base import Actions, RobotAttributes, RobotBase, RobotConstraints, RobotPosition
 from mili_env.envs.classes.terrain import GameMap, Terrain
 from mili_env.envs.timing_utils import timing_log, timing_start, timing_stop
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 # No global passive checker monkeypatching or warning filtering here. The
 # environment implements a multi-agent interface and returns dicts for
@@ -32,6 +40,8 @@ ACTION_ENERGY_COSTS = {
     Actions.ROTATE_RIGHT.value: 0.5,
 }
 
+
+logger = logging.getLogger(__name__)
 
 class TerrainWorldEnv(gym.Env):
     """Custom environment for the terrain world with multi-agent support."""
@@ -104,6 +114,26 @@ class TerrainWorldEnv(gym.Env):
         })
 
         self.render_mode = render_mode
+
+        # Reward function registry and runtime selection
+        # Reward function registry and runtime selection.
+        # Registry entries map: name -> (per_agent_fn, team_fn). Each may be None.
+        self.reward_registry: dict = {}
+        self.current_reward_name = "default"
+        self.reward_mode = "team"  # 'team', 'per_agent', or 'both'
+        self.reward_log_path: str | None = None
+
+        # Register the default reward function. The default per-agent function
+        # uses the environment's centralized reward computation (`_get_reward`) and
+        # returns the same scalar for each agent. Keeping this registration here
+        # preserves previous behavior while allowing users to register custom
+        # per-agent or team functions later.
+        try:
+            self.register_reward_function("default", per_agent_fn=self._get_reward, team_fn=None)
+        except KeyError:
+            # If registration fails for any reason, ensure there is at least a
+            # placeholder entry in the registry to avoid later KeyErrors.
+            self.reward_registry["default"] = (None, None)
 
         self.window = None
         self.clock = None
@@ -368,8 +398,170 @@ class TerrainWorldEnv(gym.Env):
 
         return info
 
+
+    # ----------------- Reward function registry and helpers -----------------
+    def register_reward_function(
+            self, name: str, *, per_agent_fn: Callable[[dict], dict] | None = None,
+            team_fn: Callable[[dict, dict], float] | None = None
+        ) -> None:
+        """Register a reward function pair under `name`.
+
+        Parameters
+        ----------
+        name:
+            Short identifier used to select the reward pair at runtime.
+        per_agent_fn:
+            Callable(prev_info) -> dict[str, float]. Should return a mapping
+            from agent keys (e.g. "agent_0") to numeric rewards for each agent.
+        team_fn:
+            Callable(prev_info, per_agent_rewards) -> float. Computes a scalar
+            team-level reward based on the previous info and the per-agent
+            rewards.
+
+        Either callable may be `None`. When a function is missing, the
+        environment will fall back to sensible defaults (see `_compute_rewards`).
+        """
+        self.reward_registry[name] = (per_agent_fn, team_fn)
+
+    def set_reward_function(self, name: str) -> None:
+        """Select an existing registered reward function by name."""
+        if name not in self.reward_registry:
+            msg = f"Reward function '{name}' is not registered"
+            raise KeyError(msg)
+        self.current_reward_name = name
+
+    def set_reward_mode(self, mode: str) -> None:
+        """Set reward mode: 'team', 'per_agent', or 'both'."""
+        if mode not in ("team", "per_agent", "both"):
+            msg = "mode must be one of 'team', 'per_agent', or 'both'"
+            raise ValueError(msg)
+        self.reward_mode = mode
+
+    def get_registered_reward_functions(self) -> list[str]:
+        """Get a list of registered reward function names."""
+        return list(self.reward_registry.keys())
+
+    def _compute_rewards(self, prev_info: dict) -> tuple[dict, float]:
+        """Compute per-agent and team rewards according to the currently selected functions.
+
+        Returns (per_agent_rewards, team_reward_scalar)
+        """
+        per_agent_fn, team_fn = self.reward_registry.get(self.current_reward_name, (None, None))
+
+        # Compute per-agent rewards (fallback to the default `_get_reward` which
+        # returns the centralized scalar duplicated for each agent).
+        per_agent_rewards = per_agent_fn(prev_info) if per_agent_fn is not None else self._get_reward(prev_info)
+
+        # Compute team reward (fallback to mean of per-agent rewards)
+        if team_fn is not None:
+            try:
+                team_reward = float(team_fn(prev_info, per_agent_rewards))
+            except (TypeError, ValueError, KeyError):
+                team_reward = float(next(iter(per_agent_rewards.values()), 0.0))
+        else:
+            # Default: mean of per-agent rewards
+            try:
+                vals = [float(v) for v in per_agent_rewards.values()]
+                team_reward = float(sum(vals) / len(vals)) if vals else 0.0
+            except (TypeError, ValueError, ZeroDivisionError):
+                team_reward = float(next(iter(per_agent_rewards.values()), 0.0))
+
+        return per_agent_rewards, team_reward
+
+    def _archive_reward_run(
+            self, *, log_path: str | None = None, seed: int | None = None, extra: dict | None = None
+        ) -> None:
+        """Append a short JSON line describing the reward selection and env config.
+
+        If `log_path` is given it will be used, otherwise `self.reward_log_path` or
+        default to `debug/reward_runs.jsonl`.
+        """
+        path = log_path or self.reward_log_path or (Path.cwd() / "debug" / "reward_runs.jsonl")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+        record = {
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
+            "reward_name": self.current_reward_name,
+            "reward_mode": self.reward_mode,
+            "num_agents": self.num_agents,
+            "target_zone_size": self.target_zone_size,
+        }
+        if seed is not None:
+            record["seed"] = seed
+        if extra:
+            record.update(extra)
+
+        logger = logging.getLogger(__name__)
+        try:
+            with Path(path).open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except OSError:
+            # Non-fatal: archiving should not break environment behavior
+            logger.exception("Failed to archive reward run")
+
+    def _archive_reward_function_details(
+            self, name: str, func: Callable | None = None, *, log_path: str | None = None
+        ) -> None:
+        """Archive reward function metadata: name, docstring and best-effort source.
+
+        Writes a JSON line to `debug/reward_functions.jsonl` (or `log_path` if given).
+        """
+        path = log_path or (Path.cwd() / "debug" / "reward_functions.jsonl")
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+
+        record = {
+            "timestamp": datetime.now(UTC).isoformat() + "Z",
+            "reward_name": name,
+        }
+
+        if func is not None:
+            try:
+                doc = inspect.getdoc(func) or ""
+                src = inspect.getsource(func)
+            except (OSError, TypeError):
+                doc = inspect.getdoc(func) or ""
+                src = None
+            record["docstring"] = doc
+            if src:
+                record["source"] = src
+
+        try:
+            with Path(path).open("a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+        except OSError:
+            logging.getLogger(__name__).exception("Failed to archive reward function details")
+
+    def archive_reward_function_details(self, name: str, *, log_path: str | None = None) -> None:
+        """Public wrapper: archive docstring and source for a registered reward function.
+
+        This finds the registered function by `name` and archives its metadata. If the
+        function isn't registered, it will still record the name.
+        """
+        per_agent_fn, team_fn = self.reward_registry.get(name, (None, None))
+        # Archive per-agent function details first (if present)
+        if per_agent_fn is not None:
+            try:
+                self._archive_reward_function_details(name, per_agent_fn, log_path=log_path)
+            except OSError:
+                logging.getLogger(__name__).exception("Failed archiving per-agent function details")
+        # Archive team function details only if present and different
+        if team_fn is not None and team_fn is not per_agent_fn:
+            try:
+                self._archive_reward_function_details(name + "::team", team_fn, log_path=log_path)
+            except Exception:
+                logging.getLogger(__name__).exception("Failed archiving team function details")
+
     def _get_reward(self, prev_info: dict) -> dict[str, np.floating[Any]]:
-        """Get the centralized reward for all agents (same reward for cooperative behavior)."""
+        """Compute the default centralized reward and return per-agent mapping.
+
+        This method computes a single scalar `base_reward` representing
+        collective environment performance and returns a dict mapping each
+        agent key (e.g. "agent_0") to the same scalar (as a numpy float).
+
+        The function is intended to be usable both as the environment's
+        built-in per-agent reward (returns identical rewards) and as a
+        fallback when no custom per-agent function is registered.
+        """
         current_info = self._get_info()
 
         # Calculate collective performance metrics
@@ -490,6 +682,10 @@ class TerrainWorldEnv(gym.Env):
 
         self.create_agents()
 
+        # Archive run metadata (reward selection, seed, etc.) for reproducibility
+        with contextlib.suppress(Exception):
+            self._archive_reward_run(seed=seed)
+
         timing_stop("reset")
         timing_log()
         return self._get_obs(), self._get_info()
@@ -568,17 +764,35 @@ class TerrainWorldEnv(gym.Env):
 
         # Get observations, per-agent rewards, termination flags and info
         observation = self._get_obs()
-        per_agent_rewards = self._get_reward(prev_info)
+        per_agent_rewards, team_reward = self._compute_rewards(prev_info)
         per_agent_terminated = self._get_terminates()
         per_agent_truncated = self._get_truncates()
         info = self._get_info()
 
-        # Convert to scalar reward and global booleans for gymnasium compatibility
-        # Scalar reward: use the centralized base_reward computed in _get_reward
-        # (every agent currently gets the same value). We'll extract any agent's
-        # reward (agent_0) as the scalar reward.
+        # Merge per-agent rewards into each agent's info entry so the top-level
+        # `info` object remains a mapping of agent keys -> info dict. This
+        # preserves the contract expected by tests and wrappers while still
+        # providing per-agent reward values.
+        for agent_key, rew in per_agent_rewards.items():
+            if agent_key in info and isinstance(info[agent_key], dict):
+                # Attach a single numeric reward under a consistent key
+                try:
+                    info[agent_key]["per_agent_reward"] = float(rew)
+                except OSError:
+                    info[agent_key]["per_agent_reward"] = rew
+            else:
+                # If the agent key is missing for any reason, create a lightweight
+                # entry so downstream code can still find the reward.
+                info[agent_key] = {"per_agent_reward": float(rew) if not isinstance(rew, dict) else rew}
+
+        # Determine scalar reward to return depending on selected reward mode
         try:
-            scalar_reward = float(per_agent_rewards.get("agent_0", 0.0))
+            if self.reward_mode == "team":
+                scalar_reward = float(team_reward)
+            elif self.reward_mode == "per_agent":
+                scalar_reward = float(per_agent_rewards.get("agent_0", 0.0))
+            else:  # both
+                scalar_reward = float(team_reward)
         except (AttributeError, TypeError, KeyError):
             scalar_reward = 0.0
 

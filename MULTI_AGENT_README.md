@@ -88,7 +88,7 @@ actions = {
 observations, rewards, terminated, truncated, info = env.step(actions)
 ```
 
-### Training with Stable-Baselines3
+### Training with RLlib
 
 The environment is compatible with multi-agent training libraries. Here's an example structure:
 

@@ -120,3 +120,42 @@ Running the focused RLlib wrapper test (example):
 ```bash
 pytest tests/test_rllib_wrapper.py::TestRLlibWrapper::test_cooperative_rewards -q
 ```
+
+## Reward functions and experiments
+
+This project supports modular reward functions for the multi-agent `TerrainWorldEnv`.
+
+Register reward functions in Python and select them at runtime:
+
+```python
+from mili_env.envs.terrain_world import TerrainWorldEnv
+
+env = TerrainWorldEnv(num_agents=3)
+
+def per_agent(prev_info):
+  # return dict like {"agent_0": 1.0, ...}
+  ...
+
+def team(prev_info, per_agent_rewards):
+  # return a scalar team reward
+  ...
+
+env.register_reward_function("my_reward", per_agent_fn=per_agent, team_fn=team)
+env.set_reward_function("my_reward")
+env.set_reward_mode("team")  # or "per_agent" or "both"
+```
+
+Archival and provenance
+
+ - Each `reset()` will append a compact JSON line to `debug/reward_runs.jsonl` with the selected reward name, mode, number of agents and seed (if provided).
+ - Use `env.archive_reward_function_details(name)` to append the function's docstring and best-effort source to `debug/reward_functions.jsonl` for reproducibility.
+
+Experiment runner
+
+There is a small helper script at `scripts/run_reward_experiments.py` that iterates over registered reward functions, runs a short number of episodes for each, and writes `debug/reward_experiments.jsonl` with the average reward and metadata. Run it from the repository root:
+
+```bash
+python scripts/run_reward_experiments.py
+```
+
+The experiment runner will also archive reward function docstrings/source for provenance.

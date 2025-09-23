@@ -151,13 +151,23 @@ class TestRLlibHyperparameterTuning(unittest.TestCase):
         """Test hyperparameter suggestion for DQN."""
         mock_trial = MagicMock()
         mock_trial.suggest_float.return_value = 0.0001
-        mock_trial.suggest_int.return_value = 1000
-        mock_trial.suggest_categorical.return_value = "linear"
+        # Mock suggest_int to return appropriate values for different parameters
+        def mock_suggest_int(name, _low, high):
+            if "fcnet_hiddens_idx" in name:
+                return 1  # Return valid index (0-2)
+            if "num_steps_sampled_before_learning_starts" in name:
+                return 1000
+            return min(high, 1000)  # Return reasonable value within range
+
+        mock_trial.suggest_int.side_effect = mock_suggest_int
+        mock_trial.suggest_categorical.return_value = "relu"
 
         hyperparams = suggest_dqn_hyperparams(mock_trial)
 
         self.assertIsInstance(hyperparams, dict)
         self.assertIn("lr", hyperparams)
+        self.assertIn("replay_buffer_config", hyperparams)
+        self.assertIn("exploration_config", hyperparams)
 
     def test_suggest_hyperparameters_unsupported(self):
         """Test error handling for unsupported algorithms in suggestion."""

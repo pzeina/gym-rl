@@ -143,13 +143,43 @@ def suggest_ppo_hyperparams(trial: optuna.Trial) -> dict[str, Any]:
 
 def suggest_dqn_hyperparams(trial: optuna.Trial) -> dict[str, Any]:
     """Suggest DQN hyperparameters for optimization."""
+    # Determine if prioritized replay should be used
+    use_prioritized = trial.suggest_categorical("use_prioritized_replay", [True, False])
+
+    # Define the possible network architectures
+    fcnet_options = [
+        [128, 128],
+        [256, 256],
+        [512, 512]
+    ]
+
+    # Create replay buffer config based on prioritized replay choice
+    if use_prioritized:
+        replay_buffer_config = {
+            "_enable_replay_buffer_api": True,
+            "type": "MultiAgentPrioritizedReplayBuffer",
+            "capacity": trial.suggest_categorical("replay_buffer_capacity", [50000, 100000, 200000]),
+            "prioritized_replay_alpha": trial.suggest_float("prioritized_replay_alpha", 0.4, 0.8),
+            "prioritized_replay_beta": trial.suggest_float("prioritized_replay_beta", 0.4, 1.0),
+            "prioritized_replay_eps": 1e-6,
+            "replay_sequence_length": 1,
+        }
+    else:
+        replay_buffer_config = {
+            "_enable_replay_buffer_api": True,
+            "type": "MultiAgentReplayBuffer",
+            "capacity": trial.suggest_categorical("replay_buffer_capacity", [50000, 100000, 200000]),
+            "replay_sequence_length": 1,
+        }
+
     return {
         "lr": trial.suggest_float("lr", 1e-5, 1e-3, log=True),
-        "buffer_size": trial.suggest_categorical("buffer_size", [50000, 100000, 200000]),
-        "learning_starts": trial.suggest_int("learning_starts", 1000, 10000),
         "train_batch_size": trial.suggest_categorical("train_batch_size", [32, 64, 128]),
         "target_network_update_freq": trial.suggest_int("target_network_update_freq", 1000, 20000),
-        "prioritized_replay": trial.suggest_categorical("prioritized_replay", [True, False]),
+        "num_steps_sampled_before_learning_starts": trial.suggest_int(
+            "num_steps_sampled_before_learning_starts", 1000, 10000
+        ),
+        "replay_buffer_config": replay_buffer_config,
         "exploration_config": {
             "type": "EpsilonGreedy",
             "initial_epsilon": 1.0,
@@ -157,10 +187,7 @@ def suggest_dqn_hyperparams(trial: optuna.Trial) -> dict[str, Any]:
             "epsilon_timesteps": trial.suggest_int("exploration_epsilon_timesteps", 100000, 500000),
         },
         "model": {
-            "fcnet_hiddens": trial.suggest_categorical(
-                "fcnet_hiddens",
-                [0, 1, 2]
-            ),  # Will map to [[128,128], [256,256], [512,512]]
+            "fcnet_hiddens": fcnet_options[trial.suggest_int("fcnet_hiddens_idx", 0, len(fcnet_options) - 1)],
             "fcnet_activation": trial.suggest_categorical("fcnet_activation", ["relu", "tanh"]),
         },
     }
@@ -365,18 +392,52 @@ def get_best_hyperparams(config: OptimizationConfig, trial: optuna.Trial | optun
         best_hyperparams["use_gae"] = True
     elif config.algorithm.lower() == "dqn":
         best_hyperparams = {**trial.params}
+
+        # Remove optimization-specific parameters and replace with proper config structure
+        best_hyperparams.pop("use_prioritized_replay", None)
+        best_hyperparams.pop("replay_buffer_capacity", None)
+        best_hyperparams.pop("prioritized_replay_alpha", None)
+        best_hyperparams.pop("prioritized_replay_beta", None)
+        best_hyperparams.pop("exploration_final_epsilon", None)
+        best_hyperparams.pop("exploration_epsilon_timesteps", None)
+        best_hyperparams.pop("fcnet_hiddens_idx", None)
+
+        # Reconstruct proper nested configurations
         best_hyperparams["exploration_config"] = {
             "type": "EpsilonGreedy",
             "initial_epsilon": 1.0,
             "final_epsilon": trial.params.get("exploration_final_epsilon", 0.02),
             "epsilon_timesteps": trial.params.get("exploration_epsilon_timesteps", 200000),
         }
+
+        # Reconstruct replay buffer config
+        use_prioritized = trial.params.get("use_prioritized_replay", False)
+        capacity = trial.params.get("replay_buffer_capacity", 50000)
+
+        if use_prioritized:
+            best_hyperparams["replay_buffer_config"] = {
+                "_enable_replay_buffer_api": True,
+                "type": "MultiAgentPrioritizedReplayBuffer",
+                "capacity": capacity,
+                "prioritized_replay_alpha": trial.params.get("prioritized_replay_alpha", 0.6),
+                "prioritized_replay_beta": trial.params.get("prioritized_replay_beta", 0.4),
+                "prioritized_replay_eps": 1e-6,
+                "replay_sequence_length": 1,
+            }
+        else:
+            best_hyperparams["replay_buffer_config"] = {
+                "_enable_replay_buffer_api": True,
+                "type": "MultiAgentReplayBuffer",
+                "capacity": capacity,
+                "replay_sequence_length": 1,
+            }
+
         best_hyperparams["model"] = {
             "fcnet_hiddens": [
                 [128, 128],
                 [256, 256],
                 [512, 512]
-            ][trial.params.get("fcnet_hiddens", 1)],
+            ][trial.params.get("fcnet_hiddens_idx", 1)],
             "fcnet_activation": trial.params.get("fcnet_activation", "relu"),
         }
     elif config.algorithm.lower() == "impala":

@@ -75,7 +75,7 @@ def timing_stop(name: str) -> None:
     # No dashboard in this trimmed version; keep timing only.
 
 
-def timing_log(log_file: str = "timing_stats.csv") -> None:
+def timing_log(log_file: Path | None = None) -> None:
     """Write aggregated timing statistics to CSV.
 
     The CSV columns are: ``function``, ``avg``, ``total``, ``count``. If the
@@ -85,6 +85,10 @@ def timing_log(log_file: str = "timing_stats.csv") -> None:
     Args:
         log_file: Path to the CSV file to append statistics to.
     """
+    if log_file is None:
+        log_file = Path.cwd() / "debug" / "timing_stats.csv"
+    Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+
     stats: TimingStats = {}
     with timing_stats_lock:
         for k, v in timing_stats.items():
@@ -116,4 +120,4 @@ if __name__ == "__main__":
 
     time.sleep(0.001)
     timing_stop("self_test")
-    timing_log("timing_stats.csv")
+    timing_log()

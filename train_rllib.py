@@ -267,12 +267,12 @@ class TrainingCallbacks(DefaultCallbacks):
             cm["episode_length"] = getattr(episode, "length", 0)
 
         # Log per-agent rewards
-        for agent_id, reward in (agent_rewards.items() if isinstance(agent_rewards, dict) else []):
-            try:
-                if isinstance(cm, dict):
+        if isinstance(agent_rewards, dict) and isinstance(cm, dict):
+            for agent_id, reward in agent_rewards.items():
+                if isinstance(reward, (int, float)):
                     cm[f"reward_{agent_id}"] = float(reward)
-            except (TypeError, ValueError) as exc:  # pragma: no cover - best-effort metrics
-                logger.debug("Skipping metric for %s due to: %s", agent_id, exc)
+                else:
+                    logger.debug("Skipping metric for %s due to non-numeric reward: %s", agent_id, reward)
 
 
 def create_multiagent_config(num_agents: int) -> dict[str, Any]:  # noqa: ARG001
@@ -353,10 +353,10 @@ def _create_dqn_config(
     )
     config = config.multi_agent(**multiagent_config)
     config = config.framework("torch")
-    # Use old API stack for DQN to avoid replay buffer bugs
+    # Use new API stack for DQN to handle multi-agent dict observation spaces
     config = config.api_stack(
-        enable_rl_module_and_learner=False,
-        enable_env_runner_and_connector_v2=False,
+        enable_rl_module_and_learner=True,
+        enable_env_runner_and_connector_v2=True,
     )
     # Configure rollouts (even old API stack uses new parameter names)
     config = config.env_runners(
@@ -372,20 +372,23 @@ def _create_dqn_config(
     dqn_training_params = [
         "lr", "train_batch_size", "target_network_update_freq",
         "replay_buffer_config", "num_steps_sampled_before_learning_starts",
-        "epsilon", "tau", "num_atoms", "v_min", "v_max", "noisy",
+        "tau", "num_atoms", "v_min", "v_max", "noisy",
         "sigma0", "dueling", "hiddens", "double_q", "n_step",
         "grad_clip", "adam_epsilon", "td_error_loss_fn", "training_intensity"
     ]
     for param in dqn_training_params:
         if param in hyperparams:
             training_params[param] = hyperparams[param]
+
     # Apply training configuration
     config = config.training(**training_params)
-    # Handle model configuration separately (not part of training() method)
+    
+    # Handle model configuration using rl_module for new API stack
     if "model" in hyperparams:
-        config_dict = config.to_dict()
-        config_dict["model"] = hyperparams["model"]
-        config.update_from_dict(config_dict)
+        config = config.rl_module(model_config=hyperparams["model"])
+
+    # Disable exploration_config for new API stack (as required)
+    config.exploration_config = {}
     config = config.env_runners(
         num_env_runners=2,
         num_envs_per_env_runner=1,
