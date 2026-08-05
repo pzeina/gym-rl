@@ -148,6 +148,8 @@ class CohortEnv(ParallelEnv):
         )
         if cfg.objective_cover and cfg.root_objective:
             self._prepare_defensive_ground(cfg.root_objective)
+        if cfg.observation_concealment and cfg.root_objective:
+            self._prepare_observation_posts(cfg.root_objective)
         self._spawn_roster()
         self._spawn_enemies()
         if cfg.sitrep_cadence:
@@ -213,6 +215,31 @@ class CohortEnv(ParallelEnv):
                 if max(abs(dx), abs(dy)) != 2:
                     continue
                 cell = (ox + dx, oy + dy)
+                if self.world.in_bounds(cell) and self.world.grid[cell[1], cell[0]] == OPEN:
+                    self.world.grid[cell[1], cell[0]] = FOREST
+
+    def _prepare_observation_posts(self, objective_name: str) -> None:
+        """Concealed OPs on the observation ring: recon presumes hidden positions.
+
+        Deterministic: at each of the eight compass points ~6 cells from the
+        objective center, a small forest patch (the cell + its 4-neighbors,
+        where open). Inside forest, spotting range drops below the observation
+        radius, so a stealthy approach to a garrisoned objective exists — over
+        featureless ground it does not, and the policy learns to abandon the
+        task instead (observed on squad_recon_v3).
+        """
+        from cohort.core.world import FOREST, OPEN
+
+        obj = self.world.objective_by_name(objective_name)
+        if obj is None:
+            return
+        ox, oy = obj.pos
+        for k in range(8):
+            angle = k * math.pi / 4
+            cx = ox + round(6 * math.cos(angle))
+            cy = oy + round(6 * math.sin(angle))
+            for dx, dy in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)):
+                cell = (cx + dx, cy + dy)
                 if self.world.in_bounds(cell) and self.world.grid[cell[1], cell[0]] == OPEN:
                     self.world.grid[cell[1], cell[0]] = FOREST
 

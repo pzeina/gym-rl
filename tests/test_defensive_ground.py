@@ -54,3 +54,19 @@ def test_knobs_default_off_elsewhere():
         for dx in range(-2, 3) for dy in range(-2, 3) if max(abs(dx), abs(dy)) == 2
     )
     assert ring_prepared > ring_bare
+
+
+def test_observation_concealment_places_ops():
+    from cohort.core.world import FOREST
+
+    env = make_env("squad_recon")
+    env.reset(seed=7)
+    obj = env.world.objective_by_name("BRAVO")
+    ox, oy = obj.pos
+    ring_forest = sum(
+        1
+        for y in range(env.world.height)
+        for x in range(env.world.width)
+        if env.world.grid[y, x] == FOREST and 4.5 <= dist((x, y), (ox, oy)) <= 7.5
+    )
+    assert ring_forest >= 10, "concealed OPs must exist on the observation ring"
