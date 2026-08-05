@@ -137,7 +137,7 @@ def test_success_pays_everyone():
         e.alive = False  # objective cleared
     env.roster.by_callsign["TL1"].pos = obj.pos
     _obs, rewards, terms, *_ = _step_all(env, {})
-    assert env._episode_outcome == "success"
+    assert env.outcome == "success"
     assert all(terms.values())
     for agent, r in rewards.items():
         assert r > 3.0, f"{agent} should share the terminal success reward"

@@ -181,7 +181,7 @@ def record_episode(
             }
         )
 
-    return {**static, "steps": steps, "outcome": env._episode_outcome or "timeout", "length": len(steps) - 1}
+    return {**static, "steps": steps, "outcome": env.outcome or "timeout", "length": len(steps) - 1}
 
 
 # ---------------------------------------------------------------------- #

@@ -60,3 +60,17 @@ def test_mission_phrase_forms():
     assert mission_phrase(MissionType.SEIZE, "ALPHA") == "SEIZE OBJ ALPHA"
     assert mission_phrase(MissionType.RALLY, None) == "RALLY ON ME"
     assert mission_phrase(MissionType.HOLD, None) == "HOLD POSITION"
+
+
+def test_succession_formatters():
+    """Both succession shapes live in language.py, next to each other."""
+    from cohort.core.language import format_assuming_position, format_taking_command
+
+    assert (
+        format_taking_command("RFN1", "TL1")
+        == "ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT."
+    )
+    assert (
+        format_assuming_position("RFN2", "RFN1")
+        == "ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT."
+    )

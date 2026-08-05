@@ -67,7 +67,15 @@ def test_episode_terminates_at_max_steps():
         _obs, _r, _t, _truncs, _i = env.step(acts)
         steps += 1
         assert steps <= env.spec_cfg.max_steps
-    assert env._episode_outcome in ("timeout", "defeat")
+    assert env.outcome in ("timeout", "defeat")
+
+
+def test_outcome_is_public_and_none_while_running():
+    env = make_env("fireteam")
+    env.reset(seed=2)
+    assert env.outcome is None
+    env.step({a: 0 for a in env.agents})
+    assert env.outcome is None, "outcome stays None until the episode ends"
 
 
 def test_transcript_starts_with_opord():

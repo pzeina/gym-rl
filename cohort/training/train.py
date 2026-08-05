@@ -170,7 +170,7 @@ class Trainer:
                 else:  # episode over
                     ep_returns.append(self._ep_return[e] / self.n_agents)
                     ep_lengths.append(self._ep_len[e])
-                    outcomes.append(env._episode_outcome or "timeout")
+                    outcomes.append(env.outcome or "timeout")
                     self.recent_outcomes.append(outcomes[-1])
                     self._ep_return[e] = 0.0
                     self._ep_len[e] = 0

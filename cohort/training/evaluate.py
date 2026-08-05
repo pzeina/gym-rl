@@ -60,13 +60,23 @@ def run_episode(
         if frames is not None and (steps % frame_every == 0 or not env.agents):
             frames.append(env.render())
     return {
-        "outcome": env._episode_outcome or "timeout",
+        "outcome": env.outcome or "timeout",
         "return": total / len(env.possible_agents),
         "length": steps,
         "survivors": sum(s.alive for s in env.roster.soldiers),
         "orders": sum(m.kind.value == "order" for m in env.transcript.messages),
         "reports": sum(m.kind.value in ("contact", "sitrep", "done") for m in env.transcript.messages),
     }
+
+
+def _seeded_episode(env: CohortEnv, net, ep_seed: int, **kw) -> dict:
+    """One episode with self-contained seeding (numpy + torch from ``ep_seed``).
+
+    Episode k of an evaluation reproduces standalone: its sampling streams do
+    not depend on how many random draws earlier episodes consumed.
+    """
+    torch.manual_seed(ep_seed)
+    return run_episode(env, net, seed=ep_seed, rng=np.random.default_rng(ep_seed), **kw)
 
 
 def evaluate(
@@ -91,9 +101,7 @@ def evaluate(
         raise ValueError(msg)
 
     env = make_env(scenario)
-    rng = np.random.default_rng(seed)
-    torch.manual_seed(seed)  # reproducible sampled-action evaluations
-    results = [run_episode(env, net, seed=seed + i, rng=rng, greedy=greedy) for i in range(episodes)]
+    results = [_seeded_episode(env, net, seed + i, greedy=greedy) for i in range(episodes)]
 
     outcomes = Counter(r["outcome"] for r in results)
     p = outcomes.get("success", 0) / episodes
@@ -120,7 +128,7 @@ def evaluate(
         # replay a few seeds, keep the first success (or the last attempt)
         for i in range(5):
             frames.clear()
-            stats = run_episode(env_r, net, seed=seed + 1000 + i, rng=rng, frames=frames, greedy=greedy)
+            stats = _seeded_episode(env_r, net, seed + 1000 + i, frames=frames, greedy=greedy)
             if stats["outcome"] == "success":
                 break
         if gif_path:

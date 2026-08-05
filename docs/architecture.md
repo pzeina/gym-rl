@@ -53,6 +53,11 @@ Each `env.step(actions)`:
 
 * order actions require `effective_authority > 0`, a living subordinate in that slot,
   **and** the ordered mission to be doctrine-derivable from the issuer's own mission;
+* re-tasking a subordinate within `ScenarioSpec.order_cooldown` steps (default 8) of
+  its last received order is masked — standing orders get time to be executed — unless
+  the leader's own mission changed since, or a CONTACT report hit the net since
+  (the tactical picture changed). Untasked subordinates are always orderable;
+  `order_cooldown=0` disables the cooldown;
 * FIRE requires ammo and a visible enemy in weapon range;
 * CONTACT requires a currently visible enemy;
 * MISSION COMPLETE requires holding a mission with an end state (SEIZE/RECON/CLEAR/RALLY).

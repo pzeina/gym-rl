@@ -91,6 +91,13 @@ class CohortEnv(ParallelEnv):
         self._known_enemies: dict[int, tuple[float, float, int]] = {}  # id → (x, y, step)
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
+        self._last_net_contact_step: int | None = None  # last CONTACT on the net
+
+    @property
+    def outcome(self) -> str | None:
+        """Episode outcome: ``"success"`` | ``"defeat"`` | ``"timeout"``, or
+        ``None`` while the episode is still running."""
+        return self._episode_outcome
 
     # ------------------------------------------------------------------ #
     # spaces
@@ -115,7 +122,11 @@ class CohortEnv(ParallelEnv):
     def reset(
         self, seed: int | None = None, options: dict | None = None
     ) -> tuple[dict[str, dict], dict[str, dict]]:
-        """Start a new episode; returns (observations, infos)."""
+        """Start a new episode; returns (observations, infos).
+
+        Note: the OPORD is emitted here with ``step=0``, before any action —
+        transcript consumers see HQ traffic "before the episode starts".
+        """
         del options
         if seed is not None:
             self._rng = np.random.default_rng(seed)
@@ -141,6 +152,7 @@ class CohortEnv(ParallelEnv):
         self._known_enemies = {}
         self._illegal_actions = 0
         self._episode_outcome = None
+        self._last_net_contact_step = None
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -294,9 +306,10 @@ class CohortEnv(ParallelEnv):
 
         # --- casualties and succession ---
         for dead in player_deaths:
+            # net/umpire convention: the report comes from HQ, not the casualty
             self._say(
                 MessageKind.CASUALTY,
-                dead.id,
+                HQ_ID,
                 None,
                 lang.format_casualty(dead.callsign),
                 payload={"callsign": dead.callsign},
@@ -307,8 +320,7 @@ class CohortEnv(ParallelEnv):
                 text = (
                     lang.format_taking_command(successor.callsign, replaced.callsign)
                     if not replaced.alive
-                    else f"ALL STATIONS, THIS IS {successor.callsign}: "
-                    f"ASSUMING {replaced.callsign}'S POSITION. OUT."
+                    else lang.format_assuming_position(successor.callsign, replaced.callsign)
                 )
                 self._say(
                     MessageKind.TAKING_COMMAND,
@@ -484,6 +496,7 @@ class CohortEnv(ParallelEnv):
             self._known_enemies[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
             soldier.reported_enemy_ids.add(e.id)
         soldier.last_contact_report_step = self._step_count
+        self._last_net_contact_step = self._step_count
         ledger.add(soldier.callsign, "report", cfg.contact_new if new_intel else cfg.contact_redundant)
         nearest = visible[0]
         self._say(
@@ -617,13 +630,14 @@ class CohortEnv(ParallelEnv):
                 "objective": obj_name,
             },
         )
-        self._say(
-            MessageKind.ACK,
-            recipient.id,
-            issuer_id,
-            lang.format_ack(issuer_cs, recipient.callsign),
-            payload={"issuer": issuer_cs, "recipient": recipient.callsign},
-        )
+        if self.spec_cfg.auto_ack:
+            self._say(
+                MessageKind.ACK,
+                recipient.id,
+                issuer_id,
+                lang.format_ack(issuer_cs, recipient.callsign),
+                payload={"issuer": issuer_cs, "recipient": recipient.callsign},
+            )
 
     # ------------------------------------------------------------------ #
     # OpFor
@@ -691,7 +705,16 @@ class CohortEnv(ParallelEnv):
     def _mask_for(self, soldier: Soldier) -> np.ndarray:
         visible = self._visible_enemies(soldier)
         in_range = any(dist(soldier.pos, e.pos) <= self.combat.weapon_range for e in visible)
-        return compute_mask(soldier, self.roster, self.world, in_range and soldier.ammo > 0, bool(visible))
+        return compute_mask(
+            soldier,
+            self.roster,
+            self.world,
+            in_range and soldier.ammo > 0,
+            bool(visible),
+            order_cooldown=self.spec_cfg.order_cooldown,
+            step=self._step_count,
+            net_contact_step=self._last_net_contact_step,
+        )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:
         return {
@@ -881,7 +904,7 @@ class CohortEnv(ParallelEnv):
 
 
 def make_env(
-    scenario: str = "fireteam",
+    scenario: str | ScenarioSpec = "fireteam",
     render_mode: str | None = None,
     reward_config: RewardConfig | None = None,
 ) -> CohortEnv:

@@ -15,8 +15,22 @@ grammar, tested by round-trip tests.
 | CONTACT | agent → its leader | `TL1, THIS IS RFN2: CONTACT, GRID 1716, 2 x ENEMY. OVER.` |
 | SITREP | agent → its leader | `TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24. OVER.` |
 | DONE | agent → its leader | `TL1, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.` |
-| CASUALTY | broadcast (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
-| TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` |
+| CASUALTY | HQ → all stations (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
+| TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` — recursive fills further down the chain: `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` |
+
+CASUALTY reports are attributed to HQ (the net/umpire convention): the dead do not
+transmit. Succession announcements come in two shapes — the direct successor of the
+casualty *assumes command*; agents filling the vacancies that promotion leaves further
+down the chain *assume the position* of whoever moved up.
+
+### Acknowledgements are protocol, not information
+
+WILCO is emitted automatically by the environment in the same step as its order —
+a voice-procedure convention, not a policy decision. An auto-ACK can never be absent,
+late, or withheld, so it carries **zero information**; consumers doing traffic analysis
+should treat ORDER+ACK as one event. To run an ACK-free net, disable it per scenario
+with `ScenarioSpec(auto_ack=False)` — the order still lands and is applied; only the
+WILCO line disappears.
 
 ## Order grammar (what you can type)
 

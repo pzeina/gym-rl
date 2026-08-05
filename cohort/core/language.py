@@ -127,6 +127,16 @@ def format_taking_command(new_cs: str, dead_cs: str) -> str:
     return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."
 
 
+def format_assuming_position(new_cs: str, of_cs: str) -> str:
+    """Broadcast when a recursive succession fill moves an agent up.
+
+    The direct successor of the casualty says ``I AM ASSUMING COMMAND``
+    (:func:`format_taking_command`); agents filling the vacancies that
+    promotion leaves further down the chain use this form.
+    """
+    return f"ALL STATIONS, THIS IS {new_cs}: ASSUMING {of_cs}'S POSITION. OUT."
+
+
 _ORDER_RE = re.compile(
     r"^\s*(?:(?P<issuer>[A-Za-z]{2,3}\d+)\s*(?:,|:)\s*)?"    # optional issuer prefix (ignored)
     r"(?:this\s+is\s+[A-Za-z]{2,3}\d+\s*(?::|,)\s*)?"        # optional 'THIS IS X:'
