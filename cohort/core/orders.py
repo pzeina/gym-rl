@@ -29,6 +29,8 @@ class MessageKind(Enum):
     CONTACT = "contact"                # enemy sighting report (up the chain)
     SITREP = "sitrep"                  # status report (up the chain)
     DONE = "done"                      # mission-complete report (up the chain)
+    DONE_CONFIRM = "done_confirm"      # superior confirms a truthful DONE (auto)
+    DONE_REJECT = "done_reject"        # superior rejects a false DONE (auto)
     CASUALTY = "casualty"              # agent down (auto broadcast)
     TAKING_COMMAND = "taking_command"  # succession announcement (auto broadcast)
 

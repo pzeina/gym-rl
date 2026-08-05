@@ -522,6 +522,7 @@ class CohortEnv(ParallelEnv):
         obj_name = (
             self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
         )
+        verdict = "confirmed" if truthful else "rejected"
         self._say(
             MessageKind.DONE,
             soldier.id,
@@ -532,12 +533,40 @@ class CohortEnv(ParallelEnv):
                 "recipient": self._addressee(soldier),
                 "mission": mission.type.name,
                 "objective": obj_name,
+                "verdict": verdict,
             },
         )
+        # the superior answers on the net: the verdict is command traffic, not
+        # a secret side effect (a false claimant silently keeping its mission
+        # was the one place command state stopped being derivable from traffic)
+        leader = self.roster.leader_of(soldier)
+        responder_id = leader.id if leader is not None else HQ_ID
+        responder_cs = self._addressee(soldier)
+        response_payload = {
+            "issuer": responder_cs,
+            "recipient": soldier.callsign,
+            "mission": mission.type.name,
+            "objective": obj_name,
+            "verdict": verdict,
+        }
         if truthful:
+            self._say(
+                MessageKind.DONE_CONFIRM,
+                responder_id,
+                soldier.id,
+                lang.format_done_confirm(soldier.callsign, responder_cs, mission.type, obj_name),
+                payload=response_payload,
+            )
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
         else:
+            self._say(
+                MessageKind.DONE_REJECT,
+                responder_id,
+                soldier.id,
+                lang.format_done_reject(soldier.callsign, responder_cs),
+                payload=response_payload,
+            )
             ledger.add(soldier.callsign, "report", cfg.done_false)
 
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:

@@ -82,6 +82,45 @@ def test_mission_complete_truthful_vs_false():
     assert sld.mission is None, "honest completion clears the mission"
 
 
+def test_done_verdict_lands_on_the_net():
+    """The superior answers every completion report: the verdict is traffic."""
+    env = _flat_env()
+    sld = env.roster.by_callsign["RFN1"]
+    obj = env.world.objectives[1]  # BRAVO — no enemies near after repositioning
+    for e in env.enemies:
+        e.pos = (1, 22)
+        e.home = e.pos
+    # false claim → NEGATIVE from the leader, mission stands
+    sld.pos = (2, 2)
+    sld.mission = Mission(MissionType.SEIZE, 1, obj.pos, issuer_id=-1, step_assigned=0)
+    _step_all(env, {"RFN1": DONE})
+    reject = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_reject")
+    assert reject.text == "RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT."
+    assert reject.payload["verdict"] == "rejected"
+    assert sld.mission is not None
+    # truthful claim → ROGER ... CONFIRMED, mission cleared
+    sld.pos = obj.pos
+    _step_all(env, {"RFN1": DONE})
+    confirm = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_confirm")
+    assert confirm.text == "RFN1, THIS IS TL1: ROGER, SEIZE OBJ BRAVO CONFIRMED. OUT."
+    assert confirm.payload["verdict"] == "confirmed"
+    assert sld.mission is None
+    # the claim precedes its verdict on the transcript
+    kinds = [m.kind.value for m in env.transcript.messages]
+    assert kinds.index("done") < kinds.index("done_reject")
+
+
+def test_root_done_is_answered_by_hq():
+    from cohort.core.orders import HQ_ID
+
+    env = _flat_env()
+    # TL1 holds the OPORD (SEIZE ALPHA) and is far from it: a false claim
+    _step_all(env, {"TL1": DONE})
+    reject = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_reject")
+    assert reject.sender_id == HQ_ID
+    assert reject.text.startswith("TL1, THIS IS HQ: NEGATIVE")
+
+
 def test_kill_rewards_and_team_share():
     env = _flat_env()
     sld = env.roster.by_callsign["RFN1"]

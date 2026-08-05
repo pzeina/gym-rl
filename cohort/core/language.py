@@ -117,6 +117,18 @@ def format_done(leader_cs: str, sender_cs: str, mission: MissionType, objective_
     return f"{leader_cs}, THIS IS {sender_cs}: {mission_phrase(mission, objective_name)} — COMPLETE. OVER."
 
 
+def format_done_confirm(
+    claimant_cs: str, leader_cs: str, mission: MissionType, objective_name: str | None
+) -> str:
+    """Superior confirms a truthful completion report."""
+    return f"{claimant_cs}, THIS IS {leader_cs}: ROGER, {mission_phrase(mission, objective_name)} CONFIRMED. OUT."
+
+
+def format_done_reject(claimant_cs: str, leader_cs: str) -> str:
+    """Superior rejects a false completion claim; the mission stands."""
+    return f"{claimant_cs}, THIS IS {leader_cs}: NEGATIVE, CONTINUE MISSION. OUT."
+
+
 def format_casualty(callsign: str) -> str:
     """Broadcast when an agent goes down."""
     return f"ALL STATIONS: {callsign} IS DOWN. OUT."

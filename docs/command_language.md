@@ -15,6 +15,8 @@ grammar, tested by round-trip tests.
 | CONTACT | agent → its leader | `TL1, THIS IS RFN2: CONTACT, GRID 1716, 2 x ENEMY. OVER.` |
 | SITREP | agent → its leader | `TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24. OVER.` |
 | DONE | agent → its leader | `TL1, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.` |
+| DONE_CONFIRM | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.` |
+| DONE_REJECT | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT.` |
 | CASUALTY | HQ → all stations (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
 | TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` — recursive fills further down the chain: `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` |
 
@@ -73,3 +75,9 @@ whether it is *true* is checked against the world (`core/missions.py::is_complet
 truthful reports pay and clear the mission (the agent stands by for new orders); false
 reports are penalized but still go out on the net, so the transcript reflects what was
 actually said, including mistakes.
+
+The verdict is command traffic, not a secret: the addressee (the claimant's leader, or
+HQ for the senior agent) answers every completion report on the net — `ROGER, …
+CONFIRMED. OUT.` when the claim is verified, `NEGATIVE, CONTINUE MISSION. OUT.` when it
+is false. Command state therefore stays derivable from radio traffic alone through the
+completion phase: a reader who sees no confirmation knows the mission still stands.
