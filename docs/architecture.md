@@ -31,18 +31,27 @@ composes them and adds simulation (combat, OpFor, terrain) and the RL contract.
 Each `env.step(actions)`:
 
 1. **Snapshot** previous positions and mission-anchor distances (for progress shaping).
-2. **Friendly actions** in agent order — each agent does exactly one thing per tick:
-   move, fire, report, or issue one order. Orders apply immediately: the recipient's
-   mission changes, an ORDER + WILCO pair lands on the transcript.
-3. **OpFor actions** — scripted state machine (garrison/assault, chase, engage).
-4. **Casualties & succession** — deaths broadcast CASUALTY; the roster devolves command
+2. **Net arbitration** — the radio is a single frequency: of this tick's *learned*
+   transmission attempts (CONTACT / SITREP / MISSION COMPLETE / orders), at most **one**
+   goes out. Deterministic priority: CONTACT > DONE > orders > SITREP, ties broken by
+   agent order; the losers' transmissions are dropped this tick with a NET BUSY outcome
+   (no cost, no effect — flagged per agent in `infos[...]["net_busy"]` and the oracle
+   snapshot). Auto-traffic (WILCO, DONE verdicts, CASUALTY, succession) is protocol,
+   not competition for airtime, and is never arbitrated. Contention is judged on
+   tick-start legality — the same mask the policy acted under.
+3. **Friendly actions** in agent order — each agent does exactly one thing per tick:
+   move, fire, report, or issue one order. Every emitted learned transmission costs
+   `RewardConfig.transmission_cost` (airtime is not free). Orders apply immediately:
+   the recipient's mission changes, an ORDER + WILCO pair lands on the transcript.
+4. **OpFor actions** — scripted state machine (garrison/assault, chase, engage).
+5. **Casualties & succession** — deaths broadcast CASUALTY; the roster devolves command
    recursively and successors announce TAKING COMMAND.
-5. **Knowledge decay** — the team enemy picture (fed *only* by CONTACT reports) expires
+6. **Knowledge decay** — the team enemy picture (fed *only* by CONTACT reports) expires
    stale entries and drops dead enemies.
-6. **Compliance & rewards** — each agent's standing mission is scored against what it
+7. **Compliance & rewards** — each agent's standing mission is scored against what it
    actually did (see `core/missions.py::compliance`), leaders are scored on subordinate
    coverage, and the ledger assembles per-component rewards.
-7. **Terminal checks** — scenario success (root-mission-specific), defeat (cohort wiped),
+8. **Terminal checks** — scenario success (root-mission-specific), defeat (cohort wiped),
    or timeout. PettingZoo semantics: dead agents return `terminated=True` once, then
    leave `env.agents`.
 
@@ -116,7 +125,9 @@ per-listener:
   reports up the chain are adjudicated by the umpire regardless of range.
 
 Under `"global"` the behavior is byte-for-byte the shipped one; the knob is
-purely additive.
+purely additive. Net-busy arbitration (step 2 above) stays **global** under
+`"range"` too: earshot shapes who *hears* a message, but every station shares
+the one frequency, so simultaneous transmissions still contend.
 
 ## Determinism
 

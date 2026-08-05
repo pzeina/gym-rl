@@ -91,6 +91,47 @@ CONFIRMED. OUT.` when the claim is verified, `NEGATIVE, CONTINUE MISSION. OUT.` 
 is false. Command state therefore stays derivable from radio traffic alone through the
 completion phase: a reader who sees no confirmation knows the mission still stands.
 
+## Net discipline: one station transmits at a time
+
+The net is a **single frequency**. Per tick, at most one *learned* transmission —
+CONTACT, SITREP, MISSION COMPLETE, or an order — actually goes out; when several
+stations key up together, a deterministic arbitration picks the transmission that
+matters most:
+
+```
+CONTACT  >  MISSION COMPLETE  >  orders  >  SITREP      (ties: agent order)
+```
+
+The losers get a **NET BUSY**: their transmission is dropped that tick — it never
+reaches the transcript, costs nothing, changes nothing. The dropped attempt is
+visible to external observers (`infos[...]["net_busy"]`, oracle snapshot) but not to
+the cohort: masks and observations are unchanged, a blocked station has simply lost
+its tick. Auto-traffic — WILCO, DONE verdicts, CASUALTY, succession announcements —
+is voice-procedure protocol, not a policy decision, and is never arbitrated (or
+charged). Under `comm_model="range"` the arbitration stays **global**: range shapes
+who *hears* a transmission, not who may make one — everyone shares the frequency.
+
+Airtime itself is costed: every emitted learned transmission draws
+`RewardConfig.transmission_cost` (default −0.01), so speaking is only worth it when
+the message is.
+
+### Dedup doctrine: the first accurate CONTACT wins
+
+CONTACT credit is adjudicated by the umpire against the whole-team enemy picture
+(under `comm_model="range"` too — the umpire hears everything even when a distant
+station does not):
+
+* the **first** report of an enemy the team did not know pays `contact_new` in full —
+  and a report containing *any* unknown enemy counts as first;
+* a re-report of known intel that has **aged** ≥ `contact_refresh_age` steps
+  (default 20, half the 40-step knowledge TTL) earns exactly **0**: it is a
+  legitimate refresh — it genuinely extends the picture's life — but carries no news;
+* a report whose every enemy is already **fresh** on the picture is pure noise and
+  draws the small `contact_redundant` penalty on top of the airtime cost.
+
+Every accepted report, duplicate or not, still refreshes the picture's timestamps —
+the doctrine prices the traffic, it never discards the information.
+
 ## Reporting doctrine (optional): mandatory SITREP cadence
 
 By default SITREP timing is purely reward-shaped (`sitrep_fresh`/`sitrep_spam`) and the
