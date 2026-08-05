@@ -51,13 +51,21 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
     if s.mission is not None:
         obj = env.world.objectives[s.mission.objective_id] if s.mission.objective_id is not None else None
         anchor = s.mission.anchor
+        target = None  # supported unit's callsign (SUPPORT only)
         if s.mission.type is MissionType.RALLY:
             leader = env.roster.leader_of(s)
             if leader is not None:
                 anchor = leader.pos
+        elif s.mission.type is MissionType.SUPPORT:
+            supported = env.roster.by_id.get(s.mission.extra.get("supported_id"))
+            if supported is not None:
+                target = supported.callsign
+                if supported.alive:
+                    anchor = supported.pos
         mission = {
             "type": s.mission.type.name,
             "obj": obj.name if obj else None,
+            "target": target,
             "anchor": [float(anchor[0]), float(anchor[1])],
             "since": s.mission.step_assigned,
         }
@@ -69,6 +77,7 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
         "hp": s.health,
         "ammo": s.ammo,
         "alive": s.alive,
+        "human": s.human,
         "rank": s.rank.name,
         "eff": s.effective_rank.name,
         "leader": env.roster.by_id[s.leader_id].callsign if s.leader_id is not None else None,
@@ -124,7 +133,8 @@ def record_episode(
         "max_steps": env.spec_cfg.max_steps,
         "opord": env.transcript.messages[0].text if env.transcript.messages else "",
         "roster": [
-            {"cs": s.callsign, "rank": s.rank.name, "id": s.id} for s in env.roster.soldiers
+            {"cs": s.callsign, "rank": s.rank.name, "id": s.id, "human": s.human}
+            for s in env.roster.soldiers
         ],
         "policy": policy_path or "random (masked)",
         "seed": seed,

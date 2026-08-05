@@ -35,6 +35,17 @@ class CombatParams:
     damage: int = 34
     vision_range: float = 10.0
     forest_vision_range: float = 6.0  # spotting range against targets in forest
+    # --- SUPPORT mechanics ("pas un pas sans appui", ROADMAP P2) ---
+    support_cover_accuracy: float = 0.7  # attacker accuracy vs. a supported element,
+    #                                      when the attacker is inside the supporter's
+    #                                      umbrella (covered movement)
+    support_umbrella: float = 8.0        # radius around an in-position supporter within
+    #                                      which enemy fire on its supported element is
+    #                                      degraded
+    focus_fire_bonus: float = 1.15       # per-shot hit multiplier for the second and
+    #                                      later friendly shooters at the same enemy in
+    #                                      the same step (active support required)
+    max_hit: float = 0.95                # hard cap on any final hit probability
 
 
 @dataclass
@@ -48,6 +59,7 @@ class Soldier:
     health: int = 100
     ammo: int = 30
     alive: bool = True
+    human: bool = False                   # a human commander embodied in the sim
     leader_id: int | None = None          # direct superior; None → reports to HQ
     subordinate_ids: list[int] = field(default_factory=list)
     deputy_id: int | None = None          # designated successor among subordinates
@@ -96,6 +108,32 @@ class Enemy:
     # never read by observations, rewards, masks, or the OpFor AI itself
     prev_pos: Coord = (0, 0)
     fired_this_step: bool = False
+
+
+def validate_human_ranks(soldiers: list[Soldier]) -> None:
+    """Enforce the humans-outrank-all-non-humans invariant at org build.
+
+    Every human must sit strictly above every non-human by *intrinsic*
+    authority — a human embedded below an AI commander would make the AI's
+    hard rank guarantees meaningless (the mask cannot constrain a human).
+    Raises ``ValueError`` on violation. No humans → vacuously valid.
+    """
+    humans = [s for s in soldiers if s.human]
+    if not humans:
+        return
+    top_ai = max((AUTHORITY[s.rank] for s in soldiers if not s.human), default=-1)
+    for h in humans:
+        if AUTHORITY[h.rank] <= top_ai:
+            offender = next(
+                s for s in soldiers if not s.human and AUTHORITY[s.rank] >= AUTHORITY[h.rank]
+            )
+            msg = (
+                f"Invalid org: human {h.callsign} ({h.rank.name}, authority "
+                f"{AUTHORITY[h.rank]}) does not outrank non-human {offender.callsign} "
+                f"({offender.rank.name}, authority {AUTHORITY[offender.rank]}) — "
+                "humans must outrank all non-humans."
+            )
+            raise ValueError(msg)
 
 
 class Roster:
@@ -197,11 +235,20 @@ def resolve_fire(
     distance: float,
     params: CombatParams,
     rng: np.random.Generator,
+    *,
+    modifier: float = 1.0,
 ) -> tuple[bool, int]:
-    """Resolve one shot: (hit?, damage). Caller applies damage and death."""
+    """Resolve one shot: (hit?, damage). Caller applies damage and death.
+
+    ``modifier`` multiplies the hit probability after range and cover: the
+    environment passes the SUPPORT effects through it (covered movement
+    debuffs an attacker, focus fire buffs follow-up shooters). The final
+    probability is capped at ``params.max_hit``.
+    """
     p = max(params.min_hit, min(0.9, params.base_hit - params.falloff * distance))
     if target_in_cover:
         p *= params.cover_multiplier
+    p = min(params.max_hit, p * modifier)
     if rng.random() < p:
         return True, params.damage
     return False, 0

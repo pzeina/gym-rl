@@ -1,9 +1,10 @@
 """Per-agent observation vectors.
 
 Each agent sees: its own state (with *effective* rank, so a promoted acting
-leader knows it now commands), its standing mission, its direct leader, its
-direct subordinates, currently visible enemies, objectives, a comms summary,
-and a local terrain patch. Enemy knowledge is deliberately split:
+leader knows it now commands, and an is-human flag), its standing mission,
+its direct leader (incl. whether the leader is human), its direct
+subordinates, currently visible enemies, objectives, a comms summary, and a
+local terrain patch. Enemy knowledge is deliberately split:
 
 * ``enemy`` slots — what THIS agent can see right now (private).
 * ``known enemy`` summary — the team picture, which only contains enemies
@@ -34,9 +35,19 @@ N_ENEMY_SLOTS = 4
 N_OBJECTIVE_SLOTS = 4
 PATCH_RADIUS = 2
 
-#: 12 self + 12 mission + 4 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
+#: mission block: one-hot over the 11 MICAT tasks + has-mission flag + 4
+#: anchor fields (dx, dy, has-objective, age)
+_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4
+
+#: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
+_SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
+
+#: leader block: present, dx, dy, mission index, leader-is-human
+_LEADER_BLOCK = 5
+
+#: 13 self + 16 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
 OBS_DIM = (
-    12 + 12 + 4
+    _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
     + 4 * N_ENEMY_SLOTS
     + 3 * N_OBJECTIVE_SLOTS
@@ -78,15 +89,17 @@ def build_observation(
     out = np.zeros(OBS_DIM, dtype=np.float32)
     i = 0
 
-    # --- self (12) ---
+    # --- self (13) ---
     out[i : i + 4] = (x / w, y / h, soldier.health / 100.0, soldier.ammo / 30.0)
     i += 4
     out[i + RANK_ORDER.index(soldier.effective_rank)] = 1.0
     i += len(RANK_ORDER)
     out[i] = 1.0 if world.cover_at(soldier.pos) else 0.0
     i += 1
+    out[i] = 1.0 if soldier.human else 0.0
+    i += 1
 
-    # --- mission (12) ---
+    # --- mission (16) ---
     m = soldier.mission
     if m is not None:
         out[i + MISSION_ORDER.index(m.type)] = 1.0
@@ -99,20 +112,25 @@ def build_observation(
             leader = roster.leader_of(soldier)
             if leader is not None:
                 anchor = leader.pos
+        elif m.type is MissionType.SUPPORT:
+            supported = roster.by_id.get(m.extra.get("supported_id"))
+            if supported is not None and supported.alive:
+                anchor = supported.pos
         out[i] = (anchor[0] - x) / w
         out[i + 1] = (anchor[1] - y) / h
         out[i + 2] = 1.0 if m.objective_id is not None else 0.0
         out[i + 3] = min(1.0, (view.step - m.step_assigned) / 50.0)
     i += 4
 
-    # --- leader (4) ---
+    # --- leader (5) ---
     leader = roster.leader_of(soldier)
     if leader is not None:
         out[i] = 1.0
         out[i + 1] = (leader.pos[0] - x) / w
         out[i + 2] = (leader.pos[1] - y) / h
         out[i + 3] = _mission_idx(leader.mission.type if leader.mission else None)
-    i += 4
+        out[i + 4] = 1.0 if leader.human else 0.0
+    i += 5
 
     # --- direct subordinates (5 each) ---
     subs = soldier.living_subordinates(roster)[:N_SUB_SLOTS]

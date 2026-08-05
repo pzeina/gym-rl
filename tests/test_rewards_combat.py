@@ -33,8 +33,8 @@ def _step_all(env, overrides):
 def test_compliance_progress_sign_in_env():
     env = _flat_env()
     sld = env.roster.by_callsign["RFN1"]
-    obj = env.world.objectives[0]  # ALPHA at (18, 18)
-    sld.pos = (10, 18)
+    obj = env.world.objectives[0]  # ALPHA at (27, 27)
+    sld.pos = (10, 27)
     sld.mission = Mission(MissionType.SEIZE, 0, obj.pos, issuer_id=-1, step_assigned=0)
 
     *_, infos = _step_all(env, {"RFN1": MOVE_EAST})
@@ -152,15 +152,20 @@ def test_terminal_dominates_stalling():
 
     Regression test: on the squad scenario the policy once learned to stall —
     return kept rising while success collapsed to 0% and every episode ran the
-    full 300 steps. Success must be worth strictly more than a perfect farm
-    over the longest episode any scenario allows.
+    full max_steps. Success must be worth strictly more than a perfect farm
+    over the longest episode any scenario allows (600 steps after the v1.4
+    maps x1.5), INCLUDING the bounded observation-progress payout (which
+    telescopes: at most observe_progress x the 10-step success threshold per
+    episode, so it cannot tip the balance toward stalling).
     """
     from cohort.config import SCENARIOS
+    from cohort.core.missions import RECON_OBSERVE_STEPS
     from cohort.env.rewards import RewardConfig
 
     cfg = RewardConfig()
+    observe_cap = cfg.observe_progress * 2 * RECON_OBSERVE_STEPS  # bounded, one-shot
     for spec in SCENARIOS.values():
-        best_farm = cfg.max_step_farm() * spec.max_steps
+        best_farm = cfg.max_step_farm() * spec.max_steps + observe_cap
         assert cfg.success_team > best_farm, (
             f"{spec.name}: stalling for {spec.max_steps} steps yields {best_farm:.1f} "
             f">= success reward {cfg.success_team} — reward hacking is profitable"

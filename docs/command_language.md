@@ -17,6 +17,7 @@ grammar, tested by round-trip tests.
 | DONE | agent → its leader | `TL1, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.` |
 | DONE_CONFIRM | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.` |
 | DONE_REJECT | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT.` |
+| SUPPORT_END | supporter → its leader (auto) | `SL1, THIS IS TL2: SUPPORT ENDED, TL1 IS DOWN. STANDING BY. OVER.` |
 | CASUALTY | HQ → all stations (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
 | TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` — recursive fills further down the chain: `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` |
 
@@ -38,6 +39,7 @@ WILCO line disappears.
 
 ```
 <CALLSIGN> [,:] <TASK-KEYWORD> [obj|objective] <ALPHA|BRAVO|CHARLIE|DELTA>
+<CALLSIGN> [,:] support|appuyer|cover [for] <CALLSIGN>     (unit-targeted SUPPORT)
 <CALLSIGN> [,:] rally|regroup [on me]
 <CALLSIGN> [,:] hold [position]
 ```
@@ -45,14 +47,18 @@ WILCO line disappears.
 Case-insensitive; a trailing `OUT.`/`OVER.` and an issuer prefix (`X, THIS IS Y:`) are
 accepted and ignored. Callsigns are `<RANK><n>`: `SL1`, `TL2`, `RFN3`…
 
-### Tactical tasks and synonyms
+### Tactical tasks and synonyms (MICAT set — see docs/missions.md)
 
 | Task | Keywords |
 |---|---|
-| RECON | recon, reconnoiter, reconnoitre, scout, observe |
+| RECON | recon, reconnoiter, reconnoitre, reconnaitre, scout |
+| SCREEN | screen, eclairer |
+| OBSERVE | observe, surveiller, overwatch, watch — also plain `cover obj X` / `support obj X` (the retired OVERWATCH phrases) |
+| SUPPORT | `support <callsign>`, `appuyer <callsign>`, `cover [for] <callsign>` — unit-targeted |
+| COVER | flank (canonical `COVER FLANK OBJ X`), couvrir |
+| DEFEND | defend, tenir, guard, retain — also `hold obj X` (holding a *place*) |
+| DENY | deny, interdict, interdire — section level and above (authority ≥ 2) |
 | SEIZE | seize, take, capture, assault, secure |
-| DEFEND | defend, guard, retain — also `hold obj X` (holding a *place*) |
-| OVERWATCH | overwatch, cover, support |
 | CLEAR | clear, destroy, engage, attack, eliminate, neutralize, fix |
 | RALLY | rally, regroup, assemble, return |
 | HOLD | hold, halt, stop (no objective ⇒ hold in place) |
@@ -63,7 +69,10 @@ Orders injected by a human pass the same authority checks as agent-issued ones:
 
 * as **HQ** you may order any living station;
 * as a **callsign** (e.g. `--as SL1` in the console) you may only order your living
-  *direct subordinates*, and only while you outrank them — otherwise `PermissionError`.
+  *direct subordinates*, and only while you outrank them — otherwise `PermissionError`;
+* per-echelon mission admissibility applies to everyone: `TL1, deny obj alpha` is a
+  `PermissionError` even from HQ — INTERDIRE is a section mission (manual p. 8);
+* a SUPPORT order must name a living station other than the recipient.
 
 Agent-issued (learned) orders are additionally doctrine-constrained by the action mask;
 a human at HQ deliberately is not — the human *is* higher headquarters.

@@ -157,11 +157,12 @@ const smooth = (arr, k) => arr.map((_, i) => {
 /* NATO APP-6 / MIL-STD-2525: affiliation colors (light fills) + echelon marks */
 const FRIEND_FILL = "#80e0ff", FRIEND_LINE = "#0f5c86", FRIEND_TEXT = "#a8e4ff";
 const HOSTILE_FILL = "#ff8080", HOSTILE_LINE = "#7a1111";
+const HUMAN_RING = "#e8b93c";
 const ECHELON = { RFN: "", TL: "∅", SL: "●", PSG: "●●●", PL: "●●●", XO: "|", CO: "|" };
 const GRADES = { RFN: "OR-3", TL: "OR-5", SL: "OR-6", PSG: "OR-7", PL: "OF-1", XO: "OF-2", CO: "OF-2" };
 const RANK_TITLES = { RFN: "Rifleman", TL: "Fire Team Leader", SL: "Squad Leader", PSG: "Platoon Sergeant", PL: "Platoon Leader", XO: "Executive Officer", CO: "Company Commander" };
-const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", casualty: "#ff5252", taking_command: "#c084fc" };
-const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done"], events: ["casualty", "taking_command"] };
+const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", done_confirm: "#4ade80", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#ff5252", taking_command: "#c084fc" };
+const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command"] };
 
 /* ============================= charts ============================= */
 function drawChart(canvas, series, opts = {}) {
@@ -316,6 +317,7 @@ $("toggles").querySelectorAll("input").forEach((el) =>
 $("legend").innerHTML =
   `<span style="color:${FRIEND_FILL}">▭</span> friendly (APP-6 frame + infantry saltire)<br>
    echelon marks: <b>∅</b> team (TL) · <b>●</b> squad (SL) · <b>●●●</b> platoon (PL/PSG) · <b>|</b> company (CO/XO)<br>
+   <span style="color:${HUMAN_RING}">◯</span> human commander (gold ring)<br>
    <span style="color:${HOSTILE_FILL}">◆</span> hostile &nbsp; <span style="color:${HOSTILE_FILL}">◇</span> reported contact (suspected, dashed) <br>
    <span style="color:#5f8f5f">▦</span> forest &nbsp; <span style="color:#555">▩</span> wall`;
 
@@ -525,6 +527,10 @@ function drawMap() {
     g.fillRect(X - w / 2, Y - h / 2, w, h); g.strokeRect(X - w / 2, Y - h / 2, w, h);
     g.beginPath(); g.moveTo(X - w / 2, Y - h / 2); g.lineTo(X + w / 2, Y + h / 2);
     g.moveTo(X + w / 2, Y - h / 2); g.lineTo(X - w / 2, Y + h / 2); g.stroke();
+    if (s.human) { // gold ring: a human commander embodied in the sim
+      g.strokeStyle = HUMAN_RING; g.lineWidth = 1.5;
+      g.beginPath(); g.arc(X, Y, Math.max(w, h) * 0.72, 0, 7); g.stroke();
+    }
     const mark = ECHELON[s.eff] || "";
     if (mark && cell > 7) {
       g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(8, cell * 0.4)}px sans-serif`; g.textAlign = "center";
@@ -608,11 +614,12 @@ function renderInspector() {
       const rec = step.soldiers.find((o) => o.cs === s.cs); return acc + (rec?.r || 0);
     }, 0);
     const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff} ${GRADES[s.eff]}</span>` : "";
+    const humanBadge = s.human ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
     const rows = Object.entries(s.rc).map(([k, v]) =>
       `<tr><td>${k}</td><td class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${fmt(v, 3)}</td></tr>`).join("");
     el.innerHTML = `
       <h3 style="color:${FRIEND_FILL};font-size:14px">${s.alive ? "" : "✝ "}${s.cs}
-        <span style="color:var(--dim);font-weight:400">${RANK_TITLES[s.rank] || s.rank} (${GRADES[s.rank] || "?"})</span>${acting}</h3>
+        <span style="color:var(--dim);font-weight:400">${RANK_TITLES[s.rank] || s.rank} (${GRADES[s.rank] || "?"})</span>${acting}${humanBadge}</h3>
       <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${s.hp}%</div>
       <div class="bar"><div style="width:${s.hp}%;background:${s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)"}"></div></div>
       <div style="color:var(--dim);font-size:11px">ammo ${s.ammo}/30</div>
@@ -621,7 +628,7 @@ function renderInspector() {
         <tr><td>position</td><td>(${s.x}, ${s.y})</td></tr>
         <tr><td>reports to</td><td>${s.leader || "HQ"}</td></tr>
         ${s.subs.length ? `<tr><td>commands</td><td>${s.subs.join(", ")}</td></tr>` : ""}
-        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") : "STANDBY"}</td></tr>
+        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") + (s.mission.target ? " " + s.mission.target : "") : "STANDBY"}</td></tr>
         ${s.mission ? `<tr><td>ordered at</td><td>t=${s.mission.since}</td></tr>` : ""}
         <tr><td>action @t</td><td>${s.act || "—"}</td></tr>
         <tr><td>sees</td><td>${s.sees.length} hostile${s.sees.length === 1 ? "" : "s"}</td></tr>

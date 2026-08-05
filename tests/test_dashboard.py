@@ -11,8 +11,8 @@ from cohort.viz.dashboard import DashboardHandler, record_episode, scan_runs
 def test_episode_trace_structure():
     trace = record_episode("fireteam", None, seed=5, max_steps=40)
     assert trace["scenario"] == "fireteam"
-    assert trace["width"] == 24 and trace["height"] == 24
-    assert len(trace["grid"]) == 24
+    assert trace["width"] == 36 and trace["height"] == 36
+    assert len(trace["grid"]) == 36
     assert [o["name"] for o in trace["objectives"]] == ["ALPHA", "BRAVO"]
     assert trace["outcome"] in ("success", "defeat", "timeout")
     assert trace["steps"], "trace must contain steps"

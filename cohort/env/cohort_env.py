@@ -26,17 +26,28 @@ from cohort.config import ScenarioSpec, build_org, get_scenario
 from cohort.core import language as lang
 from cohort.core.missions import (
     IN_POSITION_RADIUS,
+    LOS_REQUIRED,
+    POSITION_ANCHORED_FIRE,
     RECON_OBSERVE_STEPS,
+    WEAPONS_TIGHT,
     ComplianceContext,
     Mission,
     MissionType,
     compliance,
     derivation_quality,
     is_complete,
+    min_hold_authority,
 )
 from cohort.core.orders import HQ_ID, Message, MessageKind, Transcript
-from cohort.core.ranks import Rank
-from cohort.core.units import Enemy, Roster, Soldier, enemy_decide, resolve_fire
+from cohort.core.ranks import AUTHORITY, Rank
+from cohort.core.units import (
+    Enemy,
+    Roster,
+    Soldier,
+    enemy_decide,
+    resolve_fire,
+    validate_human_ranks,
+)
 from cohort.core.world import World, dist
 from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
 from cohort.env.observations import OBS_DIM, AgentView, build_observation
@@ -93,6 +104,8 @@ class CohortEnv(ParallelEnv):
         self._agent_known: dict[str, dict[int, tuple[float, float, int]]] = {}
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
+        self._support_umbrellas: list[tuple[Soldier, set[int]]] = []  # per-step (P2)
+        self._shots_at: dict[int, int] = {}  # enemy id → friendly shots this step
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
         self._success_step: int | None = None  # T0: success condition first met
         self._root_done_step: int | None = None  # truthful root-mission DONE step
@@ -169,6 +182,8 @@ class CohortEnv(ParallelEnv):
         )
         self._illegal_actions = 0
         self._episode_outcome = None
+        self._support_umbrellas = []
+        self._shots_at = {}
         self._last_net_contact_step = None
         self._success_step = None
         self._root_done_step = None
@@ -261,6 +276,14 @@ class CohortEnv(ParallelEnv):
                 soldiers[slot.leader].subordinate_ids.append(idx)
                 if slot.deputy:
                     soldiers[slot.leader].deputy_id = idx
+        if self.spec_cfg.root_human:
+            # the root commander (reports to HQ; senior on ties) is human
+            root = max(
+                (s for s in soldiers if s.leader_id is None),
+                key=lambda s: (AUTHORITY[s.rank], -s.id),
+            )
+            root.human = True
+        validate_human_ranks(soldiers)  # humans-outrank-all-non-humans, or raise
         for s in soldiers:
             s.prev_pos = s.pos
         self.roster = Roster(soldiers)
@@ -356,6 +379,16 @@ class CohortEnv(ParallelEnv):
         prev_dist = {
             s.callsign: self._anchor_distance(s) for s in self.roster.living if s.mission is not None
         }
+        # SUPPORT effects for this tick, from the snapshot positions:
+        # (supporter, supported-element ids) pairs whose supporter is in
+        # position. Focus fire is a coordination effect — enabled while any
+        # support relation is active. Per-target friendly shot counter for
+        # the focus-fire follow-up bonus.
+        self._support_umbrellas = [
+            (supporter, self._supported_element(supported))
+            for supporter, supported in self._active_supports()
+        ]
+        self._shots_at: dict[int, int] = {}
 
         # --- friendly actions ---
         enemy_kills: list[tuple[Soldier, Enemy]] = []
@@ -374,8 +407,16 @@ class CohortEnv(ParallelEnv):
         for dead in player_deaths:
             # net/umpire convention: the report comes from HQ, not the casualty
             self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
+            # rank-weighted: losing a leader costs more, by effective authority
+            weight = 1.0 + cfg.rank_casualty_scale * dead.effective_authority
             for other in self.roster.living:
-                ledger.add(other.callsign, "combat", cfg.teammate_death)
+                ledger.add(other.callsign, "combat", cfg.teammate_death * weight)
+            if dead.human:
+                # losing the human commander approaches mission failure: every
+                # present agent pays, on top of the normal death penalties; the
+                # episode continues and succession exercises
+                for callsign in present:
+                    ledger.add(callsign, "combat", cfg.human_death)
             for successor, replaced in self.roster.succeed(dead):
                 text = (
                     lang.format_taking_command(successor.callsign, replaced.callsign)
@@ -383,6 +424,8 @@ class CohortEnv(ParallelEnv):
                     else lang.format_assuming_position(successor.callsign, replaced.callsign)
                 )
                 self._say(MessageKind.TAKING_COMMAND, successor.id, None, text)
+        if player_deaths:
+            self._end_orphaned_supports()
 
         # --- kill sharing ---
         for shooter, _enemy in enemy_kills:
@@ -418,7 +461,10 @@ class CohortEnv(ParallelEnv):
                 continue
             ctx = self._compliance_ctx(soldier, prev_dist.get(callsign), views[callsign])
             if soldier.mission is not None:
-                if soldier.mission.type is MissionType.RECON and ctx.in_position:
+                if (
+                    soldier.mission.type in (MissionType.RECON, MissionType.SCREEN)
+                    and ctx.in_position
+                ):
                     soldier.mission.observe_steps += 1
                 ledger.add(callsign, "compliance", cfg.compliance_weight * compliance(soldier.mission.type, ctx))
             # reporting doctrine: out of contact and past the cadence → overdue
@@ -436,12 +482,20 @@ class CohortEnv(ParallelEnv):
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
 
-        # team observation progress for RECON campaigns
-        if root_obj is not None and self.spec_cfg.root_mission is MissionType.RECON:
+        # team observation progress for RECON / SCREEN campaigns. Each NOVEL
+        # step toward the success counter pays observe_progress to the
+        # observer (A2/A7 stall-exploit fix): the payout telescopes — it is
+        # bounded by the success threshold and cannot be farmed indefinitely.
+        if root_obj is not None and self.spec_cfg.root_mission in (
+            MissionType.RECON,
+            MissionType.SCREEN,
+        ):
             for s in self.roster.living:
                 if dist(s.pos, root_obj.pos) <= IN_POSITION_RADIUS[MissionType.RECON] and self.world.line_of_sight(
                     s.pos, root_obj.pos
                 ):
+                    if self._team_observe_steps < 2 * RECON_OBSERVE_STEPS:
+                        ledger.add(s.callsign, "compliance", cfg.observe_progress)
                     self._team_observe_steps += 1
                     break
 
@@ -557,9 +611,21 @@ class CohortEnv(ParallelEnv):
             return
         soldier.fired_this_step = True
         soldier.ammo -= 1
+        # focus fire ("pas un pas sans appui"): with an active support
+        # relation, follow-up shooters at an already-engaged target hit harder
+        modifier = 1.0
+        if self._support_umbrellas and self._shots_at.get(target.id, 0) >= 1:
+            modifier = self.combat.focus_fire_bonus
+        self._shots_at[target.id] = self._shots_at.get(target.id, 0) + 1
         d = dist(soldier.pos, target.pos)
         hit, damage = resolve_fire(
-            soldier.pos, target.pos, self.world.cover_at(target.pos), d, self.combat, self._rng
+            soldier.pos,
+            target.pos,
+            self.world.cover_at(target.pos),
+            d,
+            self.combat,
+            self._rng,
+            modifier=modifier,
         )
         if hit:
             target.health -= damage
@@ -671,6 +737,12 @@ class CohortEnv(ParallelEnv):
             self.world.objective_by_name(spec.order_objective) if spec.order_objective else None
         )
         obj_id = objective.id if objective else None
+        # unit-targeted SUPPORT: the supported unit is the sibling in slot j
+        supported_id: int | None = None
+        if spec.order_mission is MissionType.SUPPORT:
+            if spec.order_support_slot is None or spec.order_support_slot >= len(subs):
+                return
+            supported_id = subs[spec.order_support_slot].id
 
         # out of earshot (comm_model="range"): the transmission goes out but
         # nothing arrives — no mission change, no WILCO, no command credit
@@ -681,6 +753,7 @@ class CohortEnv(ParallelEnv):
                 recipient=recipient,
                 mission_type=spec.order_mission,
                 objective_id=obj_id,
+                supported_id=supported_id,
             )
             return
 
@@ -689,6 +762,7 @@ class CohortEnv(ParallelEnv):
             recipient.mission is not None
             and recipient.mission.type is spec.order_mission
             and recipient.mission.objective_id == obj_id
+            and recipient.mission.extra.get("supported_id") == supported_id
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             return
@@ -721,8 +795,9 @@ class CohortEnv(ParallelEnv):
             recipient=recipient,
             mission_type=spec.order_mission,
             objective_id=obj_id,
+            supported_id=supported_id,
         )
-        soldier.last_issued[recipient.id] = (spec.order_mission, obj_id)
+        soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
 
     def _assign_mission(
         self,
@@ -731,6 +806,7 @@ class CohortEnv(ParallelEnv):
         recipient: Soldier,
         mission_type: MissionType,
         objective_id: int | None,
+        supported_id: int | None = None,
     ) -> bool:
         """Transmit an order; if the recipient hears it, apply it (+ WILCO).
 
@@ -740,21 +816,27 @@ class CohortEnv(ParallelEnv):
         changes and no WILCO comes back — silence is the only clue.
         Returns True if the order was received and applied.
         """
-        if objective_id is not None:
+        extra: dict = {}
+        if mission_type is MissionType.SUPPORT and supported_id is not None:
+            supported = self.roster.by_id[supported_id]
+            anchor = supported.pos  # dynamic thereafter: tracks the supported soldier
+            target = supported.callsign
+            extra["supported_id"] = supported_id
+        elif objective_id is not None:
             anchor = self.world.objectives[objective_id].pos
-            obj_name = self.world.objectives[objective_id].name
+            target = self.world.objectives[objective_id].name
         elif mission_type is MissionType.RALLY:
             leader = self.roster.by_id.get(issuer_id)
             anchor = leader.pos if leader is not None else recipient.pos
-            obj_name = None
+            target = None
         else:  # HOLD (and any anchor-less mission): anchor where the order was received
             anchor = recipient.pos
-            obj_name = None
+            target = None
         self._say(
             MessageKind.ORDER,
             issuer_id,
             recipient.id,
-            lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
+            lang.format_order(issuer_cs, recipient.callsign, mission_type, target),
         )
         if not self._audible_to(recipient, issuer_id):
             return False
@@ -764,6 +846,7 @@ class CohortEnv(ParallelEnv):
             anchor=anchor,
             issuer_id=issuer_id,
             step_assigned=self._step_count,
+            extra=extra,
         )
         recipient.last_order_step = self._step_count
         if self.spec_cfg.auto_ack:
@@ -794,9 +877,20 @@ class CohortEnv(ParallelEnv):
         elif act == "fire":
             enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
+            # covered movement: firing at a supported element from inside an
+            # in-position supporter's umbrella degrades the attacker's accuracy
+            modifier = 1.0
+            if self._covered_by_support(target, enemy.pos):
+                modifier = self.combat.support_cover_accuracy
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
-                enemy.pos, target.pos, self.world.cover_at(target.pos), d, self.combat, self._rng
+                enemy.pos,
+                target.pos,
+                self.world.cover_at(target.pos),
+                d,
+                self.combat,
+                self._rng,
+                modifier=modifier,
             )
             if hit:
                 target.health -= damage
@@ -804,7 +898,9 @@ class CohortEnv(ParallelEnv):
                 if target.health <= 0 and target.alive:
                     target.alive = False
                     target.health = 0
-                    ledger.add(target.callsign, "combat", cfg.death)
+                    # rank-weighted death: dying as a leader costs more
+                    weight = 1.0 + cfg.rank_casualty_scale * target.effective_authority
+                    ledger.add(target.callsign, "combat", cfg.death * weight)
                     player_deaths.append(target)
 
     # ------------------------------------------------------------------ #
@@ -895,30 +991,43 @@ class CohortEnv(ParallelEnv):
             for callsign in self.agents
         }
 
-    def _anchor_distance(self, soldier: Soldier) -> float:
+    def _mission_anchor(self, soldier: Soldier) -> tuple[float, float] | None:
+        """Current anchor point of the soldier's mission (dynamic for
+        RALLY — the leader — and SUPPORT — the supported soldier)."""
         mission = soldier.mission
         if mission is None:
-            return 0.0
+            return None
         anchor = mission.anchor
         if mission.type is MissionType.RALLY:
             leader = self.roster.leader_of(soldier)
             if leader is not None:
                 anchor = leader.pos
+        elif mission.type is MissionType.SUPPORT:
+            supported = self.roster.by_id.get(mission.extra.get("supported_id"))
+            if supported is not None and supported.alive:
+                anchor = supported.pos
+        return anchor
+
+    def _anchor_distance(self, soldier: Soldier) -> float:
+        anchor = self._mission_anchor(soldier)
+        if anchor is None:
+            return 0.0
         return dist(soldier.pos, anchor)
 
     def _in_mission_position(self, soldier: Soldier, dist_now: float | None = None) -> bool:
-        """Is the soldier at its mission station (radius + LOS where required)?"""
+        """Is the soldier at its mission station (radius + LOS where required)?
+
+        SUPPORT stations relative to the supported soldier: within radius and
+        holding line of sight to *it* (you cannot support what you cannot see).
+        """
         mission = soldier.mission
         if mission is None:
             return False
         if dist_now is None:
             dist_now = self._anchor_distance(soldier)
-        anchor = mission.anchor
-        if mission.type is MissionType.RALLY:
-            leader = self.roster.leader_of(soldier)
-            anchor = leader.pos if leader is not None else anchor
+        anchor = self._mission_anchor(soldier)
         in_position = dist_now <= IN_POSITION_RADIUS[mission.type]
-        if mission.type in (MissionType.RECON, MissionType.OVERWATCH):
+        if mission.type in LOS_REQUIRED:
             in_position = in_position and self.world.line_of_sight(
                 soldier.pos, (int(anchor[0]), int(anchor[1]))
             )
@@ -927,19 +1036,78 @@ class CohortEnv(ParallelEnv):
     def _fire_discipline_factor(self, soldier: Soldier) -> float:
         """Combat-reward multiplier enforcing fire discipline by mission.
 
-        RECON is weapons tight: firing earns nothing (and compliance already
-        penalizes it). Static postures (DEFEND/OVERWATCH/HOLD) pay for
-        engagements fought FROM the mission position — chasing kills off the
-        position earns nothing. Assault tasks and untasked agents are free.
+        SCREEN is weapons tight: firing earns nothing (and compliance already
+        penalizes it). Static postures (OBSERVE/SUPPORT/COVER/DEFEND/DENY/
+        HOLD) pay for engagements fought FROM the mission position — chasing
+        kills off the position earns nothing. RECON (which may engage, per
+        PROTERRE), assault tasks, and untasked agents are free.
         """
         if not self.rewards_cfg.fire_discipline or soldier.mission is None:
             return 1.0
         mt = soldier.mission.type
-        if mt is MissionType.RECON:
+        if mt in WEAPONS_TIGHT:
             return 0.0
-        if mt in (MissionType.DEFEND, MissionType.OVERWATCH, MissionType.HOLD):
+        if mt in POSITION_ANCHORED_FIRE:
             return 1.0 if self._in_mission_position(soldier) else 0.0
         return 1.0
+
+    # ------------------------------------------------------------------ #
+    # SUPPORT relations
+    # ------------------------------------------------------------------ #
+
+    def _supported_element(self, supported: Soldier) -> set[int]:
+        """The supported element: the supported soldier + its living direct
+        subordinates (the unit it leads, or just itself if it leads none)."""
+        ids = {supported.id}
+        ids.update(s.id for s in supported.living_subordinates(self.roster))
+        return ids
+
+    def _active_supports(self) -> list[tuple[Soldier, Soldier]]:
+        """(supporter, supported) pairs whose supporter is in SUPPORT position."""
+        pairs: list[tuple[Soldier, Soldier]] = []
+        for s in self.roster.living:
+            m = s.mission
+            if m is None or m.type is not MissionType.SUPPORT:
+                continue
+            supported = self.roster.by_id.get(m.extra.get("supported_id"))
+            if supported is None or not supported.alive:
+                continue
+            if self._in_mission_position(s):
+                pairs.append((s, supported))
+        return pairs
+
+    def _covered_by_support(self, target: Soldier, shooter_pos: tuple[int, int]) -> bool:
+        """Covered movement: is ``target`` protected from a shot fired at it
+        from ``shooter_pos``? True when the target belongs to a supported
+        element and the shooter stands inside the umbrella of that element's
+        in-position supporter (computed from this step's snapshot)."""
+        return any(
+            target.id in element and dist(shooter_pos, supporter.pos) <= self.combat.support_umbrella
+            for supporter, element in self._support_umbrellas
+        )
+
+    def _end_orphaned_supports(self) -> None:
+        """Clear SUPPORT missions whose supported soldier died (with a notice).
+
+        A SUPPORT mission ends on re-tasking or on the supported unit's
+        death — succession does not transfer it: the supporter announces the
+        end on the net and stands by for new orders.
+        """
+        for s in self.roster.living:
+            m = s.mission
+            if m is None or m.type is not MissionType.SUPPORT:
+                continue
+            supported = self.roster.by_id.get(m.extra.get("supported_id"))
+            if supported is not None and supported.alive:
+                continue
+            supported_cs = supported.callsign if supported is not None else "STATION"
+            self._say(
+                MessageKind.SUPPORT_END,
+                s.id,
+                s.leader_id,
+                lang.format_support_end(self._addressee(s), s.callsign, supported_cs),
+            )
+            s.mission = None  # standing by for new orders
 
     def _compliance_ctx(
         self, soldier: Soldier, dist_prev: float | None, view: AgentView
@@ -973,7 +1141,7 @@ class CohortEnv(ParallelEnv):
     def _check_success(self, root_obj: Any) -> bool:
         mission = self.spec_cfg.root_mission
         living_enemies = [e for e in self.enemies if e.alive]
-        if mission in (MissionType.DEFEND, MissionType.CLEAR):
+        if mission in (MissionType.DEFEND, MissionType.DENY, MissionType.CLEAR):
             return not living_enemies
         if mission is MissionType.SEIZE:
             if root_obj is None:
@@ -981,7 +1149,7 @@ class CohortEnv(ParallelEnv):
             clear = not any(dist(e.pos, root_obj.pos) <= root_obj.radius + 1.0 for e in living_enemies)
             occupied = any(dist(s.pos, root_obj.pos) <= root_obj.radius for s in self.roster.living)
             return clear and occupied
-        if mission is MissionType.RECON:
+        if mission in (MissionType.RECON, MissionType.SCREEN):
             return self._team_observe_steps >= 2 * RECON_OBSERVE_STEPS
         return False
 
@@ -1025,6 +1193,24 @@ class CohortEnv(ParallelEnv):
                 msg = f"{issuing.callsign} does not outrank {recipient.callsign}."
                 raise PermissionError(msg)
             issuer_id, issuer_cs = issuing.id, issuing.callsign
+        # per-echelon admissibility (manual p. 8): e.g. DENY is a section
+        # mission — a fire team or rifleman can never hold it
+        if recipient.effective_authority < min_hold_authority(parsed.mission):
+            msg = (
+                f"{recipient.callsign} cannot hold {parsed.mission.name}: requires "
+                f"authority >= {min_hold_authority(parsed.mission)} (section level and above)."
+            )
+            raise PermissionError(msg)
+        supported_id: int | None = None
+        if parsed.mission is MissionType.SUPPORT:
+            supported = self.roster.by_callsign.get(parsed.target_callsign or "")
+            if supported is None or not supported.alive:
+                msg = f"No living station {parsed.target_callsign!r} to support."
+                raise lang.OrderParseError(msg)
+            if supported.id == recipient.id:
+                msg = f"{recipient.callsign} cannot support itself."
+                raise lang.OrderParseError(msg)
+            supported_id = supported.id
         objective = (
             self.world.objective_by_name(parsed.objective_name) if parsed.objective_name else None
         )
@@ -1037,6 +1223,7 @@ class CohortEnv(ParallelEnv):
             recipient=recipient,
             mission_type=parsed.mission,
             objective_id=objective.id if objective else None,
+            supported_id=supported_id,
         )
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 

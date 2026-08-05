@@ -53,14 +53,26 @@ def test_radio_messages_are_text_only():
 def test_human_hq_order_reaches_agent():
     env = make_env("fireteam")
     env.reset(seed=1)
-    env.inject_order("RFN1, overwatch obj bravo", issuer="HQ")
+    env.inject_order("RFN1, observe obj bravo", issuer="HQ")
     rfn1 = env.roster.by_callsign["RFN1"]
     assert rfn1.mission is not None
-    assert rfn1.mission.type is MissionType.OVERWATCH
+    assert rfn1.mission.type is MissionType.OBSERVE
     assert env.world.objectives[rfn1.mission.objective_id].name == "BRAVO"
     texts = [m.text for m in env.transcript.messages]
-    assert any("RFN1, THIS IS HQ: OVERWATCH OBJ BRAVO" in t for t in texts)
+    assert any("RFN1, THIS IS HQ: OBSERVE OBJ BRAVO" in t for t in texts)
     assert any("WILCO" in t for t in texts), "orders are acknowledged on the net"
+
+
+def test_per_echelon_admissibility_on_injection():
+    """DENY is a section mission (manual p. 8): a TL or RFN can never hold it."""
+    env = make_env("squad")
+    env.reset(seed=1)
+    env.inject_order("SL1, deny obj alpha", issuer="HQ")  # SL: authority 2 — fine
+    assert env.roster.by_callsign["SL1"].mission.type is MissionType.DENY
+    with pytest.raises(PermissionError, match="cannot hold DENY"):
+        env.inject_order("TL1, deny obj alpha", issuer="HQ")
+    with pytest.raises(PermissionError, match="cannot hold DENY"):
+        env.inject_order("RFN1, deny obj alpha", issuer="HQ")
 
 
 def test_agent_issuer_must_outrank_and_own_the_subordinate():

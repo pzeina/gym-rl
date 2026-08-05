@@ -34,8 +34,9 @@ def _print_status(env) -> None:
         state = "KIA" if not s.alive else f"{s.health:>3}hp {s.ammo:>2}rds"
         mission = s.mission.type.name if (s.alive and s.mission) else "STANDBY"
         acting = f" (acting {s.effective_rank.name})" if s.effective_rank is not s.rank else ""
+        human = " HUMAN" if s.human else ""
         leader = env.roster.by_id[s.leader_id].callsign if s.leader_id is not None else "HQ"
-        print(f"  {s.callsign:>5} [{s.rank.name}{acting}] → {leader:<5} {state}  {mission}  @{s.pos}")
+        print(f"  {s.callsign:>5} [{s.rank.name}{acting}{human}] → {leader:<5} {state}  {mission}  @{s.pos}")
 
 
 def _advance(env, obs, net, rng, n: int) -> dict:
