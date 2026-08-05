@@ -81,3 +81,24 @@ HQ for the senior agent) answers every completion report on the net — `ROGER, 
 CONFIRMED. OUT.` when the claim is verified, `NEGATIVE, CONTINUE MISSION. OUT.` when it
 is false. Command state therefore stays derivable from radio traffic alone through the
 completion phase: a reader who sees no confirmation knows the mission still stands.
+
+## Reporting doctrine (optional): mandatory SITREP cadence
+
+By default SITREP timing is purely reward-shaped (`sitrep_fresh`/`sitrep_spam`) and the
+*absence* of traffic carries no defined meaning. Setting `ScenarioSpec.sitrep_cadence=N`
+turns reporting into doctrine: an agent **not in contact** (no visible enemies) owes a
+SITREP every `N` steps —
+
+* being overdue draws `RewardConfig.sitrep_overdue` per silent step (magnitude matches
+  `sitrep_spam`), and the mandated cadence replaces `sitrep_interval` as the freshness
+  gap, so a due report is never scored as spam;
+* the SITREP clock starts at step 0 (the first report is owed within `N` steps);
+* due-ness (`min(1, steps_since_last_sitrep / N)`) is surfaced to the agent in the
+  comms-summary observation slot that is otherwise redundant (the "known enemy
+  present" flag, fully implied by the known-count field next to it) — `OBS_DIM` is
+  unchanged and old checkpoints are unaffected while the knob stays `None`;
+* agents in contact are exempt: contact reporting governs there.
+
+With a cadence set, silence acquires semantics: a station that is neither in contact
+nor reporting is *failing* to report — which is what lets a commander (or an external
+observer) distinguish "nothing to report" from "unable to report".

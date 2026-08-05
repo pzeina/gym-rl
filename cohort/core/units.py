@@ -92,6 +92,10 @@ class Enemy:
     goal: Coord | None = None       # assault objective
     last_seen_player: Coord | None = None
     last_seen_step: int = -10_000
+    # bookkeeping for the ground-truth oracle (core/oracle.py) only —
+    # never read by observations, rewards, masks, or the OpFor AI itself
+    prev_pos: Coord = (0, 0)
+    fired_this_step: bool = False
 
 
 class Roster:

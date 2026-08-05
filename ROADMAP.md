@@ -124,3 +124,22 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   LR annealed) — second instability of this kind, motivating **D4** below.
 - **2026-08-05** — dashboard Training-tab fix: delegated run-list clicks
   (auto-refresh was destroying per-item handlers), hidden-tab render guard.
+- **2026-08-05** — assurance-review fixes (external review, issues #3–#8):
+  net hygiene (CASUALTY from HQ, succession text fully in `language.py`,
+  per-episode reproducible eval seeding, public `env.outcome`, `auto_ack`
+  knob, order-mask cooldown — refs #8); MISSION COMPLETE verdicts answered
+  on the net (`DONE_CONFIRM`/`DONE_REJECT` — refs #4).
+- **2026-08-05** — **#3 fixed: the cohort now reports MISSION COMPLETE.**
+  Completion-report grace window (`ScenarioSpec.grace_window=12`): success
+  locks in at T0 but the episode stays open for the root's report, which ends
+  it (+`root_done_bonus`); the root's OPORD claim is judged against the *team*
+  success condition. Retrained: `fireteam_v3` **86% ± 7** (N=100; 67/86
+  successes end with the root's COMPLETE + HQ confirmation, ~5.5 DONE/ep) and
+  `squad_v2` **97% ± 3** (N=100; 44/97 end with the report, ~5.6 DONE/ep).
+  Old checkpoints keep their numbers under the new env (fireteam_v2 91% ± 6,
+  squad_v1 96% ± 4, platoon_v1 93% ± 5 — all ≥ their README claims), with 0
+  DONE reports, as measured by the assurance layer. Note: `squad_v2`'s
+  rolling-best checkpoint was saved before a mid-run collapse (D4, observed
+  again in both runs) and predated the reporting behavior — `ckpt_best` was
+  re-pointed to the final checkpoint after N=100 evaluation of both
+  (best-at-save 91% ± 6 / 8 report-endings vs final 97% ± 3 / 44).

@@ -91,8 +91,52 @@ So a subordinate that spots the garrison and reports it materially improves its 
 (and everyone's) information state — the reward for a novel report is aligned with an
 actual information channel, not a synthetic bonus.
 
+## The comms model (audibility)
+
+By default the net is a single, global, perfectly reliable channel
+(`ScenarioSpec.comm_model="global"`): every message reaches every station. The
+optional `comm_model="range"` (with `comm_range`, euclidean) makes audibility
+per-listener:
+
+* a message is heard only by stations within `comm_range` of the sender; the
+  sender always hears itself. HQ is a high-power station: HQ traffic is always
+  heard, and HQ always hears the root;
+* a CONTACT report updates only the enemy pictures of stations in earshot — the
+  team picture becomes *per-agent* (`_agent_known`), and each agent's "known
+  enemy" observation summary is built from its own picture (observation layout
+  unchanged);
+* an ORDER to an out-of-earshot subordinate is transmitted (it lands on the
+  transcript) but never received: no mission change, no WILCO, no command
+  credit — a missing acknowledgement finally *means* something;
+* other traffic (SITREP/DONE verdicts, CASUALTY, succession) is unchanged —
+  reports up the chain are adjudicated by the umpire regardless of range.
+
+Under `"global"` the behavior is byte-for-byte the shipped one; the knob is
+purely additive.
+
 ## Determinism
 
 All randomness flows through one `np.random.Generator` seeded at `reset(seed=...)`:
 map generation, spawns, combat rolls, OpFor jitter. Same seed + same actions ⇒ identical
 episodes, transcripts included (covered by tests).
+
+## The ground-truth oracle (external observers only)
+
+`env.oracle()` (`core/oracle.py`) returns an omniscient per-step snapshot: every unit —
+friendly and OpFor — with position, health, cover, visibility (who sees whom), the OpFor
+AI's internal state (mode, goal, last sighting), and a defined vocabulary of *behavior
+observables*: `attacking`, `advancing`, `retreating`, `covering` (protecting),
+`holding`, `hidden`, `wounded`, `down`.
+
+Two hard rules, both covered by tests:
+
+1. **The cohort never sees it.** Oracle data enters no observation, reward, or mask;
+   the observation layout is unchanged; calling the oracle consumes no randomness, so
+   it cannot perturb a seeded episode.
+2. **The net carries text only.** Radio messages are voice-procedure text — structured
+   payloads are forbidden by design. Ground truth for external analysis lives here, in
+   the oracle, not in the messages.
+
+The intended consumer is an external assurance layer: treat the enemy side of the
+snapshot as hidden ground truth and measure how well it can be inferred from the
+friendly side alone (own units + radio traffic).

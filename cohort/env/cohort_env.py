@@ -89,9 +89,14 @@ class CohortEnv(ParallelEnv):
         self._step_count = 0
         self._team_observe_steps = 0
         self._known_enemies: dict[int, tuple[float, float, int]] = {}  # id → (x, y, step)
+        #: per-listener enemy pictures, used only when comm_model="range"
+        self._agent_known: dict[str, dict[int, tuple[float, float, int]]] = {}
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
+        self._success_step: int | None = None  # T0: success condition first met
+        self._root_done_step: int | None = None  # truthful root-mission DONE step
+        self._root_done_callsign: str | None = None
 
     @property
     def outcome(self) -> str | None:
@@ -143,6 +148,11 @@ class CohortEnv(ParallelEnv):
         )
         self._spawn_roster()
         self._spawn_enemies()
+        if cfg.sitrep_cadence:
+            # reporting doctrine: the SITREP clock starts at step 0 — the
+            # first report is owed within sitrep_cadence steps
+            for s in self.roster.soldiers:
+                s.last_sitrep_step = 0
 
         self.agents = list(self.possible_agents)
         self.transcript = Transcript()
@@ -150,9 +160,15 @@ class CohortEnv(ParallelEnv):
         self._step_count = 0
         self._team_observe_steps = 0
         self._known_enemies = {}
+        self._agent_known = (
+            {cs: {} for cs in self._callsigns} if cfg.comm_model == "range" else {}
+        )
         self._illegal_actions = 0
         self._episode_outcome = None
         self._last_net_contact_step = None
+        self._success_step = None
+        self._root_done_step = None
+        self._root_done_callsign = None
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -170,12 +186,6 @@ class CohortEnv(ParallelEnv):
             HQ_ID,
             root.id,
             lang.format_opord(root.callsign, cfg.root_mission, cfg.root_objective),
-            payload={
-                "issuer": "HQ",
-                "recipient": root.callsign,
-                "mission": cfg.root_mission.name,
-                "objective": cfg.root_objective,
-            },
         )
 
         observations = self._all_observations()
@@ -212,7 +222,7 @@ class CohortEnv(ParallelEnv):
             for i in range(cfg.n_enemies):
                 pos = self._random_edge_cell(min_dist_from=target.pos, min_dist=10.0)
                 self.enemies.append(
-                    Enemy(id=i, pos=pos, home=pos, goal=target.pos, mode="assault")
+                    Enemy(id=i, pos=pos, home=pos, goal=target.pos, mode="assault", prev_pos=pos)
                 )
             return
         # garrison: majority on the OPORD objective, remainder round-robin
@@ -223,7 +233,7 @@ class CohortEnv(ParallelEnv):
         for i in range(cfg.n_enemies):
             obj = root_obj if i < n_root else others[(i - n_root) % len(others)]
             pos = self._random_cell_near(obj.pos, radius=2)
-            self.enemies.append(Enemy(id=i, pos=pos, home=pos, mode="garrison"))
+            self.enemies.append(Enemy(id=i, pos=pos, home=pos, mode="garrison", prev_pos=pos))
 
     def _bfs_free_cells(self, start: tuple[int, int], n: int) -> list[tuple[int, int]]:
         found: list[tuple[int, int]] = []
@@ -287,6 +297,9 @@ class CohortEnv(ParallelEnv):
         for s in self.roster.soldiers:
             s.prev_pos = s.pos
             s.fired_this_step = False
+        for e in self.enemies:  # oracle bookkeeping only (core/oracle.py)
+            e.prev_pos = e.pos
+            e.fired_this_step = False
         prev_dist = {
             s.callsign: self._anchor_distance(s) for s in self.roster.living if s.mission is not None
         }
@@ -307,13 +320,7 @@ class CohortEnv(ParallelEnv):
         # --- casualties and succession ---
         for dead in player_deaths:
             # net/umpire convention: the report comes from HQ, not the casualty
-            self._say(
-                MessageKind.CASUALTY,
-                HQ_ID,
-                None,
-                lang.format_casualty(dead.callsign),
-                payload={"callsign": dead.callsign},
-            )
+            self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
             for other in self.roster.living:
                 ledger.add(other.callsign, "combat", cfg.teammate_death)
             for successor, replaced in self.roster.succeed(dead):
@@ -322,17 +329,7 @@ class CohortEnv(ParallelEnv):
                     if not replaced.alive
                     else lang.format_assuming_position(successor.callsign, replaced.callsign)
                 )
-                self._say(
-                    MessageKind.TAKING_COMMAND,
-                    successor.id,
-                    None,
-                    text,
-                    payload={
-                        "successor": successor.callsign,
-                        "replaced": replaced.callsign,
-                        "assumed_command": not replaced.alive,
-                    },
-                )
+                self._say(MessageKind.TAKING_COMMAND, successor.id, None, text)
 
         # --- kill sharing ---
         for shooter, _enemy in enemy_kills:
@@ -342,11 +339,17 @@ class CohortEnv(ParallelEnv):
 
         # --- knowledge decay ---
         living_enemy_ids = {e.id for e in self.enemies if e.alive}
-        self._known_enemies = {
-            eid: entry
-            for eid, entry in self._known_enemies.items()
-            if eid in living_enemy_ids and step - entry[2] <= KNOWLEDGE_TTL
-        }
+
+        def _fresh(picture: dict[int, tuple[float, float, int]]) -> dict:
+            return {
+                eid: entry
+                for eid, entry in picture.items()
+                if eid in living_enemy_ids and step - entry[2] <= KNOWLEDGE_TTL
+            }
+
+        self._known_enemies = _fresh(self._known_enemies)
+        for callsign in self._agent_known:
+            self._agent_known[callsign] = _fresh(self._agent_known[callsign])
 
         # --- mission progress + compliance + step costs ---
         root_obj = (
@@ -365,6 +368,14 @@ class CohortEnv(ParallelEnv):
                 if soldier.mission.type is MissionType.RECON and ctx.in_position:
                     soldier.mission.observe_steps += 1
                 ledger.add(callsign, "compliance", cfg.compliance_weight * compliance(soldier.mission.type, ctx))
+            # reporting doctrine: out of contact and past the cadence → overdue
+            cadence = self.spec_cfg.sitrep_cadence
+            if (
+                cadence
+                and not views[callsign].visible_enemies
+                and step - soldier.last_sitrep_step > cadence
+            ):
+                ledger.add(callsign, "report", cfg.sitrep_overdue)
             # leader coverage
             if soldier.effective_authority > 0 and soldier.mission is not None:
                 subs = soldier.living_subordinates(self.roster)
@@ -382,14 +393,37 @@ class CohortEnv(ParallelEnv):
                     break
 
         # --- terminal conditions ---
-        success = self._check_success(root_obj)
-        defeat = not any(s.alive for s in self.roster.soldiers)
+        # Success does not terminate on the spot: when the root-mission
+        # condition is first met (T0) a completion-report grace window opens,
+        # giving the root time to transmit MISSION COMPLETE. A truthful root
+        # DONE ends the episode that step (root_done_bonus); otherwise it ends
+        # as success at T0 + grace_window anyway. Success is locked in at T0 —
+        # the speed bonus is computed from T0, so policies that never report
+        # keep their success rate and terminal reward.
+        if self._check_success(root_obj) and self._success_step is None:
+            self._success_step = step  # T0: the window opens
+        success_locked = self._success_step is not None
+        cohort_wiped = not any(s.alive for s in self.roster.soldiers)
+        defeat = cohort_wiped and not success_locked
+        root_reported = (
+            success_locked
+            and self._root_done_step is not None
+            and self._root_done_step >= self._success_step
+        )
+        success = success_locked and (
+            root_reported
+            or step >= self._success_step + self.spec_cfg.grace_window
+            or step >= self.spec_cfg.max_steps
+            or cohort_wiped
+        )
         truncated_all = step >= self.spec_cfg.max_steps and not success and not defeat
         if success:
             self._episode_outcome = "success"
-            speed = cfg.success_speed * max(0.0, 1.0 - step / self.spec_cfg.max_steps)
+            speed = cfg.success_speed * max(0.0, 1.0 - self._success_step / self.spec_cfg.max_steps)
             for s in self.roster.living:
                 ledger.add(s.callsign, "terminal", cfg.success_team + speed)
+            if root_reported and self._root_done_callsign is not None:
+                ledger.add(self._root_done_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
             self._episode_outcome = "defeat"
             for callsign in present:
@@ -442,7 +476,10 @@ class CohortEnv(ParallelEnv):
         elif spec.kind == "contact":
             self._report_contact(soldier, ledger)
         elif spec.kind == "sitrep":
-            fresh = self._step_count - soldier.last_sitrep_step >= cfg.sitrep_interval
+            # under the reporting doctrine the mandated cadence *is* the
+            # freshness interval, so a due report is never scored as spam
+            interval = self.spec_cfg.sitrep_cadence or cfg.sitrep_interval
+            fresh = self._step_count - soldier.last_sitrep_step >= interval
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
             soldier.last_sitrep_step = self._step_count
             self._say(
@@ -452,13 +489,6 @@ class CohortEnv(ParallelEnv):
                 lang.format_sitrep(
                     self._addressee(soldier), soldier.callsign, soldier.health, soldier.ammo, soldier.pos
                 ),
-                payload={
-                    "sender": soldier.callsign,
-                    "recipient": self._addressee(soldier),
-                    "grid": [int(soldier.pos[0]), int(soldier.pos[1])],
-                    "health": soldier.health,
-                    "ammo": soldier.ammo,
-                },
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
@@ -480,10 +510,11 @@ class CohortEnv(ParallelEnv):
         )
         if hit:
             target.health -= damage
-            ledger.add(soldier.callsign, "combat", cfg.hit_enemy)
+            discipline = self._fire_discipline_factor(soldier)
+            ledger.add(soldier.callsign, "combat", cfg.hit_enemy * discipline)
             if target.health <= 0:
                 target.alive = False
-                ledger.add(soldier.callsign, "combat", cfg.kill_enemy)
+                ledger.add(soldier.callsign, "combat", cfg.kill_enemy * discipline)
                 enemy_kills.append((soldier, target))
 
     def _report_contact(self, soldier: Soldier, ledger: RewardLedger) -> None:
@@ -495,6 +526,14 @@ class CohortEnv(ParallelEnv):
         for e in visible:
             self._known_enemies[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
             soldier.reported_enemy_ids.add(e.id)
+        if self.spec_cfg.comm_model == "range":
+            # the report only reaches stations within earshot: their pictures
+            # update; everyone else's stays stale (the sender hears itself)
+            for listener in self.roster.living:
+                if self._audible_to(listener, soldier.id):
+                    picture = self._agent_known.setdefault(listener.callsign, {})
+                    for e in visible:
+                        picture[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
         soldier.last_contact_report_step = self._step_count
         self._last_net_contact_step = self._step_count
         ledger.add(soldier.callsign, "report", cfg.contact_new if new_intel else cfg.contact_redundant)
@@ -504,12 +543,6 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             soldier.leader_id,
             lang.format_contact(self._addressee(soldier), soldier.callsign, len(visible), nearest.pos),
-            payload={
-                "sender": soldier.callsign,
-                "recipient": self._addressee(soldier),
-                "grid": [int(nearest.pos[0]), int(nearest.pos[1])],
-                "count": len(visible),
-            },
         )
 
     def _report_done(self, soldier: Soldier, ledger: RewardLedger) -> None:
@@ -518,23 +551,34 @@ class CohortEnv(ParallelEnv):
         if mission is None:
             return
         ctx = self._compliance_ctx(soldier, None, self._make_view(soldier))
-        truthful = is_complete(mission, ctx)
+        root_objective = (
+            self.world.objective_by_name(self.spec_cfg.root_objective)
+            if self.spec_cfg.root_objective
+            else None
+        )
+        is_root_mission_claim = (
+            soldier is self.roster.root()
+            and mission.issuer_id == HQ_ID
+            and mission.type is self.spec_cfg.root_mission
+            and mission.objective_id == (root_objective.id if root_objective else None)
+        )
+        # The root's OPORD claim reports the *operation*: it is judged against
+        # the team success condition (e.g. objective clear AND held by anyone),
+        # not against the claimant's personal end state — a commander reports
+        # the mission complete when the unit achieved it, wherever it stands.
+        truthful = (
+            self._check_success(root_objective)
+            if is_root_mission_claim
+            else is_complete(mission, ctx)
+        )
         obj_name = (
             self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
         )
-        verdict = "confirmed" if truthful else "rejected"
         self._say(
             MessageKind.DONE,
             soldier.id,
             soldier.leader_id,
             lang.format_done(self._addressee(soldier), soldier.callsign, mission.type, obj_name),
-            payload={
-                "sender": soldier.callsign,
-                "recipient": self._addressee(soldier),
-                "mission": mission.type.name,
-                "objective": obj_name,
-                "verdict": verdict,
-            },
         )
         # the superior answers on the net: the verdict is command traffic, not
         # a secret side effect (a false claimant silently keeping its mission
@@ -542,21 +586,17 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         responder_id = leader.id if leader is not None else HQ_ID
         responder_cs = self._addressee(soldier)
-        response_payload = {
-            "issuer": responder_cs,
-            "recipient": soldier.callsign,
-            "mission": mission.type.name,
-            "objective": obj_name,
-            "verdict": verdict,
-        }
         if truthful:
             self._say(
                 MessageKind.DONE_CONFIRM,
                 responder_id,
                 soldier.id,
                 lang.format_done_confirm(soldier.callsign, responder_cs, mission.type, obj_name),
-                payload=response_payload,
             )
+            if is_root_mission_claim:
+                # truthful root-mission COMPLETE: closes the grace window
+                self._root_done_step = self._step_count
+                self._root_done_callsign = soldier.callsign
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
         else:
@@ -565,7 +605,6 @@ class CohortEnv(ParallelEnv):
                 responder_id,
                 soldier.id,
                 lang.format_done_reject(soldier.callsign, responder_cs),
-                payload=response_payload,
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
 
@@ -579,6 +618,18 @@ class CohortEnv(ParallelEnv):
             self.world.objective_by_name(spec.order_objective) if spec.order_objective else None
         )
         obj_id = objective.id if objective else None
+
+        # out of earshot (comm_model="range"): the transmission goes out but
+        # nothing arrives — no mission change, no WILCO, no command credit
+        if not self._audible_to(recipient, soldier.id):
+            self._assign_mission(
+                issuer_id=soldier.id,
+                issuer_cs=soldier.callsign,
+                recipient=recipient,
+                mission_type=spec.order_mission,
+                objective_id=obj_id,
+            )
+            return
 
         # churn: reissuing the standing order is radio noise, not command
         if (
@@ -627,8 +678,15 @@ class CohortEnv(ParallelEnv):
         recipient: Soldier,
         mission_type: MissionType,
         objective_id: int | None,
-    ) -> None:
-        """Apply an order: set the recipient's mission, log ORDER + WILCO."""
+    ) -> bool:
+        """Transmit an order; if the recipient hears it, apply it (+ WILCO).
+
+        Under ``comm_model="global"`` every order is heard. Under ``"range"``
+        an out-of-earshot recipient never receives the mission: the ORDER
+        still lands on the transcript (it was transmitted), but nothing
+        changes and no WILCO comes back — silence is the only clue.
+        Returns True if the order was received and applied.
+        """
         if objective_id is not None:
             anchor = self.world.objectives[objective_id].pos
             obj_name = self.world.objectives[objective_id].name
@@ -639,6 +697,14 @@ class CohortEnv(ParallelEnv):
         else:  # HOLD (and any anchor-less mission): anchor where the order was received
             anchor = recipient.pos
             obj_name = None
+        self._say(
+            MessageKind.ORDER,
+            issuer_id,
+            recipient.id,
+            lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
+        )
+        if not self._audible_to(recipient, issuer_id):
+            return False
         recipient.mission = Mission(
             type=mission_type,
             objective_id=objective_id,
@@ -647,26 +713,14 @@ class CohortEnv(ParallelEnv):
             step_assigned=self._step_count,
         )
         recipient.last_order_step = self._step_count
-        self._say(
-            MessageKind.ORDER,
-            issuer_id,
-            recipient.id,
-            lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
-            payload={
-                "issuer": issuer_cs,
-                "recipient": recipient.callsign,
-                "mission": mission_type.name,
-                "objective": obj_name,
-            },
-        )
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
                 recipient.id,
                 issuer_id,
                 lang.format_ack(issuer_cs, recipient.callsign),
-                payload={"issuer": issuer_cs, "recipient": recipient.callsign},
             )
+        return True
 
     # ------------------------------------------------------------------ #
     # OpFor
@@ -685,6 +739,7 @@ class CohortEnv(ParallelEnv):
         if act == "move" and arg is not None and self.world.passable(arg):
             enemy.pos = arg
         elif act == "fire":
+            enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
@@ -702,6 +757,23 @@ class CohortEnv(ParallelEnv):
     # ------------------------------------------------------------------ #
     # views, masks, observations, compliance
     # ------------------------------------------------------------------ #
+
+    def _audible_to(self, listener: Soldier, sender_id: int) -> bool:
+        """Can ``listener`` hear a transmission from ``sender_id``?
+
+        ``comm_model="global"`` (default): always. ``"range"``: only within
+        ``comm_range`` (euclidean). The sender always hears itself. HQ is a
+        high-power station: its traffic is always heard, and it always hears
+        the root (the root's up-channel reports are adjudicated regardless).
+        """
+        if self.spec_cfg.comm_model != "range":
+            return True
+        if sender_id == HQ_ID:
+            return True
+        sender = self.roster.by_id.get(sender_id)
+        if sender is None or sender.id == listener.id:
+            return True
+        return dist(sender.pos, listener.pos) <= self.spec_cfg.comm_range
 
     def _visible_enemies(self, soldier: Soldier) -> list[Enemy]:
         visible = [
@@ -722,10 +794,22 @@ class CohortEnv(ParallelEnv):
         return None
 
     def _make_view(self, soldier: Soldier) -> AgentView:
+        known = (
+            self._agent_known.get(soldier.callsign, {})
+            if self.spec_cfg.comm_model == "range"
+            else self._known_enemies
+        )
+        cadence = self.spec_cfg.sitrep_cadence
+        sitrep_due = (
+            min(1.0, max(0.0, (self._step_count - soldier.last_sitrep_step) / cadence))
+            if cadence
+            else None
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
-            known_enemies=[(x, y) for (x, y, _t) in self._known_enemies.values()],
+            known_enemies=[(x, y) for (x, y, _t) in known.values()],
             step=self._step_count,
+            sitrep_due=sitrep_due,
         )
 
     def _compute_views(self) -> dict[str, AgentView]:
@@ -769,6 +853,41 @@ class CohortEnv(ParallelEnv):
                 anchor = leader.pos
         return dist(soldier.pos, anchor)
 
+    def _in_mission_position(self, soldier: Soldier, dist_now: float | None = None) -> bool:
+        """Is the soldier at its mission station (radius + LOS where required)?"""
+        mission = soldier.mission
+        if mission is None:
+            return False
+        if dist_now is None:
+            dist_now = self._anchor_distance(soldier)
+        anchor = mission.anchor
+        if mission.type is MissionType.RALLY:
+            leader = self.roster.leader_of(soldier)
+            anchor = leader.pos if leader is not None else anchor
+        in_position = dist_now <= IN_POSITION_RADIUS[mission.type]
+        if mission.type in (MissionType.RECON, MissionType.OVERWATCH):
+            in_position = in_position and self.world.line_of_sight(
+                soldier.pos, (int(anchor[0]), int(anchor[1]))
+            )
+        return in_position
+
+    def _fire_discipline_factor(self, soldier: Soldier) -> float:
+        """Combat-reward multiplier enforcing fire discipline by mission.
+
+        RECON is weapons tight: firing earns nothing (and compliance already
+        penalizes it). Static postures (DEFEND/OVERWATCH/HOLD) pay for
+        engagements fought FROM the mission position — chasing kills off the
+        position earns nothing. Assault tasks and untasked agents are free.
+        """
+        if not self.rewards_cfg.fire_discipline or soldier.mission is None:
+            return 1.0
+        mt = soldier.mission.type
+        if mt is MissionType.RECON:
+            return 0.0
+        if mt in (MissionType.DEFEND, MissionType.OVERWATCH, MissionType.HOLD):
+            return 1.0 if self._in_mission_position(soldier) else 0.0
+        return 1.0
+
     def _compliance_ctx(
         self, soldier: Soldier, dist_prev: float | None, view: AgentView
     ) -> ComplianceContext:
@@ -780,16 +899,7 @@ class CohortEnv(ParallelEnv):
         in_position = False
         enemies_at_obj = 0
         if mission is not None:
-            radius = IN_POSITION_RADIUS[mission.type]
-            anchor = mission.anchor
-            if mission.type is MissionType.RALLY:
-                leader = self.roster.leader_of(soldier)
-                anchor = leader.pos if leader is not None else anchor
-            in_position = dist_now <= radius
-            if mission.type in (MissionType.RECON, MissionType.OVERWATCH):
-                in_position = in_position and self.world.line_of_sight(
-                    soldier.pos, (int(anchor[0]), int(anchor[1]))
-                )
+            in_position = self._in_mission_position(soldier, dist_now=dist_now)
             if mission.objective_id is not None:
                 obj = self.world.objectives[mission.objective_id]
                 enemies_at_obj = sum(
@@ -830,22 +940,8 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
-    def _say(
-        self,
-        kind: MessageKind,
-        sender: int,
-        recipient: int | None,
-        text: str,
-        payload: dict | None = None,
-    ) -> None:
-        msg = Message(
-            step=self._step_count,
-            kind=kind,
-            sender_id=sender,
-            recipient_id=recipient,
-            text=text,
-            payload=payload or {},
-        )
+    def _say(self, kind: MessageKind, sender: int, recipient: int | None, text: str) -> None:
+        msg = Message(step=self._step_count, kind=kind, sender_id=sender, recipient_id=recipient, text=text)
         self.transcript.add(msg)
         self.last_messages.append(msg)
 
@@ -890,6 +986,22 @@ class CohortEnv(ParallelEnv):
             objective_id=objective.id if objective else None,
         )
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
+
+    # ------------------------------------------------------------------ #
+    # ground-truth oracle (external observers only)
+    # ------------------------------------------------------------------ #
+
+    def oracle(self) -> dict:
+        """Ground-truth snapshot incl. OpFor internals — for external observers.
+
+        Behavior observables (core/oracle.py) for every unit, friendly and
+        enemy. Strictly outside the simulation loop: never feeds agent
+        observations, rewards, or masks, and consumes no randomness. Call
+        after reset() or after each step().
+        """
+        from cohort.core.oracle import observe
+
+        return observe(self)
 
     # ------------------------------------------------------------------ #
     # rendering

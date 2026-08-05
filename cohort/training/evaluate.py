@@ -66,6 +66,7 @@ def run_episode(
         "survivors": sum(s.alive for s in env.roster.soldiers),
         "orders": sum(m.kind.value == "order" for m in env.transcript.messages),
         "reports": sum(m.kind.value in ("contact", "sitrep", "done") for m in env.transcript.messages),
+        "done_reports": sum(m.kind.value == "done" for m in env.transcript.messages),
     }
 
 
@@ -116,6 +117,7 @@ def evaluate(
         "mean_survivors": float(np.mean([r["survivors"] for r in results])),
         "mean_orders": float(np.mean([r["orders"] for r in results])),
         "mean_reports": float(np.mean([r["reports"] for r in results])),
+        "mean_done_reports": float(np.mean([r["done_reports"] for r in results])),
     }
     label = "random baseline" if net is None else checkpoint
     print(f"eval [{label}] on {scenario}:")

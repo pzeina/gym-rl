@@ -17,6 +17,7 @@ same language back*:
 [t= 87] ALL STATIONS: TL1 IS DOWN. OUT.
 [t= 87] ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.
 [t=112] HQ, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+[t=112] RFN1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
 ```
 
 The same sentence a human types — `TL1, seize obj bravo` — is parsed, validated against
@@ -164,7 +165,7 @@ python -m cohort.play --checkpoint runs/<run-name>/ckpt_best.pt
 ```
 
 A checkpoint trained on one scenario can be loaded in any other (identical observation
-and action spaces): `python -m cohort.play --checkpoint runs/fireteam_v2/ckpt_best.pt
+and action spaces): `python -m cohort.play --checkpoint runs/fireteam_v3/ckpt_best.pt
 --scenario squad` works — and `--init-from` continues training from any checkpoint.
 
 ## The command language (NATO voice procedure)
@@ -202,6 +203,19 @@ callsigns). Per agent, per step:
   contact reports, truthful completion reports, doctrine-preferred orders + subordinate
   coverage, combat events, shared terminal success/defeat. Component means are plotted
   per run so you can see *why* the cohort improves.
+* **Comms model** (`ScenarioSpec.comm_model`): `"global"` (default) is a single
+  perfectly reliable net — every station hears everything. `"range"` makes audibility
+  per-listener (euclidean `comm_range`; HQ is a high-power station): CONTACT reports
+  feed only the pictures of stations in earshot, and an order to an out-of-earshot
+  subordinate is transmitted but never received — no WILCO comes back, so silence
+  carries information.
+* **Completion reporting is load-bearing**: when the root-mission success condition is
+  first met, the episode stays open for a short window (`ScenarioSpec.grace_window`,
+  default 12 steps). A truthful `MISSION COMPLETE` from the senior agent — judged
+  against the *team* end state and confirmed by HQ on the net — ends the episode that
+  step and earns a bonus; otherwise the episode ends as a success at the window's close
+  (speed bonus anchored at the moment the condition was met, so winning never depends
+  on reporting — but reporting is what ends the operation *on the net*).
 
 ### Scenarios
 
@@ -225,11 +239,21 @@ mid-episode, succession, and truncation bootstrapping are handled in the GAE buf
 
 ### Results (fireteam, 1.5M steps, ~6 min on a laptop CPU)
 
-See `runs/fireteam_v2/` — **90% ± 6** evaluation success (95% CI, N=100 episodes):
+See `runs/fireteam_v3/` — **86% ± 7** evaluation success (95% CI, N=100 episodes), and
+the operation now *ends on the net*: in 67 of 86 successful episodes the transcript
+closes with the root's completion report and HQ's confirmation —
 
-![training curves](runs/fireteam_v2/training_curves.png)
+```
+[t= 90] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+[t= 90] TL1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+```
 
-![episode](runs/fireteam_v2/eval.gif)
+(~5.5 DONE reports per episode; the pre-v1.2 checkpoints never transmitted one.
+The earlier run is kept in `runs/fireteam_v2/`.)
+
+![training curves](runs/fireteam_v3/training_curves.png)
+
+![episode](runs/fireteam_v3/eval.gif)
 
 The eval GIF shows the map (APP-6 unit symbols, chain-of-command links, mission anchors)
 side by side with the live radio net. The full transcript of the episode is written to
@@ -237,27 +261,29 @@ side by side with the live radio net. The full transcript of the episode is writ
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v1/` — **89% ± 6** success (95% CI, N=100). The SL receives the OPORD, tasks
+`runs/squad_v2/` — **97% ± 3** success (95% CI, N=100). The SL receives the OPORD, tasks
 its two fire-team leaders, and the TLs task their riflemen; the same shared network
-plays all three roles:
+plays all three roles, and the SL reports MISSION COMPLETE up to HQ when the operation
+is won (44 of 97 successes close with the report; ~5.6 DONE reports per episode).
+The earlier run is kept in `runs/squad_v1/`.
 
-![squad curves](runs/squad_v1/training_curves.png)
+![squad curves](runs/squad_v2/training_curves.png)
 
-![squad episode](runs/squad_v1/eval.gif)
+![squad episode](runs/squad_v2/eval.gif)
 
 ### Results (platoon — three command echelons, 16 agents)
 
-`runs/platoon_v1/` — **89% ± 6** success (95% CI, N=100), trained by curriculum from the
-squad checkpoint (6M steps at `--lr 1e-4`). The full chain activates within ~16 steps of
-the OPORD: HQ → PL1, PL1 tasks PSG1/SLs, SLs task their TLs, TLs task their riflemen —
-one shared network playing every echelon:
+`runs/platoon_v1/` — **93% ± 5** success (95% CI, N=100, re-evaluated under the v1.2
+environment), trained by curriculum from the squad checkpoint (6M steps at `--lr 1e-4`).
+The full chain activates within ~16 steps of the OPORD: HQ → PL1, PL1 tasks PSG1/SLs,
+SLs task their TLs, TLs task their riflemen — one shared network playing every echelon:
 
 ![platoon curves](runs/platoon_v1/training_curves.png)
 
 ![platoon episode](runs/platoon_v1/eval.gif)
 
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
-first, then `--init-from runs/fireteam_v2/ckpt_best.pt` for `squad`, and so on up to
+first, then `--init-from runs/fireteam_v3/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
 
 ## Project layout
@@ -284,8 +310,9 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 71 tests: ranks, language, doctrine, succession, masking,
-                       PettingZoo API, rewards, combat, dashboard, training smoke
+tests/                 100 tests: ranks, language, doctrine, succession, masking,
+                       PettingZoo API, rewards, combat, completion reporting,
+                       comms range, SITREP cadence, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 

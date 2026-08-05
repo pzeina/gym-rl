@@ -29,6 +29,27 @@ def _no_cooldown_env(scenario="fireteam"):
     return make_env(replace(get_scenario(scenario), order_cooldown=0))
 
 
+def test_radio_messages_are_text_only():
+    """Owner decision: the net carries voice-procedure text, nothing else.
+
+    Structured payloads on messages are forbidden — the transcript is the
+    single source of truth for what was said, and ground truth for external
+    analysis lives in the oracle observer channel, not in the messages.
+    This test pins the Message schema so payloads cannot quietly return.
+    """
+    import dataclasses
+
+    from cohort.core.orders import Message
+
+    assert {f.name for f in dataclasses.fields(Message)} == {
+        "step",
+        "kind",
+        "sender_id",
+        "recipient_id",
+        "text",
+    }
+
+
 def test_human_hq_order_reaches_agent():
     env = make_env("fireteam")
     env.reset(seed=1)

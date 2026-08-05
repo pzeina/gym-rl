@@ -30,7 +30,10 @@ class RewardConfig:
     contact_redundant: float = -0.02
     sitrep_fresh: float = 0.05        # sitrep after >= sitrep_interval quiet steps
     sitrep_spam: float = -0.02
-    sitrep_interval: int = 25
+    sitrep_interval: int = 25         # freshness gap; ScenarioSpec.sitrep_cadence
+    #                                   overrides it when the reporting doctrine is on
+    sitrep_overdue: float = -0.02     # per step out of contact past the mandated
+    #                                   cadence without a SITREP (doctrine only)
     done_true: float = 1.0
     done_false: float = -0.5
 
@@ -47,6 +50,14 @@ class RewardConfig:
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.02       # some living subordinate left untasked
 
+    # Fire discipline by mission (found via oracle diagnosis: combat rewards
+    # were dominating mission compliance — RECON elements out-shot OVERWATCH,
+    # and defenders sallied off the objective to chase kills and died in the
+    # open 32:5). With the flag on, the shooter's hit/kill rewards are scaled:
+    # RECON → 0 (weapons tight); DEFEND/OVERWATCH/HOLD → paid only when firing
+    # from the mission position; SEIZE/CLEAR/RALLY/untasked → unchanged.
+    # Teammate kill-shares are NOT scaled (the shooter's incentive is the lever).
+    fire_discipline: bool = True
     hit_enemy: float = 0.2
     kill_enemy: float = 1.0
     team_kill_share: float = 0.2      # everyone else, per enemy killed
@@ -61,6 +72,10 @@ class RewardConfig:
     # (observed in practice on the squad scenario before this margin was set).
     success_team: float = 25.0
     success_speed: float = 10.0       # x fraction of steps remaining at success
+    root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
+    #                                   DONE inside the completion-report grace window
+    #                                   (one-shot, paid with the terminal reward — not
+    #                                   farmable per-step, so terminal dominance holds)
     defeat: float = -2.0              # whole cohort wiped out
 
     def max_step_farm(self) -> float:

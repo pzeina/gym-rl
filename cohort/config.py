@@ -87,6 +87,24 @@ class ScenarioSpec:
     order_cooldown: int = 8       # steps a leader cannot re-task the same subordinate
     #                               (masked); lifted early if the leader's own mission
     #                               changed or a CONTACT hit the net since. 0 → off.
+    grace_window: int = 12        # steps the episode stays open after the root-mission
+    #                               success condition is first met, giving the root time
+    #                               to transmit MISSION COMPLETE; a truthful root DONE
+    #                               ends the episode that step, otherwise it ends as
+    #                               success at the window's end anyway. 0 → immediate
+    #                               termination (pre-v1.2 behavior).
+    comm_model: str = "global"    # "global" → every station hears every message (the
+    #                               shipped behavior); "range" → a message is heard only
+    #                               by stations within comm_range of the sender
+    #                               (euclidean; the sender always hears itself; HQ is a
+    #                               high-power station: HQ traffic is always heard and
+    #                               HQ always hears the root).
+    comm_range: float = 12.0      # audible radius under comm_model="range"
+    sitrep_cadence: int | None = None  # reporting doctrine: an agent not in contact
+    #                               owes a SITREP every this-many steps; overdue draws
+    #                               RewardConfig.sitrep_overdue per step and is surfaced
+    #                               in the agent's observation. None (default) → no
+    #                               doctrine, the shipped behavior.
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {
