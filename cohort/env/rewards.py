@@ -50,6 +50,14 @@ class RewardConfig:
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.02       # some living subordinate left untasked
 
+    # Fire discipline by mission (found via oracle diagnosis: combat rewards
+    # were dominating mission compliance — RECON elements out-shot OVERWATCH,
+    # and defenders sallied off the objective to chase kills and died in the
+    # open 32:5). With the flag on, the shooter's hit/kill rewards are scaled:
+    # RECON → 0 (weapons tight); DEFEND/OVERWATCH/HOLD → paid only when firing
+    # from the mission position; SEIZE/CLEAR/RALLY/untasked → unchanged.
+    # Teammate kill-shares are NOT scaled (the shooter's incentive is the lever).
+    fire_discipline: bool = True
     hit_enemy: float = 0.2
     kill_enemy: float = 1.0
     team_kill_share: float = 0.2      # everyone else, per enemy killed

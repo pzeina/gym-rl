@@ -510,10 +510,11 @@ class CohortEnv(ParallelEnv):
         )
         if hit:
             target.health -= damage
-            ledger.add(soldier.callsign, "combat", cfg.hit_enemy)
+            discipline = self._fire_discipline_factor(soldier)
+            ledger.add(soldier.callsign, "combat", cfg.hit_enemy * discipline)
             if target.health <= 0:
                 target.alive = False
-                ledger.add(soldier.callsign, "combat", cfg.kill_enemy)
+                ledger.add(soldier.callsign, "combat", cfg.kill_enemy * discipline)
                 enemy_kills.append((soldier, target))
 
     def _report_contact(self, soldier: Soldier, ledger: RewardLedger) -> None:
@@ -852,6 +853,41 @@ class CohortEnv(ParallelEnv):
                 anchor = leader.pos
         return dist(soldier.pos, anchor)
 
+    def _in_mission_position(self, soldier: Soldier, dist_now: float | None = None) -> bool:
+        """Is the soldier at its mission station (radius + LOS where required)?"""
+        mission = soldier.mission
+        if mission is None:
+            return False
+        if dist_now is None:
+            dist_now = self._anchor_distance(soldier)
+        anchor = mission.anchor
+        if mission.type is MissionType.RALLY:
+            leader = self.roster.leader_of(soldier)
+            anchor = leader.pos if leader is not None else anchor
+        in_position = dist_now <= IN_POSITION_RADIUS[mission.type]
+        if mission.type in (MissionType.RECON, MissionType.OVERWATCH):
+            in_position = in_position and self.world.line_of_sight(
+                soldier.pos, (int(anchor[0]), int(anchor[1]))
+            )
+        return in_position
+
+    def _fire_discipline_factor(self, soldier: Soldier) -> float:
+        """Combat-reward multiplier enforcing fire discipline by mission.
+
+        RECON is weapons tight: firing earns nothing (and compliance already
+        penalizes it). Static postures (DEFEND/OVERWATCH/HOLD) pay for
+        engagements fought FROM the mission position — chasing kills off the
+        position earns nothing. Assault tasks and untasked agents are free.
+        """
+        if not self.rewards_cfg.fire_discipline or soldier.mission is None:
+            return 1.0
+        mt = soldier.mission.type
+        if mt is MissionType.RECON:
+            return 0.0
+        if mt in (MissionType.DEFEND, MissionType.OVERWATCH, MissionType.HOLD):
+            return 1.0 if self._in_mission_position(soldier) else 0.0
+        return 1.0
+
     def _compliance_ctx(
         self, soldier: Soldier, dist_prev: float | None, view: AgentView
     ) -> ComplianceContext:
@@ -863,16 +899,7 @@ class CohortEnv(ParallelEnv):
         in_position = False
         enemies_at_obj = 0
         if mission is not None:
-            radius = IN_POSITION_RADIUS[mission.type]
-            anchor = mission.anchor
-            if mission.type is MissionType.RALLY:
-                leader = self.roster.leader_of(soldier)
-                anchor = leader.pos if leader is not None else anchor
-            in_position = dist_now <= radius
-            if mission.type in (MissionType.RECON, MissionType.OVERWATCH):
-                in_position = in_position and self.world.line_of_sight(
-                    soldier.pos, (int(anchor[0]), int(anchor[1]))
-                )
+            in_position = self._in_mission_position(soldier, dist_now=dist_now)
             if mission.objective_id is not None:
                 obj = self.world.objectives[mission.objective_id]
                 enemies_at_obj = sum(
