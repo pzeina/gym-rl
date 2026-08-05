@@ -44,11 +44,15 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
 
 *A human commands the cohort comfortably, in the browser, on a clean net.*
 
-- `[ ]` **C1. Dashboard commander mode** — merge `play.py` into the Episode view:
+- `[x]` **C1. Dashboard commander mode** — merge `play.py` into the Episode view:
   a live-simulation mode (server keeps an env stepping; WebSocket or polling), an
   order input box wired to `inject_order`, pause-on-contact option.
   **DoD**: from the browser, issue `TL1, seize obj bravo`, watch the WILCO land and
   the maneuver happen; permission errors surface in the UI; works with any checkpoint.
+  *(done: Command tab + /api/live/{start,step,order,state}; DoD flow verified
+  end-to-end at the API level incl. WILCO and the rank-violation error; in-browser
+  click-through pending the next Chrome session — endpoints are exactly what the
+  tab consumes.)*
 - `[ ]` **A4. Comms discipline** — small per-transmission cost, a "net busy" step
   (one transmission per net per tick, queued), and dedup credit so the first
   accurate CONTACT wins.
@@ -322,3 +326,7 @@ model, p. 9), buildings + pathfinding terrain.
   still training. SUPPORT verified in live transcripts
   (`TL1, THIS IS SL1: SUPPORT TL2. OUT.` in the squad eval); dashboard
   traces regenerated per scenario with humans/missions/SUPPORT rendering.
+- **2026-08-06** — v1.4.0 tagged and merged to main (P1–P6). C1 done: dashboard
+  Command tab — live sessions with any checkpoint, orders typed on the net
+  (HQ or commander callsigns), pause-on-CONTACT; DoD flow verified via the
+  live API (WILCO + rank-violation rejection).

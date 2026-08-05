@@ -155,6 +155,12 @@ reported-but-unseen contacts are dashed diamonds (suspected). Two views:
   (filterable, click a message to jump to its moment) and an event timeline
   (rewards + contacts/orders/casualties) round it out.
 
+* **Command** — the live mode: start a session with any checkpoint, advance the
+  simulation (+1/+5/+20 or auto, with pause-on-CONTACT), and **type orders on the
+  net while it runs** — `TL1, seize obj bravo` as HQ or as any commander callsign,
+  with WILCOs landing in the radio log and rank violations rejected in the UI.
+  The browser equivalent of `python -m cohort.play`.
+
 It is equally a debugging tool: both reward exploits found during development
 are the kind of thing the Episode view makes visible in seconds (an agent's
 reward components are shown red/green at every step).

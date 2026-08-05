@@ -75,6 +75,7 @@
   <div class="tabs">
     <div class="tab active" id="tab-training">Training</div>
     <div class="tab" id="tab-episode">Episode</div>
+    <div class="tab" id="tab-command">Command</div>
   </div>
   <div id="status"></div>
 </header>
@@ -107,6 +108,35 @@
       <div class="toggles" id="toggles"></div>
     </div>
     <div class="card"><h3>Legend</h3><div id="legend" style="font-size:11px"></div></div>
+  </div>
+
+  <!-- ============ COMMAND (live) ============ -->
+  <div class="sidebar hidden" id="side-command">
+    <div class="card"><h3>Live session</h3>
+      <div class="field"><span>scenario</span><select id="lv-scenario"></select></div>
+      <div class="field"><span>policy</span><select id="lv-policy"></select></div>
+      <div class="field"><span>seed</span>
+        <div style="display:flex;gap:6px"><input type="number" id="lv-seed" value="1">
+        <button class="small" id="lv-dice" title="random seed">🎲</button></div></div>
+      <button class="primary" id="lv-start" style="margin-top:8px">⚑ Start session</button>
+      <div id="lv-info" class="meta" style="margin-top:8px;color:var(--dim)"></div>
+    </div>
+    <div class="card"><h3>Command the net</h3>
+      <div class="field"><span>speak as</span><select id="lv-issuer"><option>HQ</option></select></div>
+      <div class="field"><span>order (command language)</span>
+        <input type="text" id="lv-order" placeholder="TL1, seize obj bravo" autocomplete="off"></div>
+      <button id="lv-send">📡 Transmit</button>
+      <div id="lv-orderstatus" style="margin-top:6px;font-size:11px;min-height:14px"></div>
+    </div>
+    <div class="card"><h3>Advance</h3>
+      <div style="display:flex;gap:6px">
+        <button class="small" id="lv-s1">+1</button>
+        <button class="small" id="lv-s5">+5</button>
+        <button class="small" id="lv-s20">+20</button>
+        <button class="small" id="lv-auto">▶ auto</button>
+      </div>
+      <label class="row" style="margin-top:6px"><input type="checkbox" id="lv-pausecontact" checked> pause on CONTACT</label>
+    </div>
   </div>
   <div class="content hidden" id="main-episode">
     <div id="mapwrap">
@@ -360,6 +390,7 @@ async function generateEpisode() {
       `&policy=${encodeURIComponent($("ep-policy").value)}` +
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
+    stopAuto(); MODE = "replay";
     EP = trace;
     t = 0; sel = null; playing = false; clearInterval(playTimer);
     $("pb-slider").max = EP.steps.length - 1;
@@ -680,18 +711,111 @@ function renderMsgs() {
   el.scrollTop = el.scrollHeight;
 }
 
+/* ============================= command (live) ============================= */
+let MODE = "replay";      // replay (Episode tab) | live (Command tab)
+let liveAuto = null;      // interval id while auto-advancing
+
+function fillLiveSelectors() {
+  $("lv-scenario").innerHTML = $("ep-scenario").innerHTML;
+  $("lv-policy").innerHTML = $("ep-policy").innerHTML;
+  if ($("ep-policy").value) $("lv-policy").value = $("ep-policy").value;
+}
+
+async function liveStart() {
+  stopAuto();
+  $("lv-start").disabled = true; $("lv-start").textContent = "⏳ starting…";
+  try {
+    const snap = await api(`/api/live/start?scenario=${$("lv-scenario").value}` +
+      `&policy=${encodeURIComponent($("lv-policy").value)}&seed=${+$("lv-seed").value}`);
+    EP = snap; MODE = "live";
+    epRequest++;                       // invalidate any in-flight replay fetch
+    $("pb-slider").max = EP.steps.length - 1;
+    $("outbadge").style.display = "none";
+    $("lv-issuer").innerHTML = (snap.commanders || ["HQ"]).map((c) => `<option>${c}</option>`).join("");
+    $("lv-info").innerHTML = `${snap.opord}<br>policy: ${String(snap.policy).split("/").pop()}`;
+    sel = null; seek(EP.steps.length - 1);
+    $("lv-orderstatus").textContent = "";
+  } catch (e) { $("lv-info").textContent = "error: " + e.message; }
+  $("lv-start").disabled = false; $("lv-start").textContent = "⚑ Start session";
+}
+
+async function liveAdvance(n) {
+  if (MODE !== "live") return;
+  try {
+    const r = await api(`/api/live/step?n=${n}`);
+    EP.steps.push(...r.steps);
+    EP.length = r.length;
+    $("pb-slider").max = EP.steps.length - 1;
+    seek(EP.steps.length - 1);
+    const contact = r.steps.some((s) => s.messages.some((m) => m.kind === "contact"));
+    if (r.outcome) {
+      stopAuto();
+      const badge = $("outbadge");
+      badge.style.display = "block";
+      badge.textContent = r.outcome.toUpperCase();
+      badge.style.background = r.outcome === "success" ? "#14532d" : r.outcome === "defeat" ? "#7f1d1d" : "#57534e";
+      $("lv-info").innerHTML = `<b>${r.outcome.toUpperCase()}</b> after ${r.length} steps`;
+    } else if (contact && $("lv-pausecontact").checked && liveAuto) {
+      stopAuto();
+      $("lv-orderstatus").innerHTML = '<span style="color:var(--warn)">⏸ CONTACT on the net — auto paused</span>';
+    }
+  } catch (e) { $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">${e.message}</span>`; }
+}
+
+async function liveOrder() {
+  if (MODE !== "live") { $("lv-orderstatus").innerHTML = '<span style="color:var(--bad)">start a session first</span>'; return; }
+  const text = $("lv-order").value.trim();
+  if (!text) return;
+  try {
+    const r = await api(`/api/live/order?text=${encodeURIComponent(text)}` +
+      `&issuer=${encodeURIComponent($("lv-issuer").value)}`);
+    (r.messages || []).forEach((m) => EP.steps[EP.steps.length - 1].messages.push(m));
+    renderMsgs(); drawMap();
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${r.messages?.[0]?.text || "transmitted"}</span>`;
+    $("lv-order").value = "";
+  } catch (e) {
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">✗ ${e.message}</span>`;
+  }
+}
+
+function stopAuto() {
+  if (liveAuto) { clearInterval(liveAuto); liveAuto = null; $("lv-auto").textContent = "▶ auto"; }
+}
+function toggleAuto() {
+  if (liveAuto) { stopAuto(); return; }
+  liveAuto = setInterval(() => liveAdvance(1), 1000 / +$("pb-speed").value);
+  $("lv-auto").textContent = "⏸ auto";
+}
+
+$("lv-start").onclick = liveStart;
+$("lv-dice").onclick = () => { $("lv-seed").value = Math.floor(Math.random() * 100000); };
+$("lv-send").onclick = liveOrder;
+$("lv-order").addEventListener("keydown", (e) => { if (e.key === "Enter") liveOrder(); });
+$("lv-s1").onclick = () => liveAdvance(1);
+$("lv-s5").onclick = () => liveAdvance(5);
+$("lv-s20").onclick = () => liveAdvance(20);
+$("lv-auto").onclick = toggleAuto;
+
 /* ============================= tabs + boot ============================= */
 function setTab(name) {
   const training = name === "training";
+  const command = name === "command";
   $("tab-training").classList.toggle("active", training);
-  $("tab-episode").classList.toggle("active", !training);
+  $("tab-episode").classList.toggle("active", name === "episode");
+  $("tab-command").classList.toggle("active", command);
   ["side-training", "main-training"].forEach((id) => $(id).classList.toggle("hidden", !training));
-  ["side-episode", "main-episode", "right-episode"].forEach((id) => $(id).classList.toggle("hidden", training));
+  $("side-episode").classList.toggle("hidden", name !== "episode");
+  $("side-command").classList.toggle("hidden", !command);
+  ["main-episode", "right-episode"].forEach((id) => $(id).classList.toggle("hidden", training));
   if (training) { if (selectedRun) loadRunCharts(); }
-  else { drawMap(); drawTimeline(); }
+  else {
+    if (command) fillLiveSelectors();
+    drawMap(); drawTimeline();
+  }
 }
 $("tab-training").onclick = () => setTab("training");
-$("tab-episode").onclick = () => setTab("episode");
+$("tab-episode").onclick = () => { stopAuto(); setTab("episode"); };
+$("tab-command").onclick = () => setTab("command");
 window.addEventListener("resize", () => { drawMap(); drawTimeline(); if (selectedRun) loadRunCharts(); });
 
 (async () => {
