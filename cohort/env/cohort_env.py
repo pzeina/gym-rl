@@ -148,6 +148,11 @@ class CohortEnv(ParallelEnv):
         )
         self._spawn_roster()
         self._spawn_enemies()
+        if cfg.sitrep_cadence:
+            # reporting doctrine: the SITREP clock starts at step 0 — the
+            # first report is owed within sitrep_cadence steps
+            for s in self.roster.soldiers:
+                s.last_sitrep_step = 0
 
         self.agents = list(self.possible_agents)
         self.transcript = Transcript()
@@ -360,6 +365,14 @@ class CohortEnv(ParallelEnv):
                 if soldier.mission.type is MissionType.RECON and ctx.in_position:
                     soldier.mission.observe_steps += 1
                 ledger.add(callsign, "compliance", cfg.compliance_weight * compliance(soldier.mission.type, ctx))
+            # reporting doctrine: out of contact and past the cadence → overdue
+            cadence = self.spec_cfg.sitrep_cadence
+            if (
+                cadence
+                and not views[callsign].visible_enemies
+                and step - soldier.last_sitrep_step > cadence
+            ):
+                ledger.add(callsign, "report", cfg.sitrep_overdue)
             # leader coverage
             if soldier.effective_authority > 0 and soldier.mission is not None:
                 subs = soldier.living_subordinates(self.roster)
@@ -460,7 +473,10 @@ class CohortEnv(ParallelEnv):
         elif spec.kind == "contact":
             self._report_contact(soldier, ledger)
         elif spec.kind == "sitrep":
-            fresh = self._step_count - soldier.last_sitrep_step >= cfg.sitrep_interval
+            # under the reporting doctrine the mandated cadence *is* the
+            # freshness interval, so a due report is never scored as spam
+            interval = self.spec_cfg.sitrep_cadence or cfg.sitrep_interval
+            fresh = self._step_count - soldier.last_sitrep_step >= interval
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
             soldier.last_sitrep_step = self._step_count
             self._say(
@@ -778,10 +794,17 @@ class CohortEnv(ParallelEnv):
             if self.spec_cfg.comm_model == "range"
             else self._known_enemies
         )
+        cadence = self.spec_cfg.sitrep_cadence
+        sitrep_due = (
+            min(1.0, max(0.0, (self._step_count - soldier.last_sitrep_step) / cadence))
+            if cadence
+            else None
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
             step=self._step_count,
+            sitrep_due=sitrep_due,
         )
 
     def _compute_views(self) -> dict[str, AgentView]:

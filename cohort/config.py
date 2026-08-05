@@ -100,6 +100,11 @@ class ScenarioSpec:
     #                               high-power station: HQ traffic is always heard and
     #                               HQ always hears the root).
     comm_range: float = 12.0      # audible radius under comm_model="range"
+    sitrep_cadence: int | None = None  # reporting doctrine: an agent not in contact
+    #                               owes a SITREP every this-many steps; overdue draws
+    #                               RewardConfig.sitrep_overdue per step and is surfaced
+    #                               in the agent's observation. None (default) → no
+    #                               doctrine, the shipped behavior.
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {

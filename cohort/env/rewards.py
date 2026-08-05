@@ -30,7 +30,10 @@ class RewardConfig:
     contact_redundant: float = -0.02
     sitrep_fresh: float = 0.05        # sitrep after >= sitrep_interval quiet steps
     sitrep_spam: float = -0.02
-    sitrep_interval: int = 25
+    sitrep_interval: int = 25         # freshness gap; ScenarioSpec.sitrep_cadence
+    #                                   overrides it when the reporting doctrine is on
+    sitrep_overdue: float = -0.02     # per step out of contact past the mandated
+    #                                   cadence without a SITREP (doctrine only)
     done_true: float = 1.0
     done_false: float = -0.5
 

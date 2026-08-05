@@ -52,6 +52,11 @@ class AgentView:
     visible_enemies: list[Enemy] = field(default_factory=list)  # sorted nearest-first
     known_enemies: list[tuple[float, float]] = field(default_factory=list)  # team picture
     step: int = 0
+    #: SITREP due-ness in [0, 1] when the reporting doctrine
+    #: (``ScenarioSpec.sitrep_cadence``) is active; None → doctrine off. When
+    #: set, it replaces the comms-summary "known enemy present" flag — a slot
+    #: fully redundant with the known-count field — so OBS_DIM is unchanged.
+    sitrep_due: float | None = None
 
 
 def _mission_idx(mission_type: MissionType | None) -> float:
@@ -149,6 +154,10 @@ def build_observation(
         out[i + 2] = 1.0
         out[i + 3] = (nearest[0] - x) / w
         out[i + 4] = (nearest[1] - y) / h
+    if view.sitrep_due is not None:
+        # reporting doctrine active: this slot (otherwise redundant — slot
+        # i+1 > 0 says the same thing) carries SITREP due-ness instead
+        out[i + 2] = view.sitrep_due
     i += 5
 
     # --- terrain patch ---
