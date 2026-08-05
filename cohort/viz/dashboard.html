@@ -225,22 +225,40 @@ async function loadState() {
 function renderRunList() {
   const el = $("runlist");
   if (!STATE.runs.length) { el.innerHTML = '<div class="empty">no runs yet</div>'; return; }
-  el.innerHTML = "";
-  STATE.runs.forEach((r) => {
-    const d = document.createElement("div");
-    d.className = "runitem" + (r.name === selectedRun ? " sel" : "");
-    const succ = r.last.success_rate_rolling ? (100 * +r.last.success_rate_rolling).toFixed(0) + "%" : "–";
-    d.innerHTML = `<div class="nm">${r.name}</div>
-      <div class="meta">${r.scenario || "?"} · ${(+r.last.env_steps || 0).toLocaleString()} steps · success ${succ}</div>`;
-    d.onclick = () => { selectedRun = r.name; renderRunList(); loadRunCharts(); };
-    el.appendChild(d);
-  });
+  el.innerHTML = STATE.runs.map((r) => {
+    const succ = r.last.success_rate_rolling
+      ? (100 * +r.last.success_rate_rolling).toFixed(0) + "%" : "–";
+    return `<div class="runitem${r.name === selectedRun ? " sel" : ""}" data-name="${r.name}">
+      <div class="nm">${r.name}</div>
+      <div class="meta">${r.scenario || "?"} · ${(+r.last.env_steps || 0).toLocaleString()} steps · success ${succ}</div>
+    </div>`;
+  }).join("");
 }
+
+// Delegated listener registered ONCE: run items are rebuilt by the 5s
+// auto-refresh, and per-item handlers die with their nodes (a click that
+// straddles a rebuild is silently lost). The parent element persists.
+$("runlist").addEventListener("click", (e) => {
+  const item = e.target.closest(".runitem");
+  if (!item) return;
+  selectedRun = item.dataset.name;
+  renderRunList();
+  loadRunCharts();
+});
 
 async function loadRunCharts() {
   if (!selectedRun) return;
-  let m;
-  try { m = await api(`/api/metrics?run=${encodeURIComponent(selectedRun)}`); } catch { return; }
+  if ($("main-training").classList.contains("hidden")) return; // 0-width canvases while hidden
+  try {
+    await renderRunCharts();
+    $("status").textContent = "";
+  } catch (e) {
+    $("status").textContent = "charts: " + e.message; // e.g. torn read of a live metrics file
+  }
+}
+
+async function renderRunCharts() {
+  const m = await api(`/api/metrics?run=${encodeURIComponent(selectedRun)}`);
   const c = m.columns, x = c.env_steps;
   $("trainempty").classList.add("hidden");
   const last = (k) => c[k] ? c[k][c[k].length - 1] : null;
@@ -662,7 +680,8 @@ function setTab(name) {
   $("tab-episode").classList.toggle("active", !training);
   ["side-training", "main-training"].forEach((id) => $(id).classList.toggle("hidden", !training));
   ["side-episode", "main-episode", "right-episode"].forEach((id) => $(id).classList.toggle("hidden", training));
-  if (!training) { drawMap(); drawTimeline(); }
+  if (training) { if (selectedRun) loadRunCharts(); }
+  else { drawMap(); drawTimeline(); }
 }
 $("tab-training").onclick = () => setTab("training");
 $("tab-episode").onclick = () => setTab("episode");

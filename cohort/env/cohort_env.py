@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import functools
 import math
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from gymnasium import spaces
@@ -39,7 +39,7 @@ from cohort.core.ranks import Rank
 from cohort.core.units import Enemy, Roster, Soldier, enemy_decide, resolve_fire
 from cohort.core.world import World, dist
 from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
-from cohort.env.observations import AgentView, OBS_DIM, build_observation
+from cohort.env.observations import OBS_DIM, AgentView, build_observation
 from cohort.env.rewards import RewardConfig, RewardLedger
 
 #: Steps after which an unrefreshed contact report goes stale.
@@ -49,7 +49,7 @@ KNOWLEDGE_TTL = 40
 class CohortEnv(ParallelEnv):
     """Parallel multi-agent environment with a transparent chain of command."""
 
-    metadata = {"name": "cohort_v1", "render_modes": ["ansi", "rgb_array"]}
+    metadata: ClassVar[dict] = {"name": "cohort_v1", "render_modes": ["ansi", "rgb_array"]}
 
     def __init__(
         self,
@@ -96,13 +96,13 @@ class CohortEnv(ParallelEnv):
     # spaces
     # ------------------------------------------------------------------ #
 
-    @functools.lru_cache(maxsize=None)  # noqa: B019 - spaces are immutable
+    @functools.cache  # noqa: B019 - spaces are immutable
     def observation_space(self, agent: str) -> spaces.Dict:
         """Observation space (identical for all agents)."""
         del agent
         return self._obs_space
 
-    @functools.lru_cache(maxsize=None)  # noqa: B019
+    @functools.cache  # noqa: B019
     def action_space(self, agent: str) -> spaces.Discrete:
         """Action space (identical for all agents; legality varies via mask)."""
         del agent
@@ -707,7 +707,7 @@ class CohortEnv(ParallelEnv):
             dist_to_leader=dist(soldier.pos, leader.pos) if leader is not None else float("inf"),
         )
 
-    def _check_success(self, root_obj: Any) -> bool:  # noqa: ANN401 - Objective | None
+    def _check_success(self, root_obj: Any) -> bool:
         mission = self.spec_cfg.root_mission
         living_enemies = [e for e in self.enemies if e.alive]
         if mission in (MissionType.DEFEND, MissionType.CLEAR):

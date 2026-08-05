@@ -1,5 +1,7 @@
 # cohort — a transparent chain-of-command for multi-agent RL
 
+![ci](https://github.com/pzeina/gym-rl/actions/workflows/ci.yml/badge.svg?branch=main)
+
 A military cohort of NATO-ranked agents learns to behave the way soldiers of their rank
 should: **obey** standing orders, **report** what they see up the chain, **derive**
 doctrine-valid orders for their subordinates, and fight as a team — while every order and
@@ -223,7 +225,7 @@ mid-episode, succession, and truncation bootstrapping are handled in the GAE buf
 
 ### Results (fireteam, 1.5M steps, ~6 min on a laptop CPU)
 
-See `runs/fireteam_v2/` — 95% evaluation success over 20 episodes:
+See `runs/fireteam_v2/` — **90% ± 6** evaluation success (95% CI, N=100 episodes):
 
 ![training curves](runs/fireteam_v2/training_curves.png)
 
@@ -235,12 +237,24 @@ side by side with the live radio net. The full transcript of the episode is writ
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v1/` — the SL receives the OPORD, tasks its two fire-team leaders, and the
-TLs task their riflemen; the same shared network plays all three roles:
+`runs/squad_v1/` — **89% ± 6** success (95% CI, N=100). The SL receives the OPORD, tasks
+its two fire-team leaders, and the TLs task their riflemen; the same shared network
+plays all three roles:
 
 ![squad curves](runs/squad_v1/training_curves.png)
 
 ![squad episode](runs/squad_v1/eval.gif)
+
+### Results (platoon — three command echelons, 16 agents)
+
+`runs/platoon_v1/` — **89% ± 6** success (95% CI, N=100), trained by curriculum from the
+squad checkpoint (6M steps at `--lr 1e-4`). The full chain activates within ~16 steps of
+the OPORD: HQ → PL1, PL1 tasks PSG1/SLs, SLs task their TLs, TLs task their riflemen —
+one shared network playing every echelon:
+
+![platoon curves](runs/platoon_v1/training_curves.png)
+
+![platoon episode](runs/platoon_v1/eval.gif)
 
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v2/ckpt_best.pt` for `squad`, and so on up to
@@ -274,6 +288,11 @@ tests/                 71 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
+
+## Roadmap
+
+Planned work and its advancement are tracked in [ROADMAP.md](ROADMAP.md) — current
+flagship item: training the three-echelon `platoon` scenario by curriculum.
 
 ## Provenance
 
