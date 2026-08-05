@@ -117,6 +117,14 @@ def _check_native(kind: str, native: dict, parsed: dict) -> None:
     elif kind == "taking_command":
         if native.get("replaced") != parsed.get("replaced"):
             mismatches.append("replaced")
+    elif kind == "done_confirm":
+        if str(native.get("mission", "")).lower() != parsed.get("task"):
+            mismatches.append("mission")
+        if native.get("verdict") != "confirmed":
+            mismatches.append("verdict")
+    elif kind == "done_reject":
+        if native.get("verdict") != "rejected":
+            mismatches.append("verdict")
     if mismatches:
         raise ValueError(f"native payload disagrees with parsed text for {kind}: {mismatches} ({native} vs {parsed})")
 
@@ -140,6 +148,13 @@ def _payload(m: Message) -> dict:
     elif kind == "taking_command":
         s = _SUCCESSION_RE.search(m.text)
         parsed = {"replaced": (s.group("dead") or s.group("dead2"))} if s else {}
+    elif kind == "done_confirm":
+        # "RFN1, THIS IS TL1: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT."
+        parsed = {**_parse_phrase(m.text), "verdict": "confirmed"}
+    elif kind == "done_reject":
+        # "RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT." -- the text
+        # names no mission; the claimant's stands (that is the point).
+        parsed = {"verdict": "rejected"}
     else:
         parsed = {}
     _check_native(kind, dict(m.payload), parsed)
@@ -243,7 +258,7 @@ def tap_episodes(
                 watermark = len(env.transcript)
                 truth.write(json.dumps(_state_record(env, ep, steps), sort_keys=True) + "\n")
 
-            outcome = env._episode_outcome or "timeout"
+            outcome = env.outcome or "timeout"
             outcomes[outcome] = outcomes.get(outcome, 0) + 1
             end = {
                 "rec": "end",
