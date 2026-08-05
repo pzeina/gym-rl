@@ -114,6 +114,12 @@ class ScenarioSpec:
     assault_spawn_min_dist: float = 10.0  # minimum distance from the assaulted objective
     #                               at which "assault"-mode OpFor spawns; larger values
     #                               model the early warning a prepared defense earns.
+    observation_concealment: bool = False  # True → guarantee concealed observation
+    #                               positions: small forest patches on the ring at
+    #                               observation distance (~6 cells) around the root
+    #                               objective. Close reconnaissance of a garrisoned
+    #                               objective over featureless ground is impossible in
+    #                               reality too — recon presumes concealed OPs.
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {
@@ -173,6 +179,10 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         root_mission=MissionType.RECON,
         root_objective="BRAVO",
         max_steps=250,
+        # recon doctrine: concealed observation posts must exist (see ROADMAP —
+        # under weapons-tight economics on featureless ground, the policy
+        # rationally abandoned observation because it cost blood with no recourse)
+        observation_concealment=True,
     ),
     "platoon": ScenarioSpec(
         name="platoon",
