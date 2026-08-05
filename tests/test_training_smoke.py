@@ -62,6 +62,68 @@ def test_trainer_end_to_end(tmp_path):
     assert 0 <= int(action) < N_ACTIONS
 
 
+def test_rolling_best_gate_requires_full_window_turnover():
+    """D4: ckpt_best may only be written once the rolling window contains ONLY
+    post-start episodes (the deque fully turned over). Simulates the Trainer's
+    bookkeeping for the documented failure — a fine-tune whose strong parent
+    pins rolling at 1.0 over the first ~20 episodes (which the old >=20 gate
+    saved at ~3-4k steps and then froze forever) before collapsing."""
+    from collections import deque
+
+    from cohort.training.train import best_save_gate
+
+    window: deque[str] = deque(maxlen=100)
+    episodes_seen = 0
+    best = -1.0
+
+    def rolling() -> float:
+        return sum(o == "success" for o in window) / len(window)
+
+    # phase 1 — the strong parent: 30 straight successes. The old gate saved
+    # at episode 20 with rolling 1.0; the fixed gate must refuse every one.
+    for _ in range(30):
+        window.append("success")
+        episodes_seen += 1
+        assert not best_save_gate(episodes_seen, window.maxlen, rolling(), best)
+
+    # phase 2 — the fine-tune collapses (the squad_v3d signature): rolling
+    # decays, still no save allowed while the window has not turned over.
+    for _ in range(69):
+        window.append("timeout")
+        episodes_seen += 1
+        assert not best_save_gate(episodes_seen, window.maxlen, rolling(), best)
+
+    # phase 3 — the 100th episode completes the turnover: saving opens, and
+    # the first save reflects a full window of THIS run's training.
+    window.append("timeout")
+    episodes_seen += 1
+    assert episodes_seen == window.maxlen
+    assert best_save_gate(episodes_seen, window.maxlen, rolling(), best)
+    best = rolling()
+    assert best < 0.5, "the parent's early 1.0 was never allowed to pin the best"
+
+    # phase 4 — recovery to a genuine peak beats the recorded best and saves.
+    for _ in range(80):
+        window.append("success")
+        episodes_seen += 1
+    assert best_save_gate(episodes_seen, window.maxlen, rolling(), best)
+
+
+def test_trainer_counts_episodes_for_the_best_gate(tmp_path):
+    """The Trainer wires the D4 gate: episodes_seen tracks completed episodes
+    and no ckpt_best exists while the window has not fully turned over."""
+    cfg = PPOConfig(n_envs=2, horizon=32)
+    trainer = Trainer("fireteam", cfg, tmp_path / "run", seed=11, tensorboard=False)
+    assert trainer.episodes_seen == 0
+    trainer.train(total_steps=256)  # 256 steps: nowhere near 100 fireteam episodes
+    assert trainer.episodes_seen == len(trainer.recent_outcomes)
+    assert trainer.episodes_seen < (trainer.recent_outcomes.maxlen or 0)
+    assert not (tmp_path / "run" / "ckpt_best.pt").exists(), (
+        "ckpt_best must not be written before the rolling window turns over"
+    )
+    assert (tmp_path / "run" / "ckpt_latest.pt").exists()
+
+
 def test_evaluate_random_baseline():
     from cohort.training.evaluate import evaluate
 

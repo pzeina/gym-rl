@@ -33,6 +33,7 @@ class MessageKind(Enum):
     DONE_REJECT = "done_reject"        # superior rejects a false DONE (auto)
     SUPPORT_END = "support_end"        # SUPPORT ends: supported unit fell (auto)
     CASUALTY = "casualty"              # agent down (auto broadcast)
+    TRAP = "trap"                      # friendly hit a hidden device (auto broadcast)
     TAKING_COMMAND = "taking_command"  # succession announcement (auto broadcast)
 
 

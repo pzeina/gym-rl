@@ -45,6 +45,22 @@ METRIC_FIELDS = [
 ]
 
 
+def best_save_gate(episodes_seen: int, window: int, rolling: float, best_so_far: float) -> bool:
+    """Should the rolling-best checkpoint be (re)written this iteration?
+
+    D4 fix (the fine-tune degeneracy): ``ckpt_best`` may only be written once
+    the rolling-outcome window contains ONLY post-start episodes — i.e. the
+    deque has fully turned over (``episodes_seen >= window``, its maxlen).
+    The old gate (>= 20 episodes in a 100-episode window) let a fine-tune's
+    strong parent pin rolling success at ~1.0 within the first ~20 episodes,
+    freezing ``ckpt_best`` at ~3-4k steps for the rest of the run (observed
+    on fireteam_v4d and squad_v3d/v3e — see ROADMAP D4/A4). Requiring full
+    turnover means every eligible save reflects a full window of episodes
+    played under *this* run's training, at its statistical resolution.
+    """
+    return episodes_seen >= window and rolling > best_so_far
+
+
 class Trainer:
     """Vectorized rollout collection + PPO updates for CohortEnv."""
 
@@ -85,6 +101,7 @@ class Trainer:
         self.env_steps = 0
         self.iteration = 0
         self.recent_outcomes: deque[str] = deque(maxlen=100)
+        self.episodes_seen = 0  # episodes completed since training start (D4 best-gate)
         self.best_rolling_success = -1.0
         self._ep_return = [0.0] * cfg.n_envs
         self._ep_len = [0] * cfg.n_envs
@@ -175,6 +192,7 @@ class Trainer:
                     ep_lengths.append(self._ep_len[e])
                     outcomes.append(env.outcome or "timeout")
                     self.recent_outcomes.append(outcomes[-1])
+                    self.episodes_seen += 1
                     self._ep_return[e] = 0.0
                     self._ep_len[e] = 0
                     obs0, _ = env.reset()
@@ -253,7 +271,12 @@ class Trainer:
                     f"sps {sps:>5.0f} | {elapsed:>5.0f}s"
                 )
             self.save_checkpoint("ckpt_latest.pt")
-            if stats["success_rate_rolling"] > self.best_rolling_success and len(self.recent_outcomes) >= 20:
+            if best_save_gate(
+                self.episodes_seen,
+                self.recent_outcomes.maxlen or 0,
+                stats["success_rate_rolling"],
+                self.best_rolling_success,
+            ):
                 self.best_rolling_success = stats["success_rate_rolling"]
                 self.save_checkpoint("ckpt_best.pt")
         if self.writer is not None:

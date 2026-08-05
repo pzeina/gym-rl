@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from cohort.core.missions import MissionType
 from cohort.core.ranks import Rank
-from cohort.core.units import CombatParams
+from cohort.core.units import BriqueBandConfig, CombatParams
 
 
 @dataclass(frozen=True)
@@ -75,7 +75,9 @@ class ScenarioSpec:
     objectives: tuple[tuple[str, tuple[int, int]], ...]
     spawn: tuple[int, int]                     # friendly spawn anchor
     n_enemies: int
-    opfor_mode: str                            # garrison (hold objectives) | assault (advance on spawn objective)
+    opfor_mode: str                            # garrison (hold objectives) | assault (advance
+    #                                            on spawn objective) | brique (armed band —
+    #                                            the manual's asymmetric threat, p. 9)
     root_mission: MissionType
     root_objective: str | None                 # objective name for the OPORD
     max_steps: int
@@ -126,6 +128,14 @@ class ScenarioSpec:
     #                               objective. Close reconnaissance of a garrisoned
     #                               objective over featureless ground is impossible in
     #                               reality too — recon presumes concealed OPs.
+    # --- BRIQUE asymmetric OpFor (manual p. 9; used when opfor_mode="brique") ---
+    band: BriqueBandConfig = field(default_factory=BriqueBandConfig)
+    #                               intent machine tunables of the armed band
+    n_traps: int = 0              # hidden devices (mines/booby traps) the band lays near
+    #                               blue's likely route / the objective approaches at
+    #                               reset. Each damages the first friendly stepping on
+    #                               it (revealed once triggered). Oracle ground truth
+    #                               from step 0; never in blue observations.
 
 
 # v1.4 (P5): all maps, objective/spawn coordinates, and step budgets grew x1.5
