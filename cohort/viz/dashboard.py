@@ -142,7 +142,7 @@ def record_episode(
             "messages": [
                 {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
                  "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
-                 "text": m.text}
+                 "text": m.text, "data": m.payload}
                 for m in env.transcript.messages
             ],
             "known": [],
@@ -174,7 +174,7 @@ def record_episode(
                 "messages": [
                     {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
                      "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
-                     "text": m.text}
+                     "text": m.text, "data": m.payload}
                     for m in env.last_messages
                 ],
                 "known": [[round(x, 1), round(y, 1)] for (x, y, _t) in env._known_enemies.values()],
