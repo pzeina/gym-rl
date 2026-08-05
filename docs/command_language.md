@@ -19,10 +19,13 @@ grammar, tested by round-trip tests.
 | DONE_REJECT | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT.` |
 | SUPPORT_END | supporter → its leader (auto) | `SL1, THIS IS TL2: SUPPORT ENDED, TL1 IS DOWN. STANDING BY. OVER.` |
 | CASUALTY | HQ → all stations (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
+| TRAP | HQ → all stations (auto) | `ALL STATIONS: RFN2 HIT A DEVICE AT GRID 1110. OUT.` |
 | TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` — recursive fills further down the chain: `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` |
 
 CASUALTY reports are attributed to HQ (the net/umpire convention): the dead do not
-transmit. Succession announcements come in two shapes — the direct successor of the
+transmit. TRAP broadcasts follow the same convention — a friendly triggered one of
+the BRIQUE band's hidden devices (mine/booby trap, manual p. 9); the grid reference
+is the only location intel the net ever carries about the trap layer. Succession announcements come in two shapes — the direct successor of the
 casualty *assumes command*; agents filling the vacancies that promotion leaves further
 down the chain *assume the position* of whoever moved up.
 

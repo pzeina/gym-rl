@@ -43,7 +43,10 @@ Each `env.step(actions)`:
    move, fire, report, or issue one order. Every emitted learned transmission costs
    `RewardConfig.transmission_cost` (airtime is not free). Orders apply immediately:
    the recipient's mission changes, an ORDER + WILCO pair lands on the transcript.
-4. **OpFor actions** — scripted state machine (garrison/assault, chase, engage).
+   A move onto a hidden trap cell triggers it here (damage, reveal, net broadcast).
+4. **OpFor actions** — scripted state machine (garrison/assault, chase, engage), or
+   the BRIQUE band controller (see [The OpFor](#the-opfor) below): the band-level
+   intent machine ticks once, then each member acts under the band intent.
 5. **Casualties & succession** — deaths broadcast CASUALTY; the roster devolves command
    recursively and successors announce TAKING COMMAND.
 6. **Knowledge decay** — the team enemy picture (fed *only* by CONTACT reports) expires
@@ -128,6 +131,62 @@ Under `"global"` the behavior is byte-for-byte the shipped one; the knob is
 purely additive. Net-busy arbitration (step 2 above) stays **global** under
 `"range"` too: earshot shapes who *hears* a message, but every station shares
 the one frequency, so simultaneous transmissions still contend.
+
+## The OpFor
+
+Two enemy families, both environment-side (blue's spaces never change):
+
+**Scripted garrison/assault** (`opfor_mode="garrison" | "assault"`,
+`core/units.py::enemy_decide`): hold near home or advance on a goal, engage
+players on sight, chase briefly, return.
+
+**BRIQUE armed band** (`opfor_mode="brique"`, `core/units.py::BriqueBand`) —
+the PROTERRE manual's asymmetric threat (p. 9 "LA MENACE"): a *flat* band
+(no hierarchy, no leader) of 5–20 fighters with light weapons. A band-level
+**intent machine** drives per-member behavior states:
+
+* `lurk` — hold in cover, avoid detection; posts the ambush when blue
+  approaches within `lurk_trigger`;
+* `ambush` — posted at a chokepoint on blue's *predicted route* (the
+  spawn→objective line); **hold fire** until a blue unit is inside
+  `ambush_range` — or until the ambush is compromised (a member hit) — then
+  volley for `volley_steps` and dissolve into hit-and-run;
+* `harass` — fire `harass_shots` from max range, then displace to a new
+  cover cell ("engagement de moyens limités, très disparates");
+* `raid` — move fast onto the objective/installation, linger `raid_linger`
+  steps (sabotage), then withdraw ("raid à portée limitée visant à détruire
+  des moyens de communication, des dépôts");
+* `scatter` — break contact toward the map edges; irreversible, and entered
+  only below `scatter_below` strength (default 30% — low self-preservation
+  by design: the band fights nearly to the last).
+
+Target selection is casualty-maximizing ("actions à fort impact
+psychologique"): the human commander first, then wounded, then isolated blue
+units, then the closest. All knobs live in `ScenarioSpec.band`
+(`BriqueBandConfig`); all randomness flows through `env._rng`.
+
+**Traps/mines** (`ScenarioSpec.n_traps`): hidden devices the band lays at
+reset along blue's likely route (or, for a defense, on the position's
+approaches — "y compris les mines et les pièges"). The first friendly
+stepping on one takes its damage (default 40) through the normal casualty
+pipeline (rank-weighted death, CASUALTY broadcast, succession); the device
+is then spent and revealed, and the umpire broadcasts
+`ALL STATIONS: RFN2 HIT A DEVICE AT GRID 1110. OUT.` Traps are oracle
+ground truth from step 0 and **never appear in blue observations** — they
+are the assurance layer's inference target.
+
+**BRIQUE terminal semantics**: on DEFEND/DENY root missions against a band,
+success = the band **destroyed**, or **scattered with contact fully broken**
+(every living member ≥ `break_contact_dist` from every living friendly and
+from the root objective — scatter is irreversible, so this is final), while
+the objective is **held** (no living enemy on it, a living friendly manning
+it). SEIZE-rooted BRIQUE scenarios keep the standard SEIZE check: the OPORD
+is about the objective — a scattered band never blocks it, and destroying
+the band does not seize anything. Defeat and timeout are unchanged.
+
+The oracle exposes the whole band layer as enemy-side non-observables:
+band intent, ambush posts, spring step, per-member behavior states, and
+every trap with its armed/revealed state.
 
 ## Determinism
 

@@ -483,13 +483,16 @@ class BriqueBand:
             near = min(dist(m.pos, b) for m in living for b in blue_positions)
             if near <= cfg.lurk_trigger:
                 self.intent = "ambush"
-        if (
-            self.intent == "ambush"
-            and not self.sprung
-            and any(dist(m.pos, b) <= cfg.ambush_range for m in living for b in blue_positions)
-        ):
-            self.sprung = True
-            self.spring_step = step
+        if self.intent == "ambush" and not self.sprung:
+            # spring when a blue unit walks into the kill zone — or when the
+            # ambush is COMPROMISED (any member hit or down): a posted band
+            # taking effective fire opens fire rather than dying in place
+            compromised = any(not m.alive or m.health < 100 for m in self.members)
+            if compromised or any(
+                dist(m.pos, b) <= cfg.ambush_range for m in living for b in blue_positions
+            ):
+                self.sprung = True
+                self.spring_step = step
         if (
             self.intent == "ambush"
             and self.sprung

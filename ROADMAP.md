@@ -103,12 +103,26 @@ scenario retrains, old runs kept for provenance, results republished.*
   shots/agent-step < 0.01, but total incl. riposte-under-detection 0.016.)*
 
 Deferred to v2.0: BRIQUE asymmetric OpFor (the manual's armed-bands threat
-model, p. 9), buildings + pathfinding terrain.
+model, p. 9) — *done 2026-08-06, see P7 below* — and buildings + pathfinding
+terrain (still deferred).
 
 ## Milestone v2.0 — Adversarial & scientific
 
 *Real tactics under a learning adversary; the design justified by measurement.*
 
+- `[x]` **P7. BRIQUE asymmetric OpFor** (the v1.4 deferral) — the manual's
+  armed-bands threat (p. 9): a flat leaderless band under a band-level intent
+  machine (LURK / AMBUSH with hold-fire discipline / HARASS hit-and-run /
+  RAID-and-linger / SCATTER only under 30% strength), casualty-maximizing
+  targeting (human commander > wounded > isolated), and hidden traps/mines
+  (route/approach placement, CASUALTY-style "HIT A DEVICE" broadcasts,
+  oracle-visible from step 0, provably absent from blue observations).
+  Environment-side only: spaces frozen at Discrete(157)/Box(137), v1.4/v1.5
+  checkpoints load unchanged. Asymmetric terminal semantics for DEFEND vs. a
+  band: success = band destroyed OR scattered with contact fully broken,
+  objective held. **DoD (≥70% each at N=100): met** — `patrol_brique_v1`
+  **99% ± 2**, `defend_brique_v1` **87% ± 7**; oracle-verified behavior
+  shifts in the progress log.
 - `[ ]` **A3. Self-play OpFor** — a second cohort (own org chart, own OPORD) replaces
   the scripted enemy; alternating or league-style training.
   **DoD**: red-vs-blue episodes render in the dashboard with both transcripts; blue
@@ -174,6 +188,18 @@ model, p. 9), buildings + pathfinding terrain.
   by N=100 eval instead (fireteam: final checkpoint; squad: a genuine
   0.94-rolling peak at 51k). A D4 fix should gate best-saving on a full
   window or an eval probe.
+  **2026-08-06 update — the rolling-best degeneracy is FIXED** (commit
+  2f42441): ckpt_best is only written once the 100-episode outcome window
+  has fully turned over (`best_save_gate`, episodes_seen >= maxlen).
+  Verified in the wild on the first post-fix fine-tunes: defend_brique_v1's
+  metrics show the parent pinning rolling at 1.0 in the very first window
+  (the exact failure), yet ckpt_best was saved at its genuine 2.1M peak
+  (87% ± 7 at N=100). The underlying collapse/oscillation problem remains
+  open (patrol_brique_v1 oscillated 0.06–0.94 for ~1.5M steps before
+  converging, value-loss spiking to ~30 at each dip — consistent with the
+  death-shock hypothesis, and BRIQUE bands *deliberately target the human
+  commander*, making these fine-tunes a worst case); the D4 rerun DoD
+  still stands.
 - `[x]` **A7. Stealth-recon economics** — negative result from A2: under strict
   weapons-tight (no combat pay on RECON), the squad_recon policy *abandons the
   task* — subordinates park on OVERWATCH at 8–9 cells farming posture compliance
@@ -391,3 +417,47 @@ model, p. 9), buildings + pathfinding terrain.
   Eval-transcript spot check: fireteam episode carries 1 CONTACT +
   22 SITREPs over ~200 steps; squad cascade unchanged
   (`TL1, THIS IS SL1: SUPPORT TL2. OUT.`), one transmission per tick.
+- **2026-08-06** — **D4 rolling-best fix** (commit 2f42441): ckpt_best gated
+  on full turnover of the 100-episode outcome window (`best_save_gate`) —
+  kills the freeze-at-3k-steps fine-tune degeneracy documented in the A4
+  campaign. Bookkeeping-simulation test + an end-to-end assert that short
+  runs write no ckpt_best.
+- **2026-08-06** — **BRIQUE OpFor mechanics** (commit 56fecb6): the manual's
+  armed-band threat (p. 9) as `opfor_mode="brique"` — flat band, band-level
+  intent machine (LURK/AMBUSH/HARASS/RAID/SCATTER; hold-fire ambush
+  discipline with a compromised-ambush spring; scatter only under 30%
+  strength), casualty-maximizing targeting (human > wounded > isolated),
+  hidden traps (40 dmg, first friendly only, revealed on trigger,
+  `ALL STATIONS: <cs> HIT A DEVICE AT GRID xxyy` broadcast, new
+  MessageKind.TRAP), BRIQUE DEFEND terminal semantics (band destroyed OR
+  scattered+contact broken, objective held). Oracle: band intent, posts,
+  per-member behavior, traps — all enemy-side non-observables; obs
+  bit-identical with and without traps (tested). Spaces frozen 157/137;
+  v1.5 checkpoints verified loading. 198 → 201 tests with the scenarios.
+- **2026-08-06** — **P7 done: BRIQUE scenarios + training** (evals N=100
+  sampled, 95% CI; both 3M fine-tunes @ lr 1e-4 under the D4 fix):
+  1. *patrol_brique_v1* (from squad_v3e) — **99% ± 2**, 6.4/7 survivors.
+     Oracle before → after (30 fixed seeds, parent vs. trained): total
+     casualties 3.2 → 0.8/ep; ambushes sprung 29/30 → 15/30 (the patrol
+     refuses the kill zone); in-ambush-window casualties 1.2 → 0.8; trap
+     casualties 0.63 → 0.0/ep (the mined corridor avoided outright);
+     SUPPORT taskings during movement 1.8 → 3.9/ep (bounding starts
+     supported at t=11 of the eval transcript). Training oscillated
+     0.06–0.94 rolling for ~1.5M steps (D4, worst case by design: the band
+     hunts the human commander) before converging 0.96–1.0; ckpt_best at
+     a genuine 1.66M peak.
+  2. *defend_brique_v1* (from fireteam_defend_v5, whose baseline vs. the
+     band was 73%) — **87% ± 7** (final ckpt 88% ± 6; zero defeats
+     either way), 3.9/4 survivors. Oracle: casualties 0.43 → 0.13/ep;
+     band scattered-or-destroyed in 29/30 episodes (4.1/5 members killed);
+     trap casualties 0 → 0 — no sorties into the mined approaches. The
+     D4 fix verified in the wild here (parent pinned rolling 1.0 in the
+     first window; ckpt_best still saved at the genuine 2.1M peak).
+  One design adjustment mid-cycle (before the published patrol run): the
+  initial ambush held fire even while being destroyed at standoff (blue
+  spots forest-posted members at range 6 > ambush_range 5) — 4/30 baseline
+  episodes ever sprung. Added the compromised-ambush spring (any member
+  hit → volley); baseline re-measured at 29/30 sprung, 86.7% success.
+  Deferred: buildings + pathfinding terrain (the other half of the v1.4
+  deferral); dashboard frontend renders revealed traps only (hidden traps
+  are trace data, not drawn).
