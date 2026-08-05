@@ -26,9 +26,13 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   the failure analysis (dashboard episode traces) is the deliverable instead —
   suspects: subordinate-slot pressure, coverage dilution across depth, credit
   assignment across three echelons.
-- `[ ]` **A2. Train the untrained scenarios** — `fireteam_defend`, `squad_recon`.
+- `[x]` **A2. Train the untrained scenarios** — `fireteam_defend`, `squad_recon`.
   **DoD**: committed runs with ≥70% success each; RECON transcript shows the squad
   observing without engaging (stealth compliance visibly working).
+  *(done: fireteam_defend_v4 **91% ± 6** — zero defeats, deaths all at the
+  objective once terrain doctrine landed; squad_recon_v2 **89% ± 6**. The
+  original stealth clause was doctrinally misplaced: PROTERRE RECONNAÎTRE may
+  engage — pure stealth becomes the SCREEN mission in the v1.4 cycle (ex-A7).)*
 - `[x]` **B1. Honest evaluation standard** — bump `evaluate` default to 100 episodes;
   report a 95% CI next to success rates; regenerate the README numbers.
   **DoD**: README results carry N=100 and a CI; eval variance across reruns < 5 pts.
@@ -50,6 +54,43 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   accurate CONTACT wins.
   **DoD**: ≤1 SITREP per agent per 25 steps and no duplicate CONTACT storms in eval
   transcripts, without success-rate regression (>–3 pts vs. baseline runs).
+
+## Milestone v1.4 — PROTERRE alignment (breaking cycle)
+
+*Missions grounded in the doctrinal source (`docs/manuel-proterre.pdf`, MICAT);
+owner-approved scope, 2026-08-05. One coordinated space-breaking cycle: every
+scenario retrains, old runs kept for provenance, results republished.*
+
+- `[ ]` **P1. Full MICAT mission set** — English names, PROTERRE semantics:
+  RECON (may engage), SCREEN (ÉCLAIRER: no engagement, break contact), OBSERVE
+  (SURVEILLER: detect & alert), SUPPORT (APPUYER: unit-targeted fire support),
+  COVER (COUVRIR: flank guard), DEFEND (TENIR), DENY (INTERDIRE, section+),
+  SEIZE, CLEAR, RALLY, HOLD. Per-echelon mission admissibility from the manual's
+  tableau récapitulatif (groupe/section/compagnie menus) enforced via masks;
+  doctrine derivation tables rebuilt per echelon.
+  **DoD**: doctrine documented in `docs/missions.md` with manual page refs;
+  round-trip language tests; per-echelon admissibility tests.
+- `[ ]` **P2. SUPPORT mechanics** ("pas un pas sans appui") — SUPPORT missions
+  anchor on a friendly element; a supporting unit in position (LOS, range)
+  grants the supported unit covered movement (attacker accuracy debuff) and
+  focus-fire bonus on shared targets.
+  **DoD**: oracle shows supported bounds taking measurably fewer hits; a
+  scenario's transcript reads `TL2, THIS IS SL1: SUPPORT TL1. OUT.`
+- `[ ]` **P3. Human agents** — root commander human by default (knob),
+  observable to teammates, death penalty at mission-failure scale (~ -25,
+  episode continues; succession exercises). Rank must satisfy the
+  humans-outrank-non-humans invariant (validated at org build).
+- `[ ]` **P4. Rank-weighted casualties** — death/teammate-death penalties scale
+  with the fallen agent's effective authority.
+- `[ ]` **P5. Maps ×1.5 in place** — all scenario maps and step budgets grow
+  ~1.5×; objective layouts rescale.
+- `[ ]` **P6. Full retrain + republication** — all scenarios retrained under
+  P1–P5 (with the KL guard), N=100 evals, README/dashboard artifacts refreshed.
+  **DoD**: every scenario ≥ its v1.2 success number − 5 pts, SCREEN scenario
+  ≥80% with oracle-verified <0.01 shots/agent-step by SCREEN-holders.
+
+Deferred to v2.0: BRIQUE asymmetric OpFor (the manual's armed-bands threat
+model, p. 9), buildings + pathfinding terrain.
 
 ## Milestone v2.0 — Adversarial & scientific
 
@@ -88,10 +129,22 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   runner (no framework; a shell loop + run-name suffixes suffices).
 - `[ ]` **A6. Medic/auxiliary roles** — the legacy project's auxiliary-role idea:
   a MEDIC tag with a stabilize action; casualty play on the net (MEDEVAC request).
-- `[ ]` **D4. PPO stability guard** — twice observed a converged policy collapse
-  mid-fine-tuning (squad continuation @3e-4; platoon_v1 transient dip @1e-4).
-  Add a target-KL early stop per update (and optionally entropy-coef annealing).
-  **DoD**: rerun the platoon curriculum; no rolling-success dip below 70%.
+- `[~]` **D4. PPO stability guard** — four converged-policy collapses observed
+  (squad continuation @3e-4; platoon_v1 transient dip; squad_recon_v1 and _v2
+  terminal collapses @1e-4). Target-KL early stop implemented (PPOConfig.target_kl,
+  default 0.02). **DoD outstanding**: a platoon-curriculum rerun with no
+  rolling-success dip below 70% (the recon reruns were confounded by A7).
+- `[ ]` **A7. Stealth-recon economics** — negative result from A2: under strict
+  weapons-tight (no combat pay on RECON), the squad_recon policy *abandons the
+  task* — subordinates park on OVERWATCH at 8–9 cells farming posture compliance
+  without ever triggering the ≤7-cell observation that ends the episode, because
+  γ-discounted terminal success loses to safe indefinite shaping (the stall
+  exploit through a mission-posture side door; the undiscounted dominance bound
+  doesn't cover it). Candidate designs: pay observation *progress* (per novel
+  team-observe step, telescoping, completion-bounded), count subordinate
+  OVERWATCH-with-LOS toward team observation, or a posture-compliance budget per
+  mission. **DoD**: a squad_recon run ≥80% at N=100 where RECON-holders fire
+  <0.01/agent-step (oracle-verified), no stalling.
 
 ---
 
@@ -143,3 +196,31 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   again in both runs) and predated the reporting behavior — `ckpt_best` was
   re-pointed to the final checkpoint after N=100 evaluation of both
   (best-at-save 91% ± 6 / 8 report-endings vs final 97% ± 3 / 44).
+- **2026-08-05** — oracle observer + payloads forbidden (owner decision): the net
+  carries voice-procedure text only; `env.oracle()` exposes ground truth incl.
+  OpFor internals and behavior observables, provably invisible to the cohort.
+- **2026-08-05** — A2 campaign (six runs, four design findings):
+  1. *Fire discipline* — oracle diagnosis showed combat pay dominating mission
+     compliance (RECON elements out-shot OVERWATCH 149:82; defenders died 32:5
+     away from the objective chasing kills). Fix: `RewardConfig.fire_discipline` —
+     weapons-tight RECON, position-anchored combat pay for static postures.
+  2. *D4 implemented* — target-KL early stop after recon collapses #3 and #4.
+  3. *Terrain doctrine* — a defense needs defensible ground: `objective_cover`
+     + `assault_spawn_min_dist=14` took fireteam_defend from a ~55-60% plateau
+     (three runs: curriculum 46%, scratch 59% ± 10, scratch+discipline 58% ± 10)
+     to ~90% rolling (`fireteam_defend_v4`). Likewise `observation_concealment`
+     guarantees concealed OPs for recon.
+  4. *Negative result (→ A7)* — strict weapons-tight induced task abandonment on
+     squad_recon (v3/v4 degraded 100%→0% by posture-farming outside the trigger
+     radius). Published recon result: `squad_recon_v2` **89% ± 6** (N=100), whose
+     policy still fires on RECON (~0.05 shots/agent-step) — success DoD met,
+     stealth DoD deferred to A7.
+- **2026-08-05** — A2 **done**, v1.2 complete: fireteam_defend_v4 **91% ± 6**
+  (N=100, zero defeats, 3.8/4 survivors; oracle: all deaths at the objective) via
+  terrain doctrine; squad_recon_v2 **89% ± 6**. Old A7 reframed by doctrine.
+- **2026-08-05** — `docs/manuel-proterre.pdf` adopted as the doctrinal source
+  (MICAT missions, BRIQUE threat model, group/section/company mission menus,
+  reaction drills). Owner decisions: full MICAT set, SUPPORT as unit-targeted
+  mission, English names with PROTERRE semantics, one breaking v1.4 cycle
+  (missions+support+humans+rank-weighted deaths+maps ×1.5); BRIQUE OpFor and
+  buildings deferred to v2.0.
