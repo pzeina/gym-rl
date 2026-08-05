@@ -282,6 +282,20 @@ SLs task their TLs, TLs task their riflemen — one shared network playing every
 
 ![platoon episode](runs/platoon_v1/eval.gif)
 
+### Results (defense & reconnaissance)
+
+`runs/fireteam_defend_v4/` — **91% ± 6** (N=100, zero defeats, 3.8/4 mean survivors).
+Defense only worked once the scenario granted its doctrinal advantages (prepared
+positions ringing the objective + early-warning distance): three trainings on the bare
+spec all plateaued at a ~55-60% open-field coin flip with defenders dying off-position
+32:5; with defensible ground, every observed death is *at* the objective. Combat
+rewards are also mission-disciplined (`RewardConfig.fire_discipline`): static postures
+only pay for engagements fought from position, and reconnaissance is weapons-tight.
+
+`runs/squad_recon_v2/` — **89% ± 6** (N=100). Doctrinally (PROTERRE MICAT), RECONNAÎTRE
+*may engage*; a separate stealth task (ÉCLAIRER → SCREEN, intel without engaging) is
+planned in the PROTERRE-alignment cycle (ROADMAP).
+
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v3/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
