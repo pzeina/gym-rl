@@ -110,8 +110,18 @@ def compute_mask(
     world: World,
     visible_enemy_in_range: bool,
     visible_enemy: bool,
+    *,
+    order_cooldown: int = 0,
+    step: int = 0,
+    net_contact_step: int | None = None,
 ) -> np.ndarray:
-    """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step."""
+    """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
+
+    ``order_cooldown`` > 0 masks re-tasking a subordinate within that many
+    steps of its last received order, unless the leader's own mission changed
+    since, or a CONTACT report hit the net since (``net_contact_step``).
+    Untasked subordinates can always be ordered.
+    """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
     if not soldier.alive:
@@ -146,5 +156,14 @@ def compute_mask(
                 continue
             if spec.order_objective is not None and spec.order_objective not in objective_names:
                 continue
+            if order_cooldown > 0:
+                sub = subs[spec.order_slot]
+                recently_ordered = (
+                    sub.mission is not None and step - sub.last_order_step < order_cooldown
+                )
+                intent_changed = soldier.mission.step_assigned > sub.last_order_step
+                contact_since = net_contact_step is not None and net_contact_step > sub.last_order_step
+                if recently_ordered and not intent_changed and not contact_since:
+                    continue
             mask[spec.index] = 1
     return mask

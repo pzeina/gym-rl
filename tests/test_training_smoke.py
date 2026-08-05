@@ -69,3 +69,20 @@ def test_evaluate_random_baseline():
     assert summary["episodes"] == 2
     assert 0.0 <= summary["success_rate"] <= 1.0
     assert np.isfinite(summary["mean_return"])
+
+
+def test_eval_episodes_reproduce_standalone():
+    """Episode k of a sampled evaluation must reproduce independently: its
+    RNG streams may not depend on how many draws episodes 0..k-1 consumed."""
+    from cohort.env.cohort_env import make_env
+    from cohort.training.evaluate import _seeded_episode
+
+    net = PolicyNet(OBS_DIM, N_ACTIONS, hidden=32)  # untrained → sampled actions
+    env = make_env("fireteam")
+    seq = [_seeded_episode(env, net, 300 + i) for i in range(3)]
+    env_alone = make_env("fireteam")
+    alone = _seeded_episode(env_alone, net, 302)
+    assert (alone["outcome"], alone["length"]) == (seq[2]["outcome"], seq[2]["length"])
+    assert env_alone.transcript.render() == env.transcript.render(), (
+        "episode 2 standalone must be byte-identical to episode 2 in sequence"
+    )

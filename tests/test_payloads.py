@@ -24,7 +24,9 @@ EXPECTED_KEYS = {
     "ack": {"issuer", "recipient"},
     "contact": {"sender", "recipient", "grid", "count"},
     "sitrep": {"sender", "recipient", "grid", "health", "ammo"},
-    "done": {"sender", "recipient", "mission", "objective"},
+    "done": {"sender", "recipient", "mission", "objective", "verdict"},
+    "done_confirm": {"issuer", "recipient", "mission", "objective", "verdict"},
+    "done_reject": {"issuer", "recipient", "mission", "objective", "verdict"},
     "casualty": {"callsign"},
     "taking_command": {"successor", "replaced", "assumed_command"},
 }
@@ -132,6 +134,7 @@ def test_done_payload_matches_text():
     assert msg.payload["sender"] == "RFN1"
     assert msg.payload["mission"] == "SEIZE"
     assert msg.payload["objective"] == "BRAVO"
+    assert msg.payload["verdict"] == "confirmed"
     assert "SEIZE OBJ BRAVO — COMPLETE" in msg.text
 
 

@@ -104,3 +104,38 @@ def test_succession_announced_on_the_net():
     assert new_root is not None
     assert new_root.effective_rank is Rank.TL
     assert new_root.rank is Rank.RFN
+
+
+def test_casualty_from_hq_and_succession_text_from_language():
+    """CASUALTY comes from HQ (the dead don't transmit) and every succession
+    announcement — both shapes — is built by a core/language formatter."""
+    from cohort import make_env
+    from cohort.core import language as lang
+    from cohort.core.orders import HQ_ID
+
+    env = make_env("squad")
+    env.reset(seed=5)
+    sl = env.roster.by_callsign["SL1"]
+    sl.health = 1
+    enemy = next(e for e in env.enemies if e.alive)
+    sl.pos = (enemy.pos[0] + 1, enemy.pos[1])
+    for _ in range(40):
+        if not sl.alive:
+            break
+        env.step({a: 0 for a in env.agents})
+    assert not sl.alive, "squad leader should have been killed by the adjacent garrison"
+    casualty = next(m for m in env.transcript.messages if m.kind.value == "casualty")
+    assert casualty.sender_id == HQ_ID, "the dead do not transmit"
+    takes = [m for m in env.transcript.messages if m.kind.value == "taking_command"]
+    assert len(takes) >= 2, "SL death must cascade (TL moves up, RFN fills the TL slot)"
+    for m in takes:
+        p = m.payload
+        expected = (
+            lang.format_taking_command(p["successor"], p["replaced"])
+            if p["assumed_command"]
+            else lang.format_assuming_position(p["successor"], p["replaced"])
+        )
+        assert m.text == expected, "env must not assemble radio text inline"
+    texts = [m.text for m in takes]
+    assert any("ASSUMING COMMAND" in t for t in texts)
+    assert any("'S POSITION" in t for t in texts)

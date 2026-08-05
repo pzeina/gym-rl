@@ -82,6 +82,11 @@ class ScenarioSpec:
     forest_density: float = 1.0
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
+    # --- net protocol knobs (defaults preserve the shipped behavior) ---
+    auto_ack: bool = True         # False → orders are not auto-acknowledged (no WILCO)
+    order_cooldown: int = 8       # steps a leader cannot re-task the same subordinate
+    #                               (masked); lifted early if the leader's own mission
+    #                               changed or a CONTACT hit the net since. 0 → off.
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {
