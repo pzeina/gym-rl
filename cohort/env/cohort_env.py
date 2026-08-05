@@ -176,12 +176,6 @@ class CohortEnv(ParallelEnv):
             HQ_ID,
             root.id,
             lang.format_opord(root.callsign, cfg.root_mission, cfg.root_objective),
-            payload={
-                "issuer": "HQ",
-                "recipient": root.callsign,
-                "mission": cfg.root_mission.name,
-                "objective": cfg.root_objective,
-            },
         )
 
         observations = self._all_observations()
@@ -313,13 +307,7 @@ class CohortEnv(ParallelEnv):
         # --- casualties and succession ---
         for dead in player_deaths:
             # net/umpire convention: the report comes from HQ, not the casualty
-            self._say(
-                MessageKind.CASUALTY,
-                HQ_ID,
-                None,
-                lang.format_casualty(dead.callsign),
-                payload={"callsign": dead.callsign},
-            )
+            self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
             for other in self.roster.living:
                 ledger.add(other.callsign, "combat", cfg.teammate_death)
             for successor, replaced in self.roster.succeed(dead):
@@ -328,17 +316,7 @@ class CohortEnv(ParallelEnv):
                     if not replaced.alive
                     else lang.format_assuming_position(successor.callsign, replaced.callsign)
                 )
-                self._say(
-                    MessageKind.TAKING_COMMAND,
-                    successor.id,
-                    None,
-                    text,
-                    payload={
-                        "successor": successor.callsign,
-                        "replaced": replaced.callsign,
-                        "assumed_command": not replaced.alive,
-                    },
-                )
+                self._say(MessageKind.TAKING_COMMAND, successor.id, None, text)
 
         # --- kill sharing ---
         for shooter, _enemy in enemy_kills:
@@ -481,13 +459,6 @@ class CohortEnv(ParallelEnv):
                 lang.format_sitrep(
                     self._addressee(soldier), soldier.callsign, soldier.health, soldier.ammo, soldier.pos
                 ),
-                payload={
-                    "sender": soldier.callsign,
-                    "recipient": self._addressee(soldier),
-                    "grid": [int(soldier.pos[0]), int(soldier.pos[1])],
-                    "health": soldier.health,
-                    "ammo": soldier.ammo,
-                },
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
@@ -533,12 +504,6 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             soldier.leader_id,
             lang.format_contact(self._addressee(soldier), soldier.callsign, len(visible), nearest.pos),
-            payload={
-                "sender": soldier.callsign,
-                "recipient": self._addressee(soldier),
-                "grid": [int(nearest.pos[0]), int(nearest.pos[1])],
-                "count": len(visible),
-            },
         )
 
     def _report_done(self, soldier: Soldier, ledger: RewardLedger) -> None:
@@ -570,19 +535,11 @@ class CohortEnv(ParallelEnv):
         obj_name = (
             self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
         )
-        verdict = "confirmed" if truthful else "rejected"
         self._say(
             MessageKind.DONE,
             soldier.id,
             soldier.leader_id,
             lang.format_done(self._addressee(soldier), soldier.callsign, mission.type, obj_name),
-            payload={
-                "sender": soldier.callsign,
-                "recipient": self._addressee(soldier),
-                "mission": mission.type.name,
-                "objective": obj_name,
-                "verdict": verdict,
-            },
         )
         # the superior answers on the net: the verdict is command traffic, not
         # a secret side effect (a false claimant silently keeping its mission
@@ -590,20 +547,12 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         responder_id = leader.id if leader is not None else HQ_ID
         responder_cs = self._addressee(soldier)
-        response_payload = {
-            "issuer": responder_cs,
-            "recipient": soldier.callsign,
-            "mission": mission.type.name,
-            "objective": obj_name,
-            "verdict": verdict,
-        }
         if truthful:
             self._say(
                 MessageKind.DONE_CONFIRM,
                 responder_id,
                 soldier.id,
                 lang.format_done_confirm(soldier.callsign, responder_cs, mission.type, obj_name),
-                payload=response_payload,
             )
             if is_root_mission_claim:
                 # truthful root-mission COMPLETE: closes the grace window
@@ -617,7 +566,6 @@ class CohortEnv(ParallelEnv):
                 responder_id,
                 soldier.id,
                 lang.format_done_reject(soldier.callsign, responder_cs),
-                payload=response_payload,
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
 
@@ -704,12 +652,6 @@ class CohortEnv(ParallelEnv):
             issuer_id,
             recipient.id,
             lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
-            payload={
-                "issuer": issuer_cs,
-                "recipient": recipient.callsign,
-                "mission": mission_type.name,
-                "objective": obj_name,
-            },
         )
         if self.spec_cfg.auto_ack:
             self._say(
@@ -717,7 +659,6 @@ class CohortEnv(ParallelEnv):
                 recipient.id,
                 issuer_id,
                 lang.format_ack(issuer_cs, recipient.callsign),
-                payload={"issuer": issuer_cs, "recipient": recipient.callsign},
             )
 
     # ------------------------------------------------------------------ #
@@ -882,22 +823,8 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
-    def _say(
-        self,
-        kind: MessageKind,
-        sender: int,
-        recipient: int | None,
-        text: str,
-        payload: dict | None = None,
-    ) -> None:
-        msg = Message(
-            step=self._step_count,
-            kind=kind,
-            sender_id=sender,
-            recipient_id=recipient,
-            text=text,
-            payload=payload or {},
-        )
+    def _say(self, kind: MessageKind, sender: int, recipient: int | None, text: str) -> None:
+        msg = Message(step=self._step_count, kind=kind, sender_id=sender, recipient_id=recipient, text=text)
         self.transcript.add(msg)
         self.last_messages.append(msg)
 

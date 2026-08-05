@@ -96,14 +96,12 @@ def test_done_verdict_lands_on_the_net():
     _step_all(env, {"RFN1": DONE})
     reject = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_reject")
     assert reject.text == "RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT."
-    assert reject.payload["verdict"] == "rejected"
     assert sld.mission is not None
     # truthful claim → ROGER ... CONFIRMED, mission cleared
     sld.pos = obj.pos
     _step_all(env, {"RFN1": DONE})
     confirm = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_confirm")
     assert confirm.text == "RFN1, THIS IS TL1: ROGER, SEIZE OBJ BRAVO CONFIRMED. OUT."
-    assert confirm.payload["verdict"] == "confirmed"
     assert sld.mission is None
     # the claim precedes its verdict on the transcript
     kinds = [m.kind.value for m in env.transcript.messages]

@@ -8,7 +8,7 @@ can read the entire command flow of an episode as plain radio traffic.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 
@@ -37,14 +37,19 @@ class MessageKind(Enum):
 
 @dataclass(frozen=True)
 class Message:
-    """One radio message, with its rendered text form."""
+    """One radio message, with its rendered text form.
+
+    The net carries voice-procedure **text only** — structured payloads are
+    forbidden by design (owner decision): the transcript is the single source
+    of truth for what was said, and ground truth for external analysis lives
+    in the oracle observer channel, not in the messages. Enforced by test.
+    """
 
     step: int
     kind: MessageKind
     sender_id: int
     recipient_id: int | None  # None → broadcast to all stations
     text: str
-    payload: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

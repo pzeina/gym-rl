@@ -1,5 +1,7 @@
 """Chain-of-command succession: command devolves, recursively, with the mission."""
 
+import re
+
 from cohort.core.missions import Mission, MissionType
 from cohort.core.ranks import Rank
 from cohort.core.units import Roster, Soldier
@@ -128,14 +130,20 @@ def test_casualty_from_hq_and_succession_text_from_language():
     assert casualty.sender_id == HQ_ID, "the dead do not transmit"
     takes = [m for m in env.transcript.messages if m.kind.value == "taking_command"]
     assert len(takes) >= 2, "SL death must cascade (TL moves up, RFN fills the TL slot)"
+    shape = re.compile(
+        r"^ALL STATIONS, THIS IS (?P<successor>[A-Z]+\d+): "
+        r"(?:(?P<dead>[A-Z]+\d+) IS DOWN\. I AM ASSUMING COMMAND|"
+        r"ASSUMING (?P<moved>[A-Z]+\d+)'S POSITION)\. OUT\.$"
+    )
     for m in takes:
-        p = m.payload
-        expected = (
-            lang.format_taking_command(p["successor"], p["replaced"])
-            if p["assumed_command"]
-            else lang.format_assuming_position(p["successor"], p["replaced"])
+        match = shape.match(m.text)
+        assert match, f"succession text must come from a language.py formatter: {m.text!r}"
+        rebuilt = (
+            lang.format_taking_command(match["successor"], match["dead"])
+            if match["dead"]
+            else lang.format_assuming_position(match["successor"], match["moved"])
         )
-        assert m.text == expected, "env must not assemble radio text inline"
+        assert m.text == rebuilt, "env must not assemble radio text inline"
     texts = [m.text for m in takes]
     assert any("ASSUMING COMMAND" in t for t in texts)
     assert any("'S POSITION" in t for t in texts)
