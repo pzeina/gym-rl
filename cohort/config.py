@@ -217,6 +217,51 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         max_steps=375,
         observation_concealment=True,
     ),
+    "patrol_brique": ScenarioSpec(
+        name="patrol_brique",
+        description=(
+            "A squad patrols across ambush country to seize OBJ ALPHA; a BRIQUE armed "
+            "band (manual p. 9) is posted in ambush on the route, with mines laid."
+        ),
+        org="squad",
+        # geometry matches the `squad` scenario (its checkpoints transfer): only
+        # the OpFor changes — a flat band on the route instead of garrisons
+        map_size=(42, 42),
+        objectives=(("ALPHA", (33, 33)), ("BRAVO", (35, 9)), ("CHARLIE", (9, 35))),
+        spawn=(5, 5),
+        n_enemies=6,
+        opfor_mode="brique",
+        root_mission=MissionType.SEIZE,
+        root_objective="ALPHA",
+        max_steps=450,
+        band=BriqueBandConfig(initial_intent="ambush"),
+        n_traps=3,
+        # exercises the manual's react-to-ambush (p. 18) + break-contact (p. 19)
+        # drills and SUPPORT bounding ("pas un pas sans appui") on the blue side
+    ),
+    "defend_brique": ScenarioSpec(
+        name="defend_brique",
+        description=(
+            "A fire team holds OBJ ALPHA against a BRIQUE band that probes, "
+            "harasses and raids (manual p. 9), with mines on the approaches."
+        ),
+        org="fireteam",
+        # geometry matches `fireteam_defend` (its checkpoints transfer)
+        map_size=(36, 36),
+        objectives=(("ALPHA", (18, 18)),),
+        spawn=(17, 17),
+        n_enemies=5,
+        opfor_mode="brique",
+        root_mission=MissionType.DEFEND,
+        root_objective="ALPHA",
+        max_steps=375,
+        objective_cover=True,
+        assault_spawn_min_dist=21.0,  # the band infiltrates from the far edges
+        band=BriqueBandConfig(initial_intent="harass", raid_period=60),
+        n_traps=2,
+        # BRIQUE terminal semantics: success = band destroyed OR scattered with
+        # contact broken, while the objective is held (see docs/architecture.md)
+    ),
     "platoon": ScenarioSpec(
         name="platoon",
         description="A platoon (PL, PSG, 2 squads — 16 agents) seizes OBJ ALPHA.",

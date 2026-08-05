@@ -279,6 +279,8 @@ callsigns). Per agent, per step:
 | `squad_recon` | SL + 2 fire teams | 7 | 42×42 | RECON OBJ BRAVO (may engage) |
 | `squad_screen` | SL + 2 fire teams | 7 | 42×42 | SCREEN OBJ BRAVO — intel *without* engaging |
 | `platoon` | PL + PSG + 2 squads | 16 | 54×54 | SEIZE with three-echelon command |
+| `patrol_brique` | SL + 2 fire teams | 7 | 42×42 | SEIZE across ambush country vs. a BRIQUE band + mines |
+| `defend_brique` | TL + 3 RFN | 4 | 36×36 | DEFEND vs. a harassing/raiding BRIQUE band + mines |
 
 Add scenarios in [`cohort/config.py`](cohort/config.py) (org chart, map, OpFor, OPORD).
 
@@ -397,6 +399,73 @@ is met for unprovoked fire only — total including riposte sits above it). Trai
 1.15M steps + a 1M exploration-anneal continuation (`--ent-coef 0.003 --lr 1e-4`,
 `runs/squad_screen_v1/` kept alongside).
 
+### Asymmetric warfare (BRIQUE)
+
+The PROTERRE manual defines the threat PROTERRE units are built against
+([`docs/manuel-proterre.pdf`](docs/manuel-proterre.pdf), p. 9 "LA MENACE" — the
+« BRIQUE » enemy of the armée de terre's scenario 3): *armed bands of 5–20 with light
+individual and collective weapons*, capable of coups de main on installations, limited
+raids to destroy communications and depots, harassment of police and military forces
+with improvised means *including mines and traps*, and high-psychological-impact
+actions. `opfor_mode="brique"` implements exactly that as an environment-side OpFor
+(blue's spaces are untouched — every v1.4/v1.5 checkpoint still loads):
+
+* a **flat band** (no hierarchy, no chain of command — the structural opposite of the
+  cohort) driven by a band-level intent machine: **LURK** (hide in cover, avoid
+  detection) → **AMBUSH** (posted at a chokepoint on blue's predicted route, weapons
+  holstered until a blue unit is inside `ambush_range` *or the ambush is compromised*,
+  then a volley) → **HARASS** (1–2 shots from max range, displace to new cover) ⇄
+  **RAID** (move fast onto the objective, linger sabotaging, withdraw) → **SCATTER**
+  (break contact to the map edges — only under 30% strength: the band accepts
+  casualties a regular force would not);
+* **casualty-maximizing target selection**: the human commander first, then wounded,
+  then isolated blue units — the band shoots for psychological impact, which couples
+  directly into the cohort's human-death economics;
+* **mines/traps** (`ScenarioSpec.n_traps`): hidden cells on blue's likely route or the
+  position's approaches; the first friendly stepping on one takes 40 damage and the
+  umpire broadcasts `ALL STATIONS: RFN2 HIT A DEVICE AT GRID 1110. OUT.` — devices are
+  oracle ground truth from step 0 and **never** appear in blue observations (the
+  assurance layer's inference target);
+* **asymmetric terminal semantics** (DEFEND vs. a band): success = band destroyed OR
+  scattered with contact fully broken, while the objective is held — a hit-and-run
+  enemy does not have to be annihilated to be defeated, but it must be *out of the
+  fight* (see [docs/architecture.md](docs/architecture.md)).
+
+The two BRIQUE scenarios exercise the manual's own counter-drills (pp. 18–19:
+*réaction à une embuscade*, *le groupe rompt le contact*): `patrol_brique` marches a
+squad through ambush country to seize a far objective (react-to-ambush, break-contact,
+SUPPORT bounding), `defend_brique` holds a position against a probing, harassing,
+raiding band.
+
+**Results** (N=100, sampled policy, 95% CI; both fine-tuned 3M steps at `--lr 1e-4`
+under the D4 rolling-best fix):
+
+`runs/patrol_brique_v1/` — **99% ± 2** (99/100, 6.4/7 mean survivors), fine-tuned from
+`squad_v3e`. Oracle before → after (30 fixed-seed episodes, parent vs. trained): total
+casualties **3.2 → 0.8 per episode**, ambushes sprung at all **29/30 → 15/30** (the
+patrol learned routes that refuse the kill zone), casualties inside the sprung-ambush
+window 1.2 → 0.8, **trap casualties 0.63 → 0.0 per episode** (the mined route corridor
+is avoided outright), SUPPORT taskings during movement **1.8 → 3.9 per episode**
+(`TL1, THIS IS SL1: SUPPORT TL2. OUT.` lands at t=11 of the eval transcript — bounding
+starts supported). The mid-run training was rough — rolling oscillated 0.06–0.94 for
+the first ~1.5M steps (the D4 shock signature, amplified by the band deliberately
+targeting the human commander) before converging to 0.96–1.0.
+
+`runs/defend_brique_v1/` — **87% ± 7** (`ckpt_best`, saved at 2.1M; the final
+checkpoint evaluates the same, 88% ± 6 — zero defeats either way, 3.9/4 mean
+survivors), fine-tuned from `fireteam_defend_v5` (whose own baseline on this band was
+73%). Oracle: casualties 0.43 → **0.13 per episode**, the band ends **scattered or
+destroyed in 29/30 episodes** (4.1/5 members killed on average), and trap casualties
+stay 0 — the defenders never sortie into their own mined approaches (position
+discipline holding). This scenario is also the D4 fix working as designed: the metrics
+log shows rolling pinned at 1.0 by the parent in the very first window — the old gate
+would have frozen `ckpt_best` at ~1k steps; the new full-turnover gate saved it at its
+genuine 2.1M peak.
+
+![patrol_brique curves](runs/patrol_brique_v1/training_curves.png)
+
+![patrol_brique episode](runs/patrol_brique_v1/eval.gif)
+
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
@@ -425,10 +494,10 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 162 tests: ranks, language, doctrine, succession, masking,
+tests/                 201 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
-                       SITREP cadence, dashboard, training smoke
+                       SITREP cadence, BRIQUE band + traps, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 

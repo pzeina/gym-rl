@@ -83,6 +83,40 @@ def test_spaces_frozen_under_brique():
         assert obs[a]["action_mask"].shape == (157,)
 
 
+def test_brique_scenario_presets():
+    """The two shipped BRIQUE scenarios: geometry matches their non-brique
+    parents (checkpoint transfer), band + traps configured per the manual."""
+    from cohort.config import get_scenario
+
+    patrol = get_scenario("patrol_brique")
+    assert patrol.opfor_mode == "brique"
+    assert patrol.band.initial_intent == "ambush"
+    assert patrol.n_traps == 3
+    assert patrol.root_mission is MissionType.SEIZE
+    squad = get_scenario("squad")
+    assert (patrol.map_size, patrol.objectives, patrol.spawn) == (
+        squad.map_size, squad.objectives, squad.spawn,
+    )
+
+    defend = get_scenario("defend_brique")
+    assert defend.opfor_mode == "brique"
+    assert defend.band.initial_intent == "harass"
+    assert defend.band.raid_period > 0
+    assert defend.n_traps == 2
+    assert defend.root_mission is MissionType.DEFEND
+    ftd = get_scenario("fireteam_defend")
+    assert (defend.map_size, defend.objectives, defend.spawn) == (
+        ftd.map_size, ftd.objectives, ftd.spawn,
+    )
+    # both scenarios reset with a live band and the full trap count
+    for name in ("patrol_brique", "defend_brique"):
+        env = make_env(name)
+        env.reset(seed=11)
+        assert env.band is not None
+        assert len(env.traps) == get_scenario(name).n_traps
+        assert all(e.mode == "brique" for e in env.enemies)
+
+
 # ------------------------------------------------------------------ #
 # band intent machine
 # ------------------------------------------------------------------ #
@@ -122,6 +156,20 @@ def test_ambush_springs_and_volleys_then_goes_harass():
     for _ in range(2):
         _step_all(env)
     assert env.band.intent == "harass", "the ambush dissolves after the volley window"
+
+
+def test_compromised_ambush_springs_early():
+    """An ambush taking effective fire is compromised and opens fire even
+    with no blue unit inside ambush_range — it does not die posted."""
+    env = _flat_brique(band=BriqueBandConfig(initial_intent="ambush", ambush_range=5.0))
+    _post_band(env, (20, 5))
+    tl1 = env.roster.by_callsign["TL1"]
+    tl1.pos = (13, 5)  # dist 7: outside ambush range, inside weapon range
+    tl1.prev_pos = tl1.pos
+    env.enemies[0].health = 60  # the band has been hit
+    _step_all(env)
+    assert env.band.sprung is True
+    assert any(e.fired_this_step for e in env.enemies), "the compromised ambush shoots back"
 
 
 def test_lurk_posts_the_ambush_when_blue_approaches():
