@@ -146,6 +146,8 @@ class CohortEnv(ParallelEnv):
             wall_density=cfg.wall_density,
             must_connect=[cfg.spawn],
         )
+        if cfg.objective_cover and cfg.root_objective:
+            self._prepare_defensive_ground(cfg.root_objective)
         self._spawn_roster()
         self._spawn_enemies()
         if cfg.sitrep_cadence:
@@ -192,6 +194,28 @@ class CohortEnv(ParallelEnv):
         infos = {a: {"components": {}} for a in self.agents}
         return observations, infos
 
+    def _prepare_defensive_ground(self, objective_name: str) -> None:
+        """Ring the objective with forest: a defense presumes prepared positions.
+
+        Deterministic (no RNG): every passable open cell at chebyshev distance 2
+        from the objective center becomes forest, giving defenders concealment
+        with the center kept clear. Random generation may otherwise leave the
+        objective bare, reducing a defensive stand to an open-field brawl.
+        """
+        from cohort.core.world import FOREST, OPEN
+
+        obj = self.world.objective_by_name(objective_name)
+        if obj is None:
+            return
+        ox, oy = obj.pos
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                if max(abs(dx), abs(dy)) != 2:
+                    continue
+                cell = (ox + dx, oy + dy)
+                if self.world.in_bounds(cell) and self.world.grid[cell[1], cell[0]] == OPEN:
+                    self.world.grid[cell[1], cell[0]] = FOREST
+
     def _spawn_roster(self) -> None:
         cells = self._bfs_free_cells(self.spec_cfg.spawn, len(self._org))
         soldiers: list[Soldier] = []
@@ -220,7 +244,9 @@ class CohortEnv(ParallelEnv):
         if cfg.opfor_mode == "assault":
             target = self.world.objective_by_name(cfg.root_objective or cfg.objectives[0][0])
             for i in range(cfg.n_enemies):
-                pos = self._random_edge_cell(min_dist_from=target.pos, min_dist=10.0)
+                pos = self._random_edge_cell(
+                    min_dist_from=target.pos, min_dist=cfg.assault_spawn_min_dist
+                )
                 self.enemies.append(
                     Enemy(id=i, pos=pos, home=pos, goal=target.pos, mode="assault", prev_pos=pos)
                 )

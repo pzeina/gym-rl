@@ -105,6 +105,15 @@ class ScenarioSpec:
     #                               RewardConfig.sitrep_overdue per step and is surfaced
     #                               in the agent's observation. None (default) → no
     #                               doctrine, the shipped behavior.
+    # --- defensive-scenario terrain doctrine ---
+    objective_cover: bool = False # True → guarantee defensible ground: the cells ringing
+    #                               the root objective (chebyshev distance 2) become
+    #                               forest — a defense presumes prepared positions, and
+    #                               random map generation may otherwise leave the
+    #                               objective bare.
+    assault_spawn_min_dist: float = 10.0  # minimum distance from the assaulted objective
+    #                               at which "assault"-mode OpFor spawns; larger values
+    #                               model the early warning a prepared defense earns.
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {
@@ -133,6 +142,11 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         root_mission=MissionType.DEFEND,
         root_objective="ALPHA",
         max_steps=250,
+        # defensive doctrine: prepared positions + early warning (see ROADMAP —
+        # three trainings on the bare spec all plateaued at a ~55-60% coin-flip
+        # brawl; a defense without defensible ground isn't a defense)
+        objective_cover=True,
+        assault_spawn_min_dist=14.0,
     ),
     "squad": ScenarioSpec(
         name="squad",
