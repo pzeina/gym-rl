@@ -38,6 +38,10 @@ class PPOConfig:
     max_grad_norm: float = 0.5
     update_epochs: int = 4
     num_minibatches: int = 4
+    #: Stop the update epochs early once the mean per-minibatch approximate KL
+    #: exceeds this. Guards against the destructive updates that four times
+    #: collapsed a converged policy mid-run (ROADMAP D4). None disables.
+    target_kl: float | None = 0.02
     hidden: int = 256
     device: str = "cpu"
 
@@ -161,7 +165,10 @@ def ppo_update(
     minibatch = max(64, n // cfg.num_minibatches)
     metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0}
     updates = 0
+    kl_stop = False
     for _ in range(cfg.update_epochs):
+        if kl_stop:
+            break
         perm = torch.randperm(n, device=device)
         for start in range(0, n, minibatch):
             mb = perm[start : start + minibatch]
@@ -186,9 +193,13 @@ def ppo_update(
             optimizer.step()
 
             with torch.no_grad():
-                metrics["approx_kl"] += ((ratio - 1) - logratio).mean().item()
+                kl = ((ratio - 1) - logratio).mean().item()
+                metrics["approx_kl"] += kl
             metrics["policy_loss"] += policy_loss.item()
             metrics["value_loss"] += value_loss.item()
             metrics["entropy"] += entropy.item()
             updates += 1
+            if cfg.target_kl is not None and kl > cfg.target_kl:
+                kl_stop = True  # this update has moved the policy far enough
+                break
     return {k: v / max(1, updates) for k, v in metrics.items()}
