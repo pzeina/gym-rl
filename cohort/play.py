@@ -3,11 +3,11 @@
 You act as HQ (or as any commander callsign) and type orders exactly as the
 agents transmit them to each other; trained policies drive every soldier.
 
-    python -m cohort.play --checkpoint runs/fireteam_v1/ckpt_best.pt
-    python -m cohort.play --scenario squad --as CDG1
+    python -m cohort.play --checkpoint runs/fireteam_v2/ckpt_best.pt
+    python -m cohort.play --scenario squad --as SL1
 
 Console commands:
-    CAP1, seize obj bravo      inject an order (any command-language line)
+    TL1, seize obj bravo       inject an order (any command-language line)
     <enter> or s [n]           advance n steps (default 5)
     m                          show the map
     net [n]                    show the last n radio messages (default 15)

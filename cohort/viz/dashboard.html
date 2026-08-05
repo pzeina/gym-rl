@@ -154,7 +154,12 @@ const smooth = (arr, k) => arr.map((_, i) => {
   return s / (hi - lo);
 });
 
-const RANK_COLORS = { SLD: "#5b8dee", CAP: "#e0a521", CDG: "#e0641f", SOA: "#c65fd6", CDS: "#e04545", ADU: "#9d6bff", CDU: "#f0f0f0" };
+/* NATO APP-6 / MIL-STD-2525: affiliation colors (light fills) + echelon marks */
+const FRIEND_FILL = "#80e0ff", FRIEND_LINE = "#0f5c86", FRIEND_TEXT = "#a8e4ff";
+const HOSTILE_FILL = "#ff8080", HOSTILE_LINE = "#7a1111";
+const ECHELON = { RFN: "", TL: "∅", SL: "●", PSG: "●●●", PL: "●●●", XO: "|", CO: "|" };
+const GRADES = { RFN: "OR-3", TL: "OR-5", SL: "OR-6", PSG: "OR-7", PL: "OF-1", XO: "OF-2", CO: "OF-2" };
+const RANK_TITLES = { RFN: "Rifleman", TL: "Fire Team Leader", SL: "Squad Leader", PSG: "Platoon Sergeant", PL: "Platoon Leader", XO: "Executive Officer", CO: "Company Commander" };
 const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", casualty: "#ff5252", taking_command: "#c084fc" };
 const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done"], events: ["casualty", "taking_command"] };
 
@@ -291,9 +296,9 @@ $("toggles").querySelectorAll("input").forEach((el) =>
   el.onchange = () => { toggles[el.dataset.t] = el.checked; drawMap(); });
 
 $("legend").innerHTML =
-  Object.entries(RANK_COLORS).map(([r, ccol]) =>
-    `<span style="color:${ccol}">●</span> ${r}&nbsp; `).join("") +
-  `<br><span style="color:#ff5252">✕</span> OpFor &nbsp; <span style="color:#ff5252">◇</span> known (reported) &nbsp;
+  `<span style="color:${FRIEND_FILL}">▭</span> friendly (APP-6 frame + infantry saltire)<br>
+   echelon marks: <b>∅</b> team (TL) · <b>●</b> squad (SL) · <b>●●●</b> platoon (PL/PSG) · <b>|</b> company (CO/XO)<br>
+   <span style="color:${HOSTILE_FILL}">◆</span> hostile &nbsp; <span style="color:${HOSTILE_FILL}">◇</span> reported contact (suspected, dashed) <br>
    <span style="color:#5f8f5f">▦</span> forest &nbsp; <span style="color:#555">▩</span> wall`;
 
 const msgFilters = { orders: true, reports: true, events: true };
@@ -423,16 +428,17 @@ function drawMap() {
       const a = (dt - (t - 12)) / 12;
       EP.steps[dt].soldiers.forEach((s) => {
         if (!s.alive) return;
-        g.fillStyle = (RANK_COLORS[s.eff] || "#888") + "40";
+        g.fillStyle = FRIEND_FILL + "40";
         g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), cell * 0.12 * (0.4 + a), 0, 7); g.fill();
       });
     }
   }
-  // known enemy picture
+  // reported enemy picture: dashed diamond = suspected (2525 anticipated frame)
   if (toggles.known) st.known.forEach(([x, y]) => {
-    g.strokeStyle = "#ff525290"; g.lineWidth = 1.4;
-    const X = cx(g0, x), Y = cy(g0, y), r = cell * 0.32;
+    g.strokeStyle = HOSTILE_FILL + "b0"; g.lineWidth = 1.4; g.setLineDash([3, 3]);
+    const X = cx(g0, x), Y = cy(g0, y), r = cell * 0.36;
     g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
+    g.setLineDash([]);
   });
   // C2 links + anchors
   st.soldiers.forEach((s) => {
@@ -445,7 +451,7 @@ function drawMap() {
       }
     }
     if (toggles.anchors && s.mission) {
-      g.strokeStyle = (RANK_COLORS[s.eff] || "#888") + "70"; g.setLineDash([2, 4]); g.lineWidth = 1;
+      g.strokeStyle = FRIEND_FILL + "60"; g.setLineDash([2, 4]); g.lineWidth = 1;
       g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y));
       g.lineTo(cx(g0, s.mission.anchor[0]), cy(g0, s.mission.anchor[1])); g.stroke();
       g.setLineDash([]);
@@ -474,37 +480,46 @@ function drawMap() {
     const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2 - Math.abs(A.x - B.x) * 0.2 - 1;
     g.quadraticCurveTo(cx(g0, mx), cy(g0, my), cx(g0, B.x), cy(g0, B.y)); g.stroke();
   });
-  // enemies
+  // enemies: APP-6 hostile = red diamond frame + infantry saltire
   st.enemies.forEach((e) => {
-    const X = cx(g0, e.x), Y = cy(g0, e.y), r = cell * 0.3;
-    g.strokeStyle = e.alive ? "#ff5252" : "#5a5a5a"; g.lineWidth = e.alive ? 2.2 : 1.2;
-    g.beginPath(); g.moveTo(X - r, Y - r); g.lineTo(X + r, Y + r); g.moveTo(X + r, Y - r); g.lineTo(X - r, Y + r); g.stroke();
-    if (sel?.type === "enemy" && sel.key === e.id) { g.strokeStyle = "#fff"; g.lineWidth = 1.2; g.beginPath(); g.arc(X, Y, r + 4, 0, 7); g.stroke(); }
-    if (toggles.hp && e.alive && e.hp < 100) barAt(g, X, Y - r - 5, cell, e.hp / 100, "#ff5252");
+    const X = cx(g0, e.x), Y = cy(g0, e.y), r = cell * 0.42;
+    const fill = e.alive ? HOSTILE_FILL : "#4a4a4a", line = e.alive ? HOSTILE_LINE : "#6a6f78";
+    g.fillStyle = fill; g.strokeStyle = line; g.lineWidth = 1.3;
+    g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath();
+    g.fill(); g.stroke();
+    const s2 = r * 0.42;
+    g.beginPath(); g.moveTo(X - s2, Y - s2); g.lineTo(X + s2, Y + s2); g.moveTo(X + s2, Y - s2); g.lineTo(X - s2, Y + s2); g.stroke();
+    if (sel?.type === "enemy" && sel.key === e.id) { g.strokeStyle = "#fff"; g.lineWidth = 1.4; g.beginPath(); g.arc(X, Y, r + 4, 0, 7); g.stroke(); }
+    if (toggles.hp && e.alive && e.hp < 100) barAt(g, X, Y - r - 5, cell, e.hp / 100, HOSTILE_FILL);
   });
-  // soldiers
+  // soldiers: APP-6 friendly = blue rectangle frame + saltire + echelon mark
   st.soldiers.forEach((s) => {
-    const X = cx(g0, s.x), Y = cy(g0, s.y), r = cell * 0.34;
+    const X = cx(g0, s.x), Y = cy(g0, s.y);
     if (!s.alive) {
+      const r = cell * 0.3;
       g.strokeStyle = "#6a6f78"; g.lineWidth = 1.4;
       g.beginPath(); g.moveTo(X - r * .7, Y); g.lineTo(X + r * .7, Y); g.moveTo(X, Y - r * .7); g.lineTo(X, Y + r * .9); g.stroke();
       return;
     }
-    const color = RANK_COLORS[s.eff] || "#999";
-    const isLeader = s.eff !== "SLD";
-    g.fillStyle = color; g.strokeStyle = "#101216"; g.lineWidth = 1.4;
-    g.beginPath();
-    if (isLeader) { g.moveTo(X, Y - r * 1.15); g.lineTo(X + r, Y + r * 0.85); g.lineTo(X - r, Y + r * 0.85); g.closePath(); }
-    else g.arc(X, Y, r * 0.9, 0, 7);
-    g.fill(); g.stroke();
-    if (sel?.type === "soldier" && sel.key === s.cs) {
-      g.strokeStyle = "#ffffff"; g.lineWidth = 1.6; g.beginPath(); g.arc(X, Y, r * 1.5, 0, 7); g.stroke();
+    const isLeader = s.eff !== "RFN";
+    const w = (isLeader ? 1.0 : 0.68) * cell, h = (isLeader ? 0.68 : 0.5) * cell;
+    g.fillStyle = FRIEND_FILL; g.strokeStyle = FRIEND_LINE; g.lineWidth = 1.3;
+    g.fillRect(X - w / 2, Y - h / 2, w, h); g.strokeRect(X - w / 2, Y - h / 2, w, h);
+    g.beginPath(); g.moveTo(X - w / 2, Y - h / 2); g.lineTo(X + w / 2, Y + h / 2);
+    g.moveTo(X + w / 2, Y - h / 2); g.lineTo(X - w / 2, Y + h / 2); g.stroke();
+    const mark = ECHELON[s.eff] || "";
+    if (mark && cell > 7) {
+      g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(8, cell * 0.4)}px sans-serif`; g.textAlign = "center";
+      g.fillText(mark, X, Y - h / 2 - 3);
     }
-    if (toggles.hp) barAt(g, X, Y - r - 6, cell, s.hp / 100, s.hp > 60 ? "#4ade80" : s.hp > 30 ? "#ffd75e" : "#ff5252");
-    if (toggles.ammo) barAt(g, X, Y + r + 4, cell, s.ammo / 30, "#6fb3ff");
+    if (sel?.type === "soldier" && sel.key === s.cs) {
+      g.strokeStyle = "#ffffff"; g.lineWidth = 1.6; g.beginPath(); g.arc(X, Y, Math.max(w, h) * 0.85, 0, 7); g.stroke();
+    }
+    if (toggles.hp) barAt(g, X, Y - h / 2 - (mark ? 12 : 5), cell, s.hp / 100, s.hp > 60 ? "#4ade80" : s.hp > 30 ? "#ffd75e" : "#ff5252");
+    if (toggles.ammo) barAt(g, X, Y + h / 2 + 3, cell, s.ammo / 30, "#6fb3ff");
     if (toggles.labels && cell > 8) {
-      g.fillStyle = color; g.font = `bold ${Math.max(9, cell * 0.42)}px sans-serif`; g.textAlign = "center";
-      g.fillText(s.cs, X, Y + r + (toggles.ammo ? 8 : 4) + Math.max(9, cell * 0.42));
+      g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(9, cell * 0.4)}px sans-serif`; g.textAlign = "center";
+      g.fillText(s.cs, X, Y + h / 2 + (toggles.ammo ? 8 : 3) + Math.max(9, cell * 0.4));
     }
   });
 }
@@ -571,15 +586,15 @@ function renderInspector() {
   if (sel.type === "soldier") {
     const s = st.soldiers.find((o) => o.cs === sel.key);
     if (!s) return;
-    const color = RANK_COLORS[s.eff];
     const cumulative = EP.steps.slice(0, t + 1).reduce((acc, step) => {
       const rec = step.soldiers.find((o) => o.cs === s.cs); return acc + (rec?.r || 0);
     }, 0);
-    const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff}</span>` : "";
+    const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff} ${GRADES[s.eff]}</span>` : "";
     const rows = Object.entries(s.rc).map(([k, v]) =>
       `<tr><td>${k}</td><td class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${fmt(v, 3)}</td></tr>`).join("");
     el.innerHTML = `
-      <h3 style="color:${color};font-size:14px">${s.alive ? "" : "✝ "}${s.cs} <span style="color:var(--dim);font-weight:400">${s.rank}</span>${acting}</h3>
+      <h3 style="color:${FRIEND_FILL};font-size:14px">${s.alive ? "" : "✝ "}${s.cs}
+        <span style="color:var(--dim);font-weight:400">${RANK_TITLES[s.rank] || s.rank} (${GRADES[s.rank] || "?"})</span>${acting}</h3>
       <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${s.hp}%</div>
       <div class="bar"><div style="width:${s.hp}%;background:${s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)"}"></div></div>
       <div style="color:var(--dim);font-size:11px">ammo ${s.ammo}/30</div>

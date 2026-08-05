@@ -8,7 +8,7 @@ the legacy repo died of framework version drift, so the trainer here depends onl
 
 * **Parameter sharing**: one actor-critic MLP (2×256 tanh) for every agent. Rank,
   mission, and org context are inputs, so the network learns *rank-conditional* policy:
-  the same weights command as a CAP and rifle as an SLD.
+  the same weights command as a TL and rifle as an RFN.
 * **Action masking**: illegal logits → −1e9 before sampling *and* during updates, so
   probability mass (and entropy) live only on admissible actions.
 * **Rollout buffer**: rectangular `(time, env, agent-slot)` arrays with a validity mask.
@@ -61,9 +61,9 @@ follows once the pieces compose.
 ## Curriculum notes
 
 * `fireteam` trains in ~10 min on a laptop CPU and is the fastest sanity check.
-* `squad` adds a second command echelon (CDG orders CAPs, CAPs order riflemen); expect
+* `squad` adds a second command echelon (the SL orders TLs, TLs order riflemen); expect
   to need 2–4× more steps.
-* `section` (16 agents, three echelons) is the stretch goal; consider initializing from
+* `platoon` (16 agents, three echelons) is the stretch goal; consider initializing from
   a `squad` checkpoint via `--init-from` (same observation/action spaces — checkpoints
   are compatible across scenarios). When fine-tuning from a converged checkpoint, lower
   the learning rate (e.g. `--lr 1e-4`): the default 3e-4 with a fresh anneal schedule

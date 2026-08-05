@@ -51,7 +51,7 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
     if s.mission is not None:
         obj = env.world.objectives[s.mission.objective_id] if s.mission.objective_id is not None else None
         anchor = s.mission.anchor
-        if s.mission.type is MissionType.REGROUP:
+        if s.mission.type is MissionType.RALLY:
             leader = env.roster.leader_of(s)
             if leader is not None:
                 anchor = leader.pos

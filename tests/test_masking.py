@@ -17,7 +17,7 @@ def test_catalog_is_stable():
 
 
 def test_riflemen_can_never_command():
-    """Across many random steps, no SLD ever has a legal order action."""
+    """Across many random steps, no rifleman ever has a legal order action."""
     env = make_env("fireteam")
     obs, _ = env.reset(seed=11)
     rng = np.random.default_rng(0)
@@ -25,9 +25,9 @@ def test_riflemen_can_never_command():
         if not env.agents:
             obs, _ = env.reset()
         for agent in env.agents:
-            if agent.startswith("SLD"):
+            if agent.startswith("RFN"):
                 soldier = env.roster.by_callsign[agent]
-                if soldier.effective_rank.name == "SLD":  # not promoted by succession
+                if soldier.effective_rank.name == "RFN":  # not promoted by succession
                     assert obs[agent]["action_mask"][ORDER_INDICES].sum() == 0
         acts = {a: int(rng.choice(np.flatnonzero(obs[a]["action_mask"]))) for a in env.agents}
         obs, *_ = env.step(acts)
@@ -36,8 +36,8 @@ def test_riflemen_can_never_command():
 def test_leader_orders_are_doctrine_constrained():
     env = make_env("fireteam")
     obs, _ = env.reset(seed=3)
-    allowed = DOCTRINE[MissionType.SEIZE]  # CAP1 holds the SEIZE OPORD
-    mask = obs["CAP1"]["action_mask"]
+    allowed = DOCTRINE[MissionType.SEIZE]  # TL1 holds the SEIZE OPORD
+    mask = obs["TL1"]["action_mask"]
     for spec in CATALOG:
         if spec.kind == "order" and mask[spec.index]:
             assert spec.order_mission in allowed, (
@@ -53,9 +53,9 @@ def test_leader_orders_are_doctrine_constrained():
 def test_agent_without_mission_cannot_order():
     env = make_env("squad")
     obs, _ = env.reset(seed=3)
-    # fire-team leaders have no mission yet at t=0 (only the CDG holds the OPORD)
-    assert obs["CAP1"]["action_mask"][ORDER_INDICES].sum() == 0
-    assert obs["CDG1"]["action_mask"][ORDER_INDICES].sum() > 0
+    # fire-team leaders have no mission yet at t=0 (only the SL holds the OPORD)
+    assert obs["TL1"]["action_mask"][ORDER_INDICES].sum() == 0
+    assert obs["SL1"]["action_mask"][ORDER_INDICES].sum() > 0
 
 
 def test_fire_requires_visible_enemy():

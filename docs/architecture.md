@@ -55,7 +55,7 @@ Each `env.step(actions)`:
   **and** the ordered mission to be doctrine-derivable from the issuer's own mission;
 * FIRE requires ammo and a visible enemy in weapon range;
 * CONTACT requires a currently visible enemy;
-* MISSION COMPLETE requires holding a mission with an end state (SEIZE/RECON/ENGAGE/REGROUP).
+* MISSION COMPLETE requires holding a mission with an end state (SEIZE/RECON/CLEAR/RALLY).
 
 The policy applies the mask at the distribution level (logits of illegal actions →
 −1e9), so illegal behavior is impossible even during exploration. The environment also

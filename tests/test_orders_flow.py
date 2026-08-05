@@ -11,43 +11,43 @@ from cohort.env.actions import CATALOG
 def test_human_hq_order_reaches_agent():
     env = make_env("fireteam")
     env.reset(seed=1)
-    env.inject_order("SLD1, overwatch obj bravo", issuer="HQ")
-    sld1 = env.roster.by_callsign["SLD1"]
-    assert sld1.mission is not None
-    assert sld1.mission.type is MissionType.OVERWATCH
-    assert env.world.objectives[sld1.mission.objective_id].name == "BRAVO"
+    env.inject_order("RFN1, overwatch obj bravo", issuer="HQ")
+    rfn1 = env.roster.by_callsign["RFN1"]
+    assert rfn1.mission is not None
+    assert rfn1.mission.type is MissionType.OVERWATCH
+    assert env.world.objectives[rfn1.mission.objective_id].name == "BRAVO"
     texts = [m.text for m in env.transcript.messages]
-    assert any("SLD1, THIS IS HQ: OVERWATCH OBJ BRAVO" in t for t in texts)
+    assert any("RFN1, THIS IS HQ: OVERWATCH OBJ BRAVO" in t for t in texts)
     assert any("WILCO" in t for t in texts), "orders are acknowledged on the net"
 
 
 def test_agent_issuer_must_outrank_and_own_the_subordinate():
     env = make_env("squad")
     env.reset(seed=1)
-    # CAP1 may order their own rifleman
-    env.inject_order("SLD1, hold position", issuer="CAP1")
-    assert env.roster.by_callsign["SLD1"].mission.type is MissionType.HOLD
+    # TL1 may order their own rifleman
+    env.inject_order("RFN1, hold position", issuer="TL1")
+    assert env.roster.by_callsign["RFN1"].mission.type is MissionType.HOLD
     # ...but not the squad leader above them
     with pytest.raises(PermissionError):
-        env.inject_order("CDG1, hold position", issuer="CAP1")
+        env.inject_order("SL1, hold position", issuer="TL1")
     # ...and not a rifleman from the other fire team
     with pytest.raises(PermissionError):
-        env.inject_order("SLD3, hold position", issuer="CAP1")
+        env.inject_order("RFN3, hold position", issuer="TL1")
 
 
 def test_unknown_station_rejected():
     env = make_env("fireteam")
     env.reset(seed=1)
     with pytest.raises(OrderParseError):
-        env.inject_order("CAP9, seize obj alpha")
+        env.inject_order("TL9, seize obj alpha")
     with pytest.raises(OrderParseError):
-        env.inject_order("SLD1, seize obj zulu")
+        env.inject_order("RFN1, seize obj zulu")
 
 
 def test_learned_order_action_assigns_mission_and_logs():
     env = make_env("fireteam")
     env.reset(seed=21)
-    # CAP1 orders subordinate slot 0 (SLD1): SEIZE OBJ ALPHA — doctrine-preferred
+    # TL1 orders subordinate slot 0 (RFN1): SEIZE OBJ ALPHA — doctrine-preferred
     spec = next(
         s
         for s in CATALOG
@@ -56,12 +56,12 @@ def test_learned_order_action_assigns_mission_and_logs():
         and s.order_mission is MissionType.SEIZE
         and s.order_objective == "ALPHA"
     )
-    _obs, _rewards, *_ , infos = env.step({a: (spec.index if a == "CAP1" else 0) for a in env.agents})
-    sld1 = env.roster.by_callsign["SLD1"]
-    assert sld1.mission is not None and sld1.mission.type is MissionType.SEIZE
-    assert infos["CAP1"]["components"]["command"] > 0, "doctrine-preferred order pays"
+    _obs, _rewards, *_ , infos = env.step({a: (spec.index if a == "TL1" else 0) for a in env.agents})
+    rfn1 = env.roster.by_callsign["RFN1"]
+    assert rfn1.mission is not None and rfn1.mission.type is MissionType.SEIZE
+    assert infos["TL1"]["components"]["command"] > 0, "doctrine-preferred order pays"
     order_msgs = [m for m in env.transcript.messages if m.kind.value == "order"]
-    assert any("SLD1, THIS IS CAP1: SEIZE OBJ ALPHA" in m.text for m in order_msgs)
+    assert any("RFN1, THIS IS TL1: SEIZE OBJ ALPHA" in m.text for m in order_msgs)
 
 
 def test_reissuing_standing_order_is_churn():
@@ -75,9 +75,9 @@ def test_reissuing_standing_order_is_churn():
         and s.order_mission is MissionType.SEIZE
         and s.order_objective == "ALPHA"
     )
-    env.step({a: (spec.index if a == "CAP1" else 0) for a in env.agents})
-    _obs, _r, *_ , infos = env.step({a: (spec.index if a == "CAP1" else 0) for a in env.agents})
-    assert infos["CAP1"]["components"]["command"] < 0, "identical re-order is penalized"
+    env.step({a: (spec.index if a == "TL1" else 0) for a in env.agents})
+    _obs, _r, *_ , infos = env.step({a: (spec.index if a == "TL1" else 0) for a in env.agents})
+    assert infos["TL1"]["components"]["command"] < 0, "identical re-order is penalized"
 
 
 def test_alternating_orders_cannot_farm_bonuses():
@@ -101,20 +101,20 @@ def test_alternating_orders_cannot_farm_bonuses():
         )
 
     # initial tasking pays
-    *_, infos = env.step({a: (order(MissionType.SEIZE).index if a == "CAP1" else 0) for a in env.agents})
-    assert infos["CAP1"]["components"]["command"] > 0
+    *_, infos = env.step({a: (order(MissionType.SEIZE).index if a == "TL1" else 0) for a in env.agents})
+    assert infos["TL1"]["components"]["command"] > 0
     # flipping to a different valid order right away is churn, not command
-    *_, infos = env.step({a: (order(MissionType.ENGAGE).index if a == "CAP1" else 0) for a in env.agents})
-    assert infos["CAP1"]["components"]["command"] < 0
+    *_, infos = env.step({a: (order(MissionType.CLEAR).index if a == "TL1" else 0) for a in env.agents})
+    assert infos["TL1"]["components"]["command"] < 0
     # ...and flipping back is churn again
-    *_, infos = env.step({a: (order(MissionType.SEIZE).index if a == "CAP1" else 0) for a in env.agents})
-    assert infos["CAP1"]["components"]["command"] < 0
+    *_, infos = env.step({a: (order(MissionType.SEIZE).index if a == "TL1" else 0) for a in env.agents})
+    assert infos["TL1"]["components"]["command"] < 0
 
 
 def test_hold_anchors_where_received():
     env = make_env("fireteam")
     env.reset(seed=2)
-    sld = env.roster.by_callsign["SLD2"]
-    env.inject_order("SLD2, hold position")
+    sld = env.roster.by_callsign["RFN2"]
+    env.inject_order("RFN2, hold position")
     assert sld.mission.type is MissionType.HOLD
     assert sld.mission.anchor == sld.pos

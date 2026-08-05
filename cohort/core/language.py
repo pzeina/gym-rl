@@ -1,16 +1,18 @@
 """The command language: format agent radio traffic, parse human orders.
 
-The grammar is deliberately the terse voice-procedure a human commander
-already knows. Formatting and parsing are inverses over the order subset, so
-a human can type exactly what agents say to each other:
+Voice procedure follows NATO conventions (ACP 125 prowords: THIS IS, OVER,
+OUT, WILCO, ALL STATIONS; four-digit GRID references; phonetic objective
+names). Formatting and parsing are inverses over the order subset, so a human
+can type exactly what agents say to each other:
 
-    CAP1, SEIZE OBJ ALPHA
-    SLD2, REGROUP ON ME
-    SLD1, HOLD POSITION
-    CAP2, OVERWATCH OBJ BRAVO
+    TL1, SEIZE OBJ ALPHA
+    RFN2, RALLY ON ME
+    RFN1, HOLD POSITION
+    TL2, OVERWATCH OBJ BRAVO
 
 Mission keywords accept common synonyms (take/capture → SEIZE, cover/support
-→ OVERWATCH, attack/eliminate → ENGAGE, rally → REGROUP, scout → RECON...).
+→ OVERWATCH, destroy/attack/engage → CLEAR, regroup/assemble → RALLY,
+scout → RECON...).
 """
 
 from __future__ import annotations
@@ -20,12 +22,13 @@ from dataclasses import dataclass
 
 from cohort.core.missions import NEEDS_OBJECTIVE, MissionType
 
-#: Objective slot names, addressed as "OBJ ALPHA" etc.
+#: Objective slot names, addressed as "OBJ ALPHA" etc. (NATO phonetic).
 OBJECTIVE_NAMES: tuple[str, ...] = ("ALPHA", "BRAVO", "CHARLIE", "DELTA")
 
 _SYNONYMS: dict[str, MissionType] = {
     "recon": MissionType.RECON,
     "reconnoiter": MissionType.RECON,
+    "reconnoitre": MissionType.RECON,
     "scout": MissionType.RECON,
     "observe": MissionType.RECON,
     "seize": MissionType.SEIZE,
@@ -35,21 +38,30 @@ _SYNONYMS: dict[str, MissionType] = {
     "secure": MissionType.SEIZE,
     "defend": MissionType.DEFEND,
     "guard": MissionType.DEFEND,
+    "retain": MissionType.DEFEND,
     "overwatch": MissionType.OVERWATCH,
     "cover": MissionType.OVERWATCH,
     "support": MissionType.OVERWATCH,
-    "engage": MissionType.ENGAGE,
-    "attack": MissionType.ENGAGE,
-    "eliminate": MissionType.ENGAGE,
-    "neutralize": MissionType.ENGAGE,
-    "fix": MissionType.ENGAGE,
-    "regroup": MissionType.REGROUP,
-    "rally": MissionType.REGROUP,
-    "return": MissionType.REGROUP,
+    "clear": MissionType.CLEAR,
+    "destroy": MissionType.CLEAR,
+    "engage": MissionType.CLEAR,
+    "attack": MissionType.CLEAR,
+    "eliminate": MissionType.CLEAR,
+    "neutralize": MissionType.CLEAR,
+    "fix": MissionType.CLEAR,
+    "rally": MissionType.RALLY,
+    "regroup": MissionType.RALLY,
+    "assemble": MissionType.RALLY,
+    "return": MissionType.RALLY,
     "hold": MissionType.HOLD,
     "halt": MissionType.HOLD,
     "stop": MissionType.HOLD,
 }
+
+
+def grid_ref(pos: tuple[int, int]) -> str:
+    """Four-digit NATO-style grid reference, e.g. (14, 7) → 'GRID 1407'."""
+    return f"GRID {int(pos[0]):02d}{int(pos[1]):02d}"
 
 
 @dataclass(frozen=True)
@@ -66,17 +78,17 @@ class OrderParseError(ValueError):
 
 
 def mission_phrase(mission: MissionType, objective_name: str | None) -> str:
-    """Canonical spoken form of a mission, e.g. 'SEIZE OBJ ALPHA'."""
+    """Canonical spoken form of a tasking, e.g. 'SEIZE OBJ ALPHA'."""
     name = mission.name
     if mission in NEEDS_OBJECTIVE:
         return f"{name} OBJ {objective_name}"
-    if mission is MissionType.REGROUP:
+    if mission is MissionType.RALLY:
         return f"{name} ON ME"
     return f"{name} POSITION"  # HOLD
 
 
 def format_order(issuer_cs: str, recipient_cs: str, mission: MissionType, objective_name: str | None) -> str:
-    """Radio form of an order: 'CAP1, THIS IS CDG1: SEIZE OBJ ALPHA. OUT.'"""
+    """Radio form of an order: 'TL1, THIS IS SL1: SEIZE OBJ ALPHA. OUT.'"""
     return f"{recipient_cs}, THIS IS {issuer_cs}: {mission_phrase(mission, objective_name)}. OUT."
 
 
@@ -87,17 +99,17 @@ def format_opord(recipient_cs: str, mission: MissionType, objective_name: str | 
 
 def format_ack(issuer_cs: str, recipient_cs: str) -> str:
     """Order acknowledgement (auto-emitted on receipt)."""
-    return f"{issuer_cs}, {recipient_cs}: WILCO."
+    return f"{issuer_cs}, THIS IS {recipient_cs}: WILCO. OUT."
 
 
 def format_contact(leader_cs: str, sender_cs: str, n_hostiles: int, pos: tuple[int, int]) -> str:
-    """Enemy sighting report."""
-    plural = "S" if n_hostiles != 1 else ""
-    return f"{leader_cs}, THIS IS {sender_cs}: CONTACT, {n_hostiles} HOSTILE{plural} AT ({pos[0]},{pos[1]}). OVER."
+    """Enemy sighting report (NATO contact report shape)."""
+    return f"{leader_cs}, THIS IS {sender_cs}: CONTACT, {grid_ref(pos)}, {n_hostiles} x ENEMY. OVER."
+
 
 def format_sitrep(leader_cs: str, sender_cs: str, health: int, ammo: int, pos: tuple[int, int]) -> str:
-    """Status report."""
-    return f"{leader_cs}, THIS IS {sender_cs}: SITREP, HP {health}%, AMMO {ammo}, POS ({pos[0]},{pos[1]}). OVER."
+    """Situation report."""
+    return f"{leader_cs}, THIS IS {sender_cs}: SITREP, {grid_ref(pos)}, HEALTH {health}%, AMMO {ammo}. OVER."
 
 
 def format_done(leader_cs: str, sender_cs: str, mission: MissionType, objective_name: str | None) -> str:
@@ -107,18 +119,18 @@ def format_done(leader_cs: str, sender_cs: str, mission: MissionType, objective_
 
 def format_casualty(callsign: str) -> str:
     """Broadcast when an agent goes down."""
-    return f"ALL STATIONS: {callsign} IS DOWN."
+    return f"ALL STATIONS: {callsign} IS DOWN. OUT."
 
 
 def format_taking_command(new_cs: str, dead_cs: str) -> str:
     """Broadcast when succession occurs."""
-    return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM TAKING COMMAND."
+    return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."
 
 
 _ORDER_RE = re.compile(
-    r"^\s*(?:(?P<issuer>[A-Za-z]{3}\d+)\s*(?:,|:)\s*)?"      # optional issuer prefix (ignored)
-    r"(?:this\s+is\s+[A-Za-z]{3}\d+\s*(?::|,)\s*)?"          # optional 'THIS IS X:'
-    r"(?P<recipient>[A-Za-z]{3}\d+)\s*(?:,|:)\s*"            # recipient callsign
+    r"^\s*(?:(?P<issuer>[A-Za-z]{2,3}\d+)\s*(?:,|:)\s*)?"    # optional issuer prefix (ignored)
+    r"(?:this\s+is\s+[A-Za-z]{2,3}\d+\s*(?::|,)\s*)?"        # optional 'THIS IS X:'
+    r"(?P<recipient>[A-Za-z]{2,3}\d+)\s*(?:,|:)\s*"          # recipient callsign
     r"(?P<body>.+?)\.?\s*(?:out\.?|over\.?)?\s*$",           # order body
     re.IGNORECASE,
 )
@@ -127,8 +139,8 @@ _ORDER_RE = re.compile(
 def parse_order(text: str) -> ParsedOrder:
     """Parse a human order line into (recipient, mission, objective).
 
-    Accepts e.g. 'CAP1, seize obj alpha', 'sld2: rally on me',
-    'SLD1, hold position', 'CAP2, cover obj bravo. out.'
+    Accepts e.g. 'TL1, seize obj alpha', 'rfn2: rally on me',
+    'RFN1, hold position', 'TL2, cover obj bravo. out.'
     """
     m = _ORDER_RE.match(text)
     if not m:

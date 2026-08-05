@@ -19,48 +19,48 @@ class OrgSlot:
 
 
 def _fireteam(leader_of: int | None, offset: int) -> list[OrgSlot]:
-    """CAP + 2 SLD."""
+    """TL + 2 RFN."""
     return [
-        OrgSlot(Rank.CAP, leader_of),
-        OrgSlot(Rank.SLD, offset),
-        OrgSlot(Rank.SLD, offset),
+        OrgSlot(Rank.TL, leader_of),
+        OrgSlot(Rank.RFN, offset),
+        OrgSlot(Rank.RFN, offset),
     ]
 
 
 def build_org(kind: str) -> list[OrgSlot]:
     """Return the org chart for a unit type.
 
-    fireteam: CAP + 3 SLD                                  (4 agents)
-    squad:    CDG + 2 fireteams (CAP + 2 SLD each)         (7 agents)
-    section:  CDS + SOA (deputy) + 2 squads                (16 agents)
+    fireteam: TL + 3 RFN                                   (4 agents)
+    squad:    SL + 2 fire teams (TL + 2 RFN each)          (7 agents)
+    platoon:  PL + PSG (deputy) + 2 squads                 (16 agents)
     """
     if kind == "fireteam":
         return [
-            OrgSlot(Rank.CAP, None),
-            OrgSlot(Rank.SLD, 0),
-            OrgSlot(Rank.SLD, 0),
-            OrgSlot(Rank.SLD, 0),
+            OrgSlot(Rank.TL, None),
+            OrgSlot(Rank.RFN, 0),
+            OrgSlot(Rank.RFN, 0),
+            OrgSlot(Rank.RFN, 0),
         ]
     if kind == "squad":
-        org = [OrgSlot(Rank.CDG, None)]
+        org = [OrgSlot(Rank.SL, None)]
         org += _fireteam(0, 1)   # slots 1..3
         org += _fireteam(0, 4)   # slots 4..6
         return org
-    if kind == "section":
+    if kind == "platoon":
         org = [
-            OrgSlot(Rank.CDS, None),
-            OrgSlot(Rank.SOA, 0, deputy=True),
+            OrgSlot(Rank.PL, None),
+            OrgSlot(Rank.PSG, 0, deputy=True),
         ]
         # squad 1: slots 2..8
-        org += [OrgSlot(Rank.CDG, 0)]
+        org += [OrgSlot(Rank.SL, 0)]
         org += _fireteam(2, 3)
         org += _fireteam(2, 6)
         # squad 2: slots 9..15
-        org += [OrgSlot(Rank.CDG, 0)]
+        org += [OrgSlot(Rank.SL, 0)]
         org += _fireteam(9, 10)
         org += _fireteam(9, 13)
         return org
-    msg = f"Unknown org kind: {kind!r} (expected fireteam | squad | section)"
+    msg = f"Unknown org kind: {kind!r} (expected fireteam | squad | platoon)"
     raise ValueError(msg)
 
 
@@ -70,7 +70,7 @@ class ScenarioSpec:
 
     name: str
     description: str
-    org: str                                   # fireteam | squad | section
+    org: str                                   # fireteam | squad | platoon
     map_size: tuple[int, int]                  # (width, height)
     objectives: tuple[tuple[str, tuple[int, int]], ...]
     spawn: tuple[int, int]                     # friendly spawn anchor
@@ -87,7 +87,7 @@ class ScenarioSpec:
 SCENARIOS: dict[str, ScenarioSpec] = {
     "fireteam": ScenarioSpec(
         name="fireteam",
-        description="A fire team (CAP + 3 SLD) seizes OBJ ALPHA held by a small OpFor garrison.",
+        description="A fire team (TL + 3 RFN) seizes OBJ ALPHA held by a small OpFor garrison.",
         org="fireteam",
         map_size=(24, 24),
         objectives=(("ALPHA", (18, 18)), ("BRAVO", (19, 4))),
@@ -113,7 +113,7 @@ SCENARIOS: dict[str, ScenarioSpec] = {
     ),
     "squad": ScenarioSpec(
         name="squad",
-        description="A squad (CDG + 2 fire teams) seizes OBJ ALPHA; OpFor garrisons ALPHA and BRAVO.",
+        description="A squad (SL + 2 fire teams) seizes OBJ ALPHA; OpFor garrisons ALPHA and BRAVO.",
         org="squad",
         map_size=(28, 28),
         objectives=(("ALPHA", (22, 22)), ("BRAVO", (23, 6)), ("CHARLIE", (6, 23))),
@@ -137,10 +137,10 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         root_objective="BRAVO",
         max_steps=250,
     ),
-    "section": ScenarioSpec(
-        name="section",
-        description="A full section (CDS, SOA, 2 squads — 16 agents) seizes OBJ ALPHA.",
-        org="section",
+    "platoon": ScenarioSpec(
+        name="platoon",
+        description="A platoon (PL, PSG, 2 squads — 16 agents) seizes OBJ ALPHA.",
+        org="platoon",
         map_size=(36, 36),
         objectives=(("ALPHA", (29, 29)), ("BRAVO", (30, 7)), ("CHARLIE", (7, 30)), ("DELTA", (18, 18))),
         spawn=(4, 4),

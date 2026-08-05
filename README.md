@@ -1,22 +1,23 @@
 # cohort — a transparent chain-of-command for multi-agent RL
 
-A military cohort of ranked agents learns to behave the way soldiers of their rank should:
-**obey** standing orders, **report** what they see up the chain, **derive** doctrine-valid
-orders for their subordinates, and fight as a team — while every order and report is a
-human-readable radio message. A human commander can read the entire command flow of an
-episode as plain voice-procedure text, and can *speak the same language back*:
+A military cohort of NATO-ranked agents learns to behave the way soldiers of their rank
+should: **obey** standing orders, **report** what they see up the chain, **derive**
+doctrine-valid orders for their subordinates, and fight as a team — while every order and
+report is a human-readable radio message in NATO voice procedure. A human commander can
+read the entire command flow of an episode as plain radio traffic, and can *speak the
+same language back*:
 
 ```
-[t=  0] CAP1, THIS IS HQ: OPORD — SEIZE OBJ ALPHA. OUT.
-[t=  3] SLD1, THIS IS CAP1: SEIZE OBJ ALPHA. OUT.
-[t=  3] CAP1, SLD1: WILCO.
-[t= 41] CAP1, THIS IS SLD2: CONTACT, 2 HOSTILES AT (17,16). OVER.
-[t= 87] ALL STATIONS: CAP1 IS DOWN.
-[t= 87] ALL STATIONS, THIS IS SLD1: CAP1 IS DOWN. I AM TAKING COMMAND.
-[t=112] HQ, THIS IS SLD1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+[t=  0] SL1, THIS IS HQ: OPORD — SEIZE OBJ ALPHA. OUT.
+[t=  1] TL2, THIS IS SL1: OVERWATCH OBJ ALPHA. OUT.
+[t=  1] SL1, THIS IS TL2: WILCO. OUT.
+[t= 11] SL1, THIS IS TL1: CONTACT, GRID 2106, 1 x ENEMY. OVER.
+[t= 87] ALL STATIONS: TL1 IS DOWN. OUT.
+[t= 87] ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.
+[t=112] HQ, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.
 ```
 
-The same sentence a human types — `CAP1, seize obj bravo` — is parsed, validated against
+The same sentence a human types — `TL1, seize obj bravo` — is parsed, validated against
 rank authority, and lands as a mission on the agent, which the trained policy then executes.
 
 ## What is guaranteed vs. what is learned
@@ -25,47 +26,46 @@ The core design split: **admissibility is enforced, behavior is trained.**
 
 | Enforced by action masking (hard guarantee) | Learned by RL (reward-shaped) |
 |---|---|
-| A rifleman (SLD) can never issue an order | *When* to move, fire, take cover |
+| A rifleman (RFN) can never issue an order | *When* to move, fire, take cover |
 | Leaders can only order their own direct subordinates | *Which* doctrine-valid order fits the situation |
 | Orders must be doctrine-derivable from the leader's own mission | Reporting contacts promptly (only *new* intel pays) |
 | You cannot FIRE without a visible target, or report a contact you cannot see | Honest MISSION COMPLETE reports (false claims are penalized) |
 | MISSION COMPLETE only for missions that have an end state | Keeping every subordinate tasked, avoiding order churn |
 
-## Ranks
+## Ranks (NATO, STANAG 2116 grades)
 
-The hierarchy follows the French light-infantry structure, plus a base rifleman rank:
+| Callsign prefix | Position | Grade | Authority | Commands |
+|---|---|---|---|---|
+| CO | Company Commander | OF-2 | 6 | ✔ |
+| XO | Executive Officer (deputy of CO) | OF-2 | 5 | ✔ |
+| PL | Platoon Leader | OF-1 | 4 | ✔ |
+| PSG | Platoon Sergeant (deputy of PL) | OR-7 | 3 | ✔ |
+| SL | Squad Leader | OR-6 | 2 | ✔ |
+| TL | Fire Team Leader | OR-5 | 1 | ✔ |
+| RFN | Rifleman | OR-3 | 0 | ✖ executes, reports, communicates |
 
-| Rank | Position | Authority | Commands |
-|---|---|---|---|
-| CDU | Commandant d'Unité (company commander) | 6 | ✔ |
-| ADU | Adjoint d'Unité (company XO, deputy of CDU) | 5 | ✔ |
-| CDS | Chef de Section (platoon leader) | 4 | ✔ |
-| SOA | Sous-Officier Adjoint (platoon sergeant, deputy of CDS) | 3 | ✔ |
-| CDG | Chef de Groupe (squad leader) | 2 | ✔ |
-| CAP | Chef d'Équipe (fire-team leader) | 1 | ✔ |
-| SLD | Soldat (rifleman) | 0 | ✖ executes, reports, communicates |
+**Succession**: when a leader falls, command devolves automatically — the designated
+deputy (XO/PSG), or the senior living direct subordinate, assumes the fallen leader's
+*position*: their effective rank, their subordinates, and their standing mission. The
+vacancy the successor leaves behind is filled the same way, recursively, and each
+promotion is announced on the net (`I AM ASSUMING COMMAND`). A rifleman can end up
+commanding a squad — and the action mask expands with the acting rank.
 
-**Succession**: when a leader falls, command devolves automatically — the designated deputy
-(ADU/SOA), or the senior living direct subordinate, assumes the fallen leader's *position*:
-their effective rank, their subordinates, and their standing mission. The vacancy the
-successor leaves behind is filled the same way, recursively, and each promotion is announced
-on the net (`I AM TAKING COMMAND`). A rifleman can end up commanding a squad — and the
-action mask expands with the acting rank.
+## Missions and doctrine (NATO tactical tasks)
 
-## Missions and doctrine
-
-Orders carry one of seven missions: `RECON`, `SEIZE`, `DEFEND`, `OVERWATCH`, `ENGAGE`,
-`REGROUP` (rally on leader), `HOLD` (hold position). A leader may only derive subordinate
-missions that doctrine allows from its *own* current mission (preference-ordered):
+Orders carry one of seven tasks: `RECON` (reconnoiter), `SEIZE`, `DEFEND`, `OVERWATCH`
+(support by fire), `CLEAR` (eliminate enemy at an objective), `RALLY` (assemble on the
+leader), `HOLD` (hold position). A leader may only derive subordinate tasks that doctrine
+allows from its *own* current mission (preference-ordered):
 
 | Own mission | May order subordinates to… |
 |---|---|
 | RECON | RECON, OVERWATCH, HOLD |
-| SEIZE | SEIZE, ENGAGE, OVERWATCH |
+| SEIZE | SEIZE, CLEAR, OVERWATCH |
 | DEFEND | DEFEND, OVERWATCH, HOLD |
 | OVERWATCH | OVERWATCH, HOLD |
-| ENGAGE | ENGAGE, OVERWATCH |
-| REGROUP | REGROUP, HOLD |
+| CLEAR | CLEAR, OVERWATCH |
+| RALLY | RALLY, HOLD |
 | HOLD | HOLD, OVERWATCH |
 
 The doctrine table lives in [`cohort/core/missions.py`](cohort/core/missions.py) — edit it
@@ -80,7 +80,7 @@ pip install -r requirements.txt
 # sanity check
 pytest tests/ -q
 
-# train a fire team (CAP + 3 SLD) to seize an objective  (~10 min on CPU)
+# train a fire team (TL + 3 RFN) to seize an objective  (~10 min on CPU)
 python -m cohort.training.train --scenario fireteam --total-steps 1500000
 
 # evaluate a checkpoint: metrics + episode GIF + radio transcript
@@ -102,17 +102,20 @@ TensorBoard logs (`tensorboard --logdir runs`), checkpoints, and a post-training
 python -m cohort.viz.dashboard          # opens http://localhost:8787
 ```
 
-One command, no extra dependencies, works offline. Two views:
+One command, no extra dependencies, works offline. Unit symbology follows **NATO APP-6 /
+MIL-STD-2525**: friendly units are blue rectangle frames with the infantry saltire and an
+echelon indicator (∅ team, ● squad, ●●● platoon, | company); hostiles are red diamonds;
+reported-but-unseen contacts are dashed diamonds (suspected). Two views:
 
 * **Training** — live-refreshing charts for every run in `runs/`: return, success
   rate, episode length, per-component rewards, entropy, losses — usable *while*
   a training run is going.
 * **Episode** — simulate an episode with any checkpoint (or the random baseline),
   any scenario, any seed (reproducible), then explore it like a film:
-  play/pause/scrub/step, click any **agent** (health, ammo, effective rank, mission,
-  the exact action it took, its per-step reward broken into named components),
-  any **enemy** (who has spotted it, whether it's been reported onto the team
-  picture), any **objective** or terrain cell. Overlay toggles for chain-of-command
+  play/pause/scrub/step, click any **agent** (health, ammo, effective rank with NATO
+  grade, mission, the exact action it took, its per-step reward broken into named
+  components), any **enemy** (who has spotted it, whether it's been reported onto the
+  team picture), any **objective** or terrain cell. Overlay toggles for chain-of-command
   links, mission anchors, health/ammo bars, vision + line-of-sight, the reported
   enemy picture, comm flashes, and movement trails. A synced radio-net log
   (filterable, click a message to jump to its moment) and an event timeline
@@ -137,11 +140,6 @@ open runs/<run-name>/training_curves.png     # macOS; xdg-open on Linux
 tail -f runs/<run-name>/metrics.csv
 ```
 
-The dashboard shows episode return, success rate, episode length, per-component reward
-means (compliance / report / command / combat — *why* the cohort is improving), policy
-entropy, and losses. `python -m cohort.training.train` also regenerates it automatically
-when the run finishes.
-
 ### Watching trained agents
 
 Checkpoints (`ckpt_best.pt`, `ckpt_latest.pt`) are self-contained and reloadable: they
@@ -153,13 +151,13 @@ best by success rate; `ckpt_latest.pt` the most recent iteration.
 # metrics over N episodes + an animated GIF + the full radio transcript of one episode
 python -m cohort.training.evaluate runs/<run-name>/ckpt_best.pt \
     --episodes 20 --gif episode.gif --transcript episode.txt
-open episode.gif        # map, rank-colored units, C2 links + live radio net sidebar
+open episode.gif        # APP-6 map + live radio net sidebar
 cat episode.txt         # the episode as pure radio traffic
 
 # compare against the untrained baseline
 python -m cohort.training.evaluate --random --scenario fireteam
 
-# watch + steer it live in the terminal: type orders, step the sim, read the net
+# watch + steer it live in the terminal: type orders, read the net
 python -m cohort.play --checkpoint runs/<run-name>/ckpt_best.pt
 ```
 
@@ -167,21 +165,23 @@ A checkpoint trained on one scenario can be loaded in any other (identical obser
 and action spaces): `python -m cohort.play --checkpoint runs/fireteam_v2/ckpt_best.pt
 --scenario squad` works — and `--init-from` continues training from any checkpoint.
 
-## The command language
+## The command language (NATO voice procedure)
 
 Formatting and parsing are inverses — anything an agent says as an order, you can type:
 
 ```
-CAP1, seize obj alpha          → SEIZE at objective ALPHA
-sld2: rally on me              → REGROUP
-SLD1, hold position            → HOLD in place
-CAP2, cover obj bravo          → OVERWATCH (synonyms: cover, support)
-CAP1, hold obj alpha           → DEFEND (holding a *place* ≠ holding position)
+TL1, seize obj alpha           → SEIZE at objective ALPHA
+rfn2: rally on me              → RALLY
+RFN1, hold position            → HOLD in place
+TL2, cover obj bravo           → OVERWATCH (synonyms: cover, support)
+TL1, hold obj alpha            → DEFEND (holding a *place* ≠ holding position)
 ```
 
-Synonyms: `take/capture/assault/secure → SEIZE`, `attack/eliminate/neutralize/fix → ENGAGE`,
-`scout/observe → RECON`, `guard → DEFEND`, `rally/return → REGROUP`, `halt/stop → HOLD`.
-Rank rules apply to humans too: playing as `CAP1` you can order your riflemen, not the
+Synonyms: `take/capture/assault/secure → SEIZE`, `destroy/attack/engage/eliminate/
+neutralize/fix → CLEAR`, `scout/observe → RECON`, `guard/retain → DEFEND`,
+`regroup/assemble/return → RALLY`, `halt/stop → HOLD`. Reports use ACP-125-style
+prowords (THIS IS, WILCO, OVER, OUT, ALL STATIONS) and four-digit GRID references.
+Rank rules apply to humans too: playing as `TL1` you can order your riflemen, not the
 squad leader above you (`PermissionError`). As `HQ` you can order anyone.
 
 ## Environment
@@ -205,11 +205,11 @@ callsigns). Per agent, per step:
 
 | Name | Org | Agents | Mission |
 |---|---|---|---|
-| `fireteam` | CAP + 3 SLD | 4 | SEIZE OBJ ALPHA (garrisoned) |
-| `fireteam_defend` | CAP + 3 SLD | 4 | DEFEND OBJ ALPHA vs. OpFor assault |
-| `squad` | CDG + 2 fire teams | 7 | SEIZE with two-echelon command |
-| `squad_recon` | CDG + 2 fire teams | 7 | RECON OBJ BRAVO without engaging |
-| `section` | CDS + SOA + 2 squads | 16 | SEIZE with three-echelon command |
+| `fireteam` | TL + 3 RFN | 4 | SEIZE OBJ ALPHA (garrisoned) |
+| `fireteam_defend` | TL + 3 RFN | 4 | DEFEND OBJ ALPHA vs. OpFor assault |
+| `squad` | SL + 2 fire teams | 7 | SEIZE with two-echelon command |
+| `squad_recon` | SL + 2 fire teams | 7 | RECON OBJ BRAVO without engaging |
+| `platoon` | PL + PSG + 2 squads | 16 | SEIZE with three-echelon command |
 
 Add scenarios in [`cohort/config.py`](cohort/config.py) (org chart, map, OpFor, OPORD).
 
@@ -223,20 +223,20 @@ mid-episode, succession, and truncation bootstrapping are handled in the GAE buf
 
 ### Results (fireteam, 1.5M steps, ~6 min on a laptop CPU)
 
-See `runs/fireteam_v2/`:
+See `runs/fireteam_v2/` — 95% evaluation success over 20 episodes:
 
 ![training curves](runs/fireteam_v2/training_curves.png)
 
 ![episode](runs/fireteam_v2/eval.gif)
 
-The eval GIF shows the map (rank-colored units, chain-of-command links, mission anchors)
+The eval GIF shows the map (APP-6 unit symbols, chain-of-command links, mission anchors)
 side by side with the live radio net. The full transcript of the episode is written to
 `eval_transcript.txt`.
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v1/` — the CDG receives the OPORD, tasks its two fire-team leaders, and the
-CAPs task their riflemen; the same shared network plays all three roles:
+`runs/squad_v1/` — the SL receives the OPORD, tasks its two fire-team leaders, and the
+TLs task their riflemen; the same shared network plays all three roles:
 
 ![squad curves](runs/squad_v1/training_curves.png)
 
@@ -244,7 +244,7 @@ CAPs task their riflemen; the same shared network plays all three roles:
 
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v2/ckpt_best.pt` for `squad`, and so on up to
-`section`.
+`platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
 
 ## Project layout
 
@@ -252,10 +252,10 @@ first, then `--init-from runs/fireteam_v2/ckpt_best.pt` for `squad`, and so on u
 cohort/
   config.py            scenario presets + org chart builders
   core/
-    ranks.py           rank ladder, authority, deputies
-    missions.py        mission types, doctrine, compliance & completion semantics
+    ranks.py           NATO rank ladder, STANAG grades, deputies, echelon marks
+    missions.py        NATO tactical tasks, doctrine, compliance & completion semantics
     orders.py          radio messages + episode transcript
-    language.py        command-language formatter/parser (human ⇄ agent)
+    language.py        command-language formatter/parser (NATO voice procedure)
     units.py           soldiers, org roster, OpFor, combat, succession
     world.py           terrain grid, LOS, objectives, procedural maps
   env/
@@ -265,19 +265,21 @@ cohort/
     cohort_env.py      the PettingZoo ParallelEnv
   training/
     ppo.py             masked PPO + GAE buffer (handles agent death)
-    train.py           training CLI, metrics, checkpoints
+    train.py           training CLI, metrics, checkpoints, --init-from
     evaluate.py        eval CLI, GIF + transcript export
-  viz/                 frame renderer, GIF writer, training curves,
+  viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 66 tests: ranks, language, doctrine, succession, masking,
-                       PettingZoo API, rewards, combat, training smoke
+tests/                 71 tests: ranks, language, doctrine, succession, masking,
+                       PettingZoo API, rewards, combat, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 
 ## Provenance
 
 This project is a ground-up rewrite of an older RLlib-based attempt (preserved in
-[`legacy/`](legacy/)). The domain model — the French rank structure, doctrine-derived
-order decomposition, mission stability ideas — carries over; the environment, training
-stack, command language, succession, and tests are new.
+[`legacy/`](legacy/)). The domain model — a ranked chain of command with doctrine-derived
+order decomposition — carries over; the original French rank nomenclature (CDU/CDS/CDG…)
+was translated to NATO standards (ranks, tactical tasks, voice procedure, APP-6
+symbology) in v1.1. The environment, training stack, command language, succession, and
+tests are new.

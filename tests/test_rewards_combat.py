@@ -32,38 +32,38 @@ def _step_all(env, overrides):
 
 def test_compliance_progress_sign_in_env():
     env = _flat_env()
-    sld = env.roster.by_callsign["SLD1"]
+    sld = env.roster.by_callsign["RFN1"]
     obj = env.world.objectives[0]  # ALPHA at (18, 18)
     sld.pos = (10, 18)
     sld.mission = Mission(MissionType.SEIZE, 0, obj.pos, issuer_id=-1, step_assigned=0)
 
-    *_, infos = _step_all(env, {"SLD1": MOVE_EAST})
-    assert infos["SLD1"]["components"]["compliance"] > 0, "closing on the objective pays"
+    *_, infos = _step_all(env, {"RFN1": MOVE_EAST})
+    assert infos["RFN1"]["components"]["compliance"] > 0, "closing on the objective pays"
 
-    *_, infos = _step_all(env, {"SLD1": MOVE_WEST})
-    assert infos["SLD1"]["components"]["compliance"] < 0, "walking away from the objective costs"
+    *_, infos = _step_all(env, {"RFN1": MOVE_WEST})
+    assert infos["RFN1"]["components"]["compliance"] < 0, "walking away from the objective costs"
 
 
 def test_contact_report_new_then_redundant():
     env = _flat_env()
-    sld = env.roster.by_callsign["SLD1"]
+    sld = env.roster.by_callsign["RFN1"]
     enemy = env.enemies[0]
     enemy.pos = (10, 10)
     sld.pos = (7, 10)  # clear LOS on open ground, inside vision range
 
-    *_, infos = _step_all(env, {"SLD1": CONTACT})
-    first = infos["SLD1"]["components"]["report"]
+    *_, infos = _step_all(env, {"RFN1": CONTACT})
+    first = infos["RFN1"]["components"]["report"]
     assert first > 0, "first CONTACT on an unknown enemy is rewarded"
     assert env._known_enemies, "report feeds the team picture"
 
-    *_, infos = _step_all(env, {"SLD1": CONTACT})
-    assert infos["SLD1"]["components"]["report"] < 0, "re-reporting known intel is spam"
+    *_, infos = _step_all(env, {"RFN1": CONTACT})
+    assert infos["RFN1"]["components"]["report"] < 0, "re-reporting known intel is spam"
     assert any(m.kind.value == "contact" for m in env.transcript.messages)
 
 
 def test_mission_complete_truthful_vs_false():
     env = _flat_env()
-    sld = env.roster.by_callsign["SLD1"]
+    sld = env.roster.by_callsign["RFN1"]
     obj = env.world.objectives[1]  # BRAVO — no enemies parked there after _flat_env
     for e in env.enemies:
         e.pos = (1, 22)
@@ -71,20 +71,20 @@ def test_mission_complete_truthful_vs_false():
     # false claim first: far from BRAVO, mission clearly not done
     sld.pos = (2, 2)
     sld.mission = Mission(MissionType.SEIZE, 1, obj.pos, issuer_id=-1, step_assigned=0)
-    *_, infos = _step_all(env, {"SLD1": DONE})
-    assert infos["SLD1"]["components"]["report"] < 0, "false MISSION COMPLETE is penalized"
+    *_, infos = _step_all(env, {"RFN1": DONE})
+    assert infos["RFN1"]["components"]["report"] < 0, "false MISSION COMPLETE is penalized"
     assert sld.mission is not None, "mission stands until actually complete"
 
     # now truthfully: stand on BRAVO with no enemies near it
     sld.pos = obj.pos
-    *_, infos = _step_all(env, {"SLD1": DONE})
-    assert infos["SLD1"]["components"]["report"] > 0
+    *_, infos = _step_all(env, {"RFN1": DONE})
+    assert infos["RFN1"]["components"]["report"] > 0
     assert sld.mission is None, "honest completion clears the mission"
 
 
 def test_kill_rewards_and_team_share():
     env = _flat_env()
-    sld = env.roster.by_callsign["SLD1"]
+    sld = env.roster.by_callsign["RFN1"]
     enemy = env.enemies[0]
     enemy.pos = (8, 10)
     enemy.health = 1
@@ -94,11 +94,11 @@ def test_kill_rewards_and_team_share():
 
     killed = False
     for _ in range(8):  # point-blank shots; a miss is possible but rare
-        *_, infos = _step_all(env, {"SLD1": FIRE})
+        *_, infos = _step_all(env, {"RFN1": FIRE})
         if not enemy.alive:
             killed = True
-            assert infos["SLD1"]["components"]["combat"] > 0.5
-            assert infos["SLD2"]["components"]["combat"] > 0, "teammates share the kill"
+            assert infos["RFN1"]["components"]["combat"] > 0.5
+            assert infos["RFN2"]["components"]["combat"] > 0, "teammates share the kill"
             break
     assert killed, "adjacent target with 1 hp should die within a few shots"
 
@@ -135,7 +135,7 @@ def test_success_pays_everyone():
     obj = env.world.objectives[0]
     for e in env.enemies:
         e.alive = False  # objective cleared
-    env.roster.by_callsign["CAP1"].pos = obj.pos
+    env.roster.by_callsign["TL1"].pos = obj.pos
     _obs, rewards, terms, *_ = _step_all(env, {})
     assert env._episode_outcome == "success"
     assert all(terms.values())

@@ -1,7 +1,7 @@
 # cohort (gym-rl)
 
-Chain-of-command multi-agent RL: ranked military agents (SLD…CDU) learn to obey,
-report, and issue doctrine-valid orders; all C2 traffic is human-readable radio text.
+Chain-of-command multi-agent RL: NATO-ranked agents (RFN…CO, STANAG grades) learn to
+obey, report, and issue doctrine-valid orders; all C2 traffic is NATO voice procedure.
 
 ## Commands
 
@@ -17,7 +17,7 @@ report, and issue doctrine-valid orders; all C2 traffic is human-readable radio 
 
 - `cohort/core/` — pure domain logic, no RL deps: ranks/authority, missions/doctrine/
   compliance, radio messages, command-language parser, roster/succession, terrain/LOS.
-- `cohort/env/` — PettingZoo ParallelEnv; agent ids are callsigns (CAP1, SLD2…).
+- `cohort/env/` — PettingZoo ParallelEnv; agent ids are callsigns (TL1, RFN2…).
   Rank admissibility = hard action masks (`env/actions.py`); behavior = rewards
   (`env/rewards.py::RewardConfig`).
 - `cohort/training/` — self-contained masked PPO (torch only, NO RLlib — the legacy

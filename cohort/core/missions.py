@@ -1,4 +1,8 @@
-"""Mission types, derivation doctrine, and mission execution semantics.
+"""Mission tasks, derivation doctrine, and execution semantics.
+
+Mission names follow the NATO tactical task vocabulary (APP-28 / ATP-3.2.1
+family): RECON (reconnoiter), SEIZE, DEFEND, OVERWATCH (support by fire),
+CLEAR (eliminate enemy from an area), RALLY (assemble on the leader), HOLD.
 
 A *mission* is the payload of an order: what the recipient must do. Doctrine
 constrains how a leader may decompose its own mission into subordinate
@@ -19,14 +23,14 @@ from enum import Enum
 
 
 class MissionType(Enum):
-    """Missions an agent can hold / an order can carry."""
+    """NATO tactical tasks an agent can hold / an order can carry."""
 
     RECON = "recon"          # observe an objective without engaging
-    SEIZE = "seize"          # reach an objective and clear it of hostiles
+    SEIZE = "seize"          # take possession of an objective and clear it
     DEFEND = "defend"        # occupy an objective and repel hostiles
-    OVERWATCH = "overwatch"  # static position with line of sight on an objective
-    ENGAGE = "engage"        # close with and destroy hostiles at an objective
-    REGROUP = "regroup"      # rally on the direct leader
+    OVERWATCH = "overwatch"  # support by fire: static position with LOS on an objective
+    CLEAR = "clear"          # eliminate all hostiles at an objective
+    RALLY = "rally"          # assemble on the direct leader
     HOLD = "hold"            # hold current position
 
     @classmethod
@@ -35,28 +39,28 @@ class MissionType(Enum):
         return cls(value.lower())
 
 
-#: Missions that target a named objective. REGROUP targets the leader,
+#: Missions that target a named objective. RALLY targets the leader,
 #: HOLD targets the position where the order was received.
 NEEDS_OBJECTIVE: frozenset[MissionType] = frozenset(
-    {MissionType.RECON, MissionType.SEIZE, MissionType.DEFEND, MissionType.OVERWATCH, MissionType.ENGAGE}
+    {MissionType.RECON, MissionType.SEIZE, MissionType.DEFEND, MissionType.OVERWATCH, MissionType.CLEAR}
 )
 
 #: Missions with a definite end state that can be reported COMPLETE.
 #: DEFEND / OVERWATCH / HOLD are continuous postures — they end when a new
 #: order arrives, so MISSION COMPLETE is inadmissible for them.
 COMPLETABLE: frozenset[MissionType] = frozenset(
-    {MissionType.RECON, MissionType.SEIZE, MissionType.ENGAGE, MissionType.REGROUP}
+    {MissionType.RECON, MissionType.SEIZE, MissionType.CLEAR, MissionType.RALLY}
 )
 
 #: Derivation doctrine: own mission → subordinate missions allowed, in
-#: preference order. Adapted from the legacy TACTICAL_DERIVATION_DOCTRINE.
+#: preference order.
 DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.RECON: (MissionType.RECON, MissionType.OVERWATCH, MissionType.HOLD),
-    MissionType.SEIZE: (MissionType.SEIZE, MissionType.ENGAGE, MissionType.OVERWATCH),
+    MissionType.SEIZE: (MissionType.SEIZE, MissionType.CLEAR, MissionType.OVERWATCH),
     MissionType.DEFEND: (MissionType.DEFEND, MissionType.OVERWATCH, MissionType.HOLD),
     MissionType.OVERWATCH: (MissionType.OVERWATCH, MissionType.HOLD),
-    MissionType.ENGAGE: (MissionType.ENGAGE, MissionType.OVERWATCH),
-    MissionType.REGROUP: (MissionType.REGROUP, MissionType.HOLD),
+    MissionType.CLEAR: (MissionType.CLEAR, MissionType.OVERWATCH),
+    MissionType.RALLY: (MissionType.RALLY, MissionType.HOLD),
     MissionType.HOLD: (MissionType.HOLD, MissionType.OVERWATCH),
 }
 
@@ -66,8 +70,8 @@ IN_POSITION_RADIUS: dict[MissionType, float] = {
     MissionType.SEIZE: 2.5,
     MissionType.DEFEND: 3.5,
     MissionType.OVERWATCH: 9.0,  # paired with LOS requirement
-    MissionType.ENGAGE: 3.5,
-    MissionType.REGROUP: 2.5,
+    MissionType.CLEAR: 3.5,
+    MissionType.RALLY: 2.5,
     MissionType.HOLD: 1.5,
 }
 
@@ -79,7 +83,7 @@ def allowed_derivations(own_mission: MissionType | None) -> tuple[MissionType, .
     """Missions a leader may order subordinates given its own mission.
 
     A leader with no mission has nothing to derive from and may not order
-    (the root agent always receives the OPORD at episode start).
+    (the senior agent always receives the OPORD at episode start).
     """
     if own_mission is None:
         return ()
@@ -149,11 +153,11 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         if ctx.in_position:
             return 0.6 if ctx.stationary else 0.1
         return _progress(ctx)
-    if mission is MissionType.ENGAGE:
+    if mission is MissionType.CLEAR:
         if ctx.fired:
             return 0.8
         return 0.0 if ctx.visible_enemies > 0 else _progress(ctx)
-    if mission is MissionType.REGROUP:
+    if mission is MissionType.RALLY:
         return 0.5 if ctx.in_position else _progress(ctx)
     # HOLD
     if ctx.in_position:
@@ -169,7 +173,7 @@ def is_complete(mission: Mission, ctx: ComplianceContext) -> bool:
         return mission.observe_steps >= RECON_OBSERVE_STEPS
     if mission.type is MissionType.SEIZE:
         return ctx.in_position and ctx.enemies_at_objective == 0
-    if mission.type is MissionType.ENGAGE:
+    if mission.type is MissionType.CLEAR:
         return ctx.enemies_at_objective == 0
-    # REGROUP
-    return ctx.dist_to_leader <= IN_POSITION_RADIUS[MissionType.REGROUP]
+    # RALLY
+    return ctx.dist_to_leader <= IN_POSITION_RADIUS[MissionType.RALLY]

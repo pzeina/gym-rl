@@ -41,8 +41,8 @@ def test_no_derivation_without_a_mission():
 
 def test_derivation_quality_scores():
     assert derivation_quality(MissionType.SEIZE, MissionType.SEIZE) == 1.0
-    assert derivation_quality(MissionType.SEIZE, MissionType.ENGAGE) == 0.5
-    assert derivation_quality(MissionType.SEIZE, MissionType.REGROUP) == -0.5
+    assert derivation_quality(MissionType.SEIZE, MissionType.CLEAR) == 0.5
+    assert derivation_quality(MissionType.SEIZE, MissionType.RALLY) == -0.5
 
 
 def test_compliance_progress_sign():
@@ -69,8 +69,8 @@ def test_overwatch_and_hold_reward_being_static():
 
 
 def test_engage_rewards_firing():
-    assert compliance(MissionType.ENGAGE, _ctx(fired=True)) > compliance(
-        MissionType.ENGAGE, _ctx(visible_enemies=2)
+    assert compliance(MissionType.CLEAR, _ctx(fired=True)) > compliance(
+        MissionType.CLEAR, _ctx(visible_enemies=2)
     )
 
 
@@ -86,6 +86,6 @@ def test_continuous_postures_are_not_completable():
 
 
 def test_needs_objective_partition():
-    assert MissionType.REGROUP not in NEEDS_OBJECTIVE
+    assert MissionType.RALLY not in NEEDS_OBJECTIVE
     assert MissionType.HOLD not in NEEDS_OBJECTIVE
     assert MissionType.SEIZE in NEEDS_OBJECTIVE

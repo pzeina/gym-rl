@@ -1,4 +1,13 @@
-"""Render CohortEnv frames: map + units + radio transcript sidebar."""
+"""Render CohortEnv frames: map + units + radio transcript sidebar.
+
+Unit symbology follows NATO APP-6 / MIL-STD-2525 conventions:
+
+* friendly — blue rectangle frame, infantry saltire (crossed diagonals),
+  echelon indicator above the frame (∅ team, ● squad, ●●● platoon, | company);
+  riflemen are individuals and get a smaller frame with no echelon mark
+* hostile — red diamond frame with saltire
+* affiliation colors use the 2525 "light" fills: Crystal Blue / Salmon
+"""
 
 from __future__ import annotations
 
@@ -9,30 +18,55 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Circle
+from matplotlib.lines import Line2D
+from matplotlib.patches import Circle, Polygon, Rectangle
 
-from cohort.core.ranks import Rank
+from cohort.core.ranks import ECHELON_MARKS
 from cohort.core.world import FOREST, WALL
 
 if TYPE_CHECKING:
     from cohort.env.cohort_env import CohortEnv
 
-#: display colors per rank (leaders warm, riflemen blue)
-RANK_COLORS: dict[Rank, str] = {
-    Rank.SLD: "#3b6fd4",
-    Rank.CAP: "#e0a521",
-    Rank.CDG: "#e0641f",
-    Rank.SOA: "#b03ac2",
-    Rank.CDS: "#d42f2f",
-    Rank.ADU: "#8036d9",
-    Rank.CDU: "#171717",
-}
+#: MIL-STD-2525 affiliation fills (light) + frame line colors.
+FRIEND_FILL = "#80e0ff"
+FRIEND_LINE = "#005a8c"
+HOSTILE_FILL = "#ff8080"
+HOSTILE_LINE = "#8c0000"
+KIA_COLOR = "#8a8a8a"
 
 _TERRAIN_RGB = {
     0: (0.93, 0.92, 0.86),  # open
     FOREST: (0.68, 0.82, 0.62),
     WALL: (0.25, 0.25, 0.28),
 }
+
+
+def _friendly_symbol(ax: plt.Axes, x: float, y: float, echelon: str, *, small: bool) -> None:
+    """APP-6 friendly infantry: blue rectangle + saltire (+ echelon mark)."""
+    w, h = (0.9, 0.62) if not small else (0.62, 0.44)
+    ax.add_patch(
+        Rectangle((x - w / 2, y - h / 2), w, h, facecolor=FRIEND_FILL, edgecolor=FRIEND_LINE,
+                  linewidth=1.1, zorder=4)
+    )
+    ax.add_line(Line2D([x - w / 2, x + w / 2], [y - h / 2, y + h / 2], color=FRIEND_LINE, lw=0.9, zorder=5))
+    ax.add_line(Line2D([x - w / 2, x + w / 2], [y + h / 2, y - h / 2], color=FRIEND_LINE, lw=0.9, zorder=5))
+    if echelon:
+        ax.annotate(echelon, (x, y - h / 2 - 0.15), ha="center", va="bottom",
+                    fontsize=6.5, color=FRIEND_LINE, zorder=6, annotation_clip=False)
+
+
+def _hostile_symbol(ax: plt.Axes, x: float, y: float, *, alive: bool) -> None:
+    """APP-6 hostile: red diamond + saltire (gray when KIA)."""
+    r = 0.5
+    fill = HOSTILE_FILL if alive else "#d0d0d0"
+    line = HOSTILE_LINE if alive else KIA_COLOR
+    ax.add_patch(
+        Polygon([(x, y - r), (x + r, y), (x, y + r), (x - r, y)], closed=True,
+                facecolor=fill, edgecolor=line, linewidth=1.1, zorder=3)
+    )
+    s = r * 0.45
+    ax.add_line(Line2D([x - s, x + s], [y - s, y + s], color=line, lw=0.9, zorder=4))
+    ax.add_line(Line2D([x - s, x + s], [y + s, y - s], color=line, lw=0.9, zorder=4))
 
 
 def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
@@ -69,27 +103,24 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
                 )
 
     for e in env.enemies:
-        if e.alive:
-            ax.scatter(*e.pos, marker="X", s=70, color="#c01717", zorder=3, edgecolors="white", linewidths=0.5)
+        _hostile_symbol(ax, e.pos[0], e.pos[1], alive=e.alive)
 
     for s in env.roster.soldiers:
         if not s.alive:
-            ax.scatter(*s.pos, marker="x", s=28, color="#aaaaaa", zorder=2)
+            ax.scatter(*s.pos, marker="x", s=28, color=KIA_COLOR, zorder=2)
             continue
-        color = RANK_COLORS[s.effective_rank]
-        is_leader = s.effective_authority > 0
-        ax.scatter(
-            *s.pos, marker="^" if is_leader else "o", s=80 if is_leader else 55,
-            color=color, zorder=4, edgecolors="white", linewidths=0.8,
+        _friendly_symbol(
+            ax, s.pos[0], s.pos[1], ECHELON_MARKS[s.effective_rank],
+            small=s.effective_authority == 0,
         )
         ax.annotate(
-            s.callsign, s.pos, textcoords="offset points", xytext=(0, -11),
-            ha="center", fontsize=6.5, color=color, fontweight="bold",
+            s.callsign, s.pos, textcoords="offset points", xytext=(0, -12),
+            ha="center", fontsize=6.5, color=FRIEND_LINE, fontweight="bold",
         )
         if s.mission is not None:  # dashed line to the mission anchor
             ax.plot(
                 [s.pos[0], s.mission.anchor[0]], [s.pos[1], s.mission.anchor[1]],
-                color=color, lw=0.7, ls=":", alpha=0.55, zorder=1,
+                color=FRIEND_LINE, lw=0.7, ls=":", alpha=0.5, zorder=1,
             )
 
     # radio log sidebar
