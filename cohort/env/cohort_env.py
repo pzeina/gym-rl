@@ -407,8 +407,10 @@ class CohortEnv(ParallelEnv):
         for dead in player_deaths:
             # net/umpire convention: the report comes from HQ, not the casualty
             self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
+            # rank-weighted: losing a leader costs more, by effective authority
+            weight = 1.0 + cfg.rank_casualty_scale * dead.effective_authority
             for other in self.roster.living:
-                ledger.add(other.callsign, "combat", cfg.teammate_death)
+                ledger.add(other.callsign, "combat", cfg.teammate_death * weight)
             if dead.human:
                 # losing the human commander approaches mission failure: every
                 # present agent pays, on top of the normal death penalties; the
@@ -896,7 +898,9 @@ class CohortEnv(ParallelEnv):
                 if target.health <= 0 and target.alive:
                     target.alive = False
                     target.health = 0
-                    ledger.add(target.callsign, "combat", cfg.death)
+                    # rank-weighted death: dying as a leader costs more
+                    weight = 1.0 + cfg.rank_casualty_scale * target.effective_authority
+                    ledger.add(target.callsign, "combat", cfg.death * weight)
                     player_deaths.append(target)
 
     # ------------------------------------------------------------------ #

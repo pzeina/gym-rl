@@ -74,6 +74,10 @@ class RewardConfig:
     took_hit: float = -0.1
     death: float = -1.0
     teammate_death: float = -0.2
+    rank_casualty_scale: float = 0.25  # death & teammate_death scale with the FALLEN
+    #                                    agent's effective authority:
+    #                                    x (1 + scale x authority) — losing a PL
+    #                                    (authority 4) costs twice a rifleman
     human_death: float = -25.0        # paid by EVERY present agent when a human dies
     #                                   (on top of the normal death penalties): losing
     #                                   the human commander is close to mission failure,
