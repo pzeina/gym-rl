@@ -139,6 +139,10 @@ def _payload(m: Message) -> dict:
         # "TL1, THIS IS RFN1: SUPPORT ENDED, RFN2 IS DOWN. STANDING BY. OVER."
         s = re.search(r"SUPPORT ENDED, (?P<cs>[A-Z]+\d+) IS DOWN", m.text)
         parsed = {"supported": s.group("cs")} if s else {}
+    elif kind == "trap":
+        # "ALL STATIONS: RFN1 HIT A DEVICE AT GRID 1407. OUT." (BRIQUE)
+        s = re.search(r"(?P<cs>[A-Z]+\d+) HIT A DEVICE AT GRID (?P<grid>\d{4})", m.text)
+        parsed = {"victim": s.group("cs"), "grid": s.group("grid")} if s else {}
     else:
         parsed = {}
     return parsed
