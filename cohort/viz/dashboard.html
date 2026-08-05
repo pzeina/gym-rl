@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cohort dashboard</title>
+<style>
+  :root {
+    --bg: #14161a; --panel: #1c1f25; --panel2: #22262d; --line: #2e333b;
+    --text: #d6d9de; --dim: #8a919c; --accent: #6fb3ff; --good: #4ade80;
+    --bad: #ff5252; --warn: #ffd75e;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .04em; }
+  header h1 span { color: var(--accent); }
+  .tabs { display: flex; gap: 4px; }
+  .tab { padding: 5px 14px; border-radius: 6px; cursor: pointer; color: var(--dim); border: 1px solid transparent; }
+  .tab.active { color: var(--text); background: var(--panel2); border-color: var(--line); }
+  #status { margin-left: auto; color: var(--dim); font-size: 12px; }
+  main { flex: 1; display: flex; min-height: 0; }
+  .sidebar { width: 250px; min-width: 250px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .content { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; overflow-y: auto; }
+  .rightbar { width: 320px; min-width: 320px; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+  .card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin-bottom: 7px; }
+  select, input[type=number], button { background: #262b33; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
+  button { cursor: pointer; } button:hover { border-color: var(--accent); }
+  button.primary { background: #1d4ed8; border-color: #1d4ed8; font-weight: 600; }
+  button.small { width: auto; padding: 3px 9px; }
+  label.row { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; color: var(--text); }
+  label.row input { width: auto; }
+  .field { margin-bottom: 7px; } .field > span { display: block; color: var(--dim); font-size: 11px; margin-bottom: 3px; }
+  .runitem { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; margin-bottom: 6px; background: var(--panel2); }
+  .runitem:hover { border-color: var(--accent); }
+  .runitem.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .runitem .nm { font-weight: 600; } .runitem .meta { color: var(--dim); font-size: 11px; }
+  .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat { text-align: center; padding: 10px 6px; }
+  .stat .v { font-size: 20px; font-weight: 700; } .stat .k { color: var(--dim); font-size: 11px; }
+  .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .chart-card canvas { width: 100%; height: 160px; display: block; }
+  #mapwrap { flex: 1; min-height: 320px; position: relative; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; background: #101216; border: 1px solid var(--line); cursor: crosshair; }
+  #maphint { position: absolute; left: 10px; bottom: 8px; color: var(--dim); font-size: 11px; pointer-events: none; }
+  #outbadge { position: absolute; right: 10px; top: 8px; font-weight: 700; padding: 3px 10px; border-radius: 6px; display: none; }
+  .playbar { display: flex; align-items: center; gap: 8px; }
+  .playbar input[type=range] { flex: 1; }
+  #timeline { width: 100%; height: 64px; display: block; border-radius: 8px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
+  .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
+  #inspector { padding: 10px; border-bottom: 1px solid var(--line); overflow-y: auto; max-height: 46%; }
+  #radiolog { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  #radiolog .filters { display: flex; gap: 5px; padding: 8px 10px 4px; flex-wrap: wrap; }
+  .chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; color: var(--dim); }
+  .chip.on { color: var(--text); border-color: var(--accent); }
+  #msgs { flex: 1; overflow-y: auto; padding: 4px 10px 10px; font: 11px/1.5 ui-monospace, Menlo, monospace; }
+  .msg { padding: 1px 4px; border-radius: 4px; cursor: pointer; white-space: pre-wrap; }
+  .msg:hover { background: var(--panel2); }
+  .msg .t { color: var(--dim); }
+  .bar { height: 7px; border-radius: 4px; background: #30353d; overflow: hidden; margin: 2px 0 6px; }
+  .bar > div { height: 100%; }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.kv td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
+  table.kv td:last-child { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; }
+  .hidden { display: none !important; }
+  .empty { color: var(--dim); text-align: center; padding: 30px 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>⬢ <span>cohort</span> dashboard</h1>
+  <div class="tabs">
+    <div class="tab active" id="tab-training">Training</div>
+    <div class="tab" id="tab-episode">Episode</div>
+  </div>
+  <div id="status"></div>
+</header>
+<main>
+  <!-- ============ TRAINING ============ -->
+  <div class="sidebar" id="side-training">
+    <div class="card"><h3>Training runs</h3><div id="runlist"><div class="empty">loading…</div></div>
+      <label class="row"><input type="checkbox" id="autorefresh" checked> auto-refresh (5s)</label>
+    </div>
+  </div>
+  <div class="content" id="main-training">
+    <div class="cards" id="traincards"></div>
+    <div class="charts" id="traincharts"></div>
+    <div class="empty" id="trainempty">Select a training run — or start one:<br><br><code>python -m cohort.training.train --scenario fireteam</code></div>
+  </div>
+
+  <!-- ============ EPISODE ============ -->
+  <div class="sidebar hidden" id="side-episode">
+    <div class="card"><h3>Generate episode</h3>
+      <div class="field"><span>scenario</span><select id="ep-scenario"></select></div>
+      <div class="field"><span>policy</span><select id="ep-policy"></select></div>
+      <div class="field"><span>seed</span>
+        <div style="display:flex;gap:6px"><input type="number" id="ep-seed" value="1">
+        <button class="small" id="ep-dice" title="random seed">🎲</button></div></div>
+      <label class="row"><input type="checkbox" id="ep-greedy"> greedy (argmax) actions</label>
+      <button class="primary" id="ep-generate" style="margin-top:8px">▶ Generate</button>
+      <div id="ep-info" class="meta" style="margin-top:8px;color:var(--dim)"></div>
+    </div>
+    <div class="card"><h3>Overlays</h3>
+      <div class="toggles" id="toggles"></div>
+    </div>
+    <div class="card"><h3>Legend</h3><div id="legend" style="font-size:11px"></div></div>
+  </div>
+  <div class="content hidden" id="main-episode">
+    <div id="mapwrap">
+      <canvas id="map"></canvas>
+      <div id="outbadge"></div>
+      <div id="maphint">click an agent, enemy, objective or cell to inspect · ←/→ step · space play</div>
+    </div>
+    <div class="playbar card">
+      <button class="small" id="pb-start" title="to start">⏮</button>
+      <button class="small" id="pb-back" title="step back">◀</button>
+      <button class="small" id="pb-play" title="play/pause">▶</button>
+      <button class="small" id="pb-fwd" title="step forward">▶︎▶︎</button>
+      <input type="range" id="pb-slider" min="0" max="0" value="0">
+      <span id="pb-t" style="min-width:76px;text-align:right;font-family:ui-monospace,Menlo,monospace">t=0/0</span>
+      <select id="pb-speed" style="width:84px">
+        <option value="2">2 st/s</option><option value="5">5 st/s</option>
+        <option value="10" selected>10 st/s</option><option value="20">20 st/s</option>
+        <option value="40">40 st/s</option>
+      </select>
+    </div>
+    <canvas id="timeline" title="team reward per step + events — click to seek"></canvas>
+  </div>
+  <div class="rightbar hidden" id="right-episode">
+    <div id="inspector"><div class="empty">nothing selected</div></div>
+    <div id="radiolog">
+      <div class="filters" id="msgfilters"></div>
+      <div id="msgs"></div>
+    </div>
+  </div>
+</main>
+<script>
+"use strict";
+/* ============================= helpers ============================= */
+const $ = (id) => document.getElementById(id);
+const api = async (path) => {
+  const r = await fetch(path);
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+};
+const fmt = (v, d = 2) => (v == null || Number.isNaN(v)) ? "–" : (+v).toFixed(d);
+const smooth = (arr, k) => arr.map((_, i) => {
+  const lo = Math.max(0, i - (k >> 1)), hi = Math.min(arr.length, i + (k >> 1) + 1);
+  let s = 0; for (let j = lo; j < hi; j++) s += arr[j];
+  return s / (hi - lo);
+});
+
+const RANK_COLORS = { SLD: "#5b8dee", CAP: "#e0a521", CDG: "#e0641f", SOA: "#c65fd6", CDS: "#e04545", ADU: "#9d6bff", CDU: "#f0f0f0" };
+const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", casualty: "#ff5252", taking_command: "#c084fc" };
+const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done"], events: ["casualty", "taking_command"] };
+
+/* ============================= charts ============================= */
+function drawChart(canvas, series, opts = {}) {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  const g = canvas.getContext("2d"); g.scale(dpr, dpr);
+  g.clearRect(0, 0, W, H);
+  const padL = 40, padR = 8, padT = 8, padB = 18;
+  const xs = series[0]?.x || [];
+  if (!xs.length) { g.fillStyle = "#8a919c"; g.fillText("no data", W / 2 - 18, H / 2); return; }
+  let ymin = Infinity, ymax = -Infinity;
+  for (const s of series) for (const v of s.y) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
+  if (opts.zero) ymin = Math.min(ymin, 0);
+  if (ymin === ymax) { ymin -= 1; ymax += 1; }
+  const pad = (ymax - ymin) * 0.08; ymin -= pad; ymax += pad;
+  const xmin = xs[0], xmax = xs[xs.length - 1] || 1;
+  const X = (v) => padL + (v - xmin) / (xmax - xmin || 1) * (W - padL - padR);
+  const Y = (v) => padT + (1 - (v - ymin) / (ymax - ymin)) * (H - padT - padB);
+  g.strokeStyle = "#2e333b"; g.fillStyle = "#8a919c"; g.font = "10px sans-serif"; g.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const v = ymin + (ymax - ymin) * i / 3, y = Y(v);
+    g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
+    g.fillText(Math.abs(v) >= 1000 ? (v / 1000).toFixed(0) + "k" : v.toFixed(Math.abs(ymax - ymin) < 2 ? 2 : 1), 3, y + 3);
+  }
+  const kx = xmax >= 1e6 ? [1e6, "M"] : xmax >= 1e3 ? [1e3, "k"] : [1, ""];
+  for (let i = 0; i <= 3; i++) {
+    const v = xmin + (xmax - xmin) * i / 3;
+    g.fillText((v / kx[0]).toFixed(1) + kx[1], X(v) - 8, H - 5);
+  }
+  series.forEach((s) => {
+    if (s.faint) {
+      g.strokeStyle = s.color + "35"; g.lineWidth = 1; g.beginPath();
+      s.raw.forEach((v, i) => i ? g.lineTo(X(s.x[i]), Y(v)) : g.moveTo(X(s.x[i]), Y(v)));
+      g.stroke();
+    }
+    g.strokeStyle = s.color; g.lineWidth = 1.6; g.beginPath();
+    s.y.forEach((v, i) => i ? g.lineTo(X(s.x[i]), Y(v)) : g.moveTo(X(s.x[i]), Y(v)));
+    g.stroke();
+  });
+  if (series.length > 1 || opts.legend) {
+    let lx = padL + 6;
+    series.forEach((s) => {
+      g.fillStyle = s.color; g.fillRect(lx, padT + 2, 10, 3);
+      g.fillStyle = "#d6d9de"; g.fillText(s.name, lx + 13, padT + 7);
+      lx += 22 + g.measureText(s.name).width;
+    });
+  }
+}
+
+/* ============================= training tab ============================= */
+let STATE = { runs: [], scenarios: {} };
+let selectedRun = null, refreshTimer = null;
+
+async function loadState() {
+  STATE = await api("/api/state");
+  renderRunList();
+  fillEpisodeSelectors();
+}
+
+function renderRunList() {
+  const el = $("runlist");
+  if (!STATE.runs.length) { el.innerHTML = '<div class="empty">no runs yet</div>'; return; }
+  el.innerHTML = "";
+  STATE.runs.forEach((r) => {
+    const d = document.createElement("div");
+    d.className = "runitem" + (r.name === selectedRun ? " sel" : "");
+    const succ = r.last.success_rate_rolling ? (100 * +r.last.success_rate_rolling).toFixed(0) + "%" : "–";
+    d.innerHTML = `<div class="nm">${r.name}</div>
+      <div class="meta">${r.scenario || "?"} · ${(+r.last.env_steps || 0).toLocaleString()} steps · success ${succ}</div>`;
+    d.onclick = () => { selectedRun = r.name; renderRunList(); loadRunCharts(); };
+    el.appendChild(d);
+  });
+}
+
+async function loadRunCharts() {
+  if (!selectedRun) return;
+  let m;
+  try { m = await api(`/api/metrics?run=${encodeURIComponent(selectedRun)}`); } catch { return; }
+  const c = m.columns, x = c.env_steps;
+  $("trainempty").classList.add("hidden");
+  const last = (k) => c[k] ? c[k][c[k].length - 1] : null;
+  $("traincards").innerHTML = ["env steps|" + (+last("env_steps")).toLocaleString(),
+    "success (rolling)|" + (100 * last("success_rate_rolling")).toFixed(0) + "%",
+    "episode return|" + fmt(last("ep_return")),
+    "steps / sec|" + (+last("sps")).toLocaleString()]
+    .map((s) => { const [k, v] = s.split("|"); return `<div class="card stat"><div class="v">${v}</div><div class="k">${k}</div></div>`; }).join("");
+  const charts = [
+    ["episode return", [["ep_return", "#6fb3ff"]], { smooth: 9, zero: true }],
+    ["success rate (rolling 100 ep)", [["success_rate_rolling", "#4ade80"]], {}],
+    ["episode length", [["ep_length", "#ffd75e"]], { smooth: 9 }],
+    ["reward components / agent-step", [["comp_compliance", "#6fb3ff"], ["comp_report", "#ffd75e"], ["comp_command", "#4ade80"], ["comp_combat", "#ff8c42"]], { smooth: 15, zero: true, legend: true }],
+    ["policy entropy", [["entropy", "#c084fc"]], {}],
+    ["losses", [["policy_loss", "#6fb3ff"], ["value_loss", "#ff8c42"]], { legend: true, smooth: 9 }],
+  ];
+  const holder = $("traincharts");
+  if (holder.children.length !== charts.length) {
+    holder.innerHTML = charts.map((ch, i) =>
+      `<div class="card chart-card"><h3>${ch[0]}</h3><canvas id="tc${i}"></canvas></div>`).join("");
+  }
+  charts.forEach((ch, i) => {
+    const series = ch[1].filter(([k]) => c[k]).map(([k, color]) => {
+      const raw = c[k], y = ch[2].smooth ? smooth(raw, ch[2].smooth) : raw;
+      return { name: k.replace("comp_", ""), x, y, color, raw, faint: !!ch[2].smooth };
+    });
+    drawChart($(`tc${i}`), series, ch[2]);
+  });
+}
+
+$("autorefresh").onchange = setupRefresh;
+function setupRefresh() {
+  clearInterval(refreshTimer);
+  if ($("autorefresh").checked)
+    refreshTimer = setInterval(async () => { await loadState(); loadRunCharts(); }, 5000);
+}
+setupRefresh();
+
+/* ============================= episode tab ============================= */
+let EP = null, t = 0, playing = false, playTimer = null;
+let sel = null; // {type:'soldier'|'enemy'|'obj'|'cell', key}
+const TOGGLES = [
+  ["links", "C2 links", true], ["anchors", "mission anchors", true],
+  ["hp", "health bars", true], ["ammo", "ammo bars", false],
+  ["vision", "vision + LOS (selected)", true], ["known", "known enemies", true],
+  ["comms", "comm flashes", true], ["labels", "callsigns", true],
+  ["grid", "grid", false], ["trails", "movement trails", false],
+];
+const toggles = Object.fromEntries(TOGGLES.map(([k, , v]) => [k, v]));
+$("toggles").innerHTML = TOGGLES.map(([k, label, v]) =>
+  `<label class="row"><input type="checkbox" data-t="${k}" ${v ? "checked" : ""}> ${label}</label>`).join("");
+$("toggles").querySelectorAll("input").forEach((el) =>
+  el.onchange = () => { toggles[el.dataset.t] = el.checked; drawMap(); });
+
+$("legend").innerHTML =
+  Object.entries(RANK_COLORS).map(([r, ccol]) =>
+    `<span style="color:${ccol}">●</span> ${r}&nbsp; `).join("") +
+  `<br><span style="color:#ff5252">✕</span> OpFor &nbsp; <span style="color:#ff5252">◇</span> known (reported) &nbsp;
+   <span style="color:#5f8f5f">▦</span> forest &nbsp; <span style="color:#555">▩</span> wall`;
+
+const msgFilters = { orders: true, reports: true, events: true };
+$("msgfilters").innerHTML = Object.keys(KIND_GROUPS).map((k) =>
+  `<span class="chip on" data-g="${k}">${k}</span>`).join("");
+$("msgfilters").querySelectorAll(".chip").forEach((el) => el.onclick = () => {
+  msgFilters[el.dataset.g] = !msgFilters[el.dataset.g];
+  el.classList.toggle("on"); renderMsgs();
+});
+
+function fillEpisodeSelectors() {
+  const sc = $("ep-scenario");
+  const cur = sc.value;
+  sc.innerHTML = Object.keys(STATE.scenarios).map((s) => `<option>${s}</option>`).join("");
+  if (cur) sc.value = cur;
+  const pol = $("ep-policy"), curp = pol.value;
+  let opts = '<option value="random">random (masked) baseline</option>';
+  STATE.runs.forEach((r) => r.checkpoints.forEach((k) => {
+    opts += `<option value="run:${r.name}:${k}">${r.name} · ckpt_${k}</option>`;
+  }));
+  pol.innerHTML = opts;
+  if (curp) pol.value = curp;
+  if (!curp) { // default to the first best checkpoint if any
+    const first = STATE.runs.find((r) => r.checkpoints.includes("best"));
+    if (first) pol.value = `run:${first.name}:best`;
+  }
+}
+
+$("ep-dice").onclick = () => { $("ep-seed").value = Math.floor(Math.random() * 100000); };
+$("ep-generate").onclick = generateEpisode;
+
+let epRequest = 0;
+async function generateEpisode() {
+  const myRequest = ++epRequest;
+  $("ep-generate").disabled = true; $("ep-generate").textContent = "⏳ simulating…";
+  $("status").textContent = "simulating episode…";
+  try {
+    const trace = await api(`/api/episode?scenario=${$("ep-scenario").value}` +
+      `&policy=${encodeURIComponent($("ep-policy").value)}` +
+      `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
+    if (myRequest !== epRequest) return; // a newer request superseded this one
+    EP = trace;
+    t = 0; sel = null; playing = false; clearInterval(playTimer);
+    $("pb-slider").max = EP.steps.length - 1;
+    const badge = $("outbadge");
+    badge.style.display = "block";
+    badge.textContent = EP.outcome.toUpperCase();
+    badge.style.background = EP.outcome === "success" ? "#14532d" : EP.outcome === "defeat" ? "#7f1d1d" : "#57534e";
+    badge.style.color = "#fff";
+    $("ep-info").innerHTML = `<b>${EP.outcome.toUpperCase()}</b> in ${EP.length} steps · ${EP.opord}<br>policy: ${EP.policy.split("/").pop()}`;
+    drawTimeline(); seek(0);
+    $("status").textContent = "";
+  } catch (e) { $("status").textContent = "error: " + e.message; }
+  $("ep-generate").disabled = false; $("ep-generate").textContent = "▶ Generate";
+}
+
+/* ---------- playback ---------- */
+function seek(nt) {
+  if (!EP) return;
+  t = Math.max(0, Math.min(EP.steps.length - 1, nt));
+  $("pb-slider").value = t;
+  $("pb-t").textContent = `t=${EP.steps[t].t}/${EP.length}`;
+  drawMap(); renderInspector(); renderMsgs(); drawTimeline();
+}
+function togglePlay(force) {
+  playing = force !== undefined ? force : !playing;
+  $("pb-play").textContent = playing ? "⏸" : "▶";
+  clearInterval(playTimer);
+  if (playing) playTimer = setInterval(() => {
+    if (t >= EP.steps.length - 1) togglePlay(false); else seek(t + 1);
+  }, 1000 / +$("pb-speed").value);
+}
+$("pb-play").onclick = () => togglePlay();
+$("pb-start").onclick = () => seek(0);
+$("pb-back").onclick = () => seek(t - 1);
+$("pb-fwd").onclick = () => seek(t + 1);
+$("pb-slider").oninput = (e) => seek(+e.target.value);
+$("pb-speed").onchange = () => { if (playing) togglePlay(true); };
+document.addEventListener("keydown", (e) => {
+  if (!EP || $("main-episode").classList.contains("hidden")) return;
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "ArrowRight") { seek(t + 1); e.preventDefault(); }
+  if (e.key === "ArrowLeft") { seek(t - 1); e.preventDefault(); }
+  if (e.key === " ") { togglePlay(); e.preventDefault(); }
+});
+
+/* ---------- map ---------- */
+const map = $("map");
+function geom() {
+  const W = map.clientWidth, H = map.clientHeight;
+  const cell = Math.min(W / EP.width, H / EP.height);
+  return { W, H, cell, ox: (W - cell * EP.width) / 2, oy: (H - cell * EP.height) / 2 };
+}
+const cx = (g, x) => g.ox + (x + 0.5) * g.cell;
+const cy = (g, y) => g.oy + (y + 0.5) * g.cell;
+
+function drawMap() {
+  if (!EP) return;
+  const dpr = window.devicePixelRatio || 1;
+  const g0 = geom();
+  map.width = g0.W * dpr; map.height = g0.H * dpr;
+  const g = map.getContext("2d"); g.scale(dpr, dpr);
+  const st = EP.steps[t], cell = g0.cell;
+  // terrain
+  for (let y = 0; y < EP.height; y++) for (let x = 0; x < EP.width; x++) {
+    const v = EP.grid[y][x];
+    g.fillStyle = v === 2 ? "#3a3f47" : v === 1 ? "#22392a" : "#191c21";
+    g.fillRect(g0.ox + x * cell, g0.oy + y * cell, cell + 0.5, cell + 0.5);
+  }
+  if (toggles.grid && cell > 7) {
+    g.strokeStyle = "#ffffff10"; g.lineWidth = 1; g.beginPath();
+    for (let x = 0; x <= EP.width; x++) { g.moveTo(g0.ox + x * cell, g0.oy); g.lineTo(g0.ox + x * cell, g0.oy + EP.height * cell); }
+    for (let y = 0; y <= EP.height; y++) { g.moveTo(g0.ox, g0.oy + y * cell); g.lineTo(g0.ox + EP.width * cell, g0.oy + y * cell); }
+    g.stroke();
+  }
+  // objectives
+  EP.objectives.forEach((o) => {
+    g.strokeStyle = "#8a8f98"; g.setLineDash([4, 4]); g.lineWidth = 1.2;
+    g.beginPath(); g.arc(cx(g0, o.x), cy(g0, o.y), o.r * cell, 0, 7); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = "#a8adb6"; g.font = `${Math.max(9, cell * 0.55)}px sans-serif`; g.textAlign = "center";
+    g.fillText("OBJ " + o.name, cx(g0, o.x), cy(g0, o.y) - o.r * cell - 4);
+  });
+  // movement trails (last 12 steps)
+  if (toggles.trails) {
+    for (let dt = Math.max(0, t - 12); dt < t; dt++) {
+      const a = (dt - (t - 12)) / 12;
+      EP.steps[dt].soldiers.forEach((s) => {
+        if (!s.alive) return;
+        g.fillStyle = (RANK_COLORS[s.eff] || "#888") + "40";
+        g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), cell * 0.12 * (0.4 + a), 0, 7); g.fill();
+      });
+    }
+  }
+  // known enemy picture
+  if (toggles.known) st.known.forEach(([x, y]) => {
+    g.strokeStyle = "#ff525290"; g.lineWidth = 1.4;
+    const X = cx(g0, x), Y = cy(g0, y), r = cell * 0.32;
+    g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
+  });
+  // C2 links + anchors
+  st.soldiers.forEach((s) => {
+    if (!s.alive) return;
+    if (toggles.links && s.leader) {
+      const L = st.soldiers.find((o) => o.cs === s.leader);
+      if (L && L.alive) {
+        g.strokeStyle = "#8a919c50"; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y)); g.lineTo(cx(g0, L.x), cy(g0, L.y)); g.stroke();
+      }
+    }
+    if (toggles.anchors && s.mission) {
+      g.strokeStyle = (RANK_COLORS[s.eff] || "#888") + "70"; g.setLineDash([2, 4]); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y));
+      g.lineTo(cx(g0, s.mission.anchor[0]), cy(g0, s.mission.anchor[1])); g.stroke();
+      g.setLineDash([]);
+    }
+  });
+  // vision + LOS for selected soldier
+  if (toggles.vision && sel?.type === "soldier") {
+    const s = st.soldiers.find((o) => o.cs === sel.key);
+    if (s && s.alive) {
+      g.strokeStyle = "#6fb3ff40"; g.lineWidth = 1.2;
+      g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), 10 * cell, 0, 7); g.stroke();
+      g.strokeStyle = "#6fb3ff25";
+      g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), 8 * cell, 0, 7); g.stroke(); // weapon range
+      s.sees.forEach((eid) => {
+        const e = st.enemies.find((o) => o.id === eid);
+        if (e) { g.strokeStyle = "#ff8c4290"; g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y)); g.lineTo(cx(g0, e.x), cy(g0, e.y)); g.stroke(); }
+      });
+    }
+  }
+  // comm flashes for this step
+  if (toggles.comms) st.messages.forEach((m) => {
+    const A = st.soldiers.find((o) => o.cs === m.from), B = st.soldiers.find((o) => o.cs === m.to);
+    if (!A || !B) return;
+    g.strokeStyle = (KIND_COLORS[m.kind] || "#888") + "b0"; g.lineWidth = 1.8;
+    g.beginPath(); g.moveTo(cx(g0, A.x), cy(g0, A.y));
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2 - Math.abs(A.x - B.x) * 0.2 - 1;
+    g.quadraticCurveTo(cx(g0, mx), cy(g0, my), cx(g0, B.x), cy(g0, B.y)); g.stroke();
+  });
+  // enemies
+  st.enemies.forEach((e) => {
+    const X = cx(g0, e.x), Y = cy(g0, e.y), r = cell * 0.3;
+    g.strokeStyle = e.alive ? "#ff5252" : "#5a5a5a"; g.lineWidth = e.alive ? 2.2 : 1.2;
+    g.beginPath(); g.moveTo(X - r, Y - r); g.lineTo(X + r, Y + r); g.moveTo(X + r, Y - r); g.lineTo(X - r, Y + r); g.stroke();
+    if (sel?.type === "enemy" && sel.key === e.id) { g.strokeStyle = "#fff"; g.lineWidth = 1.2; g.beginPath(); g.arc(X, Y, r + 4, 0, 7); g.stroke(); }
+    if (toggles.hp && e.alive && e.hp < 100) barAt(g, X, Y - r - 5, cell, e.hp / 100, "#ff5252");
+  });
+  // soldiers
+  st.soldiers.forEach((s) => {
+    const X = cx(g0, s.x), Y = cy(g0, s.y), r = cell * 0.34;
+    if (!s.alive) {
+      g.strokeStyle = "#6a6f78"; g.lineWidth = 1.4;
+      g.beginPath(); g.moveTo(X - r * .7, Y); g.lineTo(X + r * .7, Y); g.moveTo(X, Y - r * .7); g.lineTo(X, Y + r * .9); g.stroke();
+      return;
+    }
+    const color = RANK_COLORS[s.eff] || "#999";
+    const isLeader = s.eff !== "SLD";
+    g.fillStyle = color; g.strokeStyle = "#101216"; g.lineWidth = 1.4;
+    g.beginPath();
+    if (isLeader) { g.moveTo(X, Y - r * 1.15); g.lineTo(X + r, Y + r * 0.85); g.lineTo(X - r, Y + r * 0.85); g.closePath(); }
+    else g.arc(X, Y, r * 0.9, 0, 7);
+    g.fill(); g.stroke();
+    if (sel?.type === "soldier" && sel.key === s.cs) {
+      g.strokeStyle = "#ffffff"; g.lineWidth = 1.6; g.beginPath(); g.arc(X, Y, r * 1.5, 0, 7); g.stroke();
+    }
+    if (toggles.hp) barAt(g, X, Y - r - 6, cell, s.hp / 100, s.hp > 60 ? "#4ade80" : s.hp > 30 ? "#ffd75e" : "#ff5252");
+    if (toggles.ammo) barAt(g, X, Y + r + 4, cell, s.ammo / 30, "#6fb3ff");
+    if (toggles.labels && cell > 8) {
+      g.fillStyle = color; g.font = `bold ${Math.max(9, cell * 0.42)}px sans-serif`; g.textAlign = "center";
+      g.fillText(s.cs, X, Y + r + (toggles.ammo ? 8 : 4) + Math.max(9, cell * 0.42));
+    }
+  });
+}
+function barAt(g, X, Y, cell, frac, color) {
+  const w = cell * 0.9;
+  g.fillStyle = "#00000090"; g.fillRect(X - w / 2, Y - 2, w, 3.4);
+  g.fillStyle = color; g.fillRect(X - w / 2, Y - 2, w * Math.max(0, Math.min(1, frac)), 3.4);
+}
+
+map.addEventListener("click", (e) => {
+  if (!EP) return;
+  const rect = map.getBoundingClientRect();
+  const g0 = geom();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const st = EP.steps[t];
+  const near = (x, y, rad) => Math.hypot(cx(g0, x) - mx, cy(g0, y) - my) < rad;
+  const soldier = st.soldiers.find((s) => near(s.x, s.y, g0.cell * 0.8));
+  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); return; }
+  const enemy = st.enemies.find((en) => near(en.x, en.y, g0.cell * 0.8));
+  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); return; }
+  const obj = EP.objectives.find((o) => near(o.x, o.y, o.r * g0.cell));
+  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); return; }
+  const gx = Math.floor((mx - g0.ox) / g0.cell), gy = Math.floor((my - g0.oy) / g0.cell);
+  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); }
+});
+
+/* ---------- timeline ---------- */
+function drawTimeline() {
+  if (!EP) return;
+  const tl = $("timeline"), dpr = window.devicePixelRatio || 1;
+  const W = tl.clientWidth, H = tl.clientHeight;
+  tl.width = W * dpr; tl.height = H * dpr;
+  const g = tl.getContext("2d"); g.scale(dpr, dpr);
+  const n = EP.steps.length, bw = W / n;
+  const sums = EP.steps.map((s) => s.soldiers.reduce((acc, x) => acc + (x.r || 0), 0));
+  const mx = Math.max(1e-6, ...sums.map(Math.abs));
+  const mid = H * 0.55;
+  g.clearRect(0, 0, W, H);
+  sums.forEach((v, i) => {
+    const h = (Math.abs(v) / mx) * (H * 0.4);
+    g.fillStyle = v >= 0 ? "#4ade8080" : "#ff525280";
+    g.fillRect(i * bw, v >= 0 ? mid - h : mid, Math.max(1, bw - 0.4), Math.max(1, h));
+  });
+  EP.steps.forEach((s, i) => {
+    s.messages.forEach((m) => {
+      if (["opord", "ack", "sitrep"].includes(m.kind)) return;
+      g.fillStyle = KIND_COLORS[m.kind] || "#888";
+      g.beginPath(); g.arc(i * bw + bw / 2, H * 0.12, 2.6, 0, 7); g.fill();
+    });
+  });
+  g.fillStyle = "#ffffff"; g.fillRect(t * bw, 0, 1.4, H);
+}
+$("timeline").addEventListener("click", (e) => {
+  if (!EP) return;
+  const rect = $("timeline").getBoundingClientRect();
+  seek(Math.round((e.clientX - rect.left) / rect.width * (EP.steps.length - 1)));
+});
+
+/* ---------- inspector ---------- */
+function renderInspector() {
+  const el = $("inspector");
+  if (!EP || !sel) { el.innerHTML = '<div class="empty">click something on the map</div>'; return; }
+  const st = EP.steps[t];
+  if (sel.type === "soldier") {
+    const s = st.soldiers.find((o) => o.cs === sel.key);
+    if (!s) return;
+    const color = RANK_COLORS[s.eff];
+    const cumulative = EP.steps.slice(0, t + 1).reduce((acc, step) => {
+      const rec = step.soldiers.find((o) => o.cs === s.cs); return acc + (rec?.r || 0);
+    }, 0);
+    const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff}</span>` : "";
+    const rows = Object.entries(s.rc).map(([k, v]) =>
+      `<tr><td>${k}</td><td class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${fmt(v, 3)}</td></tr>`).join("");
+    el.innerHTML = `
+      <h3 style="color:${color};font-size:14px">${s.alive ? "" : "✝ "}${s.cs} <span style="color:var(--dim);font-weight:400">${s.rank}</span>${acting}</h3>
+      <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${s.hp}%</div>
+      <div class="bar"><div style="width:${s.hp}%;background:${s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)"}"></div></div>
+      <div style="color:var(--dim);font-size:11px">ammo ${s.ammo}/30</div>
+      <div class="bar"><div style="width:${(s.ammo / 30) * 100}%;background:var(--accent)"></div></div>
+      <table class="kv">
+        <tr><td>position</td><td>(${s.x}, ${s.y})</td></tr>
+        <tr><td>reports to</td><td>${s.leader || "HQ"}</td></tr>
+        ${s.subs.length ? `<tr><td>commands</td><td>${s.subs.join(", ")}</td></tr>` : ""}
+        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") : "STANDBY"}</td></tr>
+        ${s.mission ? `<tr><td>ordered at</td><td>t=${s.mission.since}</td></tr>` : ""}
+        <tr><td>action @t</td><td>${s.act || "—"}</td></tr>
+        <tr><td>sees</td><td>${s.sees.length} hostile${s.sees.length === 1 ? "" : "s"}</td></tr>
+        <tr><td>reward @t</td><td class="${(s.r || 0) >= 0 ? "pos" : "neg"}">${fmt(s.r, 3)}</td></tr>
+        <tr><td>cumulative</td><td class="${cumulative >= 0 ? "pos" : "neg"}">${fmt(cumulative, 2)}</td></tr>
+      </table>
+      ${rows ? `<h3 style="margin-top:8px">reward components @t</h3><table class="kv">${rows}</table>` : ""}`;
+  } else if (sel.type === "enemy") {
+    const e = st.enemies.find((o) => o.id === sel.key);
+    if (!e) return;
+    const seenBy = st.soldiers.filter((s) => s.sees.includes(e.id)).map((s) => s.cs);
+    el.innerHTML = `<h3 style="color:var(--bad);font-size:14px">OpFor #${e.id} ${e.alive ? "" : "(KIA)"}</h3>
+      <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${e.hp}%</div>
+      <div class="bar"><div style="width:${Math.max(0, e.hp)}%;background:var(--bad)"></div></div>
+      <table class="kv"><tr><td>position</td><td>(${e.x}, ${e.y})</td></tr>
+      <tr><td>spotted by</td><td>${seenBy.join(", ") || "nobody"}</td></tr>
+      <tr><td>reported</td><td>${st.known.some(([x, y]) => Math.hypot(x - e.x, y - e.y) < 3) ? "yes (on team picture)" : "no"}</td></tr></table>`;
+  } else if (sel.type === "obj") {
+    const o = EP.objectives.find((x) => x.name === sel.key);
+    const inside = st.soldiers.filter((s) => s.alive && Math.hypot(s.x - o.x, s.y - o.y) <= o.r).map((s) => s.cs);
+    const hostiles = st.enemies.filter((e) => e.alive && Math.hypot(e.x - o.x, e.y - o.y) <= o.r + 1).length;
+    el.innerHTML = `<h3 style="font-size:14px">OBJ ${o.name}</h3>
+      <table class="kv"><tr><td>center</td><td>(${o.x}, ${o.y})</td></tr><tr><td>radius</td><td>${o.r}</td></tr>
+      <tr><td>friendlies inside</td><td>${inside.join(", ") || "—"}</td></tr>
+      <tr><td>hostiles inside</td><td class="${hostiles ? "neg" : "pos"}">${hostiles}</td></tr></table>`;
+  } else if (sel.type === "cell") {
+    const [x, y] = sel.key, v = EP.grid[y][x];
+    el.innerHTML = `<h3 style="font-size:14px">cell (${x}, ${y})</h3>
+      <table class="kv"><tr><td>terrain</td><td>${v === 2 ? "wall (blocks move + LOS)" : v === 1 ? "forest (cover, conceals)" : "open"}</td></tr></table>`;
+  }
+}
+
+/* ---------- radio log ---------- */
+function renderMsgs() {
+  if (!EP) return;
+  const el = $("msgs");
+  const active = new Set(Object.entries(msgFilters).flatMap(([grp, on]) => on ? KIND_GROUPS[grp] : []));
+  const lines = [];
+  for (let i = 0; i <= t; i++) {
+    EP.steps[i].messages.forEach((m) => {
+      if (!active.has(m.kind)) return;
+      lines.push({ i, m });
+    });
+  }
+  el.innerHTML = lines.slice(-250).map(({ i, m }) =>
+    `<div class="msg" data-i="${i}" style="color:${KIND_COLORS[m.kind] || "#d6d9de"}"><span class="t">[t=${String(EP.steps[i].t).padStart(3)}]</span> ${m.text}</div>`).join("")
+    || '<div class="empty">net silent</div>';
+  el.querySelectorAll(".msg").forEach((d) => d.onclick = () => seek(+d.dataset.i));
+  el.scrollTop = el.scrollHeight;
+}
+
+/* ============================= tabs + boot ============================= */
+function setTab(name) {
+  const training = name === "training";
+  $("tab-training").classList.toggle("active", training);
+  $("tab-episode").classList.toggle("active", !training);
+  ["side-training", "main-training"].forEach((id) => $(id).classList.toggle("hidden", !training));
+  ["side-episode", "main-episode", "right-episode"].forEach((id) => $(id).classList.toggle("hidden", training));
+  if (!training) { drawMap(); drawTimeline(); }
+}
+$("tab-training").onclick = () => setTab("training");
+$("tab-episode").onclick = () => setTab("episode");
+window.addEventListener("resize", () => { drawMap(); drawTimeline(); if (selectedRun) loadRunCharts(); });
+
+(async () => {
+  try {
+    await loadState();
+    if (STATE.runs.length) { selectedRun = STATE.runs[0].name; renderRunList(); loadRunCharts(); }
+  } catch (e) { $("status").textContent = "error: " + e.message; }
+})();
+</script>
+</body>
+</html>

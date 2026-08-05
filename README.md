@@ -96,7 +96,33 @@ TensorBoard logs (`tensorboard --logdir runs`), checkpoints, and a post-training
 
 ## Visualizing
 
-### While training is running
+### The interactive dashboard
+
+```bash
+python -m cohort.viz.dashboard          # opens http://localhost:8787
+```
+
+One command, no extra dependencies, works offline. Two views:
+
+* **Training** — live-refreshing charts for every run in `runs/`: return, success
+  rate, episode length, per-component rewards, entropy, losses — usable *while*
+  a training run is going.
+* **Episode** — simulate an episode with any checkpoint (or the random baseline),
+  any scenario, any seed (reproducible), then explore it like a film:
+  play/pause/scrub/step, click any **agent** (health, ammo, effective rank, mission,
+  the exact action it took, its per-step reward broken into named components),
+  any **enemy** (who has spotted it, whether it's been reported onto the team
+  picture), any **objective** or terrain cell. Overlay toggles for chain-of-command
+  links, mission anchors, health/ammo bars, vision + line-of-sight, the reported
+  enemy picture, comm flashes, and movement trails. A synced radio-net log
+  (filterable, click a message to jump to its moment) and an event timeline
+  (rewards + contacts/orders/casualties) round it out.
+
+It is equally a debugging tool: both reward exploits found during development
+are the kind of thing the Episode view makes visible in seconds (an agent's
+reward components are shown red/green at every step).
+
+### Without the dashboard (headless / scripting)
 
 ```bash
 # live scalars (return, success rate, entropy, losses) in the browser
@@ -241,7 +267,8 @@ cohort/
     ppo.py             masked PPO + GAE buffer (handles agent death)
     train.py           training CLI, metrics, checkpoints
     evaluate.py        eval CLI, GIF + transcript export
-  viz/                 frame renderer, GIF writer, training curves
+  viz/                 frame renderer, GIF writer, training curves,
+                       interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
 tests/                 66 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, training smoke

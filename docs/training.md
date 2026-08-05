@@ -26,6 +26,7 @@ python -m cohort.training.train --scenario fireteam --total-steps 1500000
 python -m cohort.training.train --scenario squad --total-steps 3000000 --run-name squad_v1
 
 # monitor
+python -m cohort.viz.dashboard            # interactive dashboard (live charts + episode explorer)
 tensorboard --logdir runs
 python -m cohort.viz.plots runs/<run>     # regenerate curves PNG anytime, even mid-run
 # training_curves.png is also regenerated automatically when the run finishes

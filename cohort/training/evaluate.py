@@ -92,6 +92,7 @@ def evaluate(
 
     env = make_env(scenario)
     rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)  # reproducible sampled-action evaluations
     results = [run_episode(env, net, seed=seed + i, rng=rng, greedy=greedy) for i in range(episodes)]
 
     outcomes = Counter(r["outcome"] for r in results)
