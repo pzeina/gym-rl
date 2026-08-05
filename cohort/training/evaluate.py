@@ -72,7 +72,7 @@ def run_episode(
 def evaluate(
     checkpoint: str | None,
     scenario: str | None = None,
-    episodes: int = 20,
+    episodes: int = 100,
     seed: int = 123,
     gif_path: str | None = None,
     transcript_path: str | None = None,
@@ -96,9 +96,12 @@ def evaluate(
     results = [run_episode(env, net, seed=seed + i, rng=rng, greedy=greedy) for i in range(episodes)]
 
     outcomes = Counter(r["outcome"] for r in results)
+    p = outcomes.get("success", 0) / episodes
+    ci95 = 1.96 * (p * (1 - p) / episodes) ** 0.5
     summary = {
         "episodes": episodes,
-        "success_rate": outcomes.get("success", 0) / episodes,
+        "success_rate": p,
+        "success_ci95": f"{p:.2f} ± {ci95:.2f}",
         "outcomes": dict(outcomes),
         "mean_return": float(np.mean([r["return"] for r in results])),
         "mean_length": float(np.mean([r["length"] for r in results])),
@@ -139,7 +142,7 @@ def main() -> None:
     parser.add_argument("checkpoint", nargs="?", default=None)
     parser.add_argument("--random", action="store_true", help="masked-random baseline instead of a checkpoint")
     parser.add_argument("--scenario", default=None)
-    parser.add_argument("--episodes", type=int, default=20)
+    parser.add_argument("--episodes", type=int, default=100)
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--gif", default=None, help="path to save an episode GIF")
     parser.add_argument("--transcript", default=None, help="path to save the episode radio transcript")

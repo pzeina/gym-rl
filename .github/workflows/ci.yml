@@ -1,0 +1,25 @@
+name: ci
+
+on:
+  push:
+    branches: [main, multi-agent-dev]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install (CPU torch)
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -e . pytest ruff
+      - name: Lint
+        run: ruff check cohort/ tests/
+      - name: Tests
+        run: pytest tests/ -q
