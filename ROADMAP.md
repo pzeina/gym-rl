@@ -17,8 +17,8 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
 
 *The three-echelon thesis demonstrated; results trustworthy.*
 
-- `[~]` **A1. Train `platoon` by curriculum** — flagship experiment. *(run
-  `platoon_v1` in progress, 2026-08-05)*
+- `[x]` **A1. Train `platoon` by curriculum** — flagship experiment. *(done: run
+  `platoon_v1`, 89% ± 6 at N=100 — see progress log)*
   `python -m cohort.training.train --scenario platoon --total-steps 8000000
   --init-from runs/squad_v1/ckpt_best.pt --lr 1e-4 --run-name platoon_v1`.
   **DoD**: ≥70% success over 100 eval episodes; transcript shows PL→SL→TL order
@@ -88,6 +88,10 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   runner (no framework; a shell loop + run-name suffixes suffices).
 - `[ ]` **A6. Medic/auxiliary roles** — the legacy project's auxiliary-role idea:
   a MEDIC tag with a stabilize action; casualty play on the net (MEDEVAC request).
+- `[ ]` **D4. PPO stability guard** — twice observed a converged policy collapse
+  mid-fine-tuning (squad continuation @3e-4; platoon_v1 transient dip @1e-4).
+  Add a target-KL early stop per update (and optionally entropy-coef annealing).
+  **DoD**: rerun the platoon curriculum; no rolling-success dip below 70%.
 
 ---
 
@@ -113,3 +117,10 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
 - **2026-08-05** — D1 done: GitHub Actions CI (pytest + ruff, CPU torch).
 - **2026-08-05** — A1 started: `platoon_v1`, 6M steps, curriculum from
   squad_v1/ckpt_best at lr 1e-4.
+- **2026-08-05** — A1 **done**: platoon_v1 hit **89% ± 6** (N=100), 11.8/16 mean
+  survivors; full HQ→PL→SL→TL→RFN cascade within ~16 steps of the OPORD.
+  Curriculum transfer was instant (>90% rolling inside 200k steps). Observed a
+  transient mid-training collapse (94%→52% around 1.8M steps, self-recovered as
+  LR annealed) — second instability of this kind, motivating **D4** below.
+- **2026-08-05** — dashboard Training-tab fix: delegated run-list clicks
+  (auto-refresh was destroying per-item handlers), hidden-tab render guard.

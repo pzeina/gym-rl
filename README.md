@@ -245,6 +245,17 @@ plays all three roles:
 
 ![squad episode](runs/squad_v1/eval.gif)
 
+### Results (platoon — three command echelons, 16 agents)
+
+`runs/platoon_v1/` — **89% ± 6** success (95% CI, N=100), trained by curriculum from the
+squad checkpoint (6M steps at `--lr 1e-4`). The full chain activates within ~16 steps of
+the OPORD: HQ → PL1, PL1 tasks PSG1/SLs, SLs task their TLs, TLs task their riflemen —
+one shared network playing every echelon:
+
+![platoon curves](runs/platoon_v1/training_curves.png)
+
+![platoon episode](runs/platoon_v1/eval.gif)
+
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v2/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
