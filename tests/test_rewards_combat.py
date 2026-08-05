@@ -170,12 +170,21 @@ def test_terminal_dominates_stalling():
 
 
 def test_success_pays_everyone():
+    """Success pays the whole team. Since the completion-report grace window
+    landed, the episode no longer ends the step the condition is met — it ends
+    when the root reports COMPLETE, or at T0 + grace_window at the latest."""
     env = _flat_env()
     obj = env.world.objectives[0]
     for e in env.enemies:
         e.alive = False  # objective cleared
     env.roster.by_callsign["TL1"].pos = obj.pos
     _obs, rewards, terms, *_ = _step_all(env, {})
+    assert env.outcome is None, "the grace window holds the episode open"
+    assert not any(terms.values())
+    for _ in range(env.spec_cfg.grace_window):
+        _obs, rewards, terms, *_ = _step_all(env, {})
+        if all(terms.values()):
+            break
     assert env.outcome == "success"
     assert all(terms.values())
     for agent, r in rewards.items():

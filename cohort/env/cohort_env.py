@@ -92,6 +92,9 @@ class CohortEnv(ParallelEnv):
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
+        self._success_step: int | None = None  # T0: success condition first met
+        self._root_done_step: int | None = None  # truthful root-mission DONE step
+        self._root_done_callsign: str | None = None
 
     @property
     def outcome(self) -> str | None:
@@ -153,6 +156,9 @@ class CohortEnv(ParallelEnv):
         self._illegal_actions = 0
         self._episode_outcome = None
         self._last_net_contact_step = None
+        self._success_step = None
+        self._root_done_step = None
+        self._root_done_callsign = None
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -382,14 +388,37 @@ class CohortEnv(ParallelEnv):
                     break
 
         # --- terminal conditions ---
-        success = self._check_success(root_obj)
-        defeat = not any(s.alive for s in self.roster.soldiers)
+        # Success does not terminate on the spot: when the root-mission
+        # condition is first met (T0) a completion-report grace window opens,
+        # giving the root time to transmit MISSION COMPLETE. A truthful root
+        # DONE ends the episode that step (root_done_bonus); otherwise it ends
+        # as success at T0 + grace_window anyway. Success is locked in at T0 —
+        # the speed bonus is computed from T0, so policies that never report
+        # keep their success rate and terminal reward.
+        if self._check_success(root_obj) and self._success_step is None:
+            self._success_step = step  # T0: the window opens
+        success_locked = self._success_step is not None
+        cohort_wiped = not any(s.alive for s in self.roster.soldiers)
+        defeat = cohort_wiped and not success_locked
+        root_reported = (
+            success_locked
+            and self._root_done_step is not None
+            and self._root_done_step >= self._success_step
+        )
+        success = success_locked and (
+            root_reported
+            or step >= self._success_step + self.spec_cfg.grace_window
+            or step >= self.spec_cfg.max_steps
+            or cohort_wiped
+        )
         truncated_all = step >= self.spec_cfg.max_steps and not success and not defeat
         if success:
             self._episode_outcome = "success"
-            speed = cfg.success_speed * max(0.0, 1.0 - step / self.spec_cfg.max_steps)
+            speed = cfg.success_speed * max(0.0, 1.0 - self._success_step / self.spec_cfg.max_steps)
             for s in self.roster.living:
                 ledger.add(s.callsign, "terminal", cfg.success_team + speed)
+            if root_reported and self._root_done_callsign is not None:
+                ledger.add(self._root_done_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
             self._episode_outcome = "defeat"
             for callsign in present:
@@ -518,7 +547,26 @@ class CohortEnv(ParallelEnv):
         if mission is None:
             return
         ctx = self._compliance_ctx(soldier, None, self._make_view(soldier))
-        truthful = is_complete(mission, ctx)
+        root_objective = (
+            self.world.objective_by_name(self.spec_cfg.root_objective)
+            if self.spec_cfg.root_objective
+            else None
+        )
+        is_root_mission_claim = (
+            soldier is self.roster.root()
+            and mission.issuer_id == HQ_ID
+            and mission.type is self.spec_cfg.root_mission
+            and mission.objective_id == (root_objective.id if root_objective else None)
+        )
+        # The root's OPORD claim reports the *operation*: it is judged against
+        # the team success condition (e.g. objective clear AND held by anyone),
+        # not against the claimant's personal end state — a commander reports
+        # the mission complete when the unit achieved it, wherever it stands.
+        truthful = (
+            self._check_success(root_objective)
+            if is_root_mission_claim
+            else is_complete(mission, ctx)
+        )
         obj_name = (
             self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
         )
@@ -557,6 +605,10 @@ class CohortEnv(ParallelEnv):
                 lang.format_done_confirm(soldier.callsign, responder_cs, mission.type, obj_name),
                 payload=response_payload,
             )
+            if is_root_mission_claim:
+                # truthful root-mission COMPLETE: closes the grace window
+                self._root_done_step = self._step_count
+                self._root_done_callsign = soldier.callsign
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
         else:

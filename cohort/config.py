@@ -87,6 +87,12 @@ class ScenarioSpec:
     order_cooldown: int = 8       # steps a leader cannot re-task the same subordinate
     #                               (masked); lifted early if the leader's own mission
     #                               changed or a CONTACT hit the net since. 0 → off.
+    grace_window: int = 12        # steps the episode stays open after the root-mission
+    #                               success condition is first met, giving the root time
+    #                               to transmit MISSION COMPLETE; a truthful root DONE
+    #                               ends the episode that step, otherwise it ends as
+    #                               success at the window's end anyway. 0 → immediate
+    #                               termination (pre-v1.2 behavior).
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {

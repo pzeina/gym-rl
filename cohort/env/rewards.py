@@ -61,6 +61,10 @@ class RewardConfig:
     # (observed in practice on the squad scenario before this margin was set).
     success_team: float = 25.0
     success_speed: float = 10.0       # x fraction of steps remaining at success
+    root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
+    #                                   DONE inside the completion-report grace window
+    #                                   (one-shot, paid with the terminal reward — not
+    #                                   farmable per-step, so terminal dominance holds)
     defeat: float = -2.0              # whole cohort wiped out
 
     def max_step_farm(self) -> float:
