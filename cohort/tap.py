@@ -81,24 +81,69 @@ def _parse_phrase(text: str) -> dict:
     return {"task": task.lower(), "objective": obj}
 
 
+def _check_native(kind: str, native: dict, parsed: dict) -> None:
+    """Cross-check the env's native payload (issue #5 fix) against the tap's
+    independent text parsers.
+
+    The two were built from opposite ends -- the env emits structure at the
+    source, the tap re-derives it from the canonical radio text -- so their
+    agreement on every message is an external verification of the #5 fix
+    (and of the text formats staying faithful). Divergence crashes corpus
+    generation loudly. Empty native payload (pre-fix code) skips the check.
+    """
+    if not native:
+        return
+    mismatches = []
+    if kind in ("opord", "order", "done"):
+        if str(native.get("mission", "")).lower() != parsed.get("task"):
+            mismatches.append("mission")
+        if native.get("objective") != parsed.get("objective"):
+            mismatches.append("objective")
+    elif kind == "contact":
+        g = native.get("grid", [None, None])
+        if f"{int(g[0]):02d}{int(g[1]):02d}" != parsed.get("grid"):
+            mismatches.append("grid")
+        if native.get("count") != parsed.get("count"):
+            mismatches.append("count")
+    elif kind == "sitrep":
+        g = native.get("grid", [None, None])
+        if f"{int(g[0]):02d}{int(g[1]):02d}" != parsed.get("grid"):
+            mismatches.append("grid")
+        if native.get("health") != parsed.get("health") or native.get("ammo") != parsed.get("ammo"):
+            mismatches.append("health/ammo")
+    elif kind == "casualty":
+        if native.get("callsign") != parsed.get("casualty"):
+            mismatches.append("callsign")
+    elif kind == "taking_command":
+        if native.get("replaced") != parsed.get("replaced"):
+            mismatches.append("replaced")
+    if mismatches:
+        raise ValueError(f"native payload disagrees with parsed text for {kind}: {mismatches} ({native} vs {parsed})")
+
+
 def _payload(m: Message) -> dict:
-    """Structured content of a message, parsed from its canonical text form."""
+    """Structured content of a message, parsed from its canonical text form.
+
+    Cross-checked against the env's native payload where present (#5)."""
     kind = m.kind.value
     if kind in ("opord", "order", "done"):
-        return _parse_phrase(m.text)
-    if kind == "contact":
+        parsed = _parse_phrase(m.text)
+    elif kind == "contact":
         c = _CONTACT_RE.search(m.text)
-        return {"grid": c.group("grid"), "count": int(c.group("n"))} if c else {}
-    if kind == "sitrep":
+        parsed = {"grid": c.group("grid"), "count": int(c.group("n"))} if c else {}
+    elif kind == "sitrep":
         s = _SITREP_RE.search(m.text)
-        return {"grid": s.group("grid"), "health": int(s.group("health")), "ammo": int(s.group("ammo"))} if s else {}
-    if kind == "casualty":
+        parsed = {"grid": s.group("grid"), "health": int(s.group("health")), "ammo": int(s.group("ammo"))} if s else {}
+    elif kind == "casualty":
         c = _CASUALTY_RE.search(m.text)
-        return {"casualty": c.group("cs")} if c else {}
-    if kind == "taking_command":
+        parsed = {"casualty": c.group("cs")} if c else {}
+    elif kind == "taking_command":
         s = _SUCCESSION_RE.search(m.text)
-        return {"replaced": (s.group("dead") or s.group("dead2"))} if s else {}
-    return {}
+        parsed = {"replaced": (s.group("dead") or s.group("dead2"))} if s else {}
+    else:
+        parsed = {}
+    _check_native(kind, dict(m.payload), parsed)
+    return parsed
 
 
 def _msg_record(env: CohortEnv, episode: int, m: Message, observers: list[str]) -> dict:
