@@ -3,7 +3,7 @@
 You act as HQ (or as any commander callsign) and type orders exactly as the
 agents transmit them to each other; trained policies drive every soldier.
 
-    python -m cohort.play --checkpoint runs/fireteam_v2/ckpt_best.pt
+    python -m cohort.play --checkpoint runs/fireteam_v4/ckpt_best.pt
     python -m cohort.play --scenario squad --as SL1
 
 Console commands:

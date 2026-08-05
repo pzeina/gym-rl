@@ -34,6 +34,7 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from cohort.config import SCENARIOS
+from cohort.core.language import OrderParseError
 from cohort.core.missions import MissionType
 from cohort.env.actions import CATALOG
 from cohort.env.cohort_env import CohortEnv, make_env
@@ -141,57 +142,148 @@ def record_episode(
         "missions": MISSION_NAMES,
     }
 
-    steps = [
-        {
-            "t": 0,
-            "soldiers": [_soldier_rec(env, s, None, None, None) for s in env.roster.soldiers],
-            "enemies": [
-                {"id": e.id, "x": e.pos[0], "y": e.pos[1], "hp": e.health, "alive": e.alive}
-                for e in env.enemies
-            ],
-            "messages": [
-                {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
-                 "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
-                 "text": m.text}
-                for m in env.transcript.messages
-            ],
-            "known": [],
-        }
-    ]
+    steps = [_initial_record(env)]
 
     limit = max_steps or env.spec_cfg.max_steps
     while env.agents and len(steps) <= limit:
         actions = _pick_actions(env, obs, net, rng, greedy=greedy)
         act_names = {a: CATALOG[i].name for a, i in actions.items()}
         obs, rewards, _terms, _truncs, infos = env.step(actions)
-        steps.append(
-            {
-                "t": env._step_count,
-                "soldiers": [
-                    _soldier_rec(
-                        env,
-                        s,
-                        act_names.get(s.callsign),
-                        rewards.get(s.callsign),
-                        infos.get(s.callsign, {}).get("components"),
-                    )
-                    for s in env.roster.soldiers
-                ],
-                "enemies": [
-                    {"id": e.id, "x": e.pos[0], "y": e.pos[1], "hp": e.health, "alive": e.alive}
-                    for e in env.enemies
-                ],
-                "messages": [
-                    {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
-                     "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
-                     "text": m.text}
-                    for m in env.last_messages
-                ],
-                "known": [[round(x, 1), round(y, 1)] for (x, y, _t) in env._known_enemies.values()],
-            }
-        )
+        steps.append(_step_record(env, act_names, rewards, infos))
 
     return {**static, "steps": steps, "outcome": env.outcome or "timeout", "length": len(steps) - 1}
+
+
+class LiveSession:
+    """One live, commandable episode: env + policy stepped on demand.
+
+    The dashboard's Command tab drives this: advance the simulation a few
+    steps at a time and inject human orders between advances — the browser
+    equivalent of ``cohort.play``. A single session exists at a time; access
+    is serialized by ``lock`` (the HTTP server is threaded).
+    """
+
+    def __init__(self, scenario: str, policy_path: str | None, seed: int) -> None:
+        self.lock = threading.Lock()
+        self.scenario = scenario
+        self.seed = seed
+        self.net = None
+        if policy_path is not None:
+            import torch
+
+            from cohort.training.train import load_policy
+
+            self.net, _ = load_policy(policy_path)
+            torch.manual_seed(seed)
+        self.env = make_env(scenario)
+        self.rng = np.random.default_rng(seed)
+        self.obs, _ = self.env.reset(seed=seed)
+        self.static = {
+            "scenario": scenario,
+            "description": SCENARIOS[scenario].description,
+            "width": self.env.world.width,
+            "height": self.env.world.height,
+            "grid": self.env.world.grid.tolist(),
+            "objectives": [
+                {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius}
+                for o in self.env.world.objectives
+            ],
+            "max_steps": self.env.spec_cfg.max_steps,
+            "opord": self.env.transcript.messages[0].text if self.env.transcript.messages else "",
+            "roster": [
+                {"cs": s.callsign, "rank": s.rank.name, "id": s.id, "human": s.human}
+                for s in self.env.roster.soldiers
+            ],
+            "policy": policy_path or "random (masked)",
+            "seed": seed,
+            "missions": MISSION_NAMES,
+            "commanders": ["HQ"] + [
+                s.callsign for s in self.env.roster.soldiers if s.effective_authority > 0
+            ],
+        }
+        self.steps = [_initial_record(self.env)]
+
+    def snapshot(self) -> dict:
+        """Full state for a fresh page: static data + all steps so far."""
+        return {
+            **self.static,
+            "steps": self.steps,
+            "outcome": self.env.outcome,
+            "length": len(self.steps) - 1,
+        }
+
+    def advance(self, n: int) -> dict:
+        """Advance up to ``n`` policy steps; returns the new step records."""
+        from cohort.training.evaluate import _pick_actions
+
+        new: list[dict] = []
+        for _ in range(n):
+            if not self.env.agents:
+                break
+            actions = _pick_actions(self.env, self.obs, self.net, self.rng)
+            act_names = {a: CATALOG[i].name for a, i in actions.items()}
+            self.obs, rewards, _t, _tr, infos = self.env.step(actions)
+            record = _step_record(self.env, act_names, rewards, infos)
+            new.append(record)
+            self.steps.append(record)
+        return {"steps": new, "outcome": self.env.outcome, "length": len(self.steps) - 1}
+
+    def order(self, text: str, issuer: str) -> dict:
+        """Inject a human order; returns the resulting radio traffic.
+
+        The ORDER/WILCO pair is appended to the latest step record so the
+        canonical trace (and any late-joining client) includes human traffic.
+        """
+        before = len(self.env.transcript)
+        self.env.inject_order(text, issuer=issuer)
+        injected = _messages_of(self.env, self.env.transcript.since(before))
+        self.steps[-1]["messages"].extend(injected)
+        return {"ok": True, "messages": injected}
+
+
+def _messages_of(env: CohortEnv, messages) -> list[dict]:
+    return [
+        {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
+         "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
+         "text": m.text}
+        for m in messages
+    ]
+
+
+def _enemies_of(env: CohortEnv) -> list[dict]:
+    return [
+        {"id": e.id, "x": e.pos[0], "y": e.pos[1], "hp": e.health, "alive": e.alive}
+        for e in env.enemies
+    ]
+
+
+def _initial_record(env: CohortEnv) -> dict:
+    return {
+        "t": 0,
+        "soldiers": [_soldier_rec(env, s, None, None, None) for s in env.roster.soldiers],
+        "enemies": _enemies_of(env),
+        "messages": _messages_of(env, env.transcript.messages),
+        "known": [],
+    }
+
+
+def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) -> dict:
+    return {
+        "t": env._step_count,
+        "soldiers": [
+            _soldier_rec(
+                env,
+                s,
+                act_names.get(s.callsign),
+                rewards.get(s.callsign),
+                infos.get(s.callsign, {}).get("components"),
+            )
+            for s in env.roster.soldiers
+        ],
+        "enemies": _enemies_of(env),
+        "messages": _messages_of(env, env.last_messages),
+        "known": [[round(x, 1), round(y, 1)] for (x, y, _t) in env._known_enemies.values()],
+    }
 
 
 # ---------------------------------------------------------------------- #
@@ -263,6 +355,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
     """Serves the SPA and the JSON API."""
 
     runs_dir: Path = Path("runs")
+    live: LiveSession | None = None  # the single live commander-mode session
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -319,6 +412,33 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     greedy=query.get("greedy", "0") == "1",
                 )
                 self._json(trace)
+            elif url.path == "/api/live/start":
+                session = LiveSession(
+                    self._safe_scenario(query.get("scenario", "fireteam")),
+                    self._resolve_policy(query.get("policy", "random")),
+                    int(query.get("seed", 0)),
+                )
+                type(self).live = session
+                self._json(session.snapshot())
+            elif url.path.startswith("/api/live/"):
+                session = type(self).live
+                if session is None:
+                    self._json({"error": "no live session — start one first"}, 400)
+                    return
+                with session.lock:
+                    if url.path == "/api/live/step":
+                        self._json(session.advance(min(50, int(query.get("n", 1)))))
+                    elif url.path == "/api/live/order":
+                        try:
+                            self._json(
+                                session.order(query["text"], query.get("issuer", "HQ"))
+                            )
+                        except (OrderParseError, PermissionError) as exc:
+                            self._json({"error": str(exc)}, 400)
+                    elif url.path == "/api/live/state":
+                        self._json(session.snapshot())
+                    else:
+                        self._json({"error": "not found"}, 404)
             else:
                 self._json({"error": "not found"}, 404)
         except (KeyError, ValueError, OSError) as exc:

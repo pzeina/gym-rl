@@ -32,6 +32,53 @@ def test_assault_spawns_respect_early_warning_distance():
             assert dist(e.pos, obj.pos) >= env.spec_cfg.assault_spawn_min_dist - 1e-9
 
 
+def test_objective_lost_pressure_on_defend_roots():
+    """While a living enemy stands on the DEFEND root objective, every living
+    agent bleeds objective_lost per step; the pressure stops when the ground
+    is regained, and never applies to non-DEFEND/DENY roots."""
+    env = make_env("fireteam_defend")
+    env.reset(seed=3)
+    env.world.grid[:] = 0
+    obj = env.world.objectives[0]
+    cfg = env.rewards_cfg
+    for s in env.roster.soldiers:
+        s.pos = (2, 2)  # defenders hiding in a corner
+    intruder = env.enemies[0]
+    for e in env.enemies:
+        e.pos = (30, 30)
+        e.home = e.pos
+    intruder.pos = obj.pos  # the enemy owns the objective
+    intruder.home = intruder.pos
+    *_, infos = env.step({a: 0 for a in env.agents})
+    for a in infos:
+        assert infos[a]["components"]["compliance"] <= cfg.objective_lost, (
+            f"{a}: hiding while the enemy holds the objective must bleed"
+        )
+    # ground regained → the pressure stops
+    intruder.pos = (30, 30)
+    intruder.home = intruder.pos
+    *_, infos = env.step({a: 0 for a in env.agents})
+    for a in infos:
+        assert infos[a]["components"]["compliance"] > cfg.objective_lost
+
+    # a SEIZE root is not a defense: no pressure even with enemies at the objective
+    env2 = make_env("fireteam")
+    env2.reset(seed=3)
+    env2.world.grid[:] = 0
+    for s in env2.roster.soldiers:
+        s.pos = (2, 2)
+        s.mission = None
+    obj2 = env2.world.objectives[0]
+    env2.enemies[0].pos = obj2.pos
+    env2.enemies[0].home = obj2.pos
+    for e in env2.enemies[1:]:
+        e.pos = (2, 30)
+        e.home = e.pos
+    *_, infos = env2.step({a: 0 for a in env2.agents})
+    for a in infos:
+        assert infos[a]["components"]["compliance"] == 0.0
+
+
 def test_knobs_default_off_elsewhere():
     env = make_env("fireteam")  # garrison scenario: no defensive terrain doctrine
     spec = get_scenario("fireteam")
