@@ -58,7 +58,13 @@ def _callsign(env: CohortEnv, agent_id: int) -> str:
 
 
 #: Canonical mission phrase, mirroring core.language.mission_phrase exactly.
-_PHRASE_RE = re.compile(r"(?P<task>[A-Z]+)(?: OBJ (?P<obj>[A-Z]+)| ON ME| POSITION)")
+#: MICAT forms (v1.3): 'SUPPORT TL1' (unit-targeted), 'COVER FLANK OBJ X';
+#: objective names carry no digits, callsigns always do -- the last
+#: alternative is unambiguous.
+_PHRASE_RE = re.compile(
+    r"(?P<task>[A-Z]+)"
+    r"(?: FLANK OBJ (?P<obj2>[A-Z]+)| OBJ (?P<obj>[A-Z]+)| ON ME| POSITION| (?P<unit>[A-Z]+\d+))"
+)
 _CONTACT_RE = re.compile(r"CONTACT, GRID (?P<grid>\d{4}), (?P<n>\d+) x ENEMY")
 _SITREP_RE = re.compile(r"SITREP, GRID (?P<grid>\d{4}), HEALTH (?P<health>\d+)%, AMMO (?P<ammo>\d+)")
 _CASUALTY_RE = re.compile(r"ALL STATIONS: (?P<cs>[A-Z]+\d+) IS DOWN")
@@ -72,14 +78,29 @@ def _parse_phrase(text: str) -> dict:
     reproduce a substring of the original text, so a silent format change
     upstream fails here instead of shipping wrong payloads.
     """
-    m = _PHRASE_RE.search(text)
+    # Scope the search to the message body (after 'RECIPIENT, THIS IS X: ');
+    # the MICAT unit-targeted form ('SUPPORT TL1') would otherwise false-match
+    # the 'IS SL1' inside the address preamble -- and round-trip cleanly,
+    # because the false match is a genuine substring (bug found by the
+    # squad_screen random corpus, PLAN.md 12.26).
+    body = text.split(": ", 1)[1] if ": " in text else text
+    m = _PHRASE_RE.search(body)
     if m is None:
         raise ValueError(f"unparseable mission phrase in {text!r}")
-    task, obj = m.group("task"), m.group("obj")
-    rebuilt = f"{task} OBJ {obj}" if obj else (f"{task} ON ME" if task == "RALLY" else f"{task} POSITION")
-    if rebuilt not in text:
+    task = m.group("task")
+    obj = m.group("obj") or m.group("obj2")
+    unit = m.group("unit")
+    if unit:
+        rebuilt = f"{task} {unit}"
+    elif m.group("obj2"):
+        rebuilt = f"{task} FLANK OBJ {obj}"
+    elif obj:
+        rebuilt = f"{task} OBJ {obj}"
+    else:
+        rebuilt = f"{task} ON ME" if task == "RALLY" else f"{task} POSITION"
+    if rebuilt not in body:
         raise ValueError(f"round-trip mismatch: {rebuilt!r} not in {text!r}")
-    return {"task": task.lower(), "objective": obj}
+    return {"task": task.lower(), "objective": obj, "unit": unit}
 
 
 def _payload(m: Message) -> dict:
@@ -114,6 +135,10 @@ def _payload(m: Message) -> dict:
         # "RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT." -- the text
         # names no mission; the claimant's stands (that is the point).
         parsed = {"verdict": "rejected"}
+    elif kind == "support_end":
+        # "TL1, THIS IS RFN1: SUPPORT ENDED, RFN2 IS DOWN. STANDING BY. OVER."
+        s = re.search(r"SUPPORT ENDED, (?P<cs>[A-Z]+\d+) IS DOWN", m.text)
+        parsed = {"supported": s.group("cs")} if s else {}
     else:
         parsed = {}
     return parsed
@@ -151,9 +176,16 @@ def _state_record(env: CohortEnv, episode: int, step: int) -> dict:
             mission[s.callsign] = None
         else:
             obj_id = s.mission.objective_id
+            # `target` is the normalized order target: objective name, or the
+            # supported unit's callsign for unit-targeted SUPPORT (MICAT).
+            target = None if obj_id is None else env.world.objectives[obj_id].name
+            sup_id = s.mission.extra.get("supported_id")
+            if sup_id is not None and sup_id in env.roster.by_id:
+                target = env.roster.by_id[sup_id].callsign
             mission[s.callsign] = {
                 "type": s.mission.type.value,
                 "objective": None if obj_id is None else env.world.objectives[obj_id].name,
+                "target": target,
             }
     return {
         "rec": "state",
@@ -196,9 +228,15 @@ def tap_episodes(
     n_msgs = 0
     outcomes: dict[str, int] = {}
     with _open(out_path) as out, _open(truth_path) as truth:
+        from cohort.core.missions import MissionType
+
         header = {
             "rec": "header",
             "tap_schema": TAP_SCHEMA,
+            # Self-describing mission catalog: the ordered task list of the
+            # code that generated this corpus. The assurance layer selects
+            # its doctrine premise by this, never by guessing from content.
+            "missions": [m.value for m in MissionType],
             "scenario": scenario,
             "checkpoint": checkpoint,
             "episodes": episodes,
