@@ -1,0 +1,194 @@
+"""Ground-truth oracle observer: what an all-seeing referee knows, per step.
+
+This module defines the vocabulary of *behavior observables* — semantic tags
+(ATTACKING, RETREATING, COVERING, WOUNDED, HIDDEN...) describing what a unit
+is doing — and computes them for **every** unit on the map, friendly and
+OpFor alike, straight from simulation ground truth (including the enemy AI's
+internal state: mode, goal, last sighting).
+
+These observables are strictly **outside the simulation loop**:
+
+* they never enter any agent observation (the observation layout is untouched),
+* they never influence rewards, masks, or the OpFor AI,
+* computing them consumes no randomness, so calling the oracle cannot perturb
+  a seeded episode.
+
+Their purpose is external analysis: an assurance layer can treat the enemy
+side of this snapshot as *hidden* ground truth and evaluate how well it can
+be inferred from the friendly side only (own units + radio traffic) — e.g.
+"was that unseen enemy retreating or repositioning to attack?" — without the
+cohort ever having access to the answer.
+
+Vocabulary mapping from the design request: attacking → ATTACKING,
+retreat → RETREATING, protect/cover → COVERING, wounded → WOUNDED,
+hidden → HIDDEN; completed with ADVANCING, HOLDING, and DOWN so every unit
+state has at least one tag.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+from typing import TYPE_CHECKING
+
+from cohort.core.world import dist
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from cohort.core.world import Coord
+
+#: Health strictly below this fraction of full strength counts as WOUNDED.
+WOUNDED_BELOW = 50
+
+
+class Observable(str, Enum):
+    """Behavior tags an omniscient referee can assign to any unit."""
+
+    ATTACKING = "attacking"    # fired this step
+    ADVANCING = "advancing"    # moved, closing on the nearest living opponent
+    RETREATING = "retreating"  # moved, opening distance from the nearest living opponent
+    COVERING = "covering"      # static, holding an opponent in line of sight and range
+    HOLDING = "holding"        # static, no opponent covered, not firing
+    HIDDEN = "hidden"          # concealed: in cover and seen by no living opponent
+    WOUNDED = "wounded"        # health below WOUNDED_BELOW (and alive)
+    DOWN = "down"              # dead — always the only tag
+
+
+def unit_observables(
+    *,
+    alive: bool,
+    health: int,
+    pos: Coord,
+    prev_pos: Coord,
+    fired: bool,
+    in_cover: bool,
+    seen_by_any_opponent: bool,
+    opponents: Sequence[Coord],
+    weapon_range: float,
+    has_los: Callable[[Coord, Coord], bool],
+) -> list[Observable]:
+    """Pure tag computation for one unit. Deterministic; consumes no RNG."""
+    if not alive:
+        return [Observable.DOWN]
+    tags: list[Observable] = []
+    if fired:
+        tags.append(Observable.ATTACKING)
+    moved = tuple(pos) != tuple(prev_pos)
+    if opponents:
+        d_now = min(dist(pos, o) for o in opponents)
+        d_prev = min(dist(prev_pos, o) for o in opponents)
+        if moved and d_now < d_prev - 1e-9:
+            tags.append(Observable.ADVANCING)
+        elif moved and d_now > d_prev + 1e-9:
+            tags.append(Observable.RETREATING)
+    if not moved and not fired:
+        covering = any(
+            dist(pos, o) <= weapon_range and has_los(pos, o) for o in opponents
+        )
+        tags.append(Observable.COVERING if covering else Observable.HOLDING)
+    if in_cover and not seen_by_any_opponent:
+        tags.append(Observable.HIDDEN)
+    if health < WOUNDED_BELOW:
+        tags.append(Observable.WOUNDED)
+    return tags
+
+
+def observe(env) -> dict:
+    """Full ground-truth snapshot of the environment for external observers.
+
+    Call after ``reset()`` or after each ``step()``. The ``enemies`` side —
+    including the OpFor AI's internal state — is the "non-observable" ground
+    truth an assurance layer may try to infer from the friendly side alone.
+    """
+    world = env.world
+    combat = env.combat
+    living_soldiers = [s for s in env.roster.soldiers if s.alive]
+    living_enemies = [e for e in env.enemies if e.alive]
+    los = world.line_of_sight
+
+    soldiers = []
+    for s in env.roster.soldiers:
+        seen_by = [
+            e.id
+            for e in living_enemies
+            if world.can_spot(e.pos, s.pos, combat.vision_range, combat.forest_vision_range)
+        ]
+        soldiers.append(
+            {
+                "cs": s.callsign,
+                "rank": s.rank.name,
+                "eff": s.effective_rank.name,
+                "pos": list(s.pos),
+                "prev_pos": list(s.prev_pos),
+                "hp": s.health,
+                "ammo": s.ammo,
+                "alive": s.alive,
+                "cover": bool(world.cover_at(s.pos)),
+                "fired": s.fired_this_step,
+                "mission": s.mission.type.name if s.mission else None,
+                "seen_by": seen_by,
+                "tags": [
+                    t.value
+                    for t in unit_observables(
+                        alive=s.alive,
+                        health=s.health,
+                        pos=s.pos,
+                        prev_pos=s.prev_pos,
+                        fired=s.fired_this_step,
+                        in_cover=world.cover_at(s.pos),
+                        seen_by_any_opponent=bool(seen_by),
+                        opponents=[e.pos for e in living_enemies],
+                        weapon_range=combat.weapon_range,
+                        has_los=los,
+                    )
+                ],
+            }
+        )
+
+    enemies = []
+    for e in env.enemies:
+        seen_by = [
+            s.callsign
+            for s in living_soldiers
+            if world.can_spot(s.pos, e.pos, combat.vision_range, combat.forest_vision_range)
+        ]
+        enemies.append(
+            {
+                "id": e.id,
+                "pos": list(e.pos),
+                "prev_pos": list(e.prev_pos),
+                "hp": e.health,
+                "alive": e.alive,
+                "cover": bool(world.cover_at(e.pos)),
+                "fired": e.fired_this_step,
+                # OpFor AI internals — ground truth the cohort never sees
+                "mode": e.mode,
+                "home": list(e.home),
+                "goal": list(e.goal) if e.goal is not None else None,
+                "last_seen_player": list(e.last_seen_player) if e.last_seen_player else None,
+                "last_seen_step": e.last_seen_step,
+                "seen_by": seen_by,
+                "tags": [
+                    t.value
+                    for t in unit_observables(
+                        alive=e.alive,
+                        health=e.health,
+                        pos=e.pos,
+                        prev_pos=e.prev_pos,
+                        fired=e.fired_this_step,
+                        in_cover=world.cover_at(e.pos),
+                        seen_by_any_opponent=bool(seen_by),
+                        opponents=[s.pos for s in living_soldiers],
+                        weapon_range=combat.weapon_range,
+                        has_los=los,
+                    )
+                ],
+            }
+        )
+
+    return {
+        "step": env._step_count,
+        "outcome": env.outcome if hasattr(env, "outcome") else env._episode_outcome,
+        "soldiers": soldiers,
+        "enemies": enemies,
+    }

@@ -222,7 +222,7 @@ class CohortEnv(ParallelEnv):
             for i in range(cfg.n_enemies):
                 pos = self._random_edge_cell(min_dist_from=target.pos, min_dist=10.0)
                 self.enemies.append(
-                    Enemy(id=i, pos=pos, home=pos, goal=target.pos, mode="assault")
+                    Enemy(id=i, pos=pos, home=pos, goal=target.pos, mode="assault", prev_pos=pos)
                 )
             return
         # garrison: majority on the OPORD objective, remainder round-robin
@@ -233,7 +233,7 @@ class CohortEnv(ParallelEnv):
         for i in range(cfg.n_enemies):
             obj = root_obj if i < n_root else others[(i - n_root) % len(others)]
             pos = self._random_cell_near(obj.pos, radius=2)
-            self.enemies.append(Enemy(id=i, pos=pos, home=pos, mode="garrison"))
+            self.enemies.append(Enemy(id=i, pos=pos, home=pos, mode="garrison", prev_pos=pos))
 
     def _bfs_free_cells(self, start: tuple[int, int], n: int) -> list[tuple[int, int]]:
         found: list[tuple[int, int]] = []
@@ -297,6 +297,9 @@ class CohortEnv(ParallelEnv):
         for s in self.roster.soldiers:
             s.prev_pos = s.pos
             s.fired_this_step = False
+        for e in self.enemies:  # oracle bookkeeping only (core/oracle.py)
+            e.prev_pos = e.pos
+            e.fired_this_step = False
         prev_dist = {
             s.callsign: self._anchor_distance(s) for s in self.roster.living if s.mission is not None
         }
@@ -735,6 +738,7 @@ class CohortEnv(ParallelEnv):
         if act == "move" and arg is not None and self.world.passable(arg):
             enemy.pos = arg
         elif act == "fire":
+            enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
@@ -955,6 +959,22 @@ class CohortEnv(ParallelEnv):
             objective_id=objective.id if objective else None,
         )
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
+
+    # ------------------------------------------------------------------ #
+    # ground-truth oracle (external observers only)
+    # ------------------------------------------------------------------ #
+
+    def oracle(self) -> dict:
+        """Ground-truth snapshot incl. OpFor internals — for external observers.
+
+        Behavior observables (core/oracle.py) for every unit, friendly and
+        enemy. Strictly outside the simulation loop: never feeds agent
+        observations, rewards, or masks, and consumes no randomness. Call
+        after reset() or after each step().
+        """
+        from cohort.core.oracle import observe
+
+        return observe(self)
 
     # ------------------------------------------------------------------ #
     # rendering

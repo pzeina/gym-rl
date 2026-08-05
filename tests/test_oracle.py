@@ -1,0 +1,127 @@
+"""Ground-truth oracle: correct tags, and provably invisible to the cohort."""
+
+import json
+
+import numpy as np
+
+from cohort import make_env
+from cohort.core.oracle import WOUNDED_BELOW, Observable, unit_observables
+from cohort.env.actions import CATALOG
+
+STAY = 0
+FIRE = next(s.index for s in CATALOG if s.kind == "fire")
+
+
+def _flat_env(seed=3):
+    env = make_env("fireteam")
+    env.reset(seed=seed)
+    env.world.grid[:] = 0
+    for e in env.enemies:
+        e.pos = (22, 1)
+        e.home = e.pos
+        e.prev_pos = e.pos
+    return env
+
+
+def _tags(**kw):
+    base = {
+        "alive": True,
+        "health": 100,
+        "pos": (5, 5),
+        "prev_pos": (5, 5),
+        "fired": False,
+        "in_cover": False,
+        "seen_by_any_opponent": True,
+        "opponents": [(10, 5)],
+        "weapon_range": 8.0,
+        "has_los": lambda a, b: True,
+    }
+    base.update(kw)
+    return unit_observables(**base)
+
+
+def test_vocabulary_is_stable():
+    assert {o.value for o in Observable} == {
+        "attacking", "advancing", "retreating", "covering",
+        "holding", "hidden", "wounded", "down",
+    }
+
+
+def test_pure_tag_semantics():
+    assert _tags(alive=False) == [Observable.DOWN]
+    assert Observable.ATTACKING in _tags(fired=True)
+    assert Observable.ADVANCING in _tags(prev_pos=(4, 5), pos=(5, 5))   # closing on (10,5)
+    assert Observable.RETREATING in _tags(prev_pos=(6, 5), pos=(5, 5))  # opening distance
+    assert Observable.COVERING in _tags()                                # static, LOS, in range
+    assert Observable.HOLDING in _tags(opponents=[(30, 30)])             # static, nothing covered
+    assert Observable.HIDDEN in _tags(in_cover=True, seen_by_any_opponent=False)
+    assert Observable.HIDDEN not in _tags(in_cover=True, seen_by_any_opponent=True)
+    assert Observable.WOUNDED in _tags(health=WOUNDED_BELOW - 1)
+    assert Observable.WOUNDED not in _tags(health=WOUNDED_BELOW)
+
+
+def test_oracle_snapshot_tags_and_enemy_internals():
+    env = _flat_env()
+    rfn = env.roster.by_callsign["RFN1"]
+    enemy = env.enemies[0]
+    enemy.pos = (rfn.pos[0] + 2, rfn.pos[1])
+    enemy.prev_pos = enemy.pos
+    enemy.health = WOUNDED_BELOW - 10
+
+    env.step({a: (FIRE if a == "RFN1" else STAY) for a in env.agents})
+    snap = env.oracle()
+
+    me = next(s for s in snap["soldiers"] if s["cs"] == "RFN1")
+    assert "attacking" in me["tags"] or me["ammo"] == 30  # fired unless target died first
+    foe = next(e for e in snap["enemies"] if e["id"] == enemy.id)
+    if foe["alive"]:
+        assert "wounded" in foe["tags"]
+    # OpFor AI internals are exposed to the oracle...
+    for key in ("mode", "home", "goal", "last_seen_player", "last_seen_step", "seen_by"):
+        assert key in foe
+    assert foe["mode"] in ("garrison", "assault")
+    # ...and the whole snapshot is JSON-serializable for external consumers
+    json.dumps(snap)
+
+
+def test_oracle_is_invisible_to_observations():
+    """Calling the oracle changes no agent observation, mask, or env state."""
+    env = make_env("fireteam")
+    obs_before, _ = env.reset(seed=9)
+    before = {a: (obs_before[a]["observation"].copy(), obs_before[a]["action_mask"].copy())
+              for a in env.agents}
+    env.oracle()
+    obs_after = env._all_observations()
+    for a in before:
+        assert np.array_equal(before[a][0], obs_after[a]["observation"])
+        assert np.array_equal(before[a][1], obs_after[a]["action_mask"])
+
+
+def test_oracle_consumes_no_randomness():
+    """Two identical seeded rollouts stay identical when one calls the oracle."""
+    def rollout(with_oracle):
+        env = make_env("fireteam")
+        env.reset(seed=77)
+        trace = []
+        for _ in range(25):
+            if not env.agents:
+                break
+            if with_oracle:
+                env.oracle()
+            env.step({a: STAY for a in env.agents})
+            trace.append(tuple(e.pos for e in env.enemies) + tuple(s.pos for s in env.roster.soldiers))
+        return trace, env.transcript.render()
+
+    t1, log1 = rollout(with_oracle=False)
+    t2, log2 = rollout(with_oracle=True)
+    assert t1 == t2
+    assert log1 == log2
+
+
+def test_dead_units_are_down_only():
+    env = _flat_env()
+    env.enemies[1].alive = False
+    env.step({a: STAY for a in env.agents})
+    snap = env.oracle()
+    foe = next(e for e in snap["enemies"] if e["id"] == env.enemies[1].id)
+    assert foe["tags"] == ["down"]

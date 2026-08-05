@@ -119,3 +119,24 @@ purely additive.
 All randomness flows through one `np.random.Generator` seeded at `reset(seed=...)`:
 map generation, spawns, combat rolls, OpFor jitter. Same seed + same actions ⇒ identical
 episodes, transcripts included (covered by tests).
+
+## The ground-truth oracle (external observers only)
+
+`env.oracle()` (`core/oracle.py`) returns an omniscient per-step snapshot: every unit —
+friendly and OpFor — with position, health, cover, visibility (who sees whom), the OpFor
+AI's internal state (mode, goal, last sighting), and a defined vocabulary of *behavior
+observables*: `attacking`, `advancing`, `retreating`, `covering` (protecting),
+`holding`, `hidden`, `wounded`, `down`.
+
+Two hard rules, both covered by tests:
+
+1. **The cohort never sees it.** Oracle data enters no observation, reward, or mask;
+   the observation layout is unchanged; calling the oracle consumes no randomness, so
+   it cannot perturb a seeded episode.
+2. **The net carries text only.** Radio messages are voice-procedure text — structured
+   payloads are forbidden by design. Ground truth for external analysis lives here, in
+   the oracle, not in the messages.
+
+The intended consumer is an external assurance layer: treat the enemy side of the
+snapshot as hidden ground truth and measure how well it can be inferred from the
+friendly side alone (own units + radio traffic).
