@@ -256,13 +256,14 @@ callsigns). Per agent, per step:
 
 ### Scenarios
 
-| Name | Org | Agents | Mission |
-|---|---|---|---|
-| `fireteam` | TL + 3 RFN | 4 | SEIZE OBJ ALPHA (garrisoned) |
-| `fireteam_defend` | TL + 3 RFN | 4 | DEFEND OBJ ALPHA vs. OpFor assault |
-| `squad` | SL + 2 fire teams | 7 | SEIZE with two-echelon command |
-| `squad_recon` | SL + 2 fire teams | 7 | RECON OBJ BRAVO without engaging |
-| `platoon` | PL + PSG + 2 squads | 16 | SEIZE with three-echelon command |
+| Name | Org | Agents | Map | Mission |
+|---|---|---|---|---|
+| `fireteam` | TL + 3 RFN | 4 | 36×36 | SEIZE OBJ ALPHA (garrisoned) |
+| `fireteam_defend` | TL + 3 RFN | 4 | 36×36 | DEFEND OBJ ALPHA vs. OpFor assault |
+| `squad` | SL + 2 fire teams | 7 | 42×42 | SEIZE with two-echelon command |
+| `squad_recon` | SL + 2 fire teams | 7 | 42×42 | RECON OBJ BRAVO (may engage) |
+| `squad_screen` | SL + 2 fire teams | 7 | 42×42 | SCREEN OBJ BRAVO — intel *without* engaging |
+| `platoon` | PL + PSG + 2 squads | 16 | 54×54 | SEIZE with three-echelon command |
 
 Add scenarios in [`cohort/config.py`](cohort/config.py) (org chart, map, OpFor, OPORD).
 

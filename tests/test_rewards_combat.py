@@ -33,8 +33,8 @@ def _step_all(env, overrides):
 def test_compliance_progress_sign_in_env():
     env = _flat_env()
     sld = env.roster.by_callsign["RFN1"]
-    obj = env.world.objectives[0]  # ALPHA at (18, 18)
-    sld.pos = (10, 18)
+    obj = env.world.objectives[0]  # ALPHA at (27, 27)
+    sld.pos = (10, 27)
     sld.mission = Mission(MissionType.SEIZE, 0, obj.pos, issuer_id=-1, step_assigned=0)
 
     *_, infos = _step_all(env, {"RFN1": MOVE_EAST})
