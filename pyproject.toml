@@ -1,74 +1,49 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs", "hatch-requirements-txt"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["mili_env"]
+packages = ["cohort"]
 
 [project]
-name = "mili_env"
-dynamic = ["version", "dependencies"]
-requires-python = "<3.13.1"
+name = "cohort"
+version = "1.0.0"
+requires-python = ">=3.10"
 authors = [{ name = "Paul Zeinaty", email = "zeinatypol@gmail.com" }]
 maintainers = [{ name = "Paul Zeinaty", email = "zeinatypol@gmail.com" }]
-description = "A Gymnasium RL Project"
+description = "A transparent chain-of-command multi-agent RL environment: ranked military agents that obey, report, and command in a human-readable order language."
 readme = "README.md"
 license = { file = "LICENSE" }
-keywords = ["gymnasium", "autonomous", "reinforcement", "learning"]
+keywords = ["reinforcement-learning", "multi-agent", "pettingzoo", "command-and-control", "marl"]
 classifiers = [
   "Development Status :: 4 - Beta",
-  "Programming Language :: Python",
   "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.12",
+]
+dependencies = [
+  "numpy>=1.24",
+  "gymnasium>=0.29",
+  "pettingzoo>=1.24",
+  "torch>=2.0",
+  "matplotlib>=3.7",
+  "pillow>=10.0",
 ]
 
-[tool.hatch.metadata.hooks.requirements_txt]
-files = ["requirements.txt"]
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "ruff>=0.4"]
+tb = ["tensorboard>=2.10"]
 
-
-[tool.hatch.version]
-source = "vcs"
-
-[tool.pyright]
-venvPath = "."
-venv = ".venv"
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = ["legacy", ".venv", "runs"]
 
 [tool.ruff]
 line-length = 120
-fix = true
-format.docstring-code-format = true
-format.docstring-code-line-length = 120
+extend-exclude = ["legacy"]
 
 [tool.ruff.lint]
-select = ["ALL"]
-ignore = ["COM812", "ISC001", "D100", "S311", "ERA001"]
-
-per-file-ignores = { "**/examples/*" = [
-  "ANN",
-  "D",
-  "INP001",
-  "T201",
-], "**/tests/**/*" = [
-  "ANN",
-  "D",
-  "INP001",
-  "PLC1901",
-  "PLR2004",
-  "PLR6301",
-  "PT009",
-  "S",
-  "TID252",
-], "src/**/*.py" = [
-    "PLR2004",
-    "S311",
-]}
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+ignore = ["E501", "SIM108"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-[tool.ruff.lint.flake8-tidy-imports]
-ban-relative-imports = "all"
-
-[tool.ruff.lint.flake8-pytest-style]
-fixture-parentheses = false
-mark-parentheses = false
