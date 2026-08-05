@@ -385,19 +385,32 @@ stands on a DEFEND/DENY root objective — restored a real defense (rolling peak
 79%, oscillating 0–79% thereafter), and the oracle confirms the deaths happen *at* the
 position again (14/22 within 6 cells, all within 10 — none in flight).
 
-`runs/squad_recon_v3/` — **88% ± 6** (N=100). PROTERRE RECONNAÎTRE *may engage*; the
-recon squad observes from concealment and fights only when it must. The run collapsed
-at ~0.4M steps after peaking at 88% rolling (the fourth recon collapse in project
-history — see ROADMAP D4); the rolling-best checkpoint is published.
+`runs/squad_recon_v4b/` — **85% ± 7** (N=100). PROTERRE RECONNAÎTRE *may engage*; the
+recon squad observes from concealment and fights only when it must. Retrained under the
+issue-#9 **team adjudication** (a root-held RECON/SCREEN completes on the squad's
+*aggregated* observation, and the commander's in-position credit follows the team —
+see `docs/missions.md`): on the 30-episode assurance protocol (seeds 500–529) the
+human commander now dies **2/30** episodes (was 9/30 — the outlier that motivated the
+issue) and **22/30** episodes end in the root's HQ-confirmed MISSION COMPLETE (was
+20/30). The published checkpoint is the 183k-step snapshot of a fine-tune from
+`squad_recon_v3` (`--lr 1e-4 --ent-coef 0.02`), selected by the measured
+commander-exposure metric among periodic snapshots: later snapshots *re-learn*
+exposure (deaths 7–9/30) — RECON's may-engage combat pay still pulls the root forward
+once adjudication no longer requires it. A first fine-tune (`runs/squad_recon_v4/`,
+default entropy) collapsed terminally at ~0.5M — the recon D4 signature — with its
+rolling-best still carrying parent exposure (7/30); kept for the record, as is
+`runs/squad_recon_v3/` (88% ± 6, pre-#9).
 
-`runs/squad_screen_v1b/` — **93% ± 5** (N=100) on the new ÉCLAIRER scenario: intel
-*without* engaging. Fire discipline (oracle-verified over 30 episodes): SCREEN-holders
-fire 0.016 shots/agent-step in total, of which **84% are riposte while already detected
-by the enemy** (the manual's "ne fait ouvrir le feu que pour riposter", p. 32);
-unprovoked fire from concealment is **0.0025 shots/agent-step** (the strict <0.01 bar
-is met for unprovoked fire only — total including riposte sits above it). Trained
-1.15M steps + a 1M exploration-anneal continuation (`--ent-coef 0.003 --lr 1e-4`,
-`runs/squad_screen_v1/` kept alongside).
+`runs/squad_screen_v2/` — **92% ± 5** (N=100) on the ÉCLAIRER scenario: intel
+*without* engaging. Fine-tuned from `squad_screen_v1b` under the issue-#9 team
+adjudication: human-commander deaths **2/30** on the assurance protocol (was 4/30),
+**27/30** episodes end in the root's HQ-confirmed COMPLETE (was 26/30), zero failed
+episodes over the 30 seeds. The fire-discipline measurement stands on the parent
+`runs/squad_screen_v1b/` (93% ± 5; oracle-verified over 30 episodes: 0.016
+shots/agent-step total, **84% riposte while already detected** — the manual's "ne fait
+ouvrir le feu que pour riposter", p. 32 — and **0.0025 shots/agent-step** unprovoked
+from concealment, meeting the strict <0.01 bar for unprovoked fire only), of which v2
+is a 110k-step gentle continuation (`runs/squad_screen_v1/` kept alongside).
 
 ### Asymmetric warfare (BRIQUE)
 

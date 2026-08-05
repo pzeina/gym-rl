@@ -461,3 +461,33 @@ terrain (still deferred).
   Deferred: buildings + pathfinding terrain (the other half of the v1.4
   deferral); dashboard frontend renders revealed traps only (hidden traps
   are trace data, not drawn).
+- **2026-08-06** — **#9 fixed: root RECON/SCREEN team-adjudicated — the
+  commander commands from cover** (commit 995acba + retrains; external
+  assurance finding: root-personal completion adjudication made the human
+  root die 9/30 assurance episodes at recon vs 1–4/30 elsewhere, against
+  the P3/P4 economics). `Mission.team_observation` on the HQ-issued
+  OPORD: completion (is_complete AND the DONE-truthfulness check, which
+  #3 had already team-judged) reads the squad's aggregated observation
+  counter (`TEAM_OBSERVE_STEPS` = 10, the success condition, env-mirrored
+  into the mission), and the root's in-position/compliance credit follows
+  the team — subordinates keep personal `observe_steps` (their DONE is
+  their own task). Spaces frozen 157/137; 202 → 208 tests. Retrains
+  (fine-tunes, 30-ep assurance protocol seeds 500–529 + N=100 sampled):
+  1. *squad_screen_v2* (1.5M from squad_screen_v1b @ lr 1e-4, no
+     collapse; published ckpt_best @110k) — **92% ± 5** (bound ≥90 ✓);
+     human deaths 4→**2**/30, root-COMPLETE endings 26→**27**/30.
+  2. *squad_recon_v4* (1.5M from squad_recon_v3 @ lr 1e-4) — terminal
+     D4 collapse at ~0.5M (recon's fifth); rolling-best @308k measured
+     89% ± 6 but kept parent exposure (deaths 7/30) — kept for the
+     record, not published as the fix. Diagnosed adjustment
+     *squad_recon_v4b* (ent 0.02 — survived all 1.5M — plus periodic
+     snapshots selected by the measured exposure metric): published
+     ckpt_best = the 183k snapshot — **85% ± 7** (bound ≥85 ✓); human
+     deaths 9(→8 local harness)→**2**/30, root-COMPLETE endings
+     20→**22**/30; oracle probe: root ring entries 16→13/30, mean
+     min-dist to the objective 7.2→8.8. **Finding**: snapshots later in
+     v4b re-learn exposure (deaths 7–9/30 from 350k on) — with
+     adjudication no longer *requiring* exposure, RECON's may-engage
+     combat pay still *attracts* the root forward; rolling success is
+     blind to this, so P3-style metrics must drive checkpoint selection
+     for human-preservation claims (B2 candidate metric).
