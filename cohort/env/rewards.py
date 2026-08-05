@@ -37,6 +37,16 @@ class RewardConfig:
     done_true: float = 1.0
     done_false: float = -0.5
 
+    # Objective-lost pressure (v1.4 retrain diagnosis): on DEFEND/DENY root
+    # missions, every living agent bleeds this per step while any living
+    # enemy stands on the root objective. Without it the x1.5 maps + the
+    # human/rank death economics made flight the equilibrium: the oracle
+    # showed enemies parked ON the objective at full health while defenders
+    # farmed location-free SUPPORT/HOLD posture compliance 25 cells away.
+    # A defense that has ceded its objective is failing, and now feels it.
+    # Pure penalty: adds nothing to the stall-farm bound.
+    objective_lost: float = -0.05
+
     # Observation progress (A2/A7 lesson — the stall exploit): pay each NOVEL
     # step of team observation toward the root RECON/SCREEN success counter.
     # Telescoping: the counter pays only until the success threshold

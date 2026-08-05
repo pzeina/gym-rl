@@ -196,7 +196,7 @@ python -m cohort.play --checkpoint runs/<run-name>/ckpt_best.pt
 ```
 
 A checkpoint trained on one scenario can be loaded in any other (identical observation
-and action spaces): `python -m cohort.play --checkpoint runs/fireteam_v3/ckpt_best.pt
+and action spaces): `python -m cohort.play --checkpoint runs/fireteam_v4/ckpt_best.pt
 --scenario squad` works — and `--init-from` continues training from any checkpoint.
 
 ## The command language (NATO voice procedure)
@@ -275,67 +275,96 @@ so the network learns *rank-conditional* behavior. Masks are applied at the dist
 level, so admissibility holds during exploration, not just at convergence. Agent death
 mid-episode, succession, and truncation bootstrapping are handled in the GAE buffer.
 
-### Results (fireteam, 1.5M steps, ~6 min on a laptop CPU)
+All published results below are from the **v1.4 environment** (full MICAT mission set,
+SUPPORT mechanics, human commanders, rank-weighted casualties, ×1.5 maps) — the space
+break made every pre-v1.4 checkpoint incompatible, so every scenario was retrained from
+scratch (fresh nets; pre-v1.4 runs stay on disk and in git history for provenance).
+Numbers are sampled-policy evaluation success over N=100 episodes with a 95% CI;
+`ckpt_best` is the rolling-best checkpoint of each run.
 
-See `runs/fireteam_v3/` — **86% ± 7** evaluation success (95% CI, N=100 episodes), and
-the operation now *ends on the net*: in 67 of 86 successful episodes the transcript
-closes with the root's completion report and HQ's confirmation —
+A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death economics
+(a human commander's death costs every agent −25) the combat-heavy scenarios train
+*unstably* — converged policies repeatedly collapsed mid-run into passive equilibria
+(squad twice, recon once, defend oscillating; the collapse onset coincides with bursts
+of human-commander deaths). The rolling-best checkpoints capture the policies at their
+peaks; the training curves show the collapses honestly.
+
+### Results (fireteam, 2.5M steps, ~13 min on a laptop CPU)
+
+`runs/fireteam_v4/` — **92% ± 5** (N=100), the operation ends on the net (~6.9 DONE
+reports per episode):
 
 ```
 [t= 90] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
 [t= 90] TL1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
 ```
 
-(~5.5 DONE reports per episode; the pre-v1.2 checkpoints never transmitted one.
-The earlier run is kept in `runs/fireteam_v2/`.)
+![training curves](runs/fireteam_v4/training_curves.png)
 
-![training curves](runs/fireteam_v3/training_curves.png)
+![episode](runs/fireteam_v4/eval.gif)
 
-![episode](runs/fireteam_v3/eval.gif)
-
-The eval GIF shows the map (APP-6 unit symbols, chain-of-command links, mission anchors)
-side by side with the live radio net. The full transcript of the episode is written to
-`eval_transcript.txt`.
+The eval GIF shows the map (APP-6 unit symbols, gold-ringed human commander,
+chain-of-command links, mission anchors) side by side with the live radio net. The full
+transcript of the episode is written to `eval_transcript.txt`.
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v2/` — **97% ± 3** success (95% CI, N=100). The SL receives the OPORD, tasks
-its two fire-team leaders, and the TLs task their riflemen; the same shared network
-plays all three roles, and the SL reports MISSION COMPLETE up to HQ when the operation
-is won (44 of 97 successes close with the report; ~5.6 DONE reports per episode).
-The earlier run is kept in `runs/squad_v1/`.
+`runs/squad_v3b/` — **84% ± 7** (N=100). The SL receives the OPORD, tasks its fire-team
+leaders (SUPPORT pairings included: `TL1, THIS IS SL1: SUPPORT TL2. OUT.`), and the TLs
+task their riflemen. **Below the v1.2 number (97% ± 3)**: both squad trainings collapsed
+mid-run (at 0.7M and 1.5M steps) after peaking at 88–90% rolling; the stability rerun
+(`--ent-coef 0.02 --lr 2e-4`) recovered from its first dip but not its second. The
+published checkpoint is the rolling-best snapshot; the sibling run `runs/squad_v3/`
+(85% ± 7) is kept alongside.
 
-![squad curves](runs/squad_v2/training_curves.png)
+![squad curves](runs/squad_v3b/training_curves.png)
 
-![squad episode](runs/squad_v2/eval.gif)
+![squad episode](runs/squad_v3b/eval.gif)
 
 ### Results (platoon — three command echelons, 16 agents)
 
-`runs/platoon_v1/` — **93% ± 5** success (95% CI, N=100, re-evaluated under the v1.2
-environment), trained by curriculum from the squad checkpoint (6M steps at `--lr 1e-4`).
-The full chain activates within ~16 steps of the OPORD: HQ → PL1, PL1 tasks PSG1/SLs,
-SLs task their TLs, TLs task their riflemen — one shared network playing every echelon:
+`runs/platoon_v2/` — **91% ± 6** (N=100, zero defeats, 10.9/16 mean survivors),
+trained by curriculum from the squad checkpoint at `--lr 1e-4` (seed 7). Curriculum
+transfer across the space break was instant: >80% rolling within 25k steps, 93% by
+600k. The full chain activates within ~5 steps of the OPORD — HQ → PL1, PL1 tasks
+PSG1/SLs (including `PSG1, THIS IS PL1: SUPPORT SL1. OUT.`), SLs task their TLs, TLs
+task their riflemen — one shared network playing every echelon. The planned 7M budget
+was cut at ~0.7M: the policy had converged (and the post-convergence collapse pattern
+argues against training past it — rolling was already dipping when the run was
+stopped; `ckpt_best` holds the peak).
 
-![platoon curves](runs/platoon_v1/training_curves.png)
+![platoon curves](runs/platoon_v2/training_curves.png)
 
-![platoon episode](runs/platoon_v1/eval.gif)
+![platoon episode](runs/platoon_v2/eval.gif)
 
-### Results (defense & reconnaissance)
+### Results (defense, reconnaissance & screen)
 
-`runs/fireteam_defend_v4/` — **91% ± 6** (N=100, zero defeats, 3.8/4 mean survivors).
-Defense only worked once the scenario granted its doctrinal advantages (prepared
-positions ringing the objective + early-warning distance): three trainings on the bare
-spec all plateaued at a ~55-60% open-field coin flip with defenders dying off-position
-32:5; with defensible ground, every observed death is *at* the objective. Combat
-rewards are also mission-disciplined (`RewardConfig.fire_discipline`): static postures
-only pay for engagements fought from position, and reconnaissance is weapons-tight.
+`runs/fireteam_defend_v5/` — **73% ± 9** (N=100, 3.3/4 mean survivors; 21% timeouts,
+6% defeats). **Below the v1.2 number (91% ± 6)**, documented honestly: on the ×1.5 map
+under the new death economics the first training abandoned the objective outright
+(oracle: enemies parked *on* the objective at full health while defenders farmed
+location-free SUPPORT/HOLD posture compliance 25 cells away). The diagnosed adjustment
+— `RewardConfig.objective_lost`, a per-step bleed for every agent while a living enemy
+stands on a DEFEND/DENY root objective — restored a real defense (rolling peaked at
+79%, oscillating 0–79% thereafter), and the oracle confirms the deaths happen *at* the
+position again (14/22 within 6 cells, all within 10 — none in flight).
 
-`runs/squad_recon_v2/` — **89% ± 6** (N=100). Doctrinally (PROTERRE MICAT), RECONNAÎTRE
-*may engage*; a separate stealth task (ÉCLAIRER → SCREEN, intel without engaging) is
-planned in the PROTERRE-alignment cycle (ROADMAP).
+`runs/squad_recon_v3/` — **88% ± 6** (N=100). PROTERRE RECONNAÎTRE *may engage*; the
+recon squad observes from concealment and fights only when it must. The run collapsed
+at ~0.4M steps after peaking at 88% rolling (the fourth recon collapse in project
+history — see ROADMAP D4); the rolling-best checkpoint is published.
+
+`runs/squad_screen_v1b/` — **93% ± 5** (N=100) on the new ÉCLAIRER scenario: intel
+*without* engaging. Fire discipline (oracle-verified over 30 episodes): SCREEN-holders
+fire 0.016 shots/agent-step in total, of which **84% are riposte while already detected
+by the enemy** (the manual's "ne fait ouvrir le feu que pour riposter", p. 32);
+unprovoked fire from concealment is **0.0025 shots/agent-step** (the strict <0.01 bar
+is met for unprovoked fire only — total including riposte sits above it). Trained
+1.15M steps + a 1M exploration-anneal continuation (`--ent-coef 0.003 --lr 1e-4`,
+`runs/squad_screen_v1/` kept alongside).
 
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
-first, then `--init-from runs/fireteam_v3/ckpt_best.pt` for `squad`, and so on up to
+first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
 
 ## Project layout
@@ -362,9 +391,10 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 100 tests: ranks, language, doctrine, succession, masking,
-                       PettingZoo API, rewards, combat, completion reporting,
-                       comms range, SITREP cadence, dashboard, training smoke
+tests/                 162 tests: ranks, language, doctrine, succession, masking,
+                       PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
+                       rank-weighted casualties, completion reporting, comms range,
+                       SITREP cadence, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 

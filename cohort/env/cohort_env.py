@@ -482,6 +482,21 @@ class CohortEnv(ParallelEnv):
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
 
+        # objective-lost pressure for DEFEND / DENY campaigns: while a living
+        # enemy stands on the root objective, every living agent bleeds —
+        # a defense that ceded its ground is failing, hiding included
+        if (
+            cfg.objective_lost != 0.0
+            and root_obj is not None
+            and self.spec_cfg.root_mission in (MissionType.DEFEND, MissionType.DENY)
+            and any(
+                e.alive and dist(e.pos, root_obj.pos) <= root_obj.radius + 1.0
+                for e in self.enemies
+            )
+        ):
+            for s in self.roster.living:
+                ledger.add(s.callsign, "compliance", cfg.objective_lost)
+
         # team observation progress for RECON / SCREEN campaigns. Each NOVEL
         # step toward the success counter pays observe_progress to the
         # observer (A2/A7 stall-exploit fix): the payout telescopes — it is
