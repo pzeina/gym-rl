@@ -52,6 +52,7 @@ def plot_training(run_dir: str | Path, out_name: str = "training_curves.png") ->
                 ("comp_report", "report"),
                 ("comp_command", "command"),
                 ("comp_combat", "combat"),
+                ("tx_per_agent_step", "transmissions"),  # absent in pre-A4 runs
             ],
         ),
         ("policy entropy", [("entropy", "entropy")]),

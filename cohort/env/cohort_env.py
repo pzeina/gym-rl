@@ -56,6 +56,12 @@ from cohort.env.rewards import RewardConfig, RewardLedger
 #: Steps after which an unrefreshed contact report goes stale.
 KNOWLEDGE_TTL = 40
 
+#: Net arbitration priority for LEARNED transmissions (A4): lower wins.
+#: CONTACT (perishable intel) > DONE (command state) > orders > SITREP
+#: (routine); ties break by agent order. Auto-traffic is not listed — WILCO,
+#: verdicts, CASUALTY, and succession are protocol, not competition for air.
+_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "sitrep": 3}
+
 
 class CohortEnv(ParallelEnv):
     """Parallel multi-agent environment with a transparent chain of command."""
@@ -110,12 +116,21 @@ class CohortEnv(ParallelEnv):
         self._success_step: int | None = None  # T0: success condition first met
         self._root_done_step: int | None = None  # truthful root-mission DONE step
         self._root_done_callsign: str | None = None
+        self._net_blocked: set[str] = set()  # NET BUSY losers this step (A4)
+        self._tx_count = 0  # learned transmissions emitted this step (A4)
 
     @property
     def outcome(self) -> str | None:
         """Episode outcome: ``"success"`` | ``"defeat"`` | ``"timeout"``, or
         ``None`` while the episode is still running."""
         return self._episode_outcome
+
+    @property
+    def transmissions_last_step(self) -> int:
+        """Learned transmissions actually emitted during the last ``step()``
+        (CONTACT / SITREP / DONE / agent-issued orders; auto-traffic and
+        NET BUSY-dropped attempts excluded). Training metrics bookkeeping."""
+        return self._tx_count
 
     # ------------------------------------------------------------------ #
     # spaces
@@ -188,6 +203,8 @@ class CohortEnv(ParallelEnv):
         self._success_step = None
         self._root_done_step = None
         self._root_done_callsign = None
+        self._net_blocked = set()
+        self._tx_count = 0
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -208,7 +225,7 @@ class CohortEnv(ParallelEnv):
         )
 
         observations = self._all_observations()
-        infos = {a: {"components": {}} for a in self.agents}
+        infos = {a: {"components": {}, "net_busy": False} for a in self.agents}
         return observations, infos
 
     def _prepare_defensive_ground(self, objective_name: str) -> None:
@@ -390,6 +407,10 @@ class CohortEnv(ParallelEnv):
         ]
         self._shots_at: dict[int, int] = {}
 
+        # --- net arbitration (A4): one learned transmission per tick ---
+        self._net_blocked = self._arbitrate_net(present, actions)
+        self._tx_count = 0
+
         # --- friendly actions ---
         enemy_kills: list[tuple[Soldier, Enemy]] = []
         for callsign in present:
@@ -569,6 +590,9 @@ class CohortEnv(ParallelEnv):
             infos[callsign] = {
                 "components": ledger.breakdown(callsign),
                 "outcome": self._episode_outcome if episode_over else None,
+                # NET BUSY (A4): this agent's transmission lost arbitration
+                # this tick and was dropped — externally measurable discipline
+                "net_busy": callsign in self._net_blocked,
             }
         self.agents = [a for a in present if not (terminations[a] or truncations[a])]
         return observations, rewards, terminations, truncations, infos
@@ -576,6 +600,47 @@ class CohortEnv(ParallelEnv):
     # ------------------------------------------------------------------ #
     # action application
     # ------------------------------------------------------------------ #
+
+    def _arbitrate_net(self, present: list[str], actions: dict[str, int]) -> set[str]:
+        """Single-frequency net: at most ONE learned transmission per tick.
+
+        Deterministic priority arbitration over this tick's transmission
+        attempts — CONTACT > DONE > orders > SITREP, ties broken by agent
+        order. Losers' transmissions are dropped this tick with a NET BUSY
+        outcome: no message, no cost, no effect — surfaced per agent in
+        ``infos[...]["net_busy"]`` and the oracle snapshot. Auto-traffic
+        (WILCO, verdicts, CASUALTY, succession) is protocol, not competition
+        for airtime, and is never arbitrated. Under ``comm_model="range"``
+        earshot shapes who *hears* a message, but every station shares the
+        one frequency, so busy-ness stays global. Contention is judged on
+        tick-start legality (the same mask the policy acted under); masks
+        and spaces are untouched — a blocked agent simply loses its tick.
+        """
+        raw: list[tuple[int, int, Soldier]] = []
+        for idx, callsign in enumerate(present):
+            soldier = self.roster.by_callsign[callsign]
+            if not soldier.alive or callsign not in actions:
+                continue
+            spec = CATALOG[int(actions[callsign])]
+            prio = _TX_PRIORITY.get(spec.kind)
+            if prio is not None:
+                raw.append((prio, idx, soldier))
+        if len(raw) <= 1:
+            return set()
+        # illegal attempts are STAY, not transmissions: they cannot contend
+        contenders = [
+            (prio, idx, s) for prio, idx, s in raw
+            if self._mask_for(s)[int(actions[s.callsign])]
+        ]
+        if len(contenders) <= 1:
+            return set()
+        contenders.sort(key=lambda c: (c[0], c[1]))
+        return {s.callsign for _, _, s in contenders[1:]}
+
+    def _charge_transmission(self, soldier: Soldier, ledger: RewardLedger, component: str) -> None:
+        """Airtime cost for one emitted learned transmission (A4)."""
+        ledger.add(soldier.callsign, component, self.rewards_cfg.transmission_cost)
+        self._tx_count += 1
 
     def _apply_action(
         self,
@@ -586,6 +651,8 @@ class CohortEnv(ParallelEnv):
     ) -> None:
         cfg = self.rewards_cfg
         spec = CATALOG[action]
+        if spec.kind in _TX_PRIORITY and soldier.callsign in self._net_blocked:
+            return  # NET BUSY: transmission dropped this tick — no cost, no effect
         mask = self._mask_for(soldier)
         if not mask[action]:
             self._illegal_actions += 1
@@ -603,6 +670,7 @@ class CohortEnv(ParallelEnv):
             interval = self.spec_cfg.sitrep_cadence or cfg.sitrep_interval
             fresh = self._step_count - soldier.last_sitrep_step >= interval
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
+            self._charge_transmission(soldier, ledger, "report")
             soldier.last_sitrep_step = self._step_count
             self._say(
                 MessageKind.SITREP,
@@ -656,7 +724,19 @@ class CohortEnv(ParallelEnv):
         visible = self._visible_enemies(soldier)
         if not visible:
             return
+        # Dedup credit (A4), adjudicated by the umpire against the whole-team
+        # picture (under comm_model="range" too — the umpire hears everything
+        # even when a distant station does not): the FIRST accurate report of
+        # an enemy takes contact_new; a re-report refreshing intel that has
+        # aged >= contact_refresh_age is worth exactly 0 (it genuinely extends
+        # the picture's life); a report whose every enemy is already fresh on
+        # the picture is pure noise and draws contact_redundant.
         new_intel = any(e.id not in self._known_enemies for e in visible)
+        refreshes = any(
+            e.id in self._known_enemies
+            and self._step_count - self._known_enemies[e.id][2] >= cfg.contact_refresh_age
+            for e in visible
+        )
         for e in visible:
             self._known_enemies[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
             soldier.reported_enemy_ids.add(e.id)
@@ -670,7 +750,11 @@ class CohortEnv(ParallelEnv):
                         picture[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
         soldier.last_contact_report_step = self._step_count
         self._last_net_contact_step = self._step_count
-        ledger.add(soldier.callsign, "report", cfg.contact_new if new_intel else cfg.contact_redundant)
+        if new_intel:
+            ledger.add(soldier.callsign, "report", cfg.contact_new)
+        elif not refreshes:
+            ledger.add(soldier.callsign, "report", cfg.contact_redundant)
+        self._charge_transmission(soldier, ledger, "report")
         nearest = visible[0]
         self._say(
             MessageKind.CONTACT,
@@ -714,6 +798,7 @@ class CohortEnv(ParallelEnv):
             soldier.leader_id,
             lang.format_done(self._addressee(soldier), soldier.callsign, mission.type, obj_name),
         )
+        self._charge_transmission(soldier, ledger, "report")
         # the superior answers on the net: the verdict is command traffic, not
         # a secret side effect (a false claimant silently keeping its mission
         # was the one place command state stopped being derivable from traffic)
@@ -758,6 +843,9 @@ class CohortEnv(ParallelEnv):
             if spec.order_support_slot is None or spec.order_support_slot >= len(subs):
                 return
             supported_id = subs[spec.order_support_slot].id
+
+        # airtime (A4): the ORDER goes out on the net either way below
+        self._charge_transmission(soldier, ledger, "command")
 
         # out of earshot (comm_model="range"): the transmission goes out but
         # nothing arrives — no mission change, no WILCO, no command credit

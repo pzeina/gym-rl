@@ -40,6 +40,7 @@ METRIC_FIELDS = [
     "value_loss",
     "approx_kl",
     "sps",
+    "tx_per_agent_step",
     *[f"comp_{c}" for c in COMPONENTS],
 ]
 
@@ -125,6 +126,7 @@ class Trainer:
         outcomes: list[str] = []
         comp_sums = dict.fromkeys(COMPONENTS, 0.0)
         agent_steps = 0
+        tx_total = 0
 
         for t in range(cfg.horizon):
             rows = [(e, a) for e, env in enumerate(self.envs) for a in env.agents]
@@ -157,6 +159,7 @@ class Trainer:
                         comp_sums[comp] += val
                     self._ep_return[e] += rewards[a]
                 agent_steps += len(present)
+                tx_total += env.transmissions_last_step
                 self._ep_len[e] += 1
 
                 # truncation: bootstrap the final state's value into the reward
@@ -200,6 +203,7 @@ class Trainer:
                 else 0.0
             ),
         }
+        stats["tx_per_agent_step"] = tx_total / max(1, agent_steps)
         for comp in COMPONENTS:
             stats[f"comp_{comp}"] = comp_sums[comp] / max(1, agent_steps)
         return stats

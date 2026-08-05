@@ -252,6 +252,15 @@ callsigns). Per agent, per step:
   feed only the pictures of stations in earshot, and an order to an out-of-earshot
   subordinate is transmitted but never received — no WILCO comes back, so silence
   carries information.
+* **Comms discipline**: the net is a single frequency — at most one *learned*
+  transmission (CONTACT / SITREP / MISSION COMPLETE / order) per tick, arbitrated by
+  priority (CONTACT > DONE > orders > SITREP, ties by agent order); losers get a NET
+  BUSY (dropped, free, externally visible in the oracle). Airtime costs: every emitted
+  learned transmission draws a small penalty; auto-traffic (WILCO, verdicts, CASUALTY,
+  succession) is protocol and stays free. CONTACT credit is deduplicated — the first
+  accurate report of an enemy pays in full, a refresh of aging intel is worth exactly
+  0, re-reporting fresh intel is penalized noise. See
+  [docs/command_language.md](docs/command_language.md).
 * **Completion reporting is load-bearing**: when the root-mission success condition is
   first met, the episode stays open for a short window (`ScenarioSpec.grace_window`,
   default 12 steps). A truthful `MISSION COMPLETE` from the senior agent — judged
@@ -286,7 +295,11 @@ SUPPORT mechanics, human commanders, rank-weighted casualties, ×1.5 maps) — t
 break made every pre-v1.4 checkpoint incompatible, so every scenario was retrained from
 scratch (fresh nets; pre-v1.4 runs stay on disk and in git history for provenance).
 Numbers are sampled-policy evaluation success over N=100 episodes with a 95% CI;
-`ckpt_best` is the rolling-best checkpoint of each run.
+`ckpt_best` is the rolling-best checkpoint of each run. The fireteam and squad
+results were re-published under the **A4 comms discipline** (net-busy arbitration +
+transmission cost + CONTACT dedup — the env every number below is measured in);
+the other scenarios' checkpoints predate A4 and keep their v1.4 numbers (measured
+in the pre-A4 env).
 
 A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death economics
 (a human commander's death costs every agent −25) the combat-heavy scenarios train
@@ -295,19 +308,27 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
 
-### Results (fireteam, 2.5M steps, ~13 min on a laptop CPU)
+### Results (fireteam)
 
-`runs/fireteam_v4/` — **92% ± 5** (N=100), the operation ends on the net (~6.9 DONE
-reports per episode):
+`runs/fireteam_v4d/` — **83% ± 7** (N=100), `fireteam_v4` fine-tuned 1.5M steps under
+the A4 comms discipline. The net transformed: CONTACT reports fell from 22.6 to **2.5
+per episode** (duplicate rate 0.92 → 0.51 — the storm is gone), total learned
+transmissions halved (0.18 → 0.09 per agent-step), SITREPs stayed within doctrine at
+0.98 per agent per 25 steps. **Below the pre-discipline number (92% ± 5, regression
+bound −3)**, documented honestly: the fine-tune took a D4-style mid-run collapse
+(0.93 rolling → 0 at ~0.6M) and self-recovered to 87% rolling but not to its peak;
+the diagnosed gentler rerun (`runs/fireteam_v4e/`, `--lr 5e-5 --ent-coef 0.003`)
+collapsed terminally at ~0.7M — retrain and adjustment both spent (ROADMAP A4/D4).
+The operation still ends on the net (~4.7 DONE reports per episode):
 
 ```
-[t= 90] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
-[t= 90] TL1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+[t=146] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+[t=146] TL1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
 ```
 
-![training curves](runs/fireteam_v4/training_curves.png)
+![training curves](runs/fireteam_v4d/training_curves.png)
 
-![episode](runs/fireteam_v4/eval.gif)
+![episode](runs/fireteam_v4d/eval.gif)
 
 The eval GIF shows the map (APP-6 unit symbols, gold-ringed human commander,
 chain-of-command links, mission anchors) side by side with the live radio net. The full
@@ -315,17 +336,24 @@ transcript of the episode is written to `eval_transcript.txt`.
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v3b/` — **84% ± 7** (N=100). The SL receives the OPORD, tasks its fire-team
-leaders (SUPPORT pairings included: `TL1, THIS IS SL1: SUPPORT TL2. OUT.`), and the TLs
-task their riflemen. **Below the v1.2 number (97% ± 3)**: both squad trainings collapsed
-mid-run (at 0.7M and 1.5M steps) after peaking at 88–90% rolling; the stability rerun
-(`--ent-coef 0.02 --lr 2e-4`) recovered from its first dip but not its second. The
-published checkpoint is the rolling-best snapshot; the sibling run `runs/squad_v3/`
-(85% ± 7) is kept alongside.
+`runs/squad_v3e/` — **84% ± 7** (N=100), fine-tuned from `squad_v3b` under the A4
+comms discipline: SITREPs fell from 2.9 to **0.74 per agent per 25 steps** and total
+learned transmissions halved (0.26 → 0.13 per agent-step) with **zero success
+regression** vs. its parent (84% ± 7). The SL receives the OPORD, tasks its fire-team
+leaders (SUPPORT pairings included: `TL1, THIS IS SL1: SUPPORT TL2. OUT.`), and the
+TLs task their riflemen — now one transmission per tick, on a readable net. Both
+discipline fine-tunes collapsed D4-style (the first at 0.1M, the diagnosed gentler
+rerun at 0.6M after holding 0.81–0.90 for 0.6M steps; `comp_combat` shows the
+human-death shock bursts before the onset); the published checkpoint is the 0.94
+rolling peak, and CONTACT dedup — only 51k discipline steps deep — still re-reports
+fresh intel at a 0.83 rate (documented A4 residual; the fireteam run shows 1.5M steps
+erase the storm entirely). Ancestors `runs/squad_v3b/` (84% ± 7, pre-discipline) and
+`runs/squad_v3/` (85% ± 7) are kept alongside, with the collapsed `runs/squad_v3d/`
+for the D4 record.
 
-![squad curves](runs/squad_v3b/training_curves.png)
+![squad curves](runs/squad_v3e/training_curves.png)
 
-![squad episode](runs/squad_v3b/eval.gif)
+![squad episode](runs/squad_v3e/eval.gif)
 
 ### Results (platoon — three command echelons, 16 agents)
 

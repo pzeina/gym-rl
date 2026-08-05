@@ -26,8 +26,20 @@ class RewardConfig:
     time_penalty: float = -0.01
     compliance_weight: float = 0.1
 
+    # Comms discipline (A4): every LEARNED transmission — CONTACT / SITREP /
+    # MISSION COMPLETE / an order — costs airtime, charged at emission.
+    # Auto-traffic (WILCO, DONE verdicts, CASUALTY, succession, SUPPORT_END)
+    # is protocol, not a policy decision, and stays free. A transmission
+    # dropped by net arbitration (NET BUSY) was never emitted: no cost.
+    transmission_cost: float = -0.01
+
     contact_new: float = 0.5          # first report of an enemy the team didn't know
-    contact_redundant: float = -0.02
+    contact_redundant: float = -0.02  # pure noise: every reported enemy fresh on the picture
+    contact_refresh_age: int = 20     # a re-report is a legitimate picture REFRESH (worth
+    #                                   exactly 0, not the noise penalty) once at least one
+    #                                   reported enemy's picture entry is this many steps
+    #                                   old; younger re-reports are duplicate storms.
+    #                                   Must be < KNOWLEDGE_TTL for refreshes to exist.
     sitrep_fresh: float = 0.05        # sitrep after >= sitrep_interval quiet steps
     sitrep_spam: float = -0.02
     sitrep_interval: int = 25         # freshness gap; ScenarioSpec.sitrep_cadence

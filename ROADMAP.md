@@ -53,11 +53,16 @@ squad 80–95% eval success), interactive dashboard, 71 tests, fresh-clone verif
   end-to-end at the API level incl. WILCO and the rank-violation error; in-browser
   click-through pending the next Chrome session — endpoints are exactly what the
   tab consumes.)*
-- `[ ]` **A4. Comms discipline** — small per-transmission cost, a "net busy" step
-  (one transmission per net per tick, queued), and dedup credit so the first
-  accurate CONTACT wins.
+- `[x]` **A4. Comms discipline** — small per-transmission cost, a "net busy" step
+  (one transmission per net per tick, priority-arbitrated), and dedup credit so the
+  first accurate CONTACT wins.
   **DoD**: ≤1 SITREP per agent per 25 steps and no duplicate CONTACT storms in eval
   transcripts, without success-rate regression (>–3 pts vs. baseline runs).
+  *(done with one honest DoD miss: mechanics + traffic goals landed on both
+  retrained scenarios (SITREPs ≤1 ✓, fireteam storm erased ✓, squad dedup residual
+  documented); squad success 84% ± 7 (bound 81 ✓, zero regression); fireteam
+  83% ± 7 (bound 89 ✗ by 6) after its retrain + diagnosed adjustment both hit
+  D4 collapses — see the progress log.)*
 
 ## Milestone v1.4 — PROTERRE alignment (breaking cycle)
 
@@ -154,6 +159,21 @@ model, p. 9), buildings + pathfinding terrain.
   function. Candidate fixes for the D4 rerun: value-loss clipping, reward
   normalization, larger batches, or spreading the human-death penalty over
   several steps.
+  **A4 update — four MORE events, now in fine-tunes too**: squad_v3d
+  (lr 1e-4 fine-tune from a converged parent, fresh Adam state) decayed
+  90→0% inside 0.1M with value_loss 10–20 from the first iterations;
+  squad_v3e (gentler: lr 5e-5, ent 0.003) held 0.81–0.90 for 0.6M then
+  collapsed terminally, with the death-shock signature clearly visible
+  beforehand (comp_combat −0.02 → −0.06/agent-step building over 300k
+  steps pre-onset — the strongest evidence yet for the shock hypothesis);
+  fireteam_v4d dipped 0.93→0 at ~0.6M and self-recovered to 0.87;
+  fireteam_v4e (5e-5/0.003) collapsed terminally at ~0.7M. Also learned:
+  the rolling-best checkpoint tracker is **degenerate for fine-tunes** —
+  the strong parent pins rolling at ~1.0 over the first window, so
+  ckpt_best freezes at ~3–4k steps; the A4 deliverables had to be selected
+  by N=100 eval instead (fireteam: final checkpoint; squad: a genuine
+  0.94-rolling peak at 51k). A D4 fix should gate best-saving on a full
+  window or an eval probe.
 - `[x]` **A7. Stealth-recon economics** — negative result from A2: under strict
   weapons-tight (no combat pay on RECON), the squad_recon policy *abandons the
   task* — subordinates park on OVERWATCH at 8–9 cells farming posture compliance
@@ -330,3 +350,44 @@ model, p. 9), buildings + pathfinding terrain.
   Command tab — live sessions with any checkpoint, orders typed on the net
   (HQ or commander callsigns), pause-on-CONTACT; DoD flow verified via the
   live API (WILCO + rank-violation rejection).
+- **2026-08-06** — **A4 mechanics** (commit b9ffe3e): single-frequency net —
+  one learned transmission per tick, deterministic priority arbitration
+  (CONTACT > DONE > orders > SITREP, ties by agent order), losers dropped
+  with a NET BUSY outcome (no cost, no effect; flagged in infos + oracle);
+  `transmission_cost` −0.01 on every emitted learned transmission
+  (auto-traffic free); CONTACT dedup — first accurate report pays
+  `contact_new`, a refresh of intel aged ≥ `contact_refresh_age` (20) earns
+  exactly 0, all-fresh re-reports draw `contact_redundant`. Busy-ness stays
+  global under `comm_model="range"` (one frequency). Spaces frozen
+  (157/137, asserted) — v1.4 checkpoints load unchanged. 178 tests.
+- **2026-08-06** — **A4 retrains + republication** (fireteam ≥89 bound ✗ 83,
+  squad ≥81 bound ✓ 84; traffic numbers over 20 sampled eval episodes,
+  before → after):
+  1. *fireteam*: `fireteam_v4d` (1.5M @ lr 1e-4 from fireteam_v4) dipped
+     0.93→0 rolling at ~0.6M, self-recovered to 0.87; final checkpoint
+     **83% ± 7** (N=100) — bound missed by 6. Diagnosed rerun
+     `fireteam_v4e` (lr 5e-5, ent 0.003 — the squad_screen_v1b recipe)
+     collapsed terminally at ~0.7M (watchdog-stopped; kept for the D4
+     record). Retrain + adjustment spent → v4d's final checkpoint
+     published (`ckpt_best` re-pointed to it; the rolling-best tracker is
+     degenerate for fine-tunes, see D4). Traffic: SITREPs/agent/25 steps
+     0.50 → **0.98** (≤1 ✓); CONTACTs 22.6/ep → **2.5/ep**, duplicate
+     rate 0.92 → 0.51 (no storm left); transmissions/agent-step
+     0.178 → **0.088**.
+  2. *squad*: `squad_v3d` (2M @ lr 1e-4 from squad_v3b) decayed 100→0%
+     inside 0.1M (D4; stopped early, kept). Diagnosed rerun `squad_v3e`
+     (lr 5e-5, ent 0.003) held 0.81–0.90 for 0.6M, then collapsed
+     (watchdog-stopped); its genuine 0.94-rolling peak at 51k steps
+     published: **84% ± 7** (N=100) — bound met, zero regression vs the
+     pre-discipline parent. Traffic: SITREPs/agent/25 steps 2.92 →
+     **0.74** (≤1 ✓); transmissions/agent-step 0.256 → **0.134**;
+     duplicate-CONTACT rate 0.85 → 0.83 (**A4 residual**: only 51k
+     discipline steps — the dedup economics need the ~1M+ steps the
+     fireteam run got to erase re-reporting; volume still capped at one
+     transmission per tick by arbitration).
+  Deviations: fireteam_v4e stopped at 0.75M/1.5M and squad_v3d at
+  0.28M/2M, squad_v3e at 0.7M/2M (terminal D4 collapses; rolling-best
+  degeneracy meant nothing further was recoverable from the budget).
+  Eval-transcript spot check: fireteam episode carries 1 CONTACT +
+  22 SITREPs over ~200 steps; squad cascade unchanged
+  (`TL1, THIS IS SL1: SUPPORT TL2. OUT.`), one transmission per tick.
