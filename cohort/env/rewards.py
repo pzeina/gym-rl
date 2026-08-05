@@ -66,7 +66,7 @@ class RewardConfig:
     def max_step_farm(self) -> float:
         """Upper bound on per-step reward farmable by stalling (not winning).
 
-        Best-case stall: perfect posture compliance (0.6 × weight) plus the
+        Best-case stall: perfect posture compliance (0.6 x weight) plus the
         leader coverage bonus, minus the time penalty. Used by tests to prove
         terminal dominance for every scenario's episode cap.
         """

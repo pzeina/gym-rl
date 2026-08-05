@@ -24,8 +24,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cohort.core.missions import NEEDS_OBJECTIVE, COMPLETABLE, MissionType, allowed_derivations
 from cohort.core.language import OBJECTIVE_NAMES
+from cohort.core.missions import COMPLETABLE, NEEDS_OBJECTIVE, MissionType, allowed_derivations
 
 if TYPE_CHECKING:
     from cohort.core.units import Roster, Soldier
@@ -108,8 +108,8 @@ def compute_mask(
     soldier: Soldier,
     roster: Roster,
     world: World,
-    visible_enemy_in_range: bool,  # noqa: FBT001 - simple flag
-    visible_enemy: bool,  # noqa: FBT001
+    visible_enemy_in_range: bool,
+    visible_enemy: bool,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step."""
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
