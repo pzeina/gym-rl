@@ -11,6 +11,6 @@ language.
 from cohort.config import SCENARIOS, ScenarioSpec, get_scenario
 from cohort.env.cohort_env import CohortEnv, make_env
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 __all__ = ["SCENARIOS", "CohortEnv", "ScenarioSpec", "get_scenario", "make_env"]
