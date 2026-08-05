@@ -173,6 +173,13 @@ POSITION_ANCHORED_FIRE: frozenset[MissionType] = frozenset(
 #: Steps of cumulative observation required to complete a RECON / SCREEN.
 RECON_OBSERVE_STEPS = 5
 
+#: Steps of cumulative TEAM observation that complete a root-held (OPORD)
+#: RECON / SCREEN — the campaign success condition. The operation's
+#: observation is aggregated squad-wide: any member on the ring advances it,
+#: so the commander can command from cover (refs issue #9 — the personal
+#: adjudication measurably drove the human root into exposure).
+TEAM_OBSERVE_STEPS = 2 * RECON_OBSERVE_STEPS
+
 
 def allowed_derivations(own_mission: MissionType | None) -> tuple[MissionType, ...]:
     """Missions a leader may order subordinates given its own mission.
@@ -206,6 +213,14 @@ class Mission:
     ``extra`` carries mission-specific state; SUPPORT stores the id of the
     supported soldier under ``extra["supported_id"]`` (the anchor tracks that
     soldier's position dynamically, like RALLY tracks the leader).
+
+    ``team_observation`` marks a root-held (OPORD) RECON / SCREEN: the
+    holder commands the *operation*, so observation is adjudicated on the
+    squad's aggregated counter — the environment mirrors it into
+    ``observe_steps`` and completion requires ``TEAM_OBSERVE_STEPS`` (the
+    success condition), while in-position credit follows the team. A
+    subordinate's RECON / SCREEN keeps personal ``observe_steps``: its own
+    DONE reflects its own task.
     """
 
     type: MissionType
@@ -213,7 +228,8 @@ class Mission:
     anchor: tuple[float, float]    # target point: objective center, leader pos, or hold pos
     issuer_id: int                 # agent id, or -1 for HQ/human
     step_assigned: int
-    observe_steps: int = 0         # RECON / SCREEN progress
+    observe_steps: int = 0         # RECON / SCREEN progress (team-mirrored on OPORDs)
+    team_observation: bool = False  # root OPORD RECON/SCREEN: team-adjudicated
     extra: dict = field(default_factory=dict)
 
 
@@ -275,7 +291,8 @@ def is_complete(mission: Mission, ctx: ComplianceContext) -> bool:
     if mission.type not in COMPLETABLE:
         return False
     if mission.type in (MissionType.RECON, MissionType.SCREEN):
-        return mission.observe_steps >= RECON_OBSERVE_STEPS
+        goal = TEAM_OBSERVE_STEPS if mission.team_observation else RECON_OBSERVE_STEPS
+        return mission.observe_steps >= goal
     if mission.type is MissionType.SEIZE:
         return ctx.in_position and ctx.enemies_at_objective == 0
     if mission.type is MissionType.CLEAR:
