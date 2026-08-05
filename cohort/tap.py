@@ -37,6 +37,7 @@ from typing import IO
 import numpy as np
 import torch
 
+from cohort.core.oracle import observe as oracle_observe
 from cohort.core.orders import HQ_ID, Message
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.training.evaluate import _pick_actions
@@ -81,58 +82,16 @@ def _parse_phrase(text: str) -> dict:
     return {"task": task.lower(), "objective": obj}
 
 
-def _check_native(kind: str, native: dict, parsed: dict) -> None:
-    """Cross-check the env's native payload (issue #5 fix) against the tap's
-    independent text parsers.
-
-    The two were built from opposite ends -- the env emits structure at the
-    source, the tap re-derives it from the canonical radio text -- so their
-    agreement on every message is an external verification of the #5 fix
-    (and of the text formats staying faithful). Divergence crashes corpus
-    generation loudly. Empty native payload (pre-fix code) skips the check.
-    """
-    if not native:
-        return
-    mismatches = []
-    if kind in ("opord", "order", "done"):
-        if str(native.get("mission", "")).lower() != parsed.get("task"):
-            mismatches.append("mission")
-        if native.get("objective") != parsed.get("objective"):
-            mismatches.append("objective")
-    elif kind == "contact":
-        g = native.get("grid", [None, None])
-        if f"{int(g[0]):02d}{int(g[1]):02d}" != parsed.get("grid"):
-            mismatches.append("grid")
-        if native.get("count") != parsed.get("count"):
-            mismatches.append("count")
-    elif kind == "sitrep":
-        g = native.get("grid", [None, None])
-        if f"{int(g[0]):02d}{int(g[1]):02d}" != parsed.get("grid"):
-            mismatches.append("grid")
-        if native.get("health") != parsed.get("health") or native.get("ammo") != parsed.get("ammo"):
-            mismatches.append("health/ammo")
-    elif kind == "casualty":
-        if native.get("callsign") != parsed.get("casualty"):
-            mismatches.append("callsign")
-    elif kind == "taking_command":
-        if native.get("replaced") != parsed.get("replaced"):
-            mismatches.append("replaced")
-    elif kind == "done_confirm":
-        if str(native.get("mission", "")).lower() != parsed.get("task"):
-            mismatches.append("mission")
-        if native.get("verdict") != "confirmed":
-            mismatches.append("verdict")
-    elif kind == "done_reject":
-        if native.get("verdict") != "rejected":
-            mismatches.append("verdict")
-    if mismatches:
-        raise ValueError(f"native payload disagrees with parsed text for {kind}: {mismatches} ({native} vs {parsed})")
-
-
 def _payload(m: Message) -> dict:
     """Structured content of a message, parsed from its canonical text form.
 
-    Cross-checked against the env's native payload where present (#5)."""
+    The net carries text only -- structured payloads on messages are
+    forbidden by upstream design (owner decision at 12f54dd; the earlier
+    native-payload cross-check era is recorded in this file's history). The
+    tap's parsers, with their round-trip self-checks, are therefore the
+    single re-derivation of structure from what was actually said, which is
+    exactly the epistemically honest arrangement: consumers get structure
+    derived from the observable, never a side-channel."""
     kind = m.kind.value
     if kind in ("opord", "order", "done"):
         parsed = _parse_phrase(m.text)
@@ -157,11 +116,21 @@ def _payload(m: Message) -> dict:
         parsed = {"verdict": "rejected"}
     else:
         parsed = {}
-    _check_native(kind, dict(m.payload), parsed)
     return parsed
 
 
-def _msg_record(env: CohortEnv, episode: int, m: Message, observers: list[str]) -> dict:
+def _msg_record(env: CohortEnv, episode: int, m: Message) -> dict:
+    """Serialize one message with its per-listener observer set.
+
+    Observers = HQ plus every soldier alive at end of step that the env's
+    own audibility model says can hear the sender (``_audible_to`` — always
+    true under ``comm_model="global"``, range-gated under ``"range"``).
+    Positions are those at step end, the same approximation as the alive
+    set (documented tap convention).
+    """
+    observers = ["HQ"] + sorted(
+        s.callsign for s in env.roster.living if env._audible_to(s, m.sender_id)
+    )
     return {
         "rec": "msg",
         "episode": episode,
@@ -195,6 +164,10 @@ def _state_record(env: CohortEnv, episode: int, step: int) -> dict:
         "effective_rank": {s.callsign: s.effective_rank.name for s in env.roster.soldiers},
         "mission": mission,
         "enemies_alive": sum(e.alive for e in env.enemies),
+        # The sanctioned ground-truth channel (cohort.core.oracle, upstream
+        # 8ca106e): behavior observables incl. the OpFor side. Scoring-only,
+        # like everything else in the truth stream.
+        "oracle": oracle_observe(env),
     }
 
 
@@ -219,8 +192,6 @@ def tap_episodes(
         raise ValueError("Need a scenario when tapping the random baseline.")
 
     env = make_env(scenario)
-    rng = np.random.default_rng(seed)
-    torch.manual_seed(seed)
 
     n_msgs = 0
     outcomes: dict[str, int] = {}
@@ -239,7 +210,13 @@ def tap_episodes(
         truth.write(json.dumps(header, sort_keys=True) + "\n")
 
         for ep in range(episodes):
+            # Self-contained per-episode seeding (upstream F8 doctrine):
+            # episode k reproduces standalone; its sampling streams do not
+            # depend on how many draws earlier episodes consumed, so a
+            # change to one episode's length never scrambles the others.
             ep_seed = seed + ep
+            rng = np.random.default_rng(ep_seed)
+            torch.manual_seed(ep_seed)
             obs, _ = env.reset(seed=ep_seed)
             out.write(json.dumps({"rec": "episode", "episode": ep, "seed": ep_seed}, sort_keys=True) + "\n")
             truth.write(json.dumps({"rec": "episode", "episode": ep, "seed": ep_seed}, sort_keys=True) + "\n")
@@ -251,9 +228,8 @@ def tap_episodes(
                 actions = _pick_actions(env, obs, net, rng, greedy=greedy)
                 obs, _rew, _term, _trunc, _info = env.step(actions)
                 steps += 1
-                observers = ["HQ"] + sorted(s.callsign for s in env.roster.living)
                 for m in env.transcript.since(watermark):
-                    out.write(json.dumps(_msg_record(env, ep, m, observers), sort_keys=True) + "\n")
+                    out.write(json.dumps(_msg_record(env, ep, m), sort_keys=True) + "\n")
                     n_msgs += 1
                 watermark = len(env.transcript)
                 truth.write(json.dumps(_state_record(env, ep, steps), sort_keys=True) + "\n")
