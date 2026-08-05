@@ -272,8 +272,8 @@ def test_support_observation_anchor_is_dynamic():
     tl1, tl2 = env.roster.by_callsign["TL1"], env.roster.by_callsign["TL2"]
     tl2.pos = (tl1.pos[0] + 6, tl1.pos[1])  # due east of the supporter
     obs = env._all_observations()["TL1"]["observation"]
-    # mission block: 12 self, then 11 one-hot + 1 flag, then anchor dx at +2
-    dx = obs[12 + 11 + 1]
-    dy = obs[12 + 11 + 2]
+    # mission block: 13 self, then 11 one-hot + 1 flag, then anchor dx/dy
+    dx = obs[13 + 11 + 1]
+    dy = obs[13 + 11 + 2]
     assert dx > 0 and abs(dy) < 1e-6, "anchor direction must point at the supported unit"
     assert np.isclose(dx, 6 / env.world.width)

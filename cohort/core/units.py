@@ -59,6 +59,7 @@ class Soldier:
     health: int = 100
     ammo: int = 30
     alive: bool = True
+    human: bool = False                   # a human commander embodied in the sim
     leader_id: int | None = None          # direct superior; None → reports to HQ
     subordinate_ids: list[int] = field(default_factory=list)
     deputy_id: int | None = None          # designated successor among subordinates
@@ -107,6 +108,32 @@ class Enemy:
     # never read by observations, rewards, masks, or the OpFor AI itself
     prev_pos: Coord = (0, 0)
     fired_this_step: bool = False
+
+
+def validate_human_ranks(soldiers: list[Soldier]) -> None:
+    """Enforce the humans-outrank-all-non-humans invariant at org build.
+
+    Every human must sit strictly above every non-human by *intrinsic*
+    authority — a human embedded below an AI commander would make the AI's
+    hard rank guarantees meaningless (the mask cannot constrain a human).
+    Raises ``ValueError`` on violation. No humans → vacuously valid.
+    """
+    humans = [s for s in soldiers if s.human]
+    if not humans:
+        return
+    top_ai = max((AUTHORITY[s.rank] for s in soldiers if not s.human), default=-1)
+    for h in humans:
+        if AUTHORITY[h.rank] <= top_ai:
+            offender = next(
+                s for s in soldiers if not s.human and AUTHORITY[s.rank] >= AUTHORITY[h.rank]
+            )
+            msg = (
+                f"Invalid org: human {h.callsign} ({h.rank.name}, authority "
+                f"{AUTHORITY[h.rank]}) does not outrank non-human {offender.callsign} "
+                f"({offender.rank.name}, authority {AUTHORITY[offender.rank]}) — "
+                "humans must outrank all non-humans."
+            )
+            raise ValueError(msg)
 
 
 class Roster:

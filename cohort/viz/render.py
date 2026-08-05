@@ -33,6 +33,7 @@ FRIEND_LINE = "#005a8c"
 HOSTILE_FILL = "#ff8080"
 HOSTILE_LINE = "#8c0000"
 KIA_COLOR = "#8a8a8a"
+HUMAN_RING = "#c9971c"  # gold ring marking a human-commander unit
 
 _TERRAIN_RGB = {
     0: (0.93, 0.92, 0.86),  # open
@@ -113,6 +114,10 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
             ax, s.pos[0], s.pos[1], ECHELON_MARKS[s.effective_rank],
             small=s.effective_authority == 0,
         )
+        if s.human:  # gold ring: a human commander embodied in the sim
+            ax.add_patch(
+                Circle(s.pos, 0.85, fill=False, lw=1.3, color=HUMAN_RING, zorder=6)
+            )
         ax.annotate(
             s.callsign, s.pos, textcoords="offset points", xytext=(0, -12),
             ha="center", fontsize=6.5, color=FRIEND_LINE, fontweight="bold",

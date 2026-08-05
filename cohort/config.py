@@ -82,6 +82,12 @@ class ScenarioSpec:
     forest_density: float = 1.0
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
+    root_human: bool = True       # the root commander is a human embodied in the sim
+    #                               (observable to teammates; its death costs
+    #                               RewardConfig.human_death for everyone, the episode
+    #                               continues and succession exercises). The org must
+    #                               satisfy the humans-outrank-all-non-humans
+    #                               invariant, validated at roster build.
     # --- net protocol knobs (defaults preserve the shipped behavior) ---
     auto_ack: bool = True         # False → orders are not auto-acknowledged (no WILCO)
     order_cooldown: int = 8       # steps a leader cannot re-task the same subordinate

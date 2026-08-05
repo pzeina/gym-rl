@@ -39,8 +39,15 @@ from cohort.core.missions import (
     min_hold_authority,
 )
 from cohort.core.orders import HQ_ID, Message, MessageKind, Transcript
-from cohort.core.ranks import Rank
-from cohort.core.units import Enemy, Roster, Soldier, enemy_decide, resolve_fire
+from cohort.core.ranks import AUTHORITY, Rank
+from cohort.core.units import (
+    Enemy,
+    Roster,
+    Soldier,
+    enemy_decide,
+    resolve_fire,
+    validate_human_ranks,
+)
 from cohort.core.world import World, dist
 from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
 from cohort.env.observations import OBS_DIM, AgentView, build_observation
@@ -269,6 +276,14 @@ class CohortEnv(ParallelEnv):
                 soldiers[slot.leader].subordinate_ids.append(idx)
                 if slot.deputy:
                     soldiers[slot.leader].deputy_id = idx
+        if self.spec_cfg.root_human:
+            # the root commander (reports to HQ; senior on ties) is human
+            root = max(
+                (s for s in soldiers if s.leader_id is None),
+                key=lambda s: (AUTHORITY[s.rank], -s.id),
+            )
+            root.human = True
+        validate_human_ranks(soldiers)  # humans-outrank-all-non-humans, or raise
         for s in soldiers:
             s.prev_pos = s.pos
         self.roster = Roster(soldiers)
@@ -394,6 +409,12 @@ class CohortEnv(ParallelEnv):
             self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
             for other in self.roster.living:
                 ledger.add(other.callsign, "combat", cfg.teammate_death)
+            if dead.human:
+                # losing the human commander approaches mission failure: every
+                # present agent pays, on top of the normal death penalties; the
+                # episode continues and succession exercises
+                for callsign in present:
+                    ledger.add(callsign, "combat", cfg.human_death)
             for successor, replaced in self.roster.succeed(dead):
                 text = (
                     lang.format_taking_command(successor.callsign, replaced.callsign)

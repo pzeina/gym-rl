@@ -54,6 +54,14 @@ vacancy the successor leaves behind is filled the same way, recursively, and eac
 promotion is announced on the net (`I AM ASSUMING COMMAND`). A rifleman can end up
 commanding a squad — and the action mask expands with the acting rank.
 
+**Humans in the ranks**: by default the root commander is a *human* embodied in the sim
+(`ScenarioSpec.root_human`) — marked with a gold ring in every view, observable to
+teammates (own/leader is-human observation flags). An org must satisfy the
+humans-outrank-all-non-humans invariant (validated at roster build). A human's death
+costs every present agent `RewardConfig.human_death` (−25, mission-failure scale) on
+top of the normal penalties; the episode continues and succession exercises — the
+cohort learns that keeping the commander alive is part of the mission.
+
 ## Missions and doctrine (MICAT / PROTERRE)
 
 Orders carry one of the eleven MICAT tasks of the French PROTERRE manual
@@ -219,11 +227,12 @@ squad leader above you (`PermissionError`). As `HQ` you can order anyone.
 `CohortEnv` is a [PettingZoo](https://pettingzoo.farama.org) `ParallelEnv` (agent ids are
 callsigns). Per agent, per step:
 
-* **Observation** (`Box(135,)` + action mask): own state incl. *effective* rank, standing
-  mission + anchor direction, leader, direct subordinates (+ who reported contact),
-  currently visible enemies, objectives, comms summary, and a 5×5 terrain patch.
-  Crucially, the *team* enemy picture contains only enemies someone has **reported** —
-  reporting is instrumentally useful, not just reward-bait.
+* **Observation** (`Box(137,)` + action mask): own state incl. *effective* rank and an
+  is-human flag, standing mission + anchor direction, leader (incl. whether the leader
+  is human), direct subordinates (+ who reported contact), currently visible enemies,
+  objectives, comms summary, and a 5×5 terrain patch. Crucially, the *team* enemy
+  picture contains only enemies someone has **reported** — reporting is instrumentally
+  useful, not just reward-bait.
 * **Actions** (`Discrete(157)`, masked): STAY, 4 moves, FIRE, REPORT CONTACT / SITREP /
   MISSION COMPLETE, and 148 order actions (subordinate slot × mission × objective, plus
   the unit-targeted `SUPPORT` pairings).

@@ -74,6 +74,10 @@ class RewardConfig:
     took_hit: float = -0.1
     death: float = -1.0
     teammate_death: float = -0.2
+    human_death: float = -25.0        # paid by EVERY present agent when a human dies
+    #                                   (on top of the normal death penalties): losing
+    #                                   the human commander is close to mission failure,
+    #                                   but the episode continues — succession exercises
 
     # Terminal rewards must DOMINATE any achievable per-step shaping accrual:
     # with ~0.06/step of positive shaping over a 600-step episode (the v1.4
