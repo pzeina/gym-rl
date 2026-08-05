@@ -51,6 +51,8 @@ class Observable(str, Enum):
     HOLDING = "holding"        # static, no opponent covered, not firing
     HIDDEN = "hidden"          # concealed: in cover and seen by no living opponent
     WOUNDED = "wounded"        # health below WOUNDED_BELOW (and alive)
+    SUPPORTING = "supporting"  # in SUPPORT position for its supported unit (P2)
+    SUPPORTED = "supported"    # member of an element under an active support umbrella
     DOWN = "down"              # dead — always the only tag
 
 
@@ -66,6 +68,8 @@ def unit_observables(
     opponents: Sequence[Coord],
     weapon_range: float,
     has_los: Callable[[Coord, Coord], bool],
+    supporting: bool = False,
+    supported: bool = False,
 ) -> list[Observable]:
     """Pure tag computation for one unit. Deterministic; consumes no RNG."""
     if not alive:
@@ -73,6 +77,10 @@ def unit_observables(
     tags: list[Observable] = []
     if fired:
         tags.append(Observable.ATTACKING)
+    if supporting:
+        tags.append(Observable.SUPPORTING)
+    if supported:
+        tags.append(Observable.SUPPORTED)
     moved = tuple(pos) != tuple(prev_pos)
     if opponents:
         d_now = min(dist(pos, o) for o in opponents)
@@ -105,6 +113,15 @@ def observe(env) -> dict:
     living_soldiers = [s for s in env.roster.soldiers if s.alive]
     living_enemies = [e for e in env.enemies if e.alive]
     los = world.line_of_sight
+
+    # active SUPPORT relations (P2): supporters currently in position, and
+    # the members of the elements they cover — recomputed from current
+    # positions, consuming no randomness
+    supporting_ids: set[int] = set()
+    supported_ids: set[int] = set()
+    for supporter, supported in env._active_supports():
+        supporting_ids.add(supporter.id)
+        supported_ids.update(env._supported_element(supported))
 
     soldiers = []
     for s in env.roster.soldiers:
@@ -140,6 +157,8 @@ def observe(env) -> dict:
                         opponents=[e.pos for e in living_enemies],
                         weapon_range=combat.weapon_range,
                         has_los=los,
+                        supporting=s.id in supporting_ids,
+                        supported=s.id in supported_ids,
                     )
                 ],
             }

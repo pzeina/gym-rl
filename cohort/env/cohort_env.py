@@ -97,6 +97,8 @@ class CohortEnv(ParallelEnv):
         self._agent_known: dict[str, dict[int, tuple[float, float, int]]] = {}
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
+        self._support_umbrellas: list[tuple[Soldier, set[int]]] = []  # per-step (P2)
+        self._shots_at: dict[int, int] = {}  # enemy id → friendly shots this step
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
         self._success_step: int | None = None  # T0: success condition first met
         self._root_done_step: int | None = None  # truthful root-mission DONE step
@@ -173,6 +175,8 @@ class CohortEnv(ParallelEnv):
         )
         self._illegal_actions = 0
         self._episode_outcome = None
+        self._support_umbrellas = []
+        self._shots_at = {}
         self._last_net_contact_step = None
         self._success_step = None
         self._root_done_step = None
@@ -360,6 +364,16 @@ class CohortEnv(ParallelEnv):
         prev_dist = {
             s.callsign: self._anchor_distance(s) for s in self.roster.living if s.mission is not None
         }
+        # SUPPORT effects for this tick, from the snapshot positions:
+        # (supporter, supported-element ids) pairs whose supporter is in
+        # position. Focus fire is a coordination effect — enabled while any
+        # support relation is active. Per-target friendly shot counter for
+        # the focus-fire follow-up bonus.
+        self._support_umbrellas = [
+            (supporter, self._supported_element(supported))
+            for supporter, supported in self._active_supports()
+        ]
+        self._shots_at: dict[int, int] = {}
 
         # --- friendly actions ---
         enemy_kills: list[tuple[Soldier, Enemy]] = []
@@ -574,9 +588,21 @@ class CohortEnv(ParallelEnv):
             return
         soldier.fired_this_step = True
         soldier.ammo -= 1
+        # focus fire ("pas un pas sans appui"): with an active support
+        # relation, follow-up shooters at an already-engaged target hit harder
+        modifier = 1.0
+        if self._support_umbrellas and self._shots_at.get(target.id, 0) >= 1:
+            modifier = self.combat.focus_fire_bonus
+        self._shots_at[target.id] = self._shots_at.get(target.id, 0) + 1
         d = dist(soldier.pos, target.pos)
         hit, damage = resolve_fire(
-            soldier.pos, target.pos, self.world.cover_at(target.pos), d, self.combat, self._rng
+            soldier.pos,
+            target.pos,
+            self.world.cover_at(target.pos),
+            d,
+            self.combat,
+            self._rng,
+            modifier=modifier,
         )
         if hit:
             target.health -= damage
@@ -828,9 +854,20 @@ class CohortEnv(ParallelEnv):
         elif act == "fire":
             enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
+            # covered movement: firing at a supported element from inside an
+            # in-position supporter's umbrella degrades the attacker's accuracy
+            modifier = 1.0
+            if self._covered_by_support(target, enemy.pos):
+                modifier = self.combat.support_cover_accuracy
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
-                enemy.pos, target.pos, self.world.cover_at(target.pos), d, self.combat, self._rng
+                enemy.pos,
+                target.pos,
+                self.world.cover_at(target.pos),
+                d,
+                self.combat,
+                self._rng,
+                modifier=modifier,
             )
             if hit:
                 target.health -= damage
@@ -1013,6 +1050,16 @@ class CohortEnv(ParallelEnv):
             if self._in_mission_position(s):
                 pairs.append((s, supported))
         return pairs
+
+    def _covered_by_support(self, target: Soldier, shooter_pos: tuple[int, int]) -> bool:
+        """Covered movement: is ``target`` protected from a shot fired at it
+        from ``shooter_pos``? True when the target belongs to a supported
+        element and the shooter stands inside the umbrella of that element's
+        in-position supporter (computed from this step's snapshot)."""
+        return any(
+            target.id in element and dist(shooter_pos, supporter.pos) <= self.combat.support_umbrella
+            for supporter, element in self._support_umbrellas
+        )
 
     def _end_orphaned_supports(self) -> None:
         """Clear SUPPORT missions whose supported soldier died (with a notice).

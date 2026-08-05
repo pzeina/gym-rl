@@ -62,14 +62,29 @@ Two doctrinal notes:
   assault all decompose into a supported element and a supporting element
   (cf. RECONNAÎTRE step 4 "APPUYER", p. 30).
 
-## SUPPORT addressing
+## SUPPORT mechanics ("pas un pas sans appui")
 
 The SUPPORT catalog entries are `ORDER_S{i}_SUPPORT_U{j}` (i ≠ j): the
 subordinate in slot *i* supports the unit led by the subordinate in slot *j*
 (or that soldier itself if it leads no one). On the net the order names the
-supported callsign — `TL2, THIS IS SL1: SUPPORT TL1. OUT.` The combat
-effects of an in-position supporter (covered movement, focus fire) are
-specified in the SUPPORT-mechanics cycle item (ROADMAP P2).
+supported callsign — `TL2, THIS IS SL1: SUPPORT TL1. OUT.`
+
+While a supporter is **in SUPPORT position** (≤ 10 cells of the supported
+soldier, LOS to it — "la liaison à vue avec l'élément appuyé", p. 35):
+
+* **Covered movement** — an enemy firing at a member of the supported
+  element (the supported soldier + its living direct subordinates) from
+  inside the supporter's umbrella (`CombatParams.support_umbrella`, 8 cells)
+  suffers an accuracy multiplier of ×0.7 (`support_cover_accuracy`).
+* **Focus fire** — while a support relation is active, when ≥ 2 friendlies
+  fire at the same enemy in the same step, each shot after the first gets
+  hit probability ×1.15 (`focus_fire_bonus`); any final hit probability is
+  capped at 0.95 (`max_hit`).
+
+Both effects switch off the moment the supporter leaves its position (the
+umbrella is computed from each step's snapshot), and are visible to
+external observers via the oracle's `supporting` / `supported` tags —
+never to the cohort itself.
 
 ## Observation progress (the anti-stall clause)
 

@@ -35,6 +35,17 @@ class CombatParams:
     damage: int = 34
     vision_range: float = 10.0
     forest_vision_range: float = 6.0  # spotting range against targets in forest
+    # --- SUPPORT mechanics ("pas un pas sans appui", ROADMAP P2) ---
+    support_cover_accuracy: float = 0.7  # attacker accuracy vs. a supported element,
+    #                                      when the attacker is inside the supporter's
+    #                                      umbrella (covered movement)
+    support_umbrella: float = 8.0        # radius around an in-position supporter within
+    #                                      which enemy fire on its supported element is
+    #                                      degraded
+    focus_fire_bonus: float = 1.15       # per-shot hit multiplier for the second and
+    #                                      later friendly shooters at the same enemy in
+    #                                      the same step (active support required)
+    max_hit: float = 0.95                # hard cap on any final hit probability
 
 
 @dataclass
@@ -197,11 +208,20 @@ def resolve_fire(
     distance: float,
     params: CombatParams,
     rng: np.random.Generator,
+    *,
+    modifier: float = 1.0,
 ) -> tuple[bool, int]:
-    """Resolve one shot: (hit?, damage). Caller applies damage and death."""
+    """Resolve one shot: (hit?, damage). Caller applies damage and death.
+
+    ``modifier`` multiplies the hit probability after range and cover: the
+    environment passes the SUPPORT effects through it (covered movement
+    debuffs an attacker, focus fire buffs follow-up shooters). The final
+    probability is capped at ``params.max_hit``.
+    """
     p = max(params.min_hit, min(0.9, params.base_hit - params.falloff * distance))
     if target_in_cover:
         p *= params.cover_multiplier
+    p = min(params.max_hit, p * modifier)
     if rng.random() < p:
         return True, params.damage
     return False, 0

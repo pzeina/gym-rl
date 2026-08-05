@@ -89,6 +89,14 @@ group-level TENIR/COUVRIR — no echelon can pass DENY down.) The doctrine table
 [`cohort/core/missions.py`](cohort/core/missions.py) — edit it and the action masks,
 rewards, and behavior all follow.
 
+SUPPORT is mechanically real — *pas un pas sans appui*: a supporter in position
+(≤ 10 cells of the supported soldier, LOS to it) degrades any attacker firing at the
+supported element from inside its 8-cell umbrella (accuracy ×0.7), and enables focus
+fire (second and later friendly shooters at the same target in the same step: hit
+probability ×1.15, capped at 0.95). Both effects die the moment the supporter leaves
+its station, and are visible to external observers via the oracle's
+`supporting`/`supported` tags.
+
 ## Quickstart
 
 ```bash

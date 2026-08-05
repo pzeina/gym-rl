@@ -43,7 +43,7 @@ def _tags(**kw):
 def test_vocabulary_is_stable():
     assert {o.value for o in Observable} == {
         "attacking", "advancing", "retreating", "covering",
-        "holding", "hidden", "wounded", "down",
+        "holding", "hidden", "wounded", "supporting", "supported", "down",
     }
 
 
@@ -58,6 +58,44 @@ def test_pure_tag_semantics():
     assert Observable.HIDDEN not in _tags(in_cover=True, seen_by_any_opponent=True)
     assert Observable.WOUNDED in _tags(health=WOUNDED_BELOW - 1)
     assert Observable.WOUNDED not in _tags(health=WOUNDED_BELOW)
+    assert Observable.SUPPORTING in _tags(supporting=True)
+    assert Observable.SUPPORTED in _tags(supported=True)
+    assert Observable.SUPPORTING not in _tags()
+    assert _tags(alive=False, supporting=True) == [Observable.DOWN]
+
+
+def test_support_tags_in_snapshot():
+    """An in-position supporter and its supported element carry the tags;
+    both disappear the moment the supporter leaves its position."""
+    from cohort.core.missions import Mission, MissionType
+
+    env = make_env("squad")
+    env.reset(seed=3)
+    env.world.grid[:] = 0
+    for e in env.enemies:
+        e.pos = (26, 1)
+        e.home = e.pos
+        e.prev_pos = e.pos
+    tl1 = env.roster.by_callsign["TL1"]
+    tl2 = env.roster.by_callsign["TL2"]
+    tl2.pos = (10, 10)
+    tl1.pos = (14, 10)  # in range + LOS on open ground
+    tl1.mission = Mission(
+        MissionType.SUPPORT, None, tl2.pos, issuer_id=-1, step_assigned=0,
+        extra={"supported_id": tl2.id},
+    )
+    snap = env.oracle()
+    by_cs = {s["cs"]: s for s in snap["soldiers"]}
+    assert "supporting" in by_cs["TL1"]["tags"]
+    assert "supported" in by_cs["TL2"]["tags"]
+    assert "supported" in by_cs["RFN3"]["tags"], "the supported element includes the team"
+    assert "supported" not in by_cs["RFN1"]["tags"], "TL1's own riflemen are not covered"
+
+    tl1.pos = (26, 10)  # out of SUPPORT range → effects off
+    snap = env.oracle()
+    by_cs = {s["cs"]: s for s in snap["soldiers"]}
+    assert "supporting" not in by_cs["TL1"]["tags"]
+    assert "supported" not in by_cs["TL2"]["tags"]
 
 
 def test_oracle_snapshot_tags_and_enemy_internals():
