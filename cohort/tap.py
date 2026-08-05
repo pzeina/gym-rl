@@ -121,9 +121,10 @@ def _state_record(env: CohortEnv, episode: int, step: int) -> dict:
         if s.mission is None:
             mission[s.callsign] = None
         else:
+            obj_id = s.mission.objective_id
             mission[s.callsign] = {
                 "type": s.mission.type.value,
-                "objective": s.mission.objective_id,
+                "objective": None if obj_id is None else env.world.objectives[obj_id].name,
             }
     return {
         "rec": "state",
