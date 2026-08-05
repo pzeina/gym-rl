@@ -26,9 +26,9 @@ ORDER_SEIZE_S0 = next(
 )
 
 #: Offset of the comms-summary "known enemy count" field in the observation:
-#: 12 self + 12 mission + 4 leader + 5*4 subs + 4*4 enemies + 3*4 obj = 76,
+#: 12 self + 16 mission + 4 leader + 5*4 subs + 4*4 enemies + 3*4 obj = 80,
 #: comms block = [new-order flag, known count, known present, dx, dy].
-KNOWN_COUNT_FIELD = 77
+KNOWN_COUNT_FIELD = 81
 
 
 def _flat_env(spec, seed=1):

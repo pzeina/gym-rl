@@ -58,6 +58,54 @@ def test_agent_without_mission_cannot_order():
     assert obs["SL1"]["action_mask"][ORDER_INDICES].sum() > 0
 
 
+def test_deny_never_reaches_group_level():
+    """Per-echelon admissibility at the mask: a leader cannot give DENY to a
+    TL/RFN. Doctrine already derives DENY to nobody; even if it did (patched
+    here), the min-hold-authority check blocks recipients below section level."""
+    env = make_env("squad")
+    obs, _ = env.reset(seed=3)
+    env.inject_order("SL1, deny obj alpha", issuer="HQ")
+    obs = env._all_observations()
+    legal = {
+        spec.order_mission
+        for spec in CATALOG
+        if spec.kind == "order" and obs["SL1"]["action_mask"][spec.index]
+    }
+    assert MissionType.DENY not in legal, "doctrine derives DENY to nobody"
+    assert legal <= set(DOCTRINE[MissionType.DENY])
+
+    # belt and braces: even with doctrine patched to allow DENY→DENY, the
+    # admissibility check keeps it off the mask for sub-section recipients
+    original = DOCTRINE[MissionType.DENY]
+    DOCTRINE[MissionType.DENY] = (MissionType.DENY, *original)
+    try:
+        obs = env._all_observations()
+        legal = {
+            spec.order_mission
+            for spec in CATALOG
+            if spec.kind == "order" and obs["SL1"]["action_mask"][spec.index]
+        }
+        assert MissionType.DENY not in legal, "TL recipients are below min hold authority"
+    finally:
+        DOCTRINE[MissionType.DENY] = original
+
+
+def test_support_orders_need_a_living_supported_unit():
+    """ORDER_S{i}_SUPPORT_U{j} is legal only when both slots hold living subs."""
+    env = make_env("squad")
+    obs, _ = env.reset(seed=3)
+    sl = env.roster.by_callsign["SL1"]
+    assert sl.mission is not None  # holds the OPORD (SEIZE → SUPPORT derivable)
+    support_specs = [
+        s for s in CATALOG if s.kind == "order" and s.order_mission is MissionType.SUPPORT
+    ]
+    mask = obs["SL1"]["action_mask"]
+    n_subs = len(sl.living_subordinates(env.roster))  # 2 fire-team leaders
+    for spec in support_specs:
+        expected = spec.order_slot < n_subs and spec.order_support_slot < n_subs
+        assert bool(mask[spec.index]) == expected, spec.name
+
+
 def test_fire_requires_visible_enemy():
     env = make_env("fireteam")
     obs, _ = env.reset(seed=7)

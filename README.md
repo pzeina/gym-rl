@@ -11,7 +11,7 @@ same language back*:
 
 ```
 [t=  0] SL1, THIS IS HQ: OPORD — SEIZE OBJ ALPHA. OUT.
-[t=  1] TL2, THIS IS SL1: OVERWATCH OBJ ALPHA. OUT.
+[t=  1] TL2, THIS IS SL1: SUPPORT TL1. OUT.
 [t=  1] SL1, THIS IS TL2: WILCO. OUT.
 [t= 11] SL1, THIS IS TL1: CONTACT, GRID 2106, 1 x ENEMY. OVER.
 [t= 87] ALL STATIONS: TL1 IS DOWN. OUT.
@@ -54,25 +54,40 @@ vacancy the successor leaves behind is filled the same way, recursively, and eac
 promotion is announced on the net (`I AM ASSUMING COMMAND`). A rifleman can end up
 commanding a squad — and the action mask expands with the acting rank.
 
-## Missions and doctrine (NATO tactical tasks)
+## Missions and doctrine (MICAT / PROTERRE)
 
-Orders carry one of seven tasks: `RECON` (reconnoiter), `SEIZE`, `DEFEND`, `OVERWATCH`
-(support by fire), `CLEAR` (eliminate enemy at an objective), `RALLY` (assemble on the
-leader), `HOLD` (hold position). A leader may only derive subordinate tasks that doctrine
-allows from its *own* current mission (preference-ordered):
+Orders carry one of the eleven MICAT tasks of the French PROTERRE manual
+([`docs/manuel-proterre.pdf`](docs/manuel-proterre.pdf) — English names, PROTERRE
+semantics; full doctrine with manual page references in
+[`docs/missions.md`](docs/missions.md)):
+
+`RECON` (RECONNAÎTRE — get intel, *may* engage), `SCREEN` (ÉCLAIRER — intel *without*
+engaging, weapons tight), `OBSERVE` (SURVEILLER — static watch, detect & alert),
+`SUPPORT` (APPUYER — **unit-targeted** fire support: the order names a friendly element),
+`COVER` (COUVRIR — flank guard on an objective), `DEFEND` (TENIR), `DENY` (INTERDIRE —
+section-level area denial, authority ≥ 2 only), `SEIZE`, `CLEAR`, `RALLY`, `HOLD`.
+
+A leader may only derive subordinate tasks that doctrine allows from its *own* current
+mission (preference-ordered):
 
 | Own mission | May order subordinates to… |
 |---|---|
-| RECON | RECON, OVERWATCH, HOLD |
-| SEIZE | SEIZE, CLEAR, OVERWATCH |
-| DEFEND | DEFEND, OVERWATCH, HOLD |
-| OVERWATCH | OVERWATCH, HOLD |
-| CLEAR | CLEAR, OVERWATCH |
+| RECON | RECON, SUPPORT, OBSERVE, SCREEN |
+| SCREEN | SCREEN, OBSERVE, HOLD |
+| OBSERVE | OBSERVE, COVER, HOLD |
+| SUPPORT | SUPPORT, OBSERVE, HOLD |
+| COVER | COVER, OBSERVE, HOLD |
+| DEFEND | DEFEND, SUPPORT, OBSERVE, HOLD |
+| DENY | DEFEND, COVER, SUPPORT, OBSERVE |
+| SEIZE | SEIZE, CLEAR, SUPPORT, OBSERVE |
+| CLEAR | CLEAR, SUPPORT |
 | RALLY | RALLY, HOLD |
-| HOLD | HOLD, OVERWATCH |
+| HOLD | HOLD, OBSERVE |
 
-The doctrine table lives in [`cohort/core/missions.py`](cohort/core/missions.py) — edit it
-and the action masks, rewards, and behavior all follow.
+(DENY derives DEFEND, not itself: INTERDIRE is a section mission executed through
+group-level TENIR/COUVRIR — no echelon can pass DENY down.) The doctrine table lives in
+[`cohort/core/missions.py`](cohort/core/missions.py) — edit it and the action masks,
+rewards, and behavior all follow.
 
 ## Quickstart
 
@@ -176,12 +191,16 @@ Formatting and parsing are inverses — anything an agent says as an order, you 
 TL1, seize obj alpha           → SEIZE at objective ALPHA
 rfn2: rally on me              → RALLY
 RFN1, hold position            → HOLD in place
-TL2, cover obj bravo           → OVERWATCH (synonyms: cover, support)
+TL2, support TL1               → SUPPORT (unit-targeted: names a friendly element)
+TL2, cover obj bravo           → OBSERVE (the retired OVERWATCH phrases stay usable)
+TL1, cover flank obj bravo     → COVER (flank guard)
 TL1, hold obj alpha            → DEFEND (holding a *place* ≠ holding position)
 ```
 
 Synonyms: `take/capture/assault/secure → SEIZE`, `destroy/attack/engage/eliminate/
-neutralize/fix → CLEAR`, `scout/observe → RECON`, `guard/retain → DEFEND`,
+neutralize/fix → CLEAR`, `scout → RECON`, `eclairer → SCREEN`, `watch/overwatch/
+surveiller → OBSERVE`, `appuyer/cover for <callsign> → SUPPORT`, `couvrir/flank →
+COVER`, `guard/retain/tenir → DEFEND`, `interdict/interdire → DENY`,
 `regroup/assemble/return → RALLY`, `halt/stop → HOLD`. Reports use ACP-125-style
 prowords (THIS IS, WILCO, OVER, OUT, ALL STATIONS) and four-digit GRID references.
 Rank rules apply to humans too: playing as `TL1` you can order your riflemen, not the
@@ -192,13 +211,14 @@ squad leader above you (`PermissionError`). As `HQ` you can order anyone.
 `CohortEnv` is a [PettingZoo](https://pettingzoo.farama.org) `ParallelEnv` (agent ids are
 callsigns). Per agent, per step:
 
-* **Observation** (`Box(131,)` + action mask): own state incl. *effective* rank, standing
+* **Observation** (`Box(135,)` + action mask): own state incl. *effective* rank, standing
   mission + anchor direction, leader, direct subordinates (+ who reported contact),
   currently visible enemies, objectives, comms summary, and a 5×5 terrain patch.
   Crucially, the *team* enemy picture contains only enemies someone has **reported** —
   reporting is instrumentally useful, not just reward-bait.
-* **Actions** (`Discrete(97)`, masked): STAY, 4 moves, FIRE, REPORT CONTACT / SITREP /
-  MISSION COMPLETE, and 88 order actions (subordinate slot × mission × objective).
+* **Actions** (`Discrete(157)`, masked): STAY, 4 moves, FIRE, REPORT CONTACT / SITREP /
+  MISSION COMPLETE, and 148 order actions (subordinate slot × mission × objective, plus
+  the unit-targeted `SUPPORT` pairings).
 * **Rewards** (per agent, decomposed and logged): mission compliance shaping, new-intel
   contact reports, truthful completion reports, doctrine-preferred orders + subordinate
   coverage, combat events, shared terminal success/defeat. Component means are plotted

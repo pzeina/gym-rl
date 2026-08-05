@@ -1,10 +1,12 @@
 """Fire discipline by mission: combat rewards must serve the standing order.
 
-Found via oracle diagnosis (A2): with flat combat rewards, RECON elements
-out-shot OVERWATCH ones, and defenders left the objective to chase kills —
-32 of 37 defender deaths happened away from the position they were ordered
-to hold. Combat pay is now scaled by mission: weapons tight on RECON, and
-static postures only pay for engagements fought from the mission position.
+Found via oracle diagnosis (A2): with flat combat rewards, recon elements
+out-shot the static postures, and defenders left the objective to chase
+kills — 32 of 37 defender deaths happened away from the position they were
+ordered to hold. Combat pay is scaled by mission (core/missions.py): weapons
+tight on SCREEN (ÉCLAIRER — intel *without* engaging), position-anchored pay
+for the static postures, full pay for RECON (RECONNAÎTRE may engage),
+assault tasks, and untasked agents.
 """
 
 from cohort import make_env
@@ -57,15 +59,24 @@ def test_untasked_shooter_paid_in_full():
     assert combat >= 1.0, "untasked kill pays hit + kill rewards"
 
 
-def test_recon_is_weapons_tight():
+def test_screen_is_weapons_tight():
     env = _flat_env()
     rfn = env.roster.by_callsign["RFN1"]
     obj = env.world.objectives[1]
-    mission = Mission(MissionType.RECON, 1, obj.pos, issuer_id=-1, step_assigned=0)
+    mission = Mission(MissionType.SCREEN, 1, obj.pos, issuer_id=-1, step_assigned=0)
     combat = _point_blank_kill(env, mission=mission)
-    assert combat <= 0.0, "RECON shooter earns nothing for the kill"
+    assert combat <= 0.0, "SCREEN shooter earns nothing for the kill"
     # ...and compliance still punishes the shot itself
     assert rfn.mission is not None
+
+
+def test_recon_may_engage():
+    """PROTERRE RECONNAÎTRE engages when needed: full combat pay on RECON."""
+    env = _flat_env()
+    obj = env.world.objectives[1]
+    mission = Mission(MissionType.RECON, 1, obj.pos, issuer_id=-1, step_assigned=0)
+    combat = _point_blank_kill(env, mission=mission)
+    assert combat >= 1.0, "RECON kill pays hit + kill rewards"
 
 
 def test_defend_pays_only_from_position():
@@ -90,7 +101,7 @@ def test_knob_off_restores_flat_combat_pay():
     env = _flat_env(fire_discipline=False)
     rfn = env.roster.by_callsign["RFN1"]
     obj = env.world.objectives[1]
-    mission = Mission(MissionType.RECON, 1, obj.pos, issuer_id=-1, step_assigned=0)
+    mission = Mission(MissionType.SCREEN, 1, obj.pos, issuer_id=-1, step_assigned=0)
     combat = _point_blank_kill(env, mission=mission)
     del rfn
     assert combat >= 1.0, "fire_discipline=False restores the old behavior"
@@ -99,7 +110,7 @@ def test_knob_off_restores_flat_combat_pay():
 def test_teammate_share_unscaled():
     env = _flat_env()
     obj = env.world.objectives[1]
-    mission = Mission(MissionType.RECON, 1, obj.pos, issuer_id=-1, step_assigned=0)
+    mission = Mission(MissionType.SCREEN, 1, obj.pos, issuer_id=-1, step_assigned=0)
     rfn = env.roster.by_callsign["RFN1"]
     enemy = env.enemies[0]
     for other in env.enemies[1:]:

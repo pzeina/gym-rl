@@ -8,6 +8,11 @@ is the *mask*. Rank admissibility is a hard guarantee, not a learned habit:
 * Leaders can only order their own living direct subordinates (slots), and
   only missions that doctrine allows them to derive from their *own* current
   mission. A trained leader is therefore doctrine-conformant by construction.
+* Per-echelon mission admissibility (manual p. 8 tableau récapitulatif):
+  a mission with a minimum hold authority (DENY → section, authority >= 2)
+  can never be ordered onto a subordinate below that authority.
+* SUPPORT is unit-targeted: ``ORDER_S{i}_SUPPORT_U{j}`` tasks the subordinate
+  in slot *i* to support the unit led by the subordinate in slot *j*.
 * FIRE requires a visible enemy in weapon range and ammunition.
 * CONTACT requires a currently visible enemy (you cannot report what you do
   not see). MISSION COMPLETE requires holding a completable mission —
@@ -25,7 +30,13 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from cohort.core.language import OBJECTIVE_NAMES
-from cohort.core.missions import COMPLETABLE, NEEDS_OBJECTIVE, MissionType, allowed_derivations
+from cohort.core.missions import (
+    COMPLETABLE,
+    NEEDS_OBJECTIVE,
+    MissionType,
+    allowed_derivations,
+    min_hold_authority,
+)
 
 if TYPE_CHECKING:
     from cohort.core.units import Roster, Soldier
@@ -53,7 +64,8 @@ class ActionSpec:
     move: tuple[int, int] | None = None
     order_slot: int | None = None
     order_mission: MissionType | None = None
-    order_objective: str | None = None  # objective name, or None for RALLY/HOLD
+    order_objective: str | None = None      # objective name, or None
+    order_support_slot: int | None = None   # supported unit's slot (SUPPORT only)
 
 
 def _build_catalog() -> list[ActionSpec]:
@@ -71,7 +83,19 @@ def _build_catalog() -> list[ActionSpec]:
     add("done", "REPORT_MISSION_COMPLETE")
     for slot in range(MAX_SUB_SLOTS):
         for mission in MissionType:
-            if mission in NEEDS_OBJECTIVE:
+            if mission is MissionType.SUPPORT:
+                # unit-targeted: slot i supports the unit led by slot j (i != j)
+                for other in range(MAX_SUB_SLOTS):
+                    if other == slot:
+                        continue
+                    add(
+                        "order",
+                        f"ORDER_S{slot}_SUPPORT_U{other}",
+                        order_slot=slot,
+                        order_mission=mission,
+                        order_support_slot=other,
+                    )
+            elif mission in NEEDS_OBJECTIVE:
                 for obj in OBJECTIVE_NAMES:
                     add(
                         "order",
@@ -155,6 +179,14 @@ def compute_mask(
             if spec.order_mission not in allowed:
                 continue
             if spec.order_objective is not None and spec.order_objective not in objective_names:
+                continue
+            # unit-targeted SUPPORT needs a living unit in the supported slot
+            if spec.order_mission is MissionType.SUPPORT and (
+                spec.order_support_slot is None or spec.order_support_slot >= len(subs)
+            ):
+                continue
+            # per-echelon admissibility: the recipient must be able to HOLD it
+            if subs[spec.order_slot].effective_authority < min_hold_authority(spec.order_mission):
                 continue
             if order_cooldown > 0:
                 sub = subs[spec.order_slot]

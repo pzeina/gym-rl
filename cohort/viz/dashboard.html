@@ -160,8 +160,8 @@ const HOSTILE_FILL = "#ff8080", HOSTILE_LINE = "#7a1111";
 const ECHELON = { RFN: "", TL: "∅", SL: "●", PSG: "●●●", PL: "●●●", XO: "|", CO: "|" };
 const GRADES = { RFN: "OR-3", TL: "OR-5", SL: "OR-6", PSG: "OR-7", PL: "OF-1", XO: "OF-2", CO: "OF-2" };
 const RANK_TITLES = { RFN: "Rifleman", TL: "Fire Team Leader", SL: "Squad Leader", PSG: "Platoon Sergeant", PL: "Platoon Leader", XO: "Executive Officer", CO: "Company Commander" };
-const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", casualty: "#ff5252", taking_command: "#c084fc" };
-const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done"], events: ["casualty", "taking_command"] };
+const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", done_confirm: "#4ade80", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#ff5252", taking_command: "#c084fc" };
+const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command"] };
 
 /* ============================= charts ============================= */
 function drawChart(canvas, series, opts = {}) {
@@ -621,7 +621,7 @@ function renderInspector() {
         <tr><td>position</td><td>(${s.x}, ${s.y})</td></tr>
         <tr><td>reports to</td><td>${s.leader || "HQ"}</td></tr>
         ${s.subs.length ? `<tr><td>commands</td><td>${s.subs.join(", ")}</td></tr>` : ""}
-        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") : "STANDBY"}</td></tr>
+        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") + (s.mission.target ? " " + s.mission.target : "") : "STANDBY"}</td></tr>
         ${s.mission ? `<tr><td>ordered at</td><td>t=${s.mission.since}</td></tr>` : ""}
         <tr><td>action @t</td><td>${s.act || "—"}</td></tr>
         <tr><td>sees</td><td>${s.sees.length} hostile${s.sees.length === 1 ? "" : "s"}</td></tr>

@@ -48,11 +48,14 @@ Each `env.step(actions)`:
 
 ## Rank admissibility as masking
 
-`env/actions.py` builds one flat catalog (97 actions) shared by all agents. Per step,
+`env/actions.py` builds one flat catalog (157 actions) shared by all agents. Per step,
 `compute_mask` produces the legality vector:
 
 * order actions require `effective_authority > 0`, a living subordinate in that slot,
   **and** the ordered mission to be doctrine-derivable from the issuer's own mission;
+* per-echelon admissibility: a mission with a minimum hold authority (DENY → 2,
+  section level) is masked for recipients below it; SUPPORT orders
+  (`ORDER_S{i}_SUPPORT_U{j}`, unit-targeted) need living units in both slots;
 * re-tasking a subordinate within `ScenarioSpec.order_cooldown` steps (default 8) of
   its last received order is masked — standing orders get time to be executed — unless
   the leader's own mission changed since, or a CONTACT report hit the net since
@@ -60,7 +63,8 @@ Each `env.step(actions)`:
   `order_cooldown=0` disables the cooldown;
 * FIRE requires ammo and a visible enemy in weapon range;
 * CONTACT requires a currently visible enemy;
-* MISSION COMPLETE requires holding a mission with an end state (SEIZE/RECON/CLEAR/RALLY).
+* MISSION COMPLETE requires holding a mission with an end state
+  (RECON/SCREEN/SEIZE/CLEAR/RALLY).
 
 The policy applies the mask at the distribution level (logits of illegal actions →
 −1e9), so illegal behavior is impossible even during exploration. The environment also

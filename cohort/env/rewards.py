@@ -37,6 +37,14 @@ class RewardConfig:
     done_true: float = 1.0
     done_false: float = -0.5
 
+    # Observation progress (A2/A7 lesson — the stall exploit): pay each NOVEL
+    # step of team observation toward the root RECON/SCREEN success counter.
+    # Telescoping: the counter pays only until the success threshold
+    # (2 x RECON_OBSERVE_STEPS = 10 steps), so at most 3.0 per episode is
+    # earnable — it rewards *finishing* the observation, and cannot be farmed
+    # by parking outside the trigger radius.
+    observe_progress: float = 0.3
+
     # Order quality bonuses pay only for *fresh* tasking: the subordinate is
     # untasked, or the leader's own mission changed after the subordinate was
     # last ordered (free propagation credit). Re-ordering inside the stability
@@ -51,12 +59,14 @@ class RewardConfig:
     coverage_gap: float = -0.02       # some living subordinate left untasked
 
     # Fire discipline by mission (found via oracle diagnosis: combat rewards
-    # were dominating mission compliance — RECON elements out-shot OVERWATCH,
-    # and defenders sallied off the objective to chase kills and died in the
-    # open 32:5). With the flag on, the shooter's hit/kill rewards are scaled:
-    # RECON → 0 (weapons tight); DEFEND/OVERWATCH/HOLD → paid only when firing
-    # from the mission position; SEIZE/CLEAR/RALLY/untasked → unchanged.
-    # Teammate kill-shares are NOT scaled (the shooter's incentive is the lever).
+    # were dominating mission compliance — recon elements out-shot the static
+    # postures, and defenders sallied off the objective to chase kills and
+    # died in the open 32:5). With the flag on, the shooter's hit/kill rewards
+    # are scaled per core/missions.py: SCREEN → 0 (weapons tight); OBSERVE /
+    # SUPPORT / COVER / DEFEND / DENY / HOLD → paid only when firing from the
+    # mission position; RECON (may engage) / SEIZE / CLEAR / RALLY / untasked
+    # → unchanged. Teammate kill-shares are NOT scaled (the shooter's
+    # incentive is the lever).
     fire_discipline: bool = True
     hit_enemy: float = 0.2
     kill_enemy: float = 1.0
@@ -66,12 +76,13 @@ class RewardConfig:
     teammate_death: float = -0.2
 
     # Terminal rewards must DOMINATE any achievable per-step shaping accrual:
-    # with ~0.05/step of positive shaping over a 300-step episode an agent can
-    # farm ~13 by never finishing — mission success has to be worth strictly
-    # more, or the policy learns to stall at 100% "in position" and 0% wins
-    # (observed in practice on the squad scenario before this margin was set).
-    success_team: float = 25.0
-    success_speed: float = 10.0       # x fraction of steps remaining at success
+    # with ~0.06/step of positive shaping over a 600-step episode (the v1.4
+    # platoon cap) an agent can farm ~36 by never finishing — mission success
+    # has to be worth strictly more, or the policy learns to stall at 100%
+    # "in position" and 0% wins (observed in practice on the squad scenario
+    # before this margin was set; raised 25 → 45 for the v1.4 x1.5 maps).
+    success_team: float = 45.0
+    success_speed: float = 15.0       # x fraction of steps remaining at success
     root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
     #                                   DONE inside the completion-report grace window
     #                                   (one-shot, paid with the terminal reward — not

@@ -34,9 +34,13 @@ N_ENEMY_SLOTS = 4
 N_OBJECTIVE_SLOTS = 4
 PATCH_RADIUS = 2
 
-#: 12 self + 12 mission + 4 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
+#: mission block: one-hot over the 11 MICAT tasks + has-mission flag + 4
+#: anchor fields (dx, dy, has-objective, age)
+_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4
+
+#: 12 self + 16 mission + 4 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
 OBS_DIM = (
-    12 + 12 + 4
+    12 + _MISSION_BLOCK + 4
     + 5 * N_SUB_SLOTS
     + 4 * N_ENEMY_SLOTS
     + 3 * N_OBJECTIVE_SLOTS
@@ -86,7 +90,7 @@ def build_observation(
     out[i] = 1.0 if world.cover_at(soldier.pos) else 0.0
     i += 1
 
-    # --- mission (12) ---
+    # --- mission (16) ---
     m = soldier.mission
     if m is not None:
         out[i + MISSION_ORDER.index(m.type)] = 1.0
@@ -99,6 +103,10 @@ def build_observation(
             leader = roster.leader_of(soldier)
             if leader is not None:
                 anchor = leader.pos
+        elif m.type is MissionType.SUPPORT:
+            supported = roster.by_id.get(m.extra.get("supported_id"))
+            if supported is not None and supported.alive:
+                anchor = supported.pos
         out[i] = (anchor[0] - x) / w
         out[i + 1] = (anchor[1] - y) / h
         out[i + 2] = 1.0 if m.objective_id is not None else 0.0

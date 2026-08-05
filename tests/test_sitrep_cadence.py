@@ -17,8 +17,8 @@ STAY = 0
 SITREP_IDX = next(s.index for s in CATALOG if s.kind == "sitrep")
 CONTACT_IDX = next(s.index for s in CATALOG if s.kind == "contact")
 
-#: comms summary block starts at 76; slot 78 = known-present / sitrep-due.
-DUE_FIELD = 78
+#: comms summary block starts at 80; slot 82 = known-present / sitrep-due.
+DUE_FIELD = 82
 
 CADENCE = 10
 

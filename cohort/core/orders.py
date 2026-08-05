@@ -31,6 +31,7 @@ class MessageKind(Enum):
     DONE = "done"                      # mission-complete report (up the chain)
     DONE_CONFIRM = "done_confirm"      # superior confirms a truthful DONE (auto)
     DONE_REJECT = "done_reject"        # superior rejects a false DONE (auto)
+    SUPPORT_END = "support_end"        # SUPPORT ends: supported unit fell (auto)
     CASUALTY = "casualty"              # agent down (auto broadcast)
     TAKING_COMMAND = "taking_command"  # succession announcement (auto broadcast)
 

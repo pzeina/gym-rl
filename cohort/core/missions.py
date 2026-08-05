@@ -1,8 +1,21 @@
 """Mission tasks, derivation doctrine, and execution semantics.
 
-Mission names follow the NATO tactical task vocabulary (APP-28 / ATP-3.2.1
-family): RECON (reconnoiter), SEIZE, DEFEND, OVERWATCH (support by fire),
-CLEAR (eliminate enemy from an area), RALLY (assemble on the leader), HOLD.
+The mission set is the full MICAT catalog of the French PROTERRE manual
+(``docs/manuel-proterre.pdf``), carried under English names with PROTERRE
+semantics (owner decision, 2026-08-05; see ``docs/missions.md`` for the
+per-mission doctrine with manual page references):
+
+    RECON   (RECONNAÎTRE)  get intel on an objective; MAY engage
+    SCREEN  (ÉCLAIRER)     intel WITHOUT engaging; weapons tight
+    OBSERVE (SURVEILLER)   static observation posture; detect and alert
+    SUPPORT (APPUYER)      unit-targeted fire support ("pas un pas sans appui")
+    COVER   (COUVRIR)      flank guard on an objective; free to fire in place
+    DEFEND  (TENIR)        occupy and hold an objective
+    DENY    (INTERDIRE)    section-level area denial (authority >= 2)
+    SEIZE                  take possession of an objective and clear it
+    CLEAR                  eliminate all hostiles at an objective
+    RALLY                  assemble on the direct leader
+    HOLD                   hold current position
 
 A *mission* is the payload of an order: what the recipient must do. Doctrine
 constrains how a leader may decompose its own mission into subordinate
@@ -23,15 +36,24 @@ from enum import Enum
 
 
 class MissionType(Enum):
-    """NATO tactical tasks an agent can hold / an order can carry."""
+    """MICAT tactical tasks an agent can hold / an order can carry.
 
-    RECON = "recon"          # observe an objective without engaging
-    SEIZE = "seize"          # take possession of an objective and clear it
-    DEFEND = "defend"        # occupy an objective and repel hostiles
-    OVERWATCH = "overwatch"  # support by fire: static position with LOS on an objective
-    CLEAR = "clear"          # eliminate all hostiles at an objective
-    RALLY = "rally"          # assemble on the direct leader
-    HOLD = "hold"            # hold current position
+    The declaration order is load-bearing: it defines the observation
+    one-hot layout and the action-catalog layout. Changing it breaks
+    every trained checkpoint.
+    """
+
+    RECON = "recon"      # RECONNAÎTRE: get intel on an objective, may engage
+    SCREEN = "screen"    # ÉCLAIRER: intel without engaging (weapons tight)
+    OBSERVE = "observe"  # SURVEILLER: static observation posture, alert role
+    SUPPORT = "support"  # APPUYER: unit-targeted fire support
+    COVER = "cover"      # COUVRIR: flank guard at an objective
+    DEFEND = "defend"    # TENIR: occupy an objective and repel hostiles
+    DENY = "deny"        # INTERDIRE: section-level area denial
+    SEIZE = "seize"      # take possession of an objective and clear it
+    CLEAR = "clear"      # eliminate all hostiles at an objective
+    RALLY = "rally"      # assemble on the direct leader
+    HOLD = "hold"        # hold current position
 
     @classmethod
     def from_str(cls, value: str) -> MissionType:
@@ -39,43 +61,116 @@ class MissionType(Enum):
         return cls(value.lower())
 
 
-#: Missions that target a named objective. RALLY targets the leader,
-#: HOLD targets the position where the order was received.
+#: Missions that target a named objective. SUPPORT targets a friendly unit,
+#: RALLY targets the leader, HOLD targets the position where the order was
+#: received.
 NEEDS_OBJECTIVE: frozenset[MissionType] = frozenset(
-    {MissionType.RECON, MissionType.SEIZE, MissionType.DEFEND, MissionType.OVERWATCH, MissionType.CLEAR}
+    {
+        MissionType.RECON,
+        MissionType.SCREEN,
+        MissionType.OBSERVE,
+        MissionType.COVER,
+        MissionType.DEFEND,
+        MissionType.DENY,
+        MissionType.SEIZE,
+        MissionType.CLEAR,
+    }
 )
 
+#: Missions whose order names a friendly element instead of an objective.
+UNIT_TARGETED: frozenset[MissionType] = frozenset({MissionType.SUPPORT})
+
 #: Missions with a definite end state that can be reported COMPLETE.
-#: DEFEND / OVERWATCH / HOLD are continuous postures — they end when a new
-#: order arrives, so MISSION COMPLETE is inadmissible for them.
+#: OBSERVE / SUPPORT / COVER / DEFEND / DENY / HOLD are continuous postures —
+#: they end when a new order arrives (SUPPORT also ends when the supported
+#: unit dies), so MISSION COMPLETE is inadmissible for them.
 COMPLETABLE: frozenset[MissionType] = frozenset(
-    {MissionType.RECON, MissionType.SEIZE, MissionType.CLEAR, MissionType.RALLY}
+    {
+        MissionType.RECON,
+        MissionType.SCREEN,
+        MissionType.SEIZE,
+        MissionType.CLEAR,
+        MissionType.RALLY,
+    }
 )
 
 #: Derivation doctrine: own mission → subordinate missions allowed, in
-#: preference order.
+#: preference order. Rebuilt for the MICAT set from the manual's mission
+#: definitions (docs/missions.md). Note DENY: a section holding INTERDIRE
+#: tasks its groups with DEFEND/COVER/SUPPORT/OBSERVE — DENY itself is a
+#: section-level mission no group can hold (tableau récapitulatif, manual
+#: p. 8), so it is derivable to nobody.
 DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
-    MissionType.RECON: (MissionType.RECON, MissionType.OVERWATCH, MissionType.HOLD),
-    MissionType.SEIZE: (MissionType.SEIZE, MissionType.CLEAR, MissionType.OVERWATCH),
-    MissionType.DEFEND: (MissionType.DEFEND, MissionType.OVERWATCH, MissionType.HOLD),
-    MissionType.OVERWATCH: (MissionType.OVERWATCH, MissionType.HOLD),
-    MissionType.CLEAR: (MissionType.CLEAR, MissionType.OVERWATCH),
+    MissionType.RECON: (
+        MissionType.RECON, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.SCREEN,
+    ),
+    MissionType.SCREEN: (MissionType.SCREEN, MissionType.OBSERVE, MissionType.HOLD),
+    MissionType.OBSERVE: (MissionType.OBSERVE, MissionType.COVER, MissionType.HOLD),
+    MissionType.SUPPORT: (MissionType.SUPPORT, MissionType.OBSERVE, MissionType.HOLD),
+    MissionType.COVER: (MissionType.COVER, MissionType.OBSERVE, MissionType.HOLD),
+    MissionType.DEFEND: (
+        MissionType.DEFEND, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.HOLD,
+    ),
+    MissionType.DENY: (
+        MissionType.DEFEND, MissionType.COVER, MissionType.SUPPORT, MissionType.OBSERVE,
+    ),
+    MissionType.SEIZE: (
+        MissionType.SEIZE, MissionType.CLEAR, MissionType.SUPPORT, MissionType.OBSERVE,
+    ),
+    MissionType.CLEAR: (MissionType.CLEAR, MissionType.SUPPORT),
     MissionType.RALLY: (MissionType.RALLY, MissionType.HOLD),
-    MissionType.HOLD: (MissionType.HOLD, MissionType.OVERWATCH),
+    MissionType.HOLD: (MissionType.HOLD, MissionType.OBSERVE),
 }
+
+#: Per-echelon admissibility: minimum *effective* authority required to HOLD
+#: a mission (manual p. 8, tableau récapitulatif: INTERDIRE is a section /
+#: company mission, never a group's). Enforced in the order mask and in
+#: ``inject_order`` validation.
+MISSION_MIN_HOLD_AUTHORITY: dict[MissionType, int] = {MissionType.DENY: 2}
+
+
+def min_hold_authority(mission: MissionType) -> int:
+    """Minimum effective authority an agent needs to hold ``mission``."""
+    return MISSION_MIN_HOLD_AUTHORITY.get(mission, 0)
+
 
 #: Radius (grid cells) within which each mission counts as "in position".
 IN_POSITION_RADIUS: dict[MissionType, float] = {
-    MissionType.RECON: 7.0,      # observation ring, paired with LOS requirement
-    MissionType.SEIZE: 2.5,
+    MissionType.RECON: 7.0,    # observation ring, paired with LOS requirement
+    MissionType.SCREEN: 7.0,   # same observation semantics as RECON
+    MissionType.OBSERVE: 9.0,  # paired with LOS requirement
+    MissionType.SUPPORT: 10.0,  # of the supported soldier, paired with LOS to it
+    MissionType.COVER: 6.0,    # flank-guard station; no LOS requirement
     MissionType.DEFEND: 3.5,
-    MissionType.OVERWATCH: 9.0,  # paired with LOS requirement
+    MissionType.DENY: 5.0,     # area denial: like DEFEND, wider footprint
+    MissionType.SEIZE: 2.5,
     MissionType.CLEAR: 3.5,
     MissionType.RALLY: 2.5,
     MissionType.HOLD: 1.5,
 }
 
-#: Steps of cumulative observation required to complete a RECON.
+#: Missions whose "in position" additionally requires line of sight to the
+#: anchor (the objective — or the supported soldier for SUPPORT).
+LOS_REQUIRED: frozenset[MissionType] = frozenset(
+    {MissionType.RECON, MissionType.SCREEN, MissionType.OBSERVE, MissionType.SUPPORT}
+)
+
+#: Fire-discipline classes (consumed by the env's combat-reward scaling):
+#: WEAPONS_TIGHT missions earn nothing for fire, POSITION_ANCHORED_FIRE
+#: missions earn combat rewards only when firing from the mission position.
+WEAPONS_TIGHT: frozenset[MissionType] = frozenset({MissionType.SCREEN})
+POSITION_ANCHORED_FIRE: frozenset[MissionType] = frozenset(
+    {
+        MissionType.OBSERVE,
+        MissionType.SUPPORT,
+        MissionType.COVER,
+        MissionType.DEFEND,
+        MissionType.DENY,
+        MissionType.HOLD,
+    }
+)
+
+#: Steps of cumulative observation required to complete a RECON / SCREEN.
 RECON_OBSERVE_STEPS = 5
 
 
@@ -106,14 +201,19 @@ def derivation_quality(own_mission: MissionType | None, proposed: MissionType) -
 
 @dataclass
 class Mission:
-    """Mutable per-agent mission state (the standing order being executed)."""
+    """Mutable per-agent mission state (the standing order being executed).
+
+    ``extra`` carries mission-specific state; SUPPORT stores the id of the
+    supported soldier under ``extra["supported_id"]`` (the anchor tracks that
+    soldier's position dynamically, like RALLY tracks the leader).
+    """
 
     type: MissionType
     objective_id: int | None       # index into world objectives, or None
     anchor: tuple[float, float]    # target point: objective center, leader pos, or hold pos
     issuer_id: int                 # agent id, or -1 for HQ/human
     step_assigned: int
-    observe_steps: int = 0         # RECON progress
+    observe_steps: int = 0         # RECON / SCREEN progress
     extra: dict = field(default_factory=dict)
 
 
@@ -142,23 +242,28 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
     if mission is None:
         return 0.0
     if mission is MissionType.RECON:
-        if ctx.fired:
-            return -0.6  # recon is stealthy: do not engage
+        # RECONNAÎTRE may engage: no fire penalty (manual p. 30)
         return 0.6 if ctx.in_position else _progress(ctx)
-    if mission is MissionType.SEIZE:
-        return 0.5 if ctx.in_position else _progress(ctx)
-    if mission is MissionType.DEFEND:
-        return 0.5 if ctx.in_position else _progress(ctx)
-    if mission is MissionType.OVERWATCH:
+    if mission is MissionType.SCREEN:
+        # ÉCLAIRER: intel without engaging (manual p. 32) — weapons tight
+        if ctx.fired:
+            return -0.6
+        return 0.6 if ctx.in_position else _progress(ctx)
+    if mission in (MissionType.OBSERVE, MissionType.SUPPORT):
+        # static postures: full pay only when static in position
         if ctx.in_position:
             return 0.6 if ctx.stationary else 0.1
         return _progress(ctx)
+    if mission is MissionType.COVER:
+        if ctx.in_position:
+            return 0.5 if ctx.stationary else 0.1
+        return _progress(ctx)
+    if mission in (MissionType.SEIZE, MissionType.DEFEND, MissionType.DENY, MissionType.RALLY):
+        return 0.5 if ctx.in_position else _progress(ctx)
     if mission is MissionType.CLEAR:
         if ctx.fired:
             return 0.8
         return 0.0 if ctx.visible_enemies > 0 else _progress(ctx)
-    if mission is MissionType.RALLY:
-        return 0.5 if ctx.in_position else _progress(ctx)
     # HOLD
     if ctx.in_position:
         return 0.5 if ctx.stationary else 0.1
@@ -169,7 +274,7 @@ def is_complete(mission: Mission, ctx: ComplianceContext) -> bool:
     """True if the mission's end state is objectively reached."""
     if mission.type not in COMPLETABLE:
         return False
-    if mission.type is MissionType.RECON:
+    if mission.type in (MissionType.RECON, MissionType.SCREEN):
         return mission.observe_steps >= RECON_OBSERVE_STEPS
     if mission.type is MissionType.SEIZE:
         return ctx.in_position and ctx.enemies_at_objective == 0
