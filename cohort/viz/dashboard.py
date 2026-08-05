@@ -257,11 +257,21 @@ def _enemies_of(env: CohortEnv) -> list[dict]:
     ]
 
 
+def _traps_of(env: CohortEnv) -> list[dict]:
+    """Ground-truth trap states for the trace (like enemies, the trace is
+    omniscient); the frontend only draws the revealed ones."""
+    return [
+        {"x": t.pos[0], "y": t.pos[1], "revealed": t.revealed}
+        for t in getattr(env, "traps", [])
+    ]
+
+
 def _initial_record(env: CohortEnv) -> dict:
     return {
         "t": 0,
         "soldiers": [_soldier_rec(env, s, None, None, None) for s in env.roster.soldiers],
         "enemies": _enemies_of(env),
+        "traps": _traps_of(env),
         "messages": _messages_of(env, env.transcript.messages),
         "known": [],
     }
@@ -281,6 +291,7 @@ def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) ->
             for s in env.roster.soldiers
         ],
         "enemies": _enemies_of(env),
+        "traps": _traps_of(env),
         "messages": _messages_of(env, env.last_messages),
         "known": [[round(x, 1), round(y, 1)] for (x, y, _t) in env._known_enemies.values()],
     }

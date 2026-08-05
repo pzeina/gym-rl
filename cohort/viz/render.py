@@ -103,6 +103,16 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
                     color="#999999", lw=0.6, alpha=0.5, zorder=1,
                 )
 
+    # revealed traps (BRIQUE devices): hostile-colored warning triangle.
+    # Unrevealed traps stay hidden — the frame shows what the fight revealed.
+    for trap in getattr(env, "traps", []):
+        if trap.revealed:
+            x, y, r = trap.pos[0], trap.pos[1], 0.45
+            ax.add_patch(
+                Polygon([(x, y - r), (x + r, y + r * 0.8), (x - r, y + r * 0.8)], closed=True,
+                        facecolor="#ffd24d", edgecolor=HOSTILE_LINE, linewidth=1.1, zorder=3)
+            )
+
     for e in env.enemies:
         _hostile_symbol(ax, e.pos[0], e.pos[1], alive=e.alive)
 

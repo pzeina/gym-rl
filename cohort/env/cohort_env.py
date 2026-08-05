@@ -41,9 +41,11 @@ from cohort.core.missions import (
 from cohort.core.orders import HQ_ID, Message, MessageKind, Transcript
 from cohort.core.ranks import AUTHORITY, Rank
 from cohort.core.units import (
+    BriqueBand,
     Enemy,
     Roster,
     Soldier,
+    Trap,
     enemy_decide,
     resolve_fire,
     validate_human_ranks,
@@ -101,6 +103,8 @@ class CohortEnv(ParallelEnv):
         self.world: World | None = None
         self.roster: Roster | None = None
         self.enemies: list[Enemy] = []
+        self.band: BriqueBand | None = None  # BRIQUE armed band (opfor_mode="brique")
+        self.traps: list[Trap] = []          # hidden devices laid by the band at reset
         self.transcript = Transcript()
         self.last_messages: list[Message] = []
         self._step_count = 0
@@ -180,6 +184,7 @@ class CohortEnv(ParallelEnv):
             self._prepare_observation_posts(cfg.root_objective)
         self._spawn_roster()
         self._spawn_enemies()
+        self._spawn_traps()
         if cfg.sitrep_cadence:
             # reporting doctrine: the SITREP clock starts at step 0 — the
             # first report is owed within sitrep_cadence steps
@@ -308,6 +313,10 @@ class CohortEnv(ParallelEnv):
     def _spawn_enemies(self) -> None:
         cfg = self.spec_cfg
         self.enemies = []
+        self.band = None
+        if cfg.opfor_mode == "brique":
+            self._spawn_band()
+            return
         if cfg.opfor_mode == "assault":
             target = self.world.objective_by_name(cfg.root_objective or cfg.objectives[0][0])
             for i in range(cfg.n_enemies):
@@ -327,6 +336,107 @@ class CohortEnv(ParallelEnv):
             obj = root_obj if i < n_root else others[(i - n_root) % len(others)]
             pos = self._random_cell_near(obj.pos, radius=2)
             self.enemies.append(Enemy(id=i, pos=pos, home=pos, mode="garrison", prev_pos=pos))
+
+    def _spawn_band(self) -> None:
+        """BRIQUE armed band (manual p. 9): a flat, leaderless band whose
+        members share a band-level intent machine (core/units.py::BriqueBand).
+
+        AMBUSH/LURK bands post at a chokepoint on blue's predicted route —
+        the straight line from the friendly spawn to the OPORD objective.
+        HARASS/RAID bands infiltrate from the map edges at standoff distance
+        (``assault_spawn_min_dist`` models the early warning a defense earns).
+        """
+        cfg = self.spec_cfg
+        root_obj = self.world.objective_by_name(cfg.root_objective) if cfg.root_objective else None
+        obj_pos = root_obj.pos if root_obj is not None else cfg.objectives[0][1]
+        members: list[Enemy] = []
+        posts: dict[int, tuple[int, int]] = {}
+        if cfg.band.initial_intent in ("ambush", "lurk"):
+            f = 0.45 + 0.25 * self._rng.random()  # chokepoint fraction along the route
+            choke = (
+                round(cfg.spawn[0] + f * (obj_pos[0] - cfg.spawn[0])),
+                round(cfg.spawn[1] + f * (obj_pos[1] - cfg.spawn[1])),
+            )
+            for i in range(cfg.n_enemies):
+                post = self._band_post_near(choke, radius=3, taken=set(posts.values()))
+                members.append(
+                    Enemy(id=i, pos=post, home=post, goal=obj_pos, mode="brique", prev_pos=post)
+                )
+                posts[i] = post
+        else:  # harass / raid: infiltrate from the edges
+            for i in range(cfg.n_enemies):
+                pos = self._random_edge_cell(
+                    min_dist_from=obj_pos, min_dist=cfg.assault_spawn_min_dist
+                )
+                members.append(
+                    Enemy(id=i, pos=pos, home=pos, goal=obj_pos, mode="brique", prev_pos=pos)
+                )
+                posts[i] = pos
+        self.enemies = members
+        self.band = BriqueBand(members, cfg.band, objective=obj_pos, posts=posts)
+
+    def _band_post_near(
+        self, center: tuple[int, int], radius: int, taken: set[tuple[int, int]]
+    ) -> tuple[int, int]:
+        """An ambush/lurk post near ``center``: cover cells preferred, then any
+        passable cell; deterministic through ``env._rng`` only."""
+        cover: list[tuple[int, int]] = []
+        open_cells: list[tuple[int, int]] = []
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                cell = (center[0] + dx, center[1] + dy)
+                if cell in taken or not self.world.passable(cell):
+                    continue
+                (cover if self.world.cover_at(cell) else open_cells).append(cell)
+        pool = cover or open_cells
+        if pool:
+            return pool[int(self._rng.integers(len(pool)))]
+        return self._random_cell_near(center, radius=radius + 2)
+
+    def _spawn_traps(self) -> None:
+        """The band mines blue's likely route / the objective approaches.
+
+        Route scenarios (spawn far from the objective): trap cells sit along
+        the spawn→objective line with jitter — where a patrol is likely to
+        walk. Defense scenarios (blue spawns on the objective): traps ring
+        the position's approaches instead, punishing undisciplined sorties.
+        Hidden until triggered; oracle-visible from step 0.
+        """
+        cfg = self.spec_cfg
+        self.traps = []
+        if cfg.n_traps <= 0:
+            return
+        root_obj = self.world.objective_by_name(cfg.root_objective) if cfg.root_objective else None
+        obj_pos = root_obj.pos if root_obj is not None else cfg.objectives[0][1]
+        on_route = dist(cfg.spawn, obj_pos) >= 10.0
+        taken: set[tuple[int, int]] = set()
+        for i in range(cfg.n_traps):
+            for _ in range(60):
+                if on_route:
+                    f = 0.3 + 0.55 * self._rng.random()
+                    cand = (
+                        round(cfg.spawn[0] + f * (obj_pos[0] - cfg.spawn[0]))
+                        + int(self._rng.integers(-2, 3)),
+                        round(cfg.spawn[1] + f * (obj_pos[1] - cfg.spawn[1]))
+                        + int(self._rng.integers(-2, 3)),
+                    )
+                else:
+                    ang = 2.0 * math.pi * self._rng.random()
+                    r = 4.0 + 4.0 * self._rng.random()
+                    cand = (
+                        round(obj_pos[0] + r * math.cos(ang)),
+                        round(obj_pos[1] + r * math.sin(ang)),
+                    )
+                if cand in taken or not self.world.passable(cand):
+                    continue
+                if dist(cand, cfg.spawn) < 6.0:
+                    continue  # never mine the friendly spawn itself
+                if any(dist(cand, o.pos) <= o.radius for o in self.world.objectives):
+                    continue  # objectives themselves stay standable
+                taken.add(cand)
+                self.traps.append(Trap(id=i, pos=cand))
+                break
+            # degenerate map: fewer traps rather than an invalid placement
 
     def _bfs_free_cells(self, start: tuple[int, int], n: int) -> list[tuple[int, int]]:
         found: list[tuple[int, int]] = []
@@ -413,14 +523,17 @@ class CohortEnv(ParallelEnv):
 
         # --- friendly actions ---
         enemy_kills: list[tuple[Soldier, Enemy]] = []
+        player_deaths: list[Soldier] = []  # traps can kill during the friendly phase
         for callsign in present:
             soldier = self.roster.by_callsign[callsign]
             if not soldier.alive or callsign not in actions:
                 continue
-            self._apply_action(soldier, int(actions[callsign]), ledger, enemy_kills)
+            self._apply_action(soldier, int(actions[callsign]), ledger, enemy_kills, player_deaths)
 
         # --- OpFor actions ---
-        player_deaths: list[Soldier] = []
+        if self.band is not None:
+            # band-level intent machine ticks once, on post-move blue positions
+            self.band.update(step, [s.pos for s in self.roster.living])
         for enemy in [e for e in self.enemies if e.alive]:
             self._enemy_turn(enemy, ledger, player_deaths)
 
@@ -648,6 +761,7 @@ class CohortEnv(ParallelEnv):
         action: int,
         ledger: RewardLedger,
         enemy_kills: list[tuple[Soldier, Enemy]],
+        player_deaths: list[Soldier],
     ) -> None:
         cfg = self.rewards_cfg
         spec = CATALOG[action]
@@ -660,6 +774,7 @@ class CohortEnv(ParallelEnv):
 
         if spec.kind == "move":
             soldier.pos = (soldier.pos[0] + spec.move[0], soldier.pos[1] + spec.move[1])
+            self._check_trap(soldier, ledger, player_deaths)
         elif spec.kind == "fire":
             self._resolve_player_fire(soldier, ledger, enemy_kills)
         elif spec.kind == "contact":
@@ -965,8 +1080,37 @@ class CohortEnv(ParallelEnv):
     # OpFor
     # ------------------------------------------------------------------ #
 
-    def _enemy_turn(self, enemy: Enemy, ledger: RewardLedger, player_deaths: list[Soldier]) -> None:
+    def _check_trap(self, soldier: Soldier, ledger: RewardLedger, player_deaths: list[Soldier]) -> None:
+        """First friendly stepping on a live device takes its damage; the trap
+        is spent and revealed, and the umpire broadcasts a CASUALTY-style net
+        message. Enemy-side ground truth: never in any blue observation."""
+        for trap in self.traps:
+            if trap.armed and soldier.pos == trap.pos:
+                trap.armed = False
+                trap.revealed = True
+                self._say(
+                    MessageKind.TRAP, HQ_ID, None, lang.format_trap(soldier.callsign, trap.pos)
+                )
+                self._damage_soldier(soldier, trap.damage, ledger, player_deaths)
+                return
+
+    def _damage_soldier(
+        self, target: Soldier, damage: int, ledger: RewardLedger, player_deaths: list[Soldier]
+    ) -> None:
+        """Apply damage to a friendly (enemy fire or a trap), with the
+        rank-weighted death economics; deaths queue for casualty processing."""
         cfg = self.rewards_cfg
+        target.health -= damage
+        ledger.add(target.callsign, "combat", cfg.took_hit)
+        if target.health <= 0 and target.alive:
+            target.alive = False
+            target.health = 0
+            # rank-weighted death: dying as a leader costs more
+            weight = 1.0 + cfg.rank_casualty_scale * target.effective_authority
+            ledger.add(target.callsign, "combat", cfg.death * weight)
+            player_deaths.append(target)
+
+    def _enemy_turn(self, enemy: Enemy, ledger: RewardLedger, player_deaths: list[Soldier]) -> None:
         visible_players = [
             s
             for s in self.roster.living
@@ -974,7 +1118,20 @@ class CohortEnv(ParallelEnv):
                 enemy.pos, s.pos, self.combat.vision_range, self.combat.forest_vision_range
             )
         ]
-        act, arg = enemy_decide(enemy, visible_players, self.world, self._step_count, self.combat, self._rng)
+        if self.band is not None and enemy.mode == "brique":
+            act, arg = self.band.member_decide(
+                enemy,
+                visible_players,
+                self.roster.living,
+                self.world,
+                self._step_count,
+                self.combat,
+                self._rng,
+            )
+        else:
+            act, arg = enemy_decide(
+                enemy, visible_players, self.world, self._step_count, self.combat, self._rng
+            )
         if act == "move" and arg is not None and self.world.passable(arg):
             enemy.pos = arg
         elif act == "fire":
@@ -996,15 +1153,7 @@ class CohortEnv(ParallelEnv):
                 modifier=modifier,
             )
             if hit:
-                target.health -= damage
-                ledger.add(target.callsign, "combat", cfg.took_hit)
-                if target.health <= 0 and target.alive:
-                    target.alive = False
-                    target.health = 0
-                    # rank-weighted death: dying as a leader costs more
-                    weight = 1.0 + cfg.rank_casualty_scale * target.effective_authority
-                    ledger.add(target.callsign, "combat", cfg.death * weight)
-                    player_deaths.append(target)
+                self._damage_soldier(target, damage, ledger, player_deaths)
 
     # ------------------------------------------------------------------ #
     # views, masks, observations, compliance
@@ -1241,9 +1390,51 @@ class CohortEnv(ParallelEnv):
             dist_to_leader=dist(soldier.pos, leader.pos) if leader is not None else float("inf"),
         )
 
+    def _band_neutralized(self, root_obj: Any) -> bool:
+        """BRIQUE terminal semantics: the band is out of the fight.
+
+        True when the band is destroyed (no living member), OR it has
+        scattered AND fully broken contact: scatter is irreversible, so once
+        every living member stands >= ``band.break_contact_dist`` from every
+        living friendly AND from the root objective, the band never returns.
+        """
+        living = [e for e in self.enemies if e.alive]
+        if not living:
+            return True
+        if self.band is None or self.band.intent != "scatter":
+            return False
+        pts = [s.pos for s in self.roster.living]
+        if root_obj is not None:
+            pts.append(root_obj.pos)
+        d = self.spec_cfg.band.break_contact_dist
+        return all(dist(e.pos, p) >= d for e in living for p in pts)
+
+    def _objective_held(self, root_obj: Any) -> bool:
+        """A DEFEND/DENY position is held: no living enemy stands on it and a
+        living friendly mans it (consistent with the objective_lost economics)."""
+        if root_obj is None:
+            return True
+        clear = not any(
+            e.alive and dist(e.pos, root_obj.pos) <= root_obj.radius + 1.0 for e in self.enemies
+        )
+        manned = any(
+            dist(s.pos, root_obj.pos) <= root_obj.radius + 1.0 for s in self.roster.living
+        )
+        return clear and manned
+
     def _check_success(self, root_obj: Any) -> bool:
         mission = self.spec_cfg.root_mission
         living_enemies = [e for e in self.enemies if e.alive]
+        if (
+            self.spec_cfg.opfor_mode == "brique"
+            and mission in (MissionType.DEFEND, MissionType.DENY)
+        ):
+            # Asymmetric defense: success = the band destroyed, OR the band
+            # scattered with contact broken, while the objective is held.
+            # (SEIZE-rooted BRIQUE scenarios keep the standard SEIZE check:
+            # the OPORD is about the objective — a scattered band never
+            # blocks it, but destroying the band does not seize anything.)
+            return self._band_neutralized(root_obj) and self._objective_held(root_obj)
         if mission in (MissionType.DEFEND, MissionType.DENY, MissionType.CLEAR):
             return not living_enemies
         if mission is MissionType.SEIZE:

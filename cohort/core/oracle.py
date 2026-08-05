@@ -189,6 +189,10 @@ def observe(env) -> dict:
                 "goal": list(e.goal) if e.goal is not None else None,
                 "last_seen_player": list(e.last_seen_player) if e.last_seen_player else None,
                 "last_seen_step": e.last_seen_step,
+                # BRIQUE per-member behavior state ("posted", "volleying",
+                # "sniping", "displacing", "raiding", "fleeing"...); None for
+                # the scripted garrison/assault OpFor
+                "behavior": e.behavior or None,
                 "seen_by": seen_by,
                 "tags": [
                     t.value
@@ -208,9 +212,37 @@ def observe(env) -> dict:
             }
         )
 
+    # BRIQUE non-observables (enemy-side ground truth, ROADMAP v2.0): the
+    # band's intent machine, its ambush posts, and every trap location —
+    # exactly what an assurance layer should try to infer from the friendly
+    # side (radio traffic incl. "HIT A DEVICE" broadcasts) alone.
+    band = getattr(env, "band", None)
+    band_rec = None
+    if band is not None:
+        band_rec = {
+            "intent": band.intent,
+            "sprung": band.sprung,
+            "spring_step": band.spring_step,
+            "objective": list(band.objective) if band.objective is not None else None,
+            "posts": {str(mid): list(pos) for mid, pos in band.posts.items()},
+            "strength": band.strength,
+        }
+    traps = [
+        {
+            "id": t.id,
+            "pos": list(t.pos),
+            "damage": t.damage,
+            "armed": t.armed,
+            "revealed": t.revealed,
+        }
+        for t in getattr(env, "traps", [])
+    ]
+
     return {
         "step": env._step_count,
         "outcome": env.outcome if hasattr(env, "outcome") else env._episode_outcome,
         "soldiers": soldiers,
         "enemies": enemies,
+        "band": band_rec,
+        "traps": traps,
     }

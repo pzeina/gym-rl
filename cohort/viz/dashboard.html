@@ -191,8 +191,8 @@ const HUMAN_RING = "#e8b93c";
 const ECHELON = { RFN: "", TL: "∅", SL: "●", PSG: "●●●", PL: "●●●", XO: "|", CO: "|" };
 const GRADES = { RFN: "OR-3", TL: "OR-5", SL: "OR-6", PSG: "OR-7", PL: "OF-1", XO: "OF-2", CO: "OF-2" };
 const RANK_TITLES = { RFN: "Rifleman", TL: "Fire Team Leader", SL: "Squad Leader", PSG: "Platoon Sergeant", PL: "Platoon Leader", XO: "Executive Officer", CO: "Company Commander" };
-const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", done_confirm: "#4ade80", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#ff5252", taking_command: "#c084fc" };
-const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command"] };
+const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", done_confirm: "#4ade80", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#ff5252", taking_command: "#c084fc", trap: "#ffd24d" };
+const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command", "trap"] };
 
 /* ============================= charts ============================= */
 function drawChart(canvas, series, opts = {}) {
@@ -348,7 +348,7 @@ $("legend").innerHTML =
   `<span style="color:${FRIEND_FILL}">▭</span> friendly (APP-6 frame + infantry saltire)<br>
    echelon marks: <b>∅</b> team (TL) · <b>●</b> squad (SL) · <b>●●●</b> platoon (PL/PSG) · <b>|</b> company (CO/XO)<br>
    <span style="color:${HUMAN_RING}">◯</span> human commander (gold ring)<br>
-   <span style="color:${HOSTILE_FILL}">◆</span> hostile &nbsp; <span style="color:${HOSTILE_FILL}">◇</span> reported contact (suspected, dashed) <br>
+   <span style="color:${HOSTILE_FILL}">◆</span> hostile &nbsp; <span style="color:${HOSTILE_FILL}">◇</span> reported contact (suspected, dashed) &nbsp; <span style="color:#ffd24d">▲</span> device (revealed trap)<br>
    <span style="color:#5f8f5f">▦</span> forest &nbsp; <span style="color:#555">▩</span> wall`;
 
 const msgFilters = { orders: true, reports: true, events: true };
@@ -530,6 +530,14 @@ function drawMap() {
     g.beginPath(); g.moveTo(cx(g0, A.x), cy(g0, A.y));
     const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2 - Math.abs(A.x - B.x) * 0.2 - 1;
     g.quadraticCurveTo(cx(g0, mx), cy(g0, my), cx(g0, B.x), cy(g0, B.y)); g.stroke();
+  });
+  // revealed traps (BRIQUE devices): hostile-edged warning triangle
+  (st.traps || []).forEach((tp) => {
+    if (!tp.revealed) return;
+    const X = cx(g0, tp.x), Y = cy(g0, tp.y), r = cell * 0.34;
+    g.fillStyle = "#ffd24d"; g.strokeStyle = HOSTILE_LINE; g.lineWidth = 1.2;
+    g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y + r * 0.85); g.lineTo(X - r, Y + r * 0.85); g.closePath();
+    g.fill(); g.stroke();
   });
   // enemies: APP-6 hostile = red diamond frame + infantry saltire
   st.enemies.forEach((e) => {

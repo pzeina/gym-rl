@@ -177,6 +177,15 @@ def format_casualty(callsign: str) -> str:
     return f"ALL STATIONS: {callsign} IS DOWN. OUT."
 
 
+def format_trap(callsign: str, pos: tuple[int, int]) -> str:
+    """Broadcast when a friendly triggers a hidden device (mine / booby trap).
+
+    BRIQUE harassment "y compris les mines et les pièges" (manual p. 9);
+    umpire/net convention like CASUALTY: the report comes from HQ.
+    """
+    return f"ALL STATIONS: {callsign} HIT A DEVICE AT {grid_ref(pos)}. OUT."
+
+
 def format_taking_command(new_cs: str, dead_cs: str) -> str:
     """Broadcast when succession occurs."""
     return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."

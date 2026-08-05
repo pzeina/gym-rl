@@ -7,14 +7,24 @@ leader's position — inheriting their effective rank, their subordinates, and
 their standing mission — and the vacancy that promotion leaves in the lower
 echelon is filled the same way, recursively. This is what lets a rifleman
 end up commanding a squad after heavy casualties.
+
+The OpFor side has two families:
+
+* the scripted garrison/assault enemy (:func:`enemy_decide`), and
+* the BRIQUE armed band (:class:`BriqueBand`) — the PROTERRE manual's threat
+  model (p. 9): a flat band of 5-20 with light weapons, no hierarchy, driven
+  by a band-level intent machine (LURK / AMBUSH / HARASS / RAID / SCATTER)
+  with per-member behavior states, plus hidden traps/mines (:class:`Trap`).
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from cohort.core.ranks import AUTHORITY, Rank
+from cohort.core.world import dist
 
 if TYPE_CHECKING:
     import numpy as np
@@ -99,11 +109,17 @@ class Enemy:
     pos: Coord
     health: int = 100
     alive: bool = True
-    mode: str = "garrison"          # "garrison" holds near home; "assault" advances
+    mode: str = "garrison"          # "garrison" holds near home; "assault" advances;
+    #                                 "brique" → member of a BriqueBand (armed band)
     home: Coord = (0, 0)
     goal: Coord | None = None       # assault objective
     last_seen_player: Coord | None = None
     last_seen_step: int = -10_000
+    #: per-member behavior state, set by the band controller each decision
+    #: ("posted", "volleying", "sniping", "displacing", "raiding",
+    #: "sabotaging", "fleeing"...). Band AI internal state — exposed to the
+    #: oracle as enemy-side ground truth, never to blue observations.
+    behavior: str = ""
     # bookkeeping for the ground-truth oracle (core/oracle.py) only —
     # never read by observations, rewards, masks, or the OpFor AI itself
     prev_pos: Coord = (0, 0)
@@ -299,3 +315,304 @@ def _step_toward(pos: Coord, goal: Coord, world: World, rng: np.random.Generator
         return pos
     options.sort()
     return options[0][2]
+
+
+# ---------------------------------------------------------------------- #
+# BRIQUE: the armed band (manuel PROTERRE, p. 9 "LA MENACE")
+# ---------------------------------------------------------------------- #
+
+
+@dataclass
+class Trap:
+    """A hidden device (mine / booby trap) laid by the band at reset.
+
+    Harassment "par engagement de moyens limités ... y compris les mines et
+    les pièges" (manual p. 9). Damages the FIRST friendly stepping on its
+    cell, then is spent and revealed. Ground truth for the oracle from the
+    start of the episode; NEVER present in any blue observation — the
+    assurance layer's inference target.
+    """
+
+    id: int
+    pos: Coord
+    damage: int = 40
+    armed: bool = True
+    revealed: bool = False
+
+
+@dataclass(frozen=True)
+class BriqueBandConfig:
+    """Tunables of the band-level intent machine (ScenarioSpec.band)."""
+
+    initial_intent: str = "ambush"    # lurk | ambush | harass | raid
+    lurk_trigger: float = 12.0        # blue this close to a lurking member → post the ambush
+    ambush_range: float = 5.0         # hold fire until a blue unit is this close, then volley
+    volley_steps: int = 6             # steps the sprung ambush volleys before going hit-and-run
+    harass_shots: int = 2             # shots fired from max range before displacing
+    displace_dist: float = 7.0        # displacement leg to a new cover cell (hit-and-run)
+    standoff: float = 10.0            # loiter distance from the band objective while probing
+    raid_linger: int = 10             # sabotage steps on the raided objective before withdrawing
+    raid_period: int = 0              # 0 → never raid; else steps between raids (from HARASS)
+    scatter_below: float = 0.3        # break contact only under this strength fraction —
+    #                                   a HIGH threshold: low self-preservation by design
+    break_contact_dist: float = 12.0  # scattered members this far from every living blue
+    #                                   AND the root objective have broken contact for good
+
+
+def select_band_target(
+    shooter_pos: Coord,
+    candidates: list[Soldier],
+    all_blue: list[Soldier],
+    *,
+    isolation_radius: float = 6.0,
+    wounded_below: int = 50,
+) -> Soldier | None:
+    """Casualty-maximizing target choice ("actions à fort impact psychologique").
+
+    Preference order: the human commander first, then wounded units, then
+    isolated units (no living teammate within ``isolation_radius``), then the
+    closest; ids break remaining ties. Pure and deterministic — no RNG.
+    """
+    if not candidates:
+        return None
+
+    def key(s: Soldier) -> tuple:
+        nearest_mate = min(
+            (dist(s.pos, o.pos) for o in all_blue if o.alive and o.id != s.id),
+            default=float("inf"),
+        )
+        return (
+            0 if s.human else 1,
+            0 if s.health < wounded_below else 1,
+            0 if nearest_mate > isolation_radius else 1,
+            dist(shooter_pos, s.pos),
+            s.id,
+        )
+
+    return min(candidates, key=key)
+
+
+def _nearest_edge(pos: Coord, world: World) -> Coord:
+    """Closest map-edge cell (scatter destination)."""
+    x, y = pos
+    cands = [(1, y), (world.width - 2, y), (x, 1), (x, world.height - 2)]
+    return min(cands, key=lambda c: dist(pos, c))
+
+
+def _displacement_cell(
+    pos: Coord, threat: Coord, leg: float, world: World, rng: np.random.Generator
+) -> Coord:
+    """New cell ~``leg`` away from ``pos``, biased away from ``threat``,
+    preferring cover (forest). Deterministic through ``rng`` only."""
+    base = math.atan2(pos[1] - threat[1], pos[0] - threat[0])
+    fallback: Coord | None = None
+    for _ in range(12):
+        ang = base + rng.uniform(-0.9, 0.9)
+        cand = (
+            int(min(max(round(pos[0] + leg * math.cos(ang)), 1), world.width - 2)),
+            int(min(max(round(pos[1] + leg * math.sin(ang)), 1), world.height - 2)),
+        )
+        if not world.passable(cand) or cand == pos:
+            continue
+        if world.cover_at(cand):
+            return cand
+        if fallback is None:
+            fallback = cand
+    return fallback if fallback is not None else pos
+
+
+class BriqueBand:
+    """A flat armed band (no hierarchy, no leader) with a band-level intent
+    machine driving per-member behavior states.
+
+    Intents (manual p. 9 modes of action):
+
+    * ``lurk``    — hold in cover away from blue, avoid detection; posts the
+      ambush when blue approaches within ``lurk_trigger``.
+    * ``ambush``  — posted at a chokepoint on blue's predicted route; HOLD
+      FIRE until a blue unit is within ``ambush_range``, then volley for
+      ``volley_steps`` steps and dissolve into hit-and-run.
+    * ``harass``  — fire ``harass_shots`` from max range, then displace to a
+      new cover cell ("engagement de moyens limités").
+    * ``raid``    — move fast onto the objective/installation, linger
+      ``raid_linger`` steps (sabotage), then withdraw ("raid à portée
+      limitée visant à détruire des moyens de communication, des dépôts").
+    * ``scatter`` — break contact toward the map edges; irreversible. Entered
+      only below ``scatter_below`` strength (low self-preservation → high
+      casualty tolerance).
+
+    Deterministic: every random draw goes through the ``rng`` handed in by
+    the environment (``env._rng``).
+    """
+
+    def __init__(
+        self,
+        members: list[Enemy],
+        cfg: BriqueBandConfig,
+        *,
+        objective: Coord | None,
+        posts: dict[int, Coord],
+    ) -> None:
+        self.members = members
+        self.cfg = cfg
+        self.intent = cfg.initial_intent
+        self.objective = objective      # raid target / operating focus (root objective)
+        self.posts = posts              # member id → ambush/lurk post
+        self.sprung = False             # ambush fired?
+        self.spring_step: int | None = None
+        self.last_raid_step = 0
+        self._raid_arrived: int | None = None
+        self._shots: dict[int, int] = {}          # member id → shots since last displace
+        self._displace_to: dict[int, Coord] = {}  # member id → displacement destination
+
+    @property
+    def strength(self) -> float:
+        """Living fraction of the band's original size."""
+        return sum(1 for m in self.members if m.alive) / max(1, len(self.members))
+
+    def update(self, step: int, blue_positions: list[Coord]) -> None:
+        """Advance the band-level intent machine (call once per env step)."""
+        cfg = self.cfg
+        living = [m for m in self.members if m.alive]
+        if not living:
+            return
+        if self.intent != "scatter" and self.strength < cfg.scatter_below:
+            self.intent = "scatter"  # terminal: the band breaks contact for good
+            return
+        if self.intent == "lurk" and blue_positions:
+            near = min(dist(m.pos, b) for m in living for b in blue_positions)
+            if near <= cfg.lurk_trigger:
+                self.intent = "ambush"
+        if (
+            self.intent == "ambush"
+            and not self.sprung
+            and any(dist(m.pos, b) <= cfg.ambush_range for m in living for b in blue_positions)
+        ):
+            self.sprung = True
+            self.spring_step = step
+        if (
+            self.intent == "ambush"
+            and self.sprung
+            and self.spring_step is not None
+            and step - self.spring_step >= cfg.volley_steps
+        ):
+            self.intent = "harass"          # the ambush dissolves into hit-and-run
+            self.last_raid_step = step      # raid clock starts after the ambush phase
+        if (
+            self.intent == "harass"
+            and cfg.raid_period > 0
+            and self.objective is not None
+            and step - self.last_raid_step >= cfg.raid_period
+        ):
+            self.intent = "raid"
+            self._raid_arrived = None
+        if self.intent == "raid":
+            if self._raid_arrived is None:
+                if self.objective is not None and any(
+                    dist(m.pos, self.objective) <= 2.0 for m in living
+                ):
+                    self._raid_arrived = step
+            elif step - self._raid_arrived >= cfg.raid_linger:
+                self.intent = "harass"      # sabotage done: withdraw and resume probing
+                self.last_raid_step = step
+                for m in living:            # spent counters force an immediate displacement
+                    self._shots[m.id] = cfg.harass_shots
+
+    def member_decide(
+        self,
+        enemy: Enemy,
+        visible_players: list[Soldier],
+        all_blue: list[Soldier],
+        world: World,
+        step: int,
+        params: CombatParams,
+        rng: np.random.Generator,
+    ) -> tuple[str, Coord | Soldier | None]:
+        """Per-member policy under the band intent.
+
+        Same contract as :func:`enemy_decide`:
+        ("fire", target) | ("move", pos) | ("stay", None).
+        """
+        cfg = self.cfg
+        if self.intent == "scatter":
+            enemy.behavior = "fleeing"
+            edge = _nearest_edge(enemy.pos, world)
+            if dist(enemy.pos, edge) <= 1.0:
+                return "stay", None
+            return "move", _step_toward(enemy.pos, edge, world, rng)
+
+        if self.intent == "lurk":
+            post = self.posts.get(enemy.id, enemy.home)
+            if dist(enemy.pos, post) <= 1.0:
+                enemy.behavior = "hiding"
+                return "stay", None
+            enemy.behavior = "posting"
+            return "move", _step_toward(enemy.pos, post, world, rng)
+
+        if self.intent == "ambush":
+            if not self.sprung:
+                # ambush discipline: HOLD FIRE even with blue inside weapon
+                # range — the volley waits for ambush_range
+                post = self.posts.get(enemy.id, enemy.home)
+                if dist(enemy.pos, post) <= 1.0:
+                    enemy.behavior = "posted"
+                    return "stay", None
+                enemy.behavior = "posting"
+                return "move", _step_toward(enemy.pos, post, world, rng)
+            target = select_band_target(enemy.pos, visible_players, all_blue)
+            if target is not None:
+                enemy.last_seen_player = target.pos
+                enemy.last_seen_step = step
+                if dist(enemy.pos, target.pos) <= params.weapon_range:
+                    enemy.behavior = "volleying"
+                    return "fire", target
+                enemy.behavior = "closing"
+                return "move", _step_toward(enemy.pos, target.pos, world, rng)
+            enemy.behavior = "posted"
+            return "stay", None
+
+        if self.intent == "raid":
+            obj = self.objective if self.objective is not None else enemy.home
+            if self._raid_arrived is not None and dist(enemy.pos, obj) <= 2.5:
+                enemy.behavior = "sabotaging"   # lingering ON the installation
+                return "stay", None
+            target = select_band_target(enemy.pos, visible_players, all_blue)
+            if target is not None and dist(enemy.pos, target.pos) <= 0.6 * params.weapon_range:
+                enemy.behavior = "raiding"      # fight through point-blank threats only
+                return "fire", target
+            enemy.behavior = "raiding"
+            return "move", _step_toward(enemy.pos, obj, world, rng)
+
+        # harass (hit-and-run)
+        dest = self._displace_to.get(enemy.id)
+        if dest is not None:
+            if dist(enemy.pos, dest) <= 1.0:
+                self._displace_to.pop(enemy.id, None)
+                self._shots[enemy.id] = 0       # new firing position: counter reset
+            else:
+                enemy.behavior = "displacing"
+                return "move", _step_toward(enemy.pos, dest, world, rng)
+        target = select_band_target(enemy.pos, visible_players, all_blue)
+        if target is not None:
+            enemy.last_seen_player = target.pos
+            enemy.last_seen_step = step
+            if self._shots.get(enemy.id, 0) < cfg.harass_shots:
+                if dist(enemy.pos, target.pos) <= params.weapon_range:
+                    self._shots[enemy.id] = self._shots.get(enemy.id, 0) + 1
+                    enemy.behavior = "sniping"
+                    return "fire", target
+                enemy.behavior = "stalking"
+                return "move", _step_toward(enemy.pos, target.pos, world, rng)
+            dest = _displacement_cell(enemy.pos, target.pos, cfg.displace_dist, world, rng)
+            self._displace_to[enemy.id] = dest
+            enemy.behavior = "displacing"
+            return "move", _step_toward(enemy.pos, dest, world, rng)
+        if enemy.last_seen_player is not None and step - enemy.last_seen_step <= 12:
+            enemy.behavior = "stalking"
+            return "move", _step_toward(enemy.pos, enemy.last_seen_player, world, rng)
+        anchor = self.objective if self.objective is not None else enemy.home
+        if dist(enemy.pos, anchor) > cfg.standoff:
+            enemy.behavior = "prowling"
+            return "move", _step_toward(enemy.pos, anchor, world, rng)
+        enemy.behavior = "hiding"
+        return "stay", None
