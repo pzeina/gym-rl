@@ -117,6 +117,130 @@ def test_false_root_claim_does_not_end_the_episode():
     assert "done_reject" in kinds, "the false claim is rejected on the net"
 
 
+# --------------------------------------------------------------------- #
+# Team adjudication of root RECON / SCREEN (refs #9): the commander's
+# OPORD observation task completes on the squad's AGGREGATED observation,
+# so the (human) root can command from cover instead of exposing itself.
+# --------------------------------------------------------------------- #
+
+
+def _recon_env(seed=1):
+    """squad_recon env, flat ground, garrison removed: SL1 (root, human)
+    holds RECON OBJ BRAVO from HQ; nobody starts on the observation ring."""
+    env = make_env("squad_recon")
+    env.reset(seed=seed)
+    env.world.grid[:] = 0
+    for e in env.enemies:
+        e.alive = False
+    return env
+
+
+def test_root_recon_opord_is_flagged_team_observation():
+    env = _recon_env()
+    assert env.roster.root().mission.team_observation is True
+    env_screen = make_env("squad_screen")
+    env_screen.reset(seed=1)
+    assert env_screen.roster.root().mission.team_observation is True
+    env_seize = make_env("fireteam")
+    env_seize.reset(seed=1)
+    assert env_seize.roster.root().mission.team_observation is False
+
+
+def test_is_complete_team_threshold_vs_personal():
+    from cohort.core.missions import (
+        RECON_OBSERVE_STEPS,
+        TEAM_OBSERVE_STEPS,
+        ComplianceContext,
+        Mission,
+        MissionType,
+        is_complete,
+    )
+
+    ctx = ComplianceContext(
+        dist_prev=20.0, dist_now=20.0, in_position=False, stationary=True,
+        fired=False, visible_enemies=0, enemies_at_objective=0, dist_to_leader=1.0,
+    )
+    personal = Mission(MissionType.RECON, 1, (0, 0), issuer_id=-1, step_assigned=0)
+    personal.observe_steps = RECON_OBSERVE_STEPS
+    assert is_complete(personal, ctx), "a subordinate's own 5 steps complete its task"
+    team = Mission(
+        MissionType.RECON, 1, (0, 0), issuer_id=-1, step_assigned=0, team_observation=True
+    )
+    team.observe_steps = RECON_OBSERVE_STEPS
+    assert not is_complete(team, ctx), "the OPORD needs the team success threshold"
+    team.observe_steps = TEAM_OBSERVE_STEPS
+    assert is_complete(team, ctx)
+
+
+def test_root_recon_completes_from_cover_via_team_observation():
+    """A subordinate observes; the root, far from the objective the whole
+    episode, still gets its COMPLETE confirmed — commanding from cover."""
+    env = _recon_env()
+    obj = env.world.objective_by_name("BRAVO")
+    sl = env.roster.by_callsign["SL1"]
+    env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])  # on the ring
+    sl.pos = (5, 21)  # commander in cover, ~30 cells out
+    for _ in range(10):  # the team counter reaches the success threshold
+        _step_all(env, {})
+    assert env.outcome is None, "grace window open, awaiting the report"
+    assert env._team_observe_steps >= 10
+    assert sl.mission.observe_steps == env._team_observe_steps, "OPORD counter is team-mirrored"
+    _obs, _r, terms, *_ = _step_all(env, {"SL1": DONE})
+    assert env.outcome == "success"
+    assert all(terms.values())
+    assert env.transcript.messages[-1].kind.value == "done_confirm"
+
+
+def test_early_root_claim_rejected_at_team_level():
+    env = _recon_env()
+    obj = env.world.objective_by_name("BRAVO")
+    env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])
+    for _ in range(3):  # team observation short of the threshold
+        _step_all(env, {})
+    _obs, _r, terms, *_ = _step_all(env, {"SL1": DONE})
+    assert not any(terms.values())
+    assert env.outcome is None
+    assert "done_reject" in [m.kind.value for m in env.transcript.messages]
+    assert env.roster.by_callsign["SL1"].mission is not None, "false claimant keeps the task"
+
+
+def test_subordinate_recon_done_stays_personal():
+    """Team success does not let a subordinate that never observed claim its
+    own RECON complete — its DONE reflects its own task."""
+    env = _recon_env()
+    obj = env.world.objective_by_name("BRAVO")
+    env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])  # TL2 observes
+    env.inject_order("TL1, recon obj bravo", issuer="SL1")
+    tl1 = env.roster.by_callsign["TL1"]
+    tl1.pos = (5, 21)  # never in position
+    for _ in range(10):
+        _step_all(env, {})
+    assert env._team_observe_steps >= 10, "team success reached by TL2"
+    assert tl1.mission.observe_steps == 0, "personal counter untouched by the mirror"
+    _step_all(env, {"TL1": DONE})
+    reject = env.transcript.messages[-1]
+    assert reject.kind.value == "done_reject"
+    assert reject.recipient_id == tl1.id
+    assert tl1.mission is not None, "the personal task still stands"
+
+
+def test_root_compliance_pays_from_cover_while_team_observes():
+    """In-position credit for the OPORD holder follows the team: the reward
+    no longer pulls the commander's body onto the observation ring."""
+    env = _recon_env()
+    obj = env.world.objective_by_name("BRAVO")
+    env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])
+    env.roster.by_callsign["SL1"].pos = (5, 21)
+    *_, infos = _step_all(env, {})
+    w = env.rewards_cfg.compliance_weight
+    assert infos["SL1"]["components"]["compliance"] == pytest.approx(0.6 * w)
+
+    env2 = _recon_env()  # control: nobody observes
+    env2.roster.by_callsign["SL1"].pos = (5, 21)
+    *_, infos2 = _step_all(env2, {})
+    assert infos2["SL1"]["components"]["compliance"] == pytest.approx(0.0)
+
+
 def test_grace_window_zero_restores_immediate_termination():
     from dataclasses import replace
 

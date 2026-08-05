@@ -28,7 +28,7 @@ from cohort.core.missions import (
     IN_POSITION_RADIUS,
     LOS_REQUIRED,
     POSITION_ANCHORED_FIRE,
-    RECON_OBSERVE_STEPS,
+    TEAM_OBSERVE_STEPS,
     WEAPONS_TIGHT,
     ComplianceContext,
     Mission,
@@ -220,6 +220,10 @@ class CohortEnv(ParallelEnv):
             anchor=objective.pos if objective else root.pos,
             issuer_id=HQ_ID,
             step_assigned=0,
+            # the commander holds the OPERATION's observation task: completion
+            # and in-position credit follow the squad's aggregated observation
+            # (refs #9 — personal adjudication drove the human root into exposure)
+            team_observation=cfg.root_mission in (MissionType.RECON, MissionType.SCREEN),
         )
         root.last_order_step = 0
         self._say(
@@ -597,8 +601,11 @@ class CohortEnv(ParallelEnv):
             if soldier.mission is not None:
                 if (
                     soldier.mission.type in (MissionType.RECON, MissionType.SCREEN)
+                    and not soldier.mission.team_observation
                     and ctx.in_position
                 ):
+                    # personal progress — a subordinate's own task; the root's
+                    # OPORD counter is mirrored from the team counter below
                     soldier.mission.observe_steps += 1
                 ledger.add(callsign, "compliance", cfg.compliance_weight * compliance(soldier.mission.type, ctx))
             # reporting doctrine: out of contact and past the cadence → overdue
@@ -639,14 +646,17 @@ class CohortEnv(ParallelEnv):
             MissionType.RECON,
             MissionType.SCREEN,
         ):
+            observer = self._team_observer(root_obj)
+            if observer is not None:
+                if self._team_observe_steps < TEAM_OBSERVE_STEPS:
+                    ledger.add(observer.callsign, "compliance", cfg.observe_progress)
+                self._team_observe_steps += 1
+            # mirror into the root's OPORD counter (refs #9): the commander's
+            # mission tracks the squad's aggregated observation, so every
+            # completion path (is_complete included) is team-adjudicated
             for s in self.roster.living:
-                if dist(s.pos, root_obj.pos) <= IN_POSITION_RADIUS[MissionType.RECON] and self.world.line_of_sight(
-                    s.pos, root_obj.pos
-                ):
-                    if self._team_observe_steps < 2 * RECON_OBSERVE_STEPS:
-                        ledger.add(s.callsign, "compliance", cfg.observe_progress)
-                    self._team_observe_steps += 1
-                    break
+                if s.mission is not None and s.mission.team_observation:
+                    s.mission.observe_steps = self._team_observe_steps
 
         # --- terminal conditions ---
         # Success does not terminate on the spot: when the root-mission
@@ -899,6 +909,9 @@ class CohortEnv(ParallelEnv):
         # the team success condition (e.g. objective clear AND held by anyone),
         # not against the claimant's personal end state — a commander reports
         # the mission complete when the unit achieved it, wherever it stands.
+        # (RECON/SCREEN OPORDs also mirror the team counter into the mission
+        # itself — refs #9 — so the is_complete branch would return the same
+        # verdict; the explicit branch covers SEIZE/DEFEND-style root claims.)
         truthful = (
             self._check_success(root_objective)
             if is_root_mission_claim
@@ -1058,12 +1071,27 @@ class CohortEnv(ParallelEnv):
         )
         if not self._audible_to(recipient, issuer_id):
             return False
+        # HQ re-issuing the OPORD observation task to the senior commander is
+        # team-adjudicated, exactly like the reset OPORD (refs #9)
+        root_objective = (
+            self.world.objective_by_name(self.spec_cfg.root_objective)
+            if self.spec_cfg.root_objective
+            else None
+        )
+        team_observation = (
+            issuer_id == HQ_ID
+            and recipient is self.roster.root()
+            and mission_type is self.spec_cfg.root_mission
+            and mission_type in (MissionType.RECON, MissionType.SCREEN)
+            and objective_id == (root_objective.id if root_objective else None)
+        )
         recipient.mission = Mission(
             type=mission_type,
             objective_id=objective_id,
             anchor=anchor,
             issuer_id=issuer_id,
             step_assigned=self._step_count,
+            team_observation=team_observation,
             extra=extra,
         )
         recipient.last_order_step = self._step_count
@@ -1266,15 +1294,33 @@ class CohortEnv(ParallelEnv):
             return 0.0
         return dist(soldier.pos, anchor)
 
+    def _team_observer(self, objective: Any) -> Soldier | None:
+        """The first living soldier observing ``objective``: on the RECON
+        observation ring (RECON and SCREEN share the radius) with LOS. The
+        squad-aggregated observation predicate, shared by the team success
+        counter and the root OPORD's in-position credit (refs #9)."""
+        for s in self.roster.living:
+            if dist(s.pos, objective.pos) <= IN_POSITION_RADIUS[
+                MissionType.RECON
+            ] and self.world.line_of_sight(s.pos, objective.pos):
+                return s
+        return None
+
     def _in_mission_position(self, soldier: Soldier, dist_now: float | None = None) -> bool:
         """Is the soldier at its mission station (radius + LOS where required)?
 
         SUPPORT stations relative to the supported soldier: within radius and
         holding line of sight to *it* (you cannot support what you cannot see).
+
+        A root-held (OPORD) RECON / SCREEN is team-adjudicated (refs #9): the
+        *operation* is in position when any living member observes the
+        objective — the commander earns its posture credit from cover.
         """
         mission = soldier.mission
         if mission is None:
             return False
+        if mission.team_observation and mission.objective_id is not None:
+            return self._team_observer(self.world.objectives[mission.objective_id]) is not None
         if dist_now is None:
             dist_now = self._anchor_distance(soldier)
         anchor = self._mission_anchor(soldier)
@@ -1444,7 +1490,7 @@ class CohortEnv(ParallelEnv):
             occupied = any(dist(s.pos, root_obj.pos) <= root_obj.radius for s in self.roster.living)
             return clear and occupied
         if mission in (MissionType.RECON, MissionType.SCREEN):
-            return self._team_observe_steps >= 2 * RECON_OBSERVE_STEPS
+            return self._team_observe_steps >= TEAM_OBSERVE_STEPS
         return False
 
     # ------------------------------------------------------------------ #

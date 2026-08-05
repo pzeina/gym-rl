@@ -14,8 +14,8 @@ it defines the observation one-hot layout and the action-catalog layout.
 
 | Mission | French (manual) | Targets | Completable | Semantics in the sim |
 |---|---|---|---|---|
-| RECON | RECONNAÎTRE (p. 30) | objective | yes | Get intel on the objective, **may engage** ("en engageant éventuellement le combat"). In position within radius 7 **with LOS**; completes after 5 cumulative observation steps. No fire penalty; full combat pay. |
-| SCREEN | ÉCLAIRER (p. 32) | objective | yes | Intel **without engaging** ("rechercher du renseignement sans engager le combat"): same observation semantics as RECON, but firing costs compliance (−0.6) and earns nothing (weapons tight). |
+| RECON | RECONNAÎTRE (p. 30) | objective | yes | Get intel on the objective, **may engage** ("en engageant éventuellement le combat"). In position within radius 7 **with LOS**; completes after 5 cumulative observation steps (root OPORD: 10 *aggregated team* steps — see [team adjudication](#team-adjudication-of-the-roots-recon--screen-refs-9)). No fire penalty; full combat pay. |
+| SCREEN | ÉCLAIRER (p. 32) | objective | yes | Intel **without engaging** ("rechercher du renseignement sans engager le combat"): same observation semantics as RECON (team-adjudicated on the root OPORD likewise), but firing costs compliance (−0.6) and earns nothing (weapons tight). |
 | OBSERVE | SURVEILLER (p. 33) | objective | no | Continuous posture: static in an observation position (radius 9 + LOS), detect and alert. Compliance 0.6 static in position / 0.1 moving. Fire pays only from position. |
 | SUPPORT | APPUYER (p. 35) | **friendly unit** | no | "Apporter une aide à une autre unité … fourniture de feux." The order names a friendly element, not an objective; the anchor *tracks the supported soldier*. In position: within 10 cells of it **with LOS to it** ("la liaison à vue avec l'élément appuyé", p. 35 note 1). Grants covered movement + focus fire (see below). Ends on re-tasking or on the supported unit's death (auto-clears with a net notice). |
 | COVER | COUVRIR (p. 38) | objective | no | Flank guard: "s'opposer à une action éventuelle de l'ennemi pouvant menacer l'action principale amie." Static within radius 6 of the named objective (no LOS requirement), **free to fire from position**. Compliance 0.5 static / 0.1 moving. |
@@ -95,6 +95,29 @@ episode) — so observing the objective is worth approaching it, but parking
 outside the trigger radius farms nothing. This closes the stall exploit
 found in the v1.2 A2/A7 campaign, where strict weapons-tight economics made
 the policy rationally abandon the observation task.
+
+## Team adjudication of the root's RECON / SCREEN (refs #9)
+
+Observation on a RECON/SCREEN **OPORD** (the root's HQ-issued mission,
+`Mission.team_observation`) is adjudicated on the squad's **aggregated**
+observation, never on the commander's own: any living member on the
+observation ring (radius 7 + LOS) advances the single team counter, the
+environment mirrors that counter into the root's `Mission.observe_steps`,
+and completion requires `TEAM_OBSERVE_STEPS` (10 novel steps — exactly the
+campaign success condition). The root's in-position credit follows the team
+too: while the operation is observing, the commander is *executing its
+mission* wherever it stands — it can command from cover.
+
+Before this rule the adjudication was root-personal, and the trained
+`squad_recon_v3` policy monetized it by walking the human commander onto
+the ring: the human died 9/30 assurance episodes at recon vs 1–4/30 in
+every other scenario, directly against the P3/P4 human-preservation
+economics (issue #9, external assurance finding).
+
+**Subordinate** RECON/SCREEN missions keep personal `observe_steps` (5
+steps, radius 7 + LOS): a team member's MISSION COMPLETE reflects its *own*
+task, and rolls up on the net — HQ's confirmation of the root's COMPLETE
+still adjudicates the operation, team-wide, as before (issue #3).
 
 ## Compliance summary
 
