@@ -93,6 +93,13 @@ class ScenarioSpec:
     #                               ends the episode that step, otherwise it ends as
     #                               success at the window's end anyway. 0 → immediate
     #                               termination (pre-v1.2 behavior).
+    comm_model: str = "global"    # "global" → every station hears every message (the
+    #                               shipped behavior); "range" → a message is heard only
+    #                               by stations within comm_range of the sender
+    #                               (euclidean; the sender always hears itself; HQ is a
+    #                               high-power station: HQ traffic is always heard and
+    #                               HQ always hears the root).
+    comm_range: float = 12.0      # audible radius under comm_model="range"
 
 
 SCENARIOS: dict[str, ScenarioSpec] = {

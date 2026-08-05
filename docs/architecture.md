@@ -91,6 +91,29 @@ So a subordinate that spots the garrison and reports it materially improves its 
 (and everyone's) information state — the reward for a novel report is aligned with an
 actual information channel, not a synthetic bonus.
 
+## The comms model (audibility)
+
+By default the net is a single, global, perfectly reliable channel
+(`ScenarioSpec.comm_model="global"`): every message reaches every station. The
+optional `comm_model="range"` (with `comm_range`, euclidean) makes audibility
+per-listener:
+
+* a message is heard only by stations within `comm_range` of the sender; the
+  sender always hears itself. HQ is a high-power station: HQ traffic is always
+  heard, and HQ always hears the root;
+* a CONTACT report updates only the enemy pictures of stations in earshot — the
+  team picture becomes *per-agent* (`_agent_known`), and each agent's "known
+  enemy" observation summary is built from its own picture (observation layout
+  unchanged);
+* an ORDER to an out-of-earshot subordinate is transmitted (it lands on the
+  transcript) but never received: no mission change, no WILCO, no command
+  credit — a missing acknowledgement finally *means* something;
+* other traffic (SITREP/DONE verdicts, CASUALTY, succession) is unchanged —
+  reports up the chain are adjudicated by the umpire regardless of range.
+
+Under `"global"` the behavior is byte-for-byte the shipped one; the knob is
+purely additive.
+
 ## Determinism
 
 All randomness flows through one `np.random.Generator` seeded at `reset(seed=...)`:

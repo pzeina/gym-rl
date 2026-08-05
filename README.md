@@ -203,6 +203,12 @@ callsigns). Per agent, per step:
   contact reports, truthful completion reports, doctrine-preferred orders + subordinate
   coverage, combat events, shared terminal success/defeat. Component means are plotted
   per run so you can see *why* the cohort improves.
+* **Comms model** (`ScenarioSpec.comm_model`): `"global"` (default) is a single
+  perfectly reliable net — every station hears everything. `"range"` makes audibility
+  per-listener (euclidean `comm_range`; HQ is a high-power station): CONTACT reports
+  feed only the pictures of stations in earshot, and an order to an out-of-earshot
+  subordinate is transmitted but never received — no WILCO comes back, so silence
+  carries information.
 * **Completion reporting is load-bearing**: when the root-mission success condition is
   first met, the episode stays open for a short window (`ScenarioSpec.grace_window`,
   default 12 steps). A truthful `MISSION COMPLETE` from the senior agent — judged

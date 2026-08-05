@@ -89,6 +89,8 @@ class CohortEnv(ParallelEnv):
         self._step_count = 0
         self._team_observe_steps = 0
         self._known_enemies: dict[int, tuple[float, float, int]] = {}  # id → (x, y, step)
+        #: per-listener enemy pictures, used only when comm_model="range"
+        self._agent_known: dict[str, dict[int, tuple[float, float, int]]] = {}
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
@@ -153,6 +155,9 @@ class CohortEnv(ParallelEnv):
         self._step_count = 0
         self._team_observe_steps = 0
         self._known_enemies = {}
+        self._agent_known = (
+            {cs: {} for cs in self._callsigns} if cfg.comm_model == "range" else {}
+        )
         self._illegal_actions = 0
         self._episode_outcome = None
         self._last_net_contact_step = None
@@ -326,11 +331,17 @@ class CohortEnv(ParallelEnv):
 
         # --- knowledge decay ---
         living_enemy_ids = {e.id for e in self.enemies if e.alive}
-        self._known_enemies = {
-            eid: entry
-            for eid, entry in self._known_enemies.items()
-            if eid in living_enemy_ids and step - entry[2] <= KNOWLEDGE_TTL
-        }
+
+        def _fresh(picture: dict[int, tuple[float, float, int]]) -> dict:
+            return {
+                eid: entry
+                for eid, entry in picture.items()
+                if eid in living_enemy_ids and step - entry[2] <= KNOWLEDGE_TTL
+            }
+
+        self._known_enemies = _fresh(self._known_enemies)
+        for callsign in self._agent_known:
+            self._agent_known[callsign] = _fresh(self._agent_known[callsign])
 
         # --- mission progress + compliance + step costs ---
         root_obj = (
@@ -495,6 +506,14 @@ class CohortEnv(ParallelEnv):
         for e in visible:
             self._known_enemies[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
             soldier.reported_enemy_ids.add(e.id)
+        if self.spec_cfg.comm_model == "range":
+            # the report only reaches stations within earshot: their pictures
+            # update; everyone else's stays stale (the sender hears itself)
+            for listener in self.roster.living:
+                if self._audible_to(listener, soldier.id):
+                    picture = self._agent_known.setdefault(listener.callsign, {})
+                    for e in visible:
+                        picture[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
         soldier.last_contact_report_step = self._step_count
         self._last_net_contact_step = self._step_count
         ledger.add(soldier.callsign, "report", cfg.contact_new if new_intel else cfg.contact_redundant)
@@ -580,6 +599,18 @@ class CohortEnv(ParallelEnv):
         )
         obj_id = objective.id if objective else None
 
+        # out of earshot (comm_model="range"): the transmission goes out but
+        # nothing arrives — no mission change, no WILCO, no command credit
+        if not self._audible_to(recipient, soldier.id):
+            self._assign_mission(
+                issuer_id=soldier.id,
+                issuer_cs=soldier.callsign,
+                recipient=recipient,
+                mission_type=spec.order_mission,
+                objective_id=obj_id,
+            )
+            return
+
         # churn: reissuing the standing order is radio noise, not command
         if (
             recipient.mission is not None
@@ -627,8 +658,15 @@ class CohortEnv(ParallelEnv):
         recipient: Soldier,
         mission_type: MissionType,
         objective_id: int | None,
-    ) -> None:
-        """Apply an order: set the recipient's mission, log ORDER + WILCO."""
+    ) -> bool:
+        """Transmit an order; if the recipient hears it, apply it (+ WILCO).
+
+        Under ``comm_model="global"`` every order is heard. Under ``"range"``
+        an out-of-earshot recipient never receives the mission: the ORDER
+        still lands on the transcript (it was transmitted), but nothing
+        changes and no WILCO comes back — silence is the only clue.
+        Returns True if the order was received and applied.
+        """
         if objective_id is not None:
             anchor = self.world.objectives[objective_id].pos
             obj_name = self.world.objectives[objective_id].name
@@ -639,6 +677,14 @@ class CohortEnv(ParallelEnv):
         else:  # HOLD (and any anchor-less mission): anchor where the order was received
             anchor = recipient.pos
             obj_name = None
+        self._say(
+            MessageKind.ORDER,
+            issuer_id,
+            recipient.id,
+            lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
+        )
+        if not self._audible_to(recipient, issuer_id):
+            return False
         recipient.mission = Mission(
             type=mission_type,
             objective_id=objective_id,
@@ -647,12 +693,6 @@ class CohortEnv(ParallelEnv):
             step_assigned=self._step_count,
         )
         recipient.last_order_step = self._step_count
-        self._say(
-            MessageKind.ORDER,
-            issuer_id,
-            recipient.id,
-            lang.format_order(issuer_cs, recipient.callsign, mission_type, obj_name),
-        )
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
@@ -660,6 +700,7 @@ class CohortEnv(ParallelEnv):
                 issuer_id,
                 lang.format_ack(issuer_cs, recipient.callsign),
             )
+        return True
 
     # ------------------------------------------------------------------ #
     # OpFor
@@ -696,6 +737,23 @@ class CohortEnv(ParallelEnv):
     # views, masks, observations, compliance
     # ------------------------------------------------------------------ #
 
+    def _audible_to(self, listener: Soldier, sender_id: int) -> bool:
+        """Can ``listener`` hear a transmission from ``sender_id``?
+
+        ``comm_model="global"`` (default): always. ``"range"``: only within
+        ``comm_range`` (euclidean). The sender always hears itself. HQ is a
+        high-power station: its traffic is always heard, and it always hears
+        the root (the root's up-channel reports are adjudicated regardless).
+        """
+        if self.spec_cfg.comm_model != "range":
+            return True
+        if sender_id == HQ_ID:
+            return True
+        sender = self.roster.by_id.get(sender_id)
+        if sender is None or sender.id == listener.id:
+            return True
+        return dist(sender.pos, listener.pos) <= self.spec_cfg.comm_range
+
     def _visible_enemies(self, soldier: Soldier) -> list[Enemy]:
         visible = [
             e
@@ -715,9 +773,14 @@ class CohortEnv(ParallelEnv):
         return None
 
     def _make_view(self, soldier: Soldier) -> AgentView:
+        known = (
+            self._agent_known.get(soldier.callsign, {})
+            if self.spec_cfg.comm_model == "range"
+            else self._known_enemies
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
-            known_enemies=[(x, y) for (x, y, _t) in self._known_enemies.values()],
+            known_enemies=[(x, y) for (x, y, _t) in known.values()],
             step=self._step_count,
         )
 
