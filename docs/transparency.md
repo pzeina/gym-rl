@@ -22,6 +22,17 @@ explains behavior (destination 0.55–0.60, defenders' station 0.99 for the
 defend-BRIQUE team leader); where traffic churns (assaults, three-echelon
 platoon), it does not. The probe exists to make exactly this measurable.
 
+**B5 update (2026-08-06):** the order-economics fixes proposed below were
+implemented (rank-scaled re-task pricing + standing-order tenure) and the
+three worst checkpoints retrained. The churn mechanism is **dead** — squad
+re-tasking fell 58.8 → 9.6 per episode, patrol anchor rotations 1364 → 1
+per 30 episodes — and destination accuracy rose sharply where orders bind
+(fireteam 0.31 → 0.54). The majority baseline nevertheless stands unbeaten
+on all three: the residual error is no longer churn but *vocabulary* —
+formation-keeping, untasked drift, and route geometry have no radio form.
+Full before/after tables and the honest verdict: [B5: binding
+orders](#b5-binding-orders-by-economics-the-after-measurement) below.
+
 ## Running it
 
 ```bash
@@ -253,6 +264,107 @@ also lengthen order lifetimes); SITREP-cadence doctrine
 (`ScenarioSpec.sitrep_cadence`) to buy posture transparency at the price of
 airtime. Re-running this probe is then the measurement of whether those
 changes worked — that is what it is for.
+
+## B5: binding orders by economics — the after-measurement
+
+Item B5 implemented the candidate fixes from §6 and re-ran this probe as
+the measurement of whether they worked. The changes (commit "B5: order
+economics"): **re-task pricing** — replacing a subordinate's standing
+mission costs the issuer `order_retask_cost_base × (1 + rank_scale ×
+authority)` (TL −0.75, SL −1.0, PL −1.5; half price for a same-anchor
+mission-type change), waived exactly when the tactical picture changed
+since the standing order (a CONTACT on the net, a casualty in the issuer's
+element, the issuer's own mission changed, the subordinate's truthful
+DONE) — and **standing-order tenure** — positive compliance credit grows
+with how long the current order has been held (×(1 + 0.5·min(held, 40)/40)),
+so settled, executed orders out-earn churned ones. The three worst B4
+checkpoints were retrained from scratch (squad, fireteam; 3M/2.5M steps)
+or re-fine-tuned (patrol-BRIQUE, 3M from the new squad checkpoint). Each
+scenario then received the campaign's one diagnosed adjustment: the first
+retrains showed re-task pricing suppressing *initial* tasking too (squad
+coverage time 0.96 → 0.61; a TL2 left untasked for 100+ steps) — an order
+that is never issued cannot bind — so `coverage_gap` was raised −0.02 →
+−0.1 and squad/fireteam retrained, patrol re-fine-tuned, under the final
+economics. Published checkpoints: `fireteam_v5b`, `squad_v4b`,
+`patrol_brique_v2b` (the pre-adjustment runs `fireteam_v5`, `squad_v4`,
+`patrol_brique_v2` are kept alongside).
+
+### The mechanism died
+
+Order traffic over the B2 protocol (30 episodes, seeds 500–529),
+before → after (published checkpoints):
+
+| | orders/ep | re-tasks/ep | priced/ep | anchor rotations (30 eps) |
+|---|---|---|---|---|
+| fireteam | 24.2 → **7.4** | 21.2 → **4.2** | 18.1 → **2.0** | 397 → **70** |
+| squad | 66.2 → **17.5** | 58.8 → **9.6** | 19.8 → **5.0** | 1404 → **210** |
+| patrol_brique | 62.6 → **6.0** | 55.9 → **0.1** | 21.2 → **0.03** | 1364 → **1** |
+
+Standing orders now stand: the seed-500 squad transcript issues six orders
+in 215 steps (was: a re-task every cooldown window), and the B4 headline
+transcript pattern — the same station rotated across three objectives in
+21 steps — no longer occurs. N=100 success stayed within the campaign
+bound (−5 pts of the published numbers): fireteam **78% ± 8** (was 83),
+squad **82% ± 8** (was 84), patrol-BRIQUE **99% ± 2** (was 99).
+
+### The DoD is still missed — honestly stated
+
+The target was destination accuracy **beating** the majority baseline on
+retrained checkpoints. Result: closer everywhere orders bind, but beaten
+nowhere (N=30, seeds 500–529, K=15; the B4 rows for the same scenarios
+are the before):
+
+| checkpoint | pairs | accuracy | majority | **gap vs majority** | gap vs random |
+|---|---|---|---|---|---|
+| fireteam_v4d *(before)* | 19022 | 0.314 | 0.477 | −0.163 | +0.064 |
+| fireteam_v5 *(retrain)* | 19559 | 0.456 | 0.520 | −0.064 | +0.206 |
+| **fireteam_v5b** *(published)* | 13362 | **0.544** | 0.609 | **−0.065** | +0.294 |
+| squad_v3e *(before)* | 27012 | 0.247 | 0.521 | −0.273 | +0.047 |
+| squad_v4 *(retrain)* | 38744 | 0.269 | 0.367 | −0.098 | +0.069 |
+| **squad_v4b** *(published)* | 31376 | **0.301** | 0.457 | **−0.156** | +0.101 |
+| patrol_brique_v1 *(before)* | 23978 | 0.239 | 0.455 | −0.216 | +0.039 |
+| patrol_brique_v2 *(retrain)* | 18200 | 0.131 | 0.503 | −0.372 | −0.069 |
+| **patrol_brique_v2b** *(published)* | 19227 | **0.226** | 0.507 | **−0.281** | +0.026 |
+
+**The fix worked partially.** What the economics fixed: the ordered class
+is now genuinely predictable — fireteam truth-ALPHA windows are predicted
+ALPHA at **0.87** (v5), and overall destination accuracy rose 0.31 → 0.54
+(v5b); the gap vs majority halved on fireteam (−0.163 → −0.065) and squad
+(−0.273 → −0.156, best-arm −0.098). What the economics cannot fix,
+quantified from the after-run confusions:
+
+1. **The majority baseline is a moving target.** Binding orders make
+   behavior more direct, so the OPORD-objective truth share *rises with
+   the fix* (fireteam 0.477 → 0.609) — the constant-prediction reader
+   pockets most of the improvement the net paid for.
+2. **Formation-keeping still has no radio form.** Truth LEADER is 13–31%
+   of pairs on the three scenarios and its accuracy is 0.000 on every
+   run, before and after — trailing your leader is never transmitted
+   (the A5 `FOLLOW ME`/formation forms remain the missing vocabulary).
+3. **Routes are not on the net.** The squad/patrol family walks a learned
+   west-then-south axis to ALPHA; mid-transit windows close on CHARLIE
+   (truth share 0.31–0.37, accuracy 0.000) while every standing order
+   truthfully says ALPHA. Only phase-line/waypoint orders (A5) can put a
+   dogleg on the net.
+4. **Silence became optimal for the patrol.** Under re-task pricing plus
+   the band's threat, `patrol_brique_v2b` converged to a *silent rush*:
+   ~60-step episodes (v1: ~200+), 6.7/7 mean survivors, 99% ± 2 at
+   N=100, 6 orders/ep, coverage time 0.35 — tactically the best patrol
+   this project has produced, and the least radio-explained (gap −0.281;
+   posture majority 0.986 MOVING). Command economics bought tactical
+   excellence and paid for it in transparency: untasked sprinters are
+   predicted HOLD by the net-reader, and there is nothing on the net to
+   say otherwise.
+
+Per the campaign protocol (one retrain + one diagnosed adjustment per
+scenario, both spent everywhere), this is where the measurement stops.
+The honest scope of the claim after B5: **the net now explains what was
+ordered and that orders bind** (re-tasks are rare, priced, and mostly
+carve-out-legitimate — the per-rank split in `behavior.json` shows leaf
+TLs re-task almost only under the contact/casualty exceptions), but
+**movement between order and arrival remains off-net** until the order
+vocabulary can carry routes and formations (A5). The predictor and ground
+truth were not modified in this campaign — the B4 measuring stick stands.
 
 ## Artifacts
 

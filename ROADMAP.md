@@ -164,10 +164,33 @@ terrain (still deferred).
   FIRING predictability tracks CONTACT discipline exactly (0.57 vs 0.02 recall
   on the two defenses). Full method, tables, failure modes, and candidate
   fixes: `docs/transparency.md`; see the progress log.)*
+- `[x]` **B5. Binding orders by economics** — implement the B4 fix candidates:
+  orders must BIND (an order should be the best predictor of its recipient's
+  near-term behavior, because changing it is expensive). Rank-scaled re-task
+  pricing (`order_retask_cost_base × (1 + rank_scale × authority)`; half price
+  for same-anchor type changes; waived when the tactical picture changed:
+  CONTACT on the net / element casualty / new superior intent / the
+  subordinate's truthful DONE) + standing-order tenure (compliance credit
+  ×(1 + 0.5·min(held,40)/40); `success_team` 45 → 60 keeps terminal dominance)
+  + the campaign's one diagnosed adjustment (`coverage_gap` −0.02 → −0.1: the
+  first retrains showed pricing suppressing *initial* tasking — an order never
+  issued cannot bind). Retrained squad/fireteam from scratch + patrol-BRIQUE
+  fine-tune; every re-task logged by the env and reported per rank in B2.
+  **DoD**: (a) N=100 within 5 pts of published — **met** (fireteam 78/83,
+  squad 82/84, patrol 99/99); (b) probe destination accuracy beats the
+  OPORD-majority baseline — **missed on all three** after one retrain + one
+  diagnosed adjustment each, documented honestly: the churn mechanism is dead
+  (squad re-tasks 58.8 → 9.6/ep, patrol rotations 1364 → 1/30 eps; fireteam
+  accuracy 0.31 → 0.54, gap −0.163 → −0.065) but the residual error is
+  vocabulary (formation-keeping/untasked drift/route doglegs have no radio
+  form → A5), and the majority baseline rises with the fix. See the progress
+  log and `docs/transparency.md` §B5.
 - `[ ]` **A5. Richer order vocabulary** — phase lines / "AT MY COMMAND" timing,
   ATTACH/DETACH task organization, simple formations (wedge/file/line).
   **DoD**: language round-trip tests for each new form; doctrine + masks extended;
-  at least one trained scenario exercising the new orders.
+  at least one trained scenario exercising the new orders. *(B5 sharpened the
+  case: with churn priced away, the probe's remaining destination error is
+  exactly the vocabulary this item adds.)*
 
 ## Backlog (unscheduled)
 
@@ -560,6 +583,41 @@ terrain (still deferred).
   with failure modes (untasked drift, riposte, no radio form for
   formation-keeping, commander self-preservation off-net) and candidate
   order-economics fixes: `docs/transparency.md`.
+- **2026-08-06** — **B5 done (DoD honestly split): binding-order economics +
+  retrains** (267 → 282 tests; commits f1a95a5 + the campaign). Mechanics:
+  rank-scaled re-task pricing with the tactical-picture carve-out (contact /
+  element casualty / superior intent / truthful DONE — the exact exception
+  set mirrors the order-cooldown lifts), standing-order tenure on positive
+  compliance (H=40, factor 0.5; `max_step_farm` updated, `success_team`
+  45 → 60 re-proves dominance at the 600-step cap), identical-reissue stays
+  a churn no-op that never restamps tenure; spaces frozen 157/137, masks and
+  cooldown untouched; env logs every re-task (priced/excepted + reason,
+  rotation vs type change) → B2 rows `orders/ep`, `re-tasks/ep`,
+  `retasks_by_rank`. Campaign (all evals N=100 sampled + B2/probe at N=30
+  seeds 500–529): first retrains squad_v4 (3M, seed 3, from scratch;
+  81% ± 8) and fireteam_v5 (2.5M, seed 1; 82% ± 8) killed the churn
+  (re-tasks 58.8 → 0.3 and 21.2 → 2.0/ep) but exposed **tasking
+  suppression** — squad coverage time 0.96 → 0.61, a TL2 untasked for 100+
+  steps: an order never issued cannot bind. One diagnosed adjustment
+  (`coverage_gap` −0.02 → −0.1) → published `fireteam_v5b` **78% ± 8**
+  (bound 78 ✓, D4 dip 6% at 1.65M self-recovered), `squad_v4b` **82% ± 8**
+  (bound 79 ✓, coverage 0.67, re-tasks 9.6/ep with TL re-orders 91 priced /
+  99 excepted), `patrol_brique_v2b` **99% ± 2** (from squad_v4's ckpt; the
+  pre-adjustment `patrol_brique_v2` 97% ± 3 kept) — the patrol converged to
+  a **silent rush** (60-step episodes, 6.7/7 survivors, 6 orders/ep, ONE
+  anchor rotation in 30 episodes). Probe before → after (gap vs majority):
+  fireteam −0.163 → **−0.065** (accuracy 0.314 → 0.544, truth-ALPHA
+  predicted at 0.87), squad −0.273 → **−0.156** (best-arm −0.098), patrol
+  −0.216 → **−0.281**. Probe DoD (beat majority) missed on all three with
+  both budgets spent — stopped per protocol and documented in
+  `docs/transparency.md` §B5: the majority baseline rises with the fix
+  (fireteam OPORD-class truth share 0.477 → 0.609) and the remaining error
+  is vocabulary, not churn — truth LEADER accuracy 0.000 everywhere (no
+  radio form for formation-keeping), route doglegs close on un-named
+  objectives (squad/patrol truth CHARLIE ~0.31–0.37) — pointing directly at
+  A5. Predictor and ground truth untouched (the B4 measuring stick stands).
+  metrics.md baseline refreshed for all 8 published checkpoints (the five
+  non-B5 checkpoints re-swept bit-identically for the new re-task rows).
 - **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
   `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
   only, consumes no RNG — recorded episodes bit-identical, tested) and

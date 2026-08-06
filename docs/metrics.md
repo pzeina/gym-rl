@@ -189,48 +189,66 @@ sampled policy, the assurance-protocol seeds. Committed as
 `runs/<run>/behavior.json` per run. `—` = `null` (the denominator never
 occurred; e.g. DEFEND holders cannot claim MISSION COMPLETE, so defense runs
 have no false-COMPLETE rate, and runs without leader deaths have no
-succession events).
+succession events). Refreshed for the B5 campaign: the fireteam / squad /
+patrol columns are the B5-retrained checkpoints (`fireteam_v5b`,
+`squad_v4b`, `patrol_brique_v2b` — trained under re-task pricing + tenure);
+the other five checkpoints predate B5 but were re-swept so the re-task rows
+exist for all eight (their episodes reproduce bit-identically — only reward
+arithmetic changed — and every previously published metric is unchanged;
+the pre-B5 fireteam/squad/patrol columns live in git history).
 
-| metric | fireteam_v4d | squad_v3e | squad_recon_v4b | squad_screen_v2 | platoon_v2 | fireteam_defend_v5 | patrol_brique_v1 | defend_brique_v1 |
+| metric | fireteam_v5b | squad_v4b | squad_recon_v4b | squad_screen_v2 | platoon_v2 | fireteam_defend_v5 | patrol_brique_v2b | defend_brique_v1 |
 |---|---|---|---|---|---|---|---|---|
-| success (N=30) | 0.80 | 0.87 | 0.93 | 1.00 | 1.00 | 0.80 | 1.00 | 0.90 |
-| obedience latency (steps) | 2.7 | 2.4 | 2.6 | 2.2 | 3.5 | 0.2 | 2.2 | 0.0 |
-| report precision | 0.43 | 0.23 | 0.43 | 0.12 | 0.14 | 1.00 | 0.68 | 0.12 |
-| report recall | 0.59 | 0.95 | 0.77 | 0.97 | 0.99 | 0.03 | 0.52 | 0.90 |
-| doctrine preference | 0.45 | 0.52 | 0.36 | 0.42 | 0.46 | 0.31 | 0.52 | 0.21 |
-| false-COMPLETE rate | 0.76 | 0.81 | 0.84 | 0.84 | 0.66 | — | 0.53 | — |
-| succession recovery (steps) | 3.6 | 1.9 | 10.0 | 2.5 | — | 3.3 | 2.0 | — |
-| succession events | 12 | 12 | 7 | 4 | 1 | 3 | 3 | 0 |
-| coverage time | 0.83 | 0.96 | 0.97 | 0.97 | 0.77 | 0.94 | 0.92 | 0.97 |
-| human: dist to enemy | 20.3 | 21.1 | 24.6 | 23.5 | 22.6 | 13.0 | 15.5 | 11.6 |
-| human: dist to objective | 20.1 | 24.1 | 22.3 | 20.5 | 33.9 | 3.4 | 24.2 | 2.4 |
-| human: ring entries / ep | 0.57 | 0.10 | 0.60 | 0.20 | 0.07 | 1.10 | 0.17 | 1.10 |
-| human: death rate | 0.37 | 0.23 | 0.07 | 0.07 | 0.00 | 0.10 | 0.07 | 0.00 |
+| success (N=30) | 0.77 | 0.83 | 0.93 | 1.00 | 1.00 | 0.80 | 0.97 | 0.90 |
+| obedience latency (steps) | 1.8 | 2.8 | 2.6 | 2.2 | 3.5 | 0.2 | 1.8 | 0.0 |
+| orders issued / ep | 7.4 | 17.5 | 86.2 | 50.4 | 150.7 | 24.1 | 6.0 | 23.4 |
+| re-tasks / ep | 4.2 | 9.6 | 79.7 | 44.4 | 136.0 | 20.9 | 0.1 | 20.4 |
+| priced re-tasks / ep | 2.0 | 5.0 | 27.0 | 15.2 | 40.2 | 20.4 | 0.0 | 14.8 |
+| anchor rotations (30 eps) | 70 | 210 | 1710 | 1072 | 3489 | 557 | 1 | 549 |
+| report precision | 0.45 | 0.17 | 0.43 | 0.12 | 0.14 | 1.00 | 1.00 | 0.12 |
+| report recall | 0.77 | 0.96 | 0.77 | 0.97 | 0.99 | 0.03 | 0.06 | 0.90 |
+| doctrine preference | 0.35 | 0.55 | 0.36 | 0.42 | 0.46 | 0.31 | 0.51 | 0.21 |
+| false-COMPLETE rate | 0.82 | 0.72 | 0.84 | 0.84 | 0.66 | — | 0.51 | — |
+| succession recovery (steps) | 6.6 | 6.5 | 10.0 | 2.5 | — | 3.3 | 11.0 | — |
+| succession events | 10 | 29 | 7 | 4 | 1 | 3 | 3 | 0 |
+| coverage time | 0.82 | 0.67 | 0.97 | 0.97 | 0.77 | 0.94 | 0.35 | 0.97 |
+| human: dist to enemy | 21.9 | 19.9 | 24.6 | 23.5 | 22.6 | 13.0 | 13.5 | 11.6 |
+| human: dist to objective | 21.9 | 24.4 | 22.3 | 20.5 | 33.9 | 3.4 | 23.4 | 2.4 |
+| human: ring entries / ep | 0.07 | 3.03 | 0.60 | 0.20 | 0.07 | 1.10 | 0.27 | 1.10 |
+| human: death rate | 0.27 | 0.27 | 0.07 | 0.07 | 0.00 | 0.10 | 0.03 | 0.00 |
 
 Event volumes behind the rates (pooled over the 30 episodes): orders applied
-754 / 2008 / 2605 / 1539 / 4551 / 751 / 1905 / 731; CONTACTs 70 / 480 / 167 /
-477 / 1182 / 3 / 31 / 900; DONE claims 100 / 263 / 219 / 185 / 175 / 0 / 45 /
-0 (column order as in the table). The platoon's single leader-death event is
-the one censored recovery (unrecovered at episode end).
+251 / 555 / 2605 / 1539 / 4551 / 751 / 211 / 731; CONTACTs 100 / 758 / 167 /
+477 / 1182 / 3 / 4 / 900; DONE claims 179 / 428 / 219 / 185 / 175 / 0 / 367 /
+0 (column order as in the table).
 
-What the baseline says (first honest read, 2026-08-06):
+What the baseline says (updated for B5, 2026-08-06):
 
+* **Order volume divides the runs into two eras.** The B5-trained columns
+  re-task 0.1–9.6 times per episode (patrol: one anchor rotation in 30
+  episodes); the pre-B5 columns re-task 20–136 times per episode with
+  hundreds-to-thousands of anchor rotations — the exact churn the B4
+  probe diagnosed, now measurable per run. The per-rank split
+  (`retasks_by_rank` in `behavior.json`) shows pre-B5 leaf TLs re-task
+  almost exclusively under what would be the contact/casualty carve-out,
+  while the mid-rank SL/PL stations carry most of the whim-priced churn.
 * **Obedience is fast everywhere** — 0–3.5 steps from order to measurable
   compliance; ~0 on defenses because holders are typically already in
   position when (re)tasked.
 * **False-COMPLETE is the weakest behavior**: where DONE is admissible,
-  53–84% of claims are rejected as premature — completion *reporting*
-  works (#3), completion *judgment* does not yet. The defenses show `—`
-  by construction (DEFEND is a continuous posture, DONE is inadmissible).
-* **Human exposure separates checkpoints as intended (#9)**: the retrained
-  recon/screen sit at 2/30 human deaths (exactly the numbers that selected
-  them), while the assault fireteam — trained before the #9 economics —
-  loses its human in 11/30 episodes. Defense ring entries ≈ 1 and small
-  objective distances are by construction (the human spawns on the
-  objective).
+  51–84% of claims are rejected as premature — completion *reporting*
+  works (#3), completion *judgment* does not yet.
+* **Human exposure separates checkpoints as intended (#9)**: recon/screen
+  hold at 2/30 human deaths; the B5 assault retrains sit at 8/30
+  (fireteam improved from 11/30; squad regressed from 7/30 and its ring
+  entries rose to 3.0/ep — the SL leads from the front under the new
+  economics; checkpoint selection for preservation claims must keep
+  reading these rows, not the success curve).
 * Doctrine preference is a *preference* rate among doctrine-legal orders
-  (the mask makes illegal ones impossible); 0.2–0.5 is what trained
+  (the mask makes illegal ones impossible); 0.2–0.55 is what trained
   policies actually choose, not a compliance failure.
 * `defend_brique_v1`'s precision 0.12 over 900 CONTACTs is the A4 dedup
   residual under siege: the band stays visible for hundreds of steps and
-  gets re-reported far inside the refresh age.
+  gets re-reported far inside the refresh age. `patrol_brique_v2b`'s
+  recall 0.06 is the other extreme — the B5 silent rush barely touches
+  the net (4 CONTACTs in 30 episodes) because it barely touches the band.
