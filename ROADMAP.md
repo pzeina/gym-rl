@@ -2,34 +2,59 @@
 
 ## ⟳ Session handoff — resume here (2026-08-06)
 
-**State**: `multi-agent-dev` = `main` = origin at `d152621`; latest tag **v1.9.0**;
-340 tests green; nothing training; every agent's work committed and pushed. Spaces are
-Discrete(228)/Box(166) since v1.9 (pre-v1.9 checkpoints incompatible). The user
-deleted `COMMENTS.md` locally (uncommitted, intentional).
+**State**: `multi-agent-dev` at `7f1fb42`, **ahead of `main`/origin by 6 commits —
+not yet pushed**; latest tag v1.9.0; **367 tests green, ruff clean**; nothing
+training. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
+**Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
+The fleet has NOT been retrained — the v1.9 numbers below are the standing
+baseline, not v1.10 results.
 
-**Published fleet (N=100 ± CI)**: fireteam 84±7 · squad 93±5 · platoon **98±3** ·
-recon 94±5 · screen 98±3 · patrol_brique 95±4 · defend_brique 85±7 ·
-**fireteam_defend 51±10** (v6 — the diagnosed v7 retrain missed at 35±9; see log).
+**Published fleet (N=100 ± CI, all measured under v1.9 spaces/economics)**:
+fireteam 84±7 · squad 93±5 · platoon **98±3** · recon 94±5 · screen 98±3 ·
+patrol_brique 95±4 · defend_brique 85±7 · **fireteam_defend 51±10** (v6; the
+diagnosed v7 retrain missed at 35±9).
 
-**Verdicts that shape what's next**:
+**What v1.10 changed (owner's design calls this session, all committed, none
+yet trained on)** — see the progress log for the full reasoning:
+1. `human_death` **−25 → 0.0** — the correlated −25 × n_agents shock, the
+   standing D4 suspect. Preservation is now measured, not priced.
+2. **Observation Box(166) → Box(220)** — tempo block (episode progress +
+   time-to-contact), nearest-cover vector, 7×7 terrain patch (was 5×5),
+   sitrep_due in its own slot, plus derived `OFF_*` block offsets.
+3. **Defend preparation period** — `fireteam_defend` draws H from (55, 75),
+   `max_steps` 375 → 450; OpFor held (but present and spottable) until H; the
+   OPORD announces the band midpoint as nominal H.
+4. **`prep_in_position` 0.05/step** — pay for standing IN COVER at the
+   objective before H. Bounded by H, in the terminal-dominance test.
+5. **False COMPLETE**: `done_false` −0.5 → **−2.0** (break-even p 0.33 → 0.67)
+   plus `done_cooldown` = 8 masking DONE after a rejection.
+
+**Verdicts that still shape what's next**:
 - Orders now *bind* (v1.8 economics: patrol anchor rotations 1364→1) and the
-  vocabulary now *names maneuver* (v1.9: ADVANCE/waypoints/phase lines, timing +
-  EXECUTE, formations, trinôme voice sync) — but the transparency probe still trails
+  vocabulary now *names maneuver* (v1.9) — but the transparency probe still trails
   the OPORD-only baseline (best-ever squad gap −0.090 against a harder stick);
-  residuals named in `docs/transparency.md` §A5.
-- fireteam_defend is the open wound: two documented misses under the new economics;
-  the lead clue is its ~0.52 human-death rate in v7 training (the −25 human-death
-  term may dominate defend's terminal structure).
-- D4 (post-convergence collapse) remains the recurring tax; the ckpt gate helps,
-  collapse itself is unsolved (correlates with human-death penalty bursts).
+  residuals named in `docs/transparency.md` §A5. **Untouched by v1.10.**
+- fireteam_defend: two documented misses. v6 held the position but would not fire;
+  v7 fires at 1.000 but fights 9.7 cells out with cover occupancy 0.05. The
+  assault defense needs fire AND the prepared position; v1.10 items 3–4 are the
+  attempt at both, and the fire-gradient fix (`9519326`) is already in.
+- D4 collapse remains unsolved and is the reason item 1 was spent.
 
 **Next recommended, in order**:
-1. **Defend root problem** — start:
-   `.venv/bin/python scripts/run_report.py fireteam_defend_v7 --vs fireteam_defend_v6`,
-   then oracle-diagnose the human-death interaction before any reward change.
-2. **Probe vs baseline** — implement the two named residual fixes
-   (probe formation/order primacy; fireteam churn-through-pricing).
-3. **A3 self-play**, buildings+pathfinding (v1.4 deferral), false-COMPLETE judgment.
+1. **Retrain `fireteam_defend` under v1.10** — the whole point of the cycle.
+   Suggested parent: `fireteam_defend_v6` (the only policy that ever held the
+   ground) — but note the space break means v6 **cannot** be fine-tuned from;
+   this is a from-scratch train. Diagnose with the oracle regardless of the
+   success number: **cover occupancy under threat** is the prep-period metric,
+   **off-objective fight distance** the occupancy-pay metric. Two variables
+   moved at once here — that separation is how a miss stays diagnosable.
+2. **Retrain the rest of the fleet** on the new spaces (all 8 scenarios) and
+   re-publish; watch `human_death_rate` (item 1 may raise it — that is the
+   accepted trade) and `false_complete_rate` (item 5 should cut it; watch
+   `done_reports` for the *muteness* failure, which is the worse outcome).
+3. **Probe vs baseline** — the two named residual fixes (probe formation/order
+   primacy; fireteam churn-through-pricing).
+4. **A3 self-play**, buildings+pathfinding (v1.4 deferral).
 
 **How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
 the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
