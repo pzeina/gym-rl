@@ -2,34 +2,59 @@
 
 ## ⟳ Session handoff — resume here (2026-08-06)
 
-**State**: `multi-agent-dev` = `main` = origin at `d152621`; latest tag **v1.9.0**;
-340 tests green; nothing training; every agent's work committed and pushed. Spaces are
-Discrete(228)/Box(166) since v1.9 (pre-v1.9 checkpoints incompatible). The user
-deleted `COMMENTS.md` locally (uncommitted, intentional).
+**State**: `multi-agent-dev` at `7f1fb42`, **ahead of `main`/origin by 6 commits —
+not yet pushed**; latest tag v1.9.0; **367 tests green, ruff clean**; nothing
+training. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
+**Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
+The fleet has NOT been retrained — the v1.9 numbers below are the standing
+baseline, not v1.10 results.
 
-**Published fleet (N=100 ± CI)**: fireteam 84±7 · squad 93±5 · platoon **98±3** ·
-recon 94±5 · screen 98±3 · patrol_brique 95±4 · defend_brique 85±7 ·
-**fireteam_defend 51±10** (v6 — the diagnosed v7 retrain missed at 35±9; see log).
+**Published fleet (N=100 ± CI, all measured under v1.9 spaces/economics)**:
+fireteam 84±7 · squad 93±5 · platoon **98±3** · recon 94±5 · screen 98±3 ·
+patrol_brique 95±4 · defend_brique 85±7 · **fireteam_defend 51±10** (v6; the
+diagnosed v7 retrain missed at 35±9).
 
-**Verdicts that shape what's next**:
+**What v1.10 changed (owner's design calls this session, all committed, none
+yet trained on)** — see the progress log for the full reasoning:
+1. `human_death` **−25 → 0.0** — the correlated −25 × n_agents shock, the
+   standing D4 suspect. Preservation is now measured, not priced.
+2. **Observation Box(166) → Box(220)** — tempo block (episode progress +
+   time-to-contact), nearest-cover vector, 7×7 terrain patch (was 5×5),
+   sitrep_due in its own slot, plus derived `OFF_*` block offsets.
+3. **Defend preparation period** — `fireteam_defend` draws H from (55, 75),
+   `max_steps` 375 → 450; OpFor held (but present and spottable) until H; the
+   OPORD announces the band midpoint as nominal H.
+4. **`prep_in_position` 0.05/step** — pay for standing IN COVER at the
+   objective before H. Bounded by H, in the terminal-dominance test.
+5. **False COMPLETE**: `done_false` −0.5 → **−2.0** (break-even p 0.33 → 0.67)
+   plus `done_cooldown` = 8 masking DONE after a rejection.
+
+**Verdicts that still shape what's next**:
 - Orders now *bind* (v1.8 economics: patrol anchor rotations 1364→1) and the
-  vocabulary now *names maneuver* (v1.9: ADVANCE/waypoints/phase lines, timing +
-  EXECUTE, formations, trinôme voice sync) — but the transparency probe still trails
+  vocabulary now *names maneuver* (v1.9) — but the transparency probe still trails
   the OPORD-only baseline (best-ever squad gap −0.090 against a harder stick);
-  residuals named in `docs/transparency.md` §A5.
-- fireteam_defend is the open wound: two documented misses under the new economics;
-  the lead clue is its ~0.52 human-death rate in v7 training (the −25 human-death
-  term may dominate defend's terminal structure).
-- D4 (post-convergence collapse) remains the recurring tax; the ckpt gate helps,
-  collapse itself is unsolved (correlates with human-death penalty bursts).
+  residuals named in `docs/transparency.md` §A5. **Untouched by v1.10.**
+- fireteam_defend: two documented misses. v6 held the position but would not fire;
+  v7 fires at 1.000 but fights 9.7 cells out with cover occupancy 0.05. The
+  assault defense needs fire AND the prepared position; v1.10 items 3–4 are the
+  attempt at both, and the fire-gradient fix (`9519326`) is already in.
+- D4 collapse remains unsolved and is the reason item 1 was spent.
 
 **Next recommended, in order**:
-1. **Defend root problem** — start:
-   `.venv/bin/python scripts/run_report.py fireteam_defend_v7 --vs fireteam_defend_v6`,
-   then oracle-diagnose the human-death interaction before any reward change.
-2. **Probe vs baseline** — implement the two named residual fixes
-   (probe formation/order primacy; fireteam churn-through-pricing).
-3. **A3 self-play**, buildings+pathfinding (v1.4 deferral), false-COMPLETE judgment.
+1. **Retrain `fireteam_defend` under v1.10** — the whole point of the cycle.
+   Suggested parent: `fireteam_defend_v6` (the only policy that ever held the
+   ground) — but note the space break means v6 **cannot** be fine-tuned from;
+   this is a from-scratch train. Diagnose with the oracle regardless of the
+   success number: **cover occupancy under threat** is the prep-period metric,
+   **off-objective fight distance** the occupancy-pay metric. Two variables
+   moved at once here — that separation is how a miss stays diagnosable.
+2. **Retrain the rest of the fleet** on the new spaces (all 8 scenarios) and
+   re-publish; watch `human_death_rate` (item 1 may raise it — that is the
+   accepted trade) and `false_complete_rate` (item 5 should cut it; watch
+   `done_reports` for the *muteness* failure, which is the worse outcome).
+3. **Probe vs baseline** — the two named residual fixes (probe formation/order
+   primacy; fireteam churn-through-pricing).
+4. **A3 self-play**, buildings+pathfinding (v1.4 deferral).
 
 **How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
 the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
@@ -844,3 +869,94 @@ terrain (still deferred).
   is visible in the next campaign's digest. Published checkpoints are
   unaffected (rewards are not part of the observation or action spaces); the
   next retrain measures the effect. 340 → 341 tests.
+- **2026-08-06** — **v1.10 breaking cycle opened: observation space Box(166) →
+  Box(220)** (Discrete(228) unchanged). Owner's call to spend a space break, so
+  everything needing one rode in the same break rather than forcing a second:
+  * **tempo block (+2)** — `episode_progress` (step/max_steps, every scenario)
+    and `time_to_contact`, the countdown to the announced H-hour of the defend
+    preparation period. There was previously **no absolute episode-time feature
+    at all**: agents saw only relative times (steps since order, sync window),
+    so an "approximately known" enemy arrival was literally unknowable.
+  * **nearest-cover vector (+3)** — present/dx/dy to the nearest cover cell
+    within `COVER_SEARCH_RADIUS` (8), encoded like objectives and control
+    measures. `World.nearest_cover` is pure and tie-broken by (distance, y, x),
+    so it consumes no RNG and is scan-order free (determinism convention).
+  * **terrain patch 5×5 → 7×7 (+48)** — `PATCH_RADIUS` 2 → 3. At radius 2 an
+    agent 5 cells off the objective could not perceive the `objective_cover`
+    ring (chebyshev 2 around the objective) it is meant to occupy: the defend
+    scenario was paying for ground the policy was partly blind to.
+  * **SITREP due-ness gets its own slot (+1)** — it previously overloaded the
+    comms "known enemy present" flag purely to keep OBS_DIM frozen (a
+    compromise documented at the time); the flag now means what it says.
+  * **derived block offsets** (`OFF_SELF`…`OFF_PATCH` + named field offsets)
+    exported from `env/observations.py`. Tests indexed the layout with magic
+    numbers, so this break broke seven of them for no signal; offsets are now
+    computed from the block constants and a future layout change surfaces as
+    the `OBS_DIM` assertion instead.
+  **Cost, stated plainly**: all eight published checkpoints are unloadable and
+  the whole fleet needs retraining. The v1.9 numbers stay published as the
+  standing baseline until that campaign runs. 341 → 348 tests.
+- **2026-08-06** — **defend preparation period** (`ScenarioSpec.assault_h_hour`,
+  owner's design call). `fireteam_defend` now draws its H-hour per episode from
+  **(55, 75)** and runs 450 steps (was 375, so the prep is bought without
+  shortening the fight). Before H the OpFor is spawned, alive, oracle-visible
+  and spottable, but does not move, fire, or advance. The OPORD announces the
+  band's **midpoint** on the net — `DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS
+  65.` — and that nominal H drives `time_to_contact`, so the arrival is
+  approximately, not exactly, known: a defense that waits for the announced
+  tick is late half the time, and the habit the scenario pays for is *being
+  set early*.
+  **Why this and not more reward weight**: the fire team spawns at (17,17) with
+  ALPHA at (18,18) — it starts ON the objective, so its problem was never
+  reaching the ground. v7 *left* it (cover occupancy 0.05, the fight 9.7 cells
+  out, ADVANCE missions holding 48% of threatened agent-steps, inherited from
+  the `defend_brique_v2` parent). ~21 steps of warning was just enough to walk
+  out and meet the assault in the open. A contact-free phase makes occupying
+  the position the only thing worth doing, and makes leaving expensive —
+  whoever walks out has to walk back before H.
+  Deliberately a **timer, not a new C2 obligation** (the TL owes no positioning
+  orders during prep): one variable at a time, so a miss stays diagnosable.
+  The draw is guarded, so scenarios without a preparation period consume no
+  randomness and reproduce their old seeds exactly. 348 → 357 tests.
+- **2026-08-06** — **preparation-period occupancy pay** (`RewardConfig.
+  prep_in_position` = 0.05/step, owner's design call — option B2). While the
+  assault is still forming up, an agent standing **in cover** within
+  `IN_POSITION_RADIUS` of the root objective earns it. The prep phase grants
+  the *time* to occupy a prepared position; this grants the *motive*. Without
+  it the contact-free phase is a null period a policy can idle through and
+  still meet the assault in the open — the v7 failure exactly.
+  **Cover is required, not proximity**: bare ground at the objective is not a
+  prepared position (the v1.2 terrain lesson). **Not farmable**: it stops
+  paying at H, so its lifetime ceiling is 0.05 × 75 = **3.75 per agent**
+  against `success_team` 60 — the terminal-dominance regression test now
+  carries `prep_cap` explicitly alongside `observe_cap`.
+  *Risk on the record*: this is the second variable in the defend cycle
+  (prep period + occupancy pay). The B5 precedent says compound changes make
+  misses undiagnosable — accepted deliberately here because a timer with no
+  motive was judged likelier to teach nothing than to teach the wrong thing.
+  If the retrain misses, the oracle should separate them: cover occupancy
+  under threat is the prep-period metric, off-objective fight distance the
+  occupancy-pay metric. 357 → 360 tests.
+- **2026-08-06** — **false-COMPLETE priced and rate-limited** (owner's call).
+  B2 measured **53–84% of DONE claims rejected as premature** wherever DONE is
+  admissible. The diagnosis before changing anything: a penalty already existed
+  (`done_false` −0.5 against `done_true` +1.0), and under it over-claiming was
+  **rational, not a training failure** — claiming pays whenever
+  `p × done_true > (1−p) × |done_false|`, i.e. **p > 0.33**. A 53% rejection
+  rate is p≈0.47, comfortably profitable. Two levers, both applied:
+  * **price** — `done_false` −0.5 → **−2.0**, moving the break-even to
+    **p > 0.67**. Deliberately moderate, not −9: the B5 precedent is that
+    over-pricing a speech act suppresses the *honest* one too, and a cohort
+    that stops transmitting DONE never closes the grace window or earns
+    `root_done_bonus`. **A mute cohort is a worse failure than an
+    over-claiming one.**
+  * **structure** — `ScenarioSpec.done_cooldown` = **8**, masking DONE for 8
+    steps after a DONE_REJECT. A rejected claim never cleared the mission and
+    DONE was admissible on *every* step, so a premature claimant could re-roll
+    each tick until one landed. Mirrors `order_cooldown`, the mechanism that
+    made orders bind in B5: price the act, rate-limit the retry. Only the
+    *retry* is limited — an honest first claim is never delayed.
+  New regression-hazard test file (`tests/test_false_complete.py`) encodes the
+  muteness hazard explicitly: the honest claim must stay reachable, the first
+  claim must never be rate-limited, and the break-even is asserted directly.
+  360 → 367 tests.

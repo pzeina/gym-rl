@@ -129,6 +129,11 @@ class CohortEnv(ParallelEnv):
         self._success_step: int | None = None  # T0: success condition first met
         self._root_done_step: int | None = None  # truthful root-mission DONE step
         self._root_done_callsign: str | None = None
+        #: defend preparation period (v1.10): the step the assault actually
+        #: begins, and the nominal H the OPORD announced. Both None when the
+        #: scenario has no ``assault_h_hour``.
+        self._h_hour: int | None = None
+        self._h_hour_nominal: int | None = None
         self._net_blocked: set[str] = set()  # NET BUSY losers this step (A4)
         self._tx_count = 0  # learned transmissions emitted this step (A4)
         #: soldier id → step of the last casualty in that soldier's element
@@ -248,6 +253,9 @@ class CohortEnv(ParallelEnv):
         self._success_step = None
         self._root_done_step = None
         self._root_done_callsign = None
+        self._h_hour = None
+        self._h_hour_nominal = None
+        self._draw_h_hour()
         self._net_blocked = set()
         self._tx_count = 0
         self._element_casualty_step = {}
@@ -276,7 +284,9 @@ class CohortEnv(ParallelEnv):
             MessageKind.OPORD,
             HQ_ID,
             root.id,
-            lang.format_opord(root.callsign, cfg.root_mission, cfg.root_objective),
+            lang.format_opord(
+                root.callsign, cfg.root_mission, cfg.root_objective, self._h_hour_nominal
+            ),
         )
         if cfg.ablation == "flat":
             # B3 flat arm: no ranks in effect — HQ tasks EVERY agent with the
@@ -619,8 +629,9 @@ class CohortEnv(ParallelEnv):
         if self.band is not None:
             # band-level intent machine ticks once, on post-move blue positions
             self.band.update(step, [s.pos for s in self.roster.living])
-        for enemy in [e for e in self.enemies if e.alive]:
-            self._enemy_turn(enemy, ledger, player_deaths)
+        if not self._in_preparation():
+            for enemy in [e for e in self.enemies if e.alive]:
+                self._enemy_turn(enemy, ledger, player_deaths)
 
         # --- casualties and succession ---
         for dead in player_deaths:
@@ -735,6 +746,19 @@ class CohortEnv(ParallelEnv):
                 if subs:
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
+
+        # preparation-period occupancy (v1.10): before H, an agent in cover
+        # within the objective's in-position radius is preparing the defense.
+        # Bounded by H itself — it stops paying the moment the assault starts.
+        if (
+            cfg.prep_in_position != 0.0
+            and root_obj is not None
+            and self._in_preparation()
+        ):
+            radius = IN_POSITION_RADIUS[self.spec_cfg.root_mission]
+            for s in self.roster.living:
+                if dist(s.pos, root_obj.pos) <= radius and self.world.cover_at(s.pos):
+                    ledger.add(s.callsign, "compliance", cfg.prep_in_position)
 
         # formation shaping (A5-3): members at their formation station while
         # their leader closes NEW ground toward its mission anchor earn the
@@ -1086,6 +1110,9 @@ class CohortEnv(ParallelEnv):
                 lang.format_done_reject(soldier.callsign, responder_cs),
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
+            # a rejected claim cannot be re-rolled every tick (v1.10): the
+            # superior said continue the mission, so continue it
+            soldier.last_done_reject_step = self._step_count
 
     def _sync_propose(self, soldier: Soldier) -> None:
         """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
@@ -1707,7 +1734,47 @@ class CohortEnv(ParallelEnv):
             sitrep_due=sitrep_due,
             sync_pending=sync_pending,
             sync_active=sync_active,
+            episode_progress=min(1.0, step / max(1, self.spec_cfg.max_steps)),
+            time_to_contact=self._time_to_contact(),
         )
+
+    def _draw_h_hour(self) -> None:
+        """Draw the actual H-hour from the scenario's band (v1.10).
+
+        The OPORD announces the band's MIDPOINT — the nominal H the cohort
+        plans against — while the assault actually arrives anywhere in the
+        band. A defense that waits for the announced tick is late half the
+        time, so the trained habit has to be *set early*, not *timed exactly*.
+        Consumes RNG only when the scenario has a preparation period, so seeds
+        for every other scenario reproduce exactly as before.
+        """
+        band = self.spec_cfg.assault_h_hour
+        if band is None:
+            return
+        lo, hi = band
+        self._h_hour = int(self._rng.integers(lo, hi + 1))
+        self._h_hour_nominal = (lo + hi) // 2
+
+    def _in_preparation(self) -> bool:
+        """True while the assault is still forming up (v1.10).
+
+        The OpFor exists from step 0 — it is on the map, oracle-visible, and
+        spottable by anyone who goes looking — but it does not move, fire, or
+        advance until H. A defense is entitled to the time it was told it had.
+        """
+        return self._h_hour is not None and self._step_count < self._h_hour
+
+    def _time_to_contact(self) -> float:
+        """Countdown to the NOMINAL announced H-hour, 1.0 → 0.0 (v1.10).
+
+        0.0 in scenarios with no preparation period, and once H has passed.
+        The actual arrival is jittered around the nominal H (the OPORD is an
+        estimate, not a timetable), so this warns without guaranteeing.
+        """
+        nominal = self._h_hour_nominal
+        if nominal is None or nominal <= 0 or self._step_count >= nominal:
+            return 0.0
+        return (nominal - self._step_count) / nominal
 
     def _compute_views(self) -> dict[str, AgentView]:
         return {s.callsign: self._make_view(s) for s in self.roster.soldiers}
@@ -1723,6 +1790,7 @@ class CohortEnv(ParallelEnv):
             in_range and soldier.ammo > 0,
             bool(visible),
             order_cooldown=self.spec_cfg.order_cooldown,
+            done_cooldown=self.spec_cfg.done_cooldown,
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,

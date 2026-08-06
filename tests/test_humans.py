@@ -6,9 +6,10 @@ from cohort import SCENARIOS, make_env
 from cohort.core.ranks import Rank
 from cohort.core.units import Soldier, validate_human_ranks
 
-#: observation offsets (see env/observations.py layout)
-SELF_HUMAN_FIELD = 12          # self block: 4 + 7 rank one-hot + cover, then is-human
-LEADER_HUMAN_FIELD = 13 + 22 + 2 + 4  # leader block: present, dx, dy, mission, is-human
+#: observation offsets, derived from the layout (env/observations.py) so a
+#: future block change moves them automatically
+from cohort.env.observations import LEADER_HUMAN as LEADER_HUMAN_FIELD
+from cohort.env.observations import SELF_HUMAN as SELF_HUMAN_FIELD
 
 
 def test_root_is_human_in_every_preset():

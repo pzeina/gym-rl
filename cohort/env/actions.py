@@ -182,6 +182,7 @@ def compute_mask(
     visible_enemy: bool,
     *,
     order_cooldown: int = 0,
+    done_cooldown: int = 0,
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
@@ -193,6 +194,9 @@ def compute_mask(
     ``order_cooldown`` > 0 masks re-tasking a subordinate within that many
     steps of its last received order, unless the leader's own mission changed
     since, or a CONTACT report hit the net since (``net_contact_step``).
+
+    ``done_cooldown`` > 0 masks MISSION COMPLETE within that many steps of a
+    rejected claim: a premature claimant must wait before re-rolling.
     Untasked subordinates can always be ordered.
 
     ``ablation`` (ROADMAP B3, ``ScenarioSpec.ablation``) selects the
@@ -225,11 +229,13 @@ def compute_mask(
         elif spec.kind == "sitrep":
             mask[spec.index] = 1
         elif spec.kind == "done":
-            # a pending order (A5-2) is not yet executing: nothing to report
+            # a pending order (A5-2) is not yet executing: nothing to report;
+            # and a rejected claim cannot be re-rolled every tick (v1.10)
             if (
                 soldier.mission is not None
                 and soldier.mission.type in COMPLETABLE
                 and not is_pending(soldier.mission, step)
+                and step - soldier.last_done_reject_step >= done_cooldown
             ):
                 mask[spec.index] = 1
         elif spec.kind == "execute":

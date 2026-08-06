@@ -72,14 +72,14 @@ def _post_band(env, pos):
 
 
 def test_spaces_frozen_under_brique():
-    """Spaces at the A5 layout: Discrete(228) / Box(166) (breaking cycle)."""
+    """Spaces at the v1.10 layout: Discrete(228) / Box(220) (breaking cycle)."""
     assert N_ACTIONS == 228
-    assert OBS_DIM == 166
+    assert OBS_DIM == 220
     env = make_env(_spec(n_traps=3))
     obs, _ = env.reset(seed=0)
     assert env.action_space(env.possible_agents[0]).n == 228
     for a in env.agents:
-        assert obs[a]["observation"].shape == (166,)
+        assert obs[a]["observation"].shape == (220,)
         assert obs[a]["action_mask"].shape == (228,)
 
 

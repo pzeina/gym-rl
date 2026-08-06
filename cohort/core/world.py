@@ -125,6 +125,24 @@ class World:
         """True if pos gives cover (forest)."""
         return self.in_bounds(pos) and self.grid[pos[1], pos[0]] == FOREST
 
+    def nearest_cover(self, pos: Coord, radius: int) -> Coord | None:
+        """Nearest cover cell within Chebyshev ``radius``, or None if there is none.
+
+        Ties break by (distance, y, x) so the result is a pure function of the
+        grid — no RNG, no scan-order dependence (determinism convention).
+        The agent's own cell counts: standing in cover means distance 0.
+        """
+        best: tuple[float, int, int] | None = None
+        for dy in range(-radius, radius + 1):
+            for dx in range(-radius, radius + 1):
+                p = (pos[0] + dx, pos[1] + dy)
+                if not self.cover_at(p):
+                    continue
+                key = (float(dx * dx + dy * dy), p[1], p[0])
+                if best is None or key < best:
+                    best = key
+        return (best[2], best[1]) if best is not None else None
+
     def line_of_sight(self, a: Coord, b: Coord) -> bool:
         """Bresenham LOS check; walls block, endpoints never block."""
         x0, y0 = a

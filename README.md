@@ -328,6 +328,15 @@ trinôme sync — see the v1.9 table below). The A5 space break (Discrete
 157 → 228, Box 137 → 166) made every earlier checkpoint incompatible, so
 every scenario was retrained from scratch (fresh nets; earlier runs stay on
 disk and in git history for provenance).
+
+> ⚠️ **v1.10 is a second breaking cycle, in progress.** The observation is now
+> **Box(220)** (Discrete(228) unchanged): a tempo block (episode progress +
+> time-to-contact for the defend preparation period), a nearest-cover vector,
+> SITREP due-ness in its own slot, and a 7×7 terrain patch (was 5×5 — a
+> defender could not perceive the `objective_cover` ring it was meant to
+> occupy). **Every checkpoint in the table below is unloadable under v1.10**
+> and the fleet has not yet been retrained; the published numbers are the
+> v1.9 results, kept as the standing baseline until the v1.10 campaign runs.
 Numbers are sampled-policy evaluation success over N=100 episodes with a 95% CI;
 `ckpt_best` is the rolling-best checkpoint of each run. The fireteam and squad
 results were re-published under the **A4 comms discipline** (net-busy arbitration +

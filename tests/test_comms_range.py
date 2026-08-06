@@ -13,6 +13,7 @@ from cohort import make_env
 from cohort.config import get_scenario
 from cohort.core.missions import MissionType
 from cohort.env.actions import CATALOG
+from cohort.env.observations import OFF_COMMS
 
 STAY = 0
 CONTACT_IDX = next(s.index for s in CATALOG if s.kind == "contact")
@@ -25,10 +26,9 @@ ORDER_SEIZE_S0 = next(
     and s.order_objective == "ALPHA"
 )
 
-#: Offset of the comms-summary "known enemy count" field in the observation:
-#: 13 self + 16 mission + 5 leader + 5*4 subs + 4*4 enemies + 3*4 obj = 82,
-#: comms block = [new-order flag, known count, known present, dx, dy].
-KNOWN_COUNT_FIELD = 112
+#: comms block = [new-order flag, known count, known present, dx, dy,
+#: sitrep-due]; derived from the layout so a block change moves it
+KNOWN_COUNT_FIELD = OFF_COMMS + 1
 
 
 def _flat_env(spec, seed=1):

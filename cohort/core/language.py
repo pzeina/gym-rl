@@ -220,9 +220,25 @@ def format_sync_go(proposer_cs: str) -> str:
     return f"{proposer_cs}: GO! OUT."
 
 
-def format_opord(recipient_cs: str, mission: MissionType, target: str | None) -> str:
-    """Initial operations order from higher HQ to the senior agent."""
-    return f"{recipient_cs}, THIS IS HQ: OPORD — {mission_phrase(mission, target)}. OUT."
+def format_opord(
+    recipient_cs: str,
+    mission: MissionType,
+    target: str | None,
+    h_hour: int | None = None,
+) -> str:
+    """Initial operations order from higher HQ to the senior agent.
+
+    ``h_hour`` (v1.10) appends the enemy-arrival estimate for scenarios with a
+    preparation period. It is an ESTIMATE — the assault arrives somewhere in
+    the scenario's band — so the wording is "EXPECT", not a timetable. The
+    clause sits after the task statement, where ``parse_order`` ignores it: the
+    task the OPORD assigns is unchanged by when the enemy is due.
+    """
+    warning = f" EXPECT ASSAULT AT H PLUS {h_hour}." if h_hour is not None else ""
+    return (
+        f"{recipient_cs}, THIS IS HQ: OPORD — {mission_phrase(mission, target)}."
+        f"{warning} OUT."
+    )
 
 
 def format_ack(issuer_cs: str, recipient_cs: str) -> str:
