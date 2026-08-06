@@ -293,3 +293,71 @@ def test_sync_determinism():
         return trail
 
     assert run(33) == run(33)
+
+
+# ---------------------------------------------------------------------- #
+# airtime (issue #18): voice is no longer free
+# ---------------------------------------------------------------------- #
+
+
+def test_voice_pays_airtime_like_every_other_transmission():
+    """The owner's call on #18: no channel is free.
+
+    While SYNC was uncharged it was the only action a policy could emit at
+    no cost, and `squad_screen_v4/ckpt_latest` poured 93% of its traffic
+    into it — 1173 messages an episode against its own best checkpoint's
+    170 — to run the clock out at 0% success. An action sink is not a
+    doctrine.
+    """
+    env = _flat_squad()
+    rfn1 = env.roster.by_callsign["RFN1"]
+    for i, s in enumerate(env.roster.soldiers):
+        s.pos = (10 + i, 10)
+    cost = env.rewards_cfg.transmission_cost
+
+    acts = _stay_all(env)
+    acts["RFN1"] = PROPOSE_IDX
+    *_, infos = env.step(acts)
+    assert infos["RFN1"]["components"]["report"] == cost, "PREPARE TO BOUND pays airtime"
+    assert env.transmissions_last_step == 1, "and it is counted as a transmission"
+
+    acts = _stay_all(env)
+    acts["RFN1"] = GO_IDX
+    *_, infos = env.step(acts)
+    assert infos["RFN1"]["components"]["report"] == cost, "GO pays airtime"
+    assert env.transmissions_last_step == 1
+
+    # charged to report, never command: the flat arm has no chain of command
+    # and its command reward must stay exactly 0.0 (tests/test_ablation.py)
+    assert infos["RFN1"]["components"]["command"] == 0.0
+
+
+def test_a_sync_that_says_nothing_costs_nothing():
+    """Airtime is paid for what is SAID. A GO with no live proposal, or one
+    past its TTL, emits no message and so must not be charged."""
+    env = _flat_squad()
+    rfn1 = env.roster.by_callsign["RFN1"]
+    for i, s in enumerate(env.roster.soldiers):
+        s.pos = (10 + i, 10)
+
+    # a GO the mask would refuse: nothing pending, nothing said, nothing paid
+    acts = _stay_all(env)
+    acts["RFN1"] = GO_IDX
+    *_, infos = env.step(acts)
+    assert infos["RFN1"]["components"]["report"] == 0.0
+    assert env.transmissions_last_step == 0
+
+    # a proposal that goes stale: the PROPOSE was said and paid, the expired
+    # GO is not
+    acts = _stay_all(env)
+    acts["RFN1"] = PROPOSE_IDX
+    env.step(acts)
+    for _ in range(SYNC_PROPOSE_TTL + 1):
+        env.step(_stay_all(env))
+    before = len(env.transcript.messages)
+    acts = _stay_all(env)
+    acts["RFN1"] = GO_IDX
+    *_, infos = env.step(acts)
+    assert infos["RFN1"]["components"]["report"] == 0.0, "the moment passed; nothing said"
+    assert len(env.transcript.messages) == before
+    assert env._synchronized(rfn1) is None

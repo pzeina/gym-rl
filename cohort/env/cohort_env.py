@@ -969,9 +969,9 @@ class CohortEnv(ParallelEnv):
         elif spec.kind == "execute":
             self._execute_signal(soldier, ledger)
         elif spec.kind == "sync_propose":
-            self._sync_propose(soldier)
+            self._sync_propose(soldier, ledger)
         elif spec.kind == "sync_go":
-            self._sync_go(soldier)
+            self._sync_go(soldier, ledger)
         elif spec.kind == "order":
             self._issue_order(soldier, spec, ledger)
 
@@ -1123,18 +1123,29 @@ class CohortEnv(ParallelEnv):
             # superior said continue the mission, so continue it
             soldier.last_done_reject_step = self._step_count
 
-    def _sync_propose(self, soldier: Soldier) -> None:
+    def _sync_propose(self, soldier: Soldier, ledger: RewardLedger) -> None:
         """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
 
         Registers a pending bound with every peer currently within
         ``voice_range`` (same element or adjacent trinôme). A re-proposal
-        overwrites the previous one. Voice is never net-arbitrated and
-        costs no airtime; it still appears on the transcript, flagged.
+        overwrites the previous one. Voice is still never net-arbitrated —
+        shouting to the soldier beside you does not contend for the net —
+        but it now pays airtime like every other learned transmission
+        (owner's call, issue #18): while it was free it was the only action
+        a policy could emit at no cost, and squad_screen_v4/ckpt_latest
+        poured 93% of its traffic into it, 1173 messages an episode, to run
+        the clock out. A speech act nobody pays for is an action sink.
+
+        Charged to ``report``, not ``command``: SYNC is speech between peers,
+        not authority exercised over a subordinate, and the ``flat`` ablation
+        arm — which has no chain of command and must show command reward of
+        exactly 0.0 — can still say GO.
         """
         peers = voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
         if not peers:
-            return  # mask guards; defensive
+            return  # mask guards; defensive — nothing said, nothing charged
         self._sync_pending[soldier.id] = (self._step_count, tuple(p.id for p in peers))
+        self._charge_transmission(soldier, ledger, "report")
         self._say(
             MessageKind.SYNC_PROPOSE,
             soldier.id,
@@ -1143,15 +1154,21 @@ class CohortEnv(ParallelEnv):
             voice=True,
         )
 
-    def _sync_go(self, soldier: Soldier) -> None:
+    def _sync_go(self, soldier: Soldier, ledger: RewardLedger) -> None:
         """The bound signal (A5-4): GO! Synchronizes the proposer and every
-        registered peer still alive for the next ``SYNC_WINDOW`` steps."""
+        registered peer still alive for the next ``SYNC_WINDOW`` steps.
+
+        Charged like any learned transmission (see ``_sync_propose``). A GO
+        that never lands — no live proposal, or one past its TTL — says
+        nothing and so costs nothing.
+        """
         pending = self._sync_pending.pop(soldier.id, None)
         if pending is None:
             return
         propose_step, peer_ids = pending
         if self._step_count - propose_step > SYNC_PROPOSE_TTL:
             return  # stale proposal: the moment has passed
+        self._charge_transmission(soldier, ledger, "report")
         group = (soldier.id, self._step_count)
         until = self._step_count + SYNC_WINDOW
         self._sync_until[soldier.id] = (until, group)
