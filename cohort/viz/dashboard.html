@@ -68,6 +68,22 @@
   .hidden { display: none !important; }
   .empty { color: var(--dim); text-align: center; padding: 30px 10px; }
   .compat { color: var(--warn); background: #2a2411; border: 1px solid #4a3f1a; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-bottom: 7px; }
+  /* chain of command: one row per station, indented by depth in the org chart */
+  #coc { display: flex; flex-direction: column; gap: 2px; }
+  .coc-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(120px, 1.6fr) 74px; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
+  .coc-row:hover { background: var(--panel2); border-color: var(--line); }
+  .coc-row.sel { border-color: var(--accent); background: var(--panel2); }
+  .coc-row.dead { opacity: .45; }
+  .coc-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .coc-cs { font-weight: 650; color: #a8e4ff; }
+  .coc-rank { color: var(--dim); font-size: 11px; }
+  .coc-order { font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .coc-order .standby { color: var(--dim); }
+  .coc-order .since { color: var(--dim); }
+  .coc-hp { display: flex; align-items: center; gap: 6px; }
+  .coc-hp .bar { flex: 1; margin: 0; height: 6px; }
+  .coc-hp .pct { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
+  .coc-tick { color: var(--line); font-family: ui-monospace, Menlo, monospace; }
   .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
 </style>
 </head>
@@ -167,6 +183,10 @@
       </select>
     </div>
     <canvas id="timeline" title="team reward per step + events — click to seek"></canvas>
+    <div class="card" id="cocpanel">
+      <h3>Chain of command <span id="coc-note"></span></h3>
+      <div id="coc"><div class="empty">generate an episode</div></div>
+    </div>
   </div>
   <div class="rightbar hidden" id="right-episode">
     <div id="inspector"><div class="empty">nothing selected</div></div>
@@ -549,7 +569,7 @@ function seek(nt) {
   t = Math.max(0, Math.min(EP.steps.length - 1, nt));
   $("pb-slider").value = t;
   $("pb-t").textContent = `t=${EP.steps[t].t}/${EP.length}`;
-  drawMap(); renderInspector(); renderMsgs(); drawTimeline();
+  drawMap(); renderInspector(); renderCoC(); renderMsgs(); drawTimeline();
 }
 function togglePlay(force) {
   playing = force !== undefined ? force : !playing;
@@ -753,13 +773,13 @@ map.addEventListener("click", (e) => {
   const st = EP.steps[t];
   const near = (x, y, rad) => Math.hypot(cx(g0, x) - mx, cy(g0, y) - my) < rad;
   const soldier = st.soldiers.find((s) => near(s.x, s.y, g0.cell * 0.8));
-  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); return; }
+  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); renderCoC(); return; }
   const enemy = st.enemies.find((en) => near(en.x, en.y, g0.cell * 0.8));
-  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); return; }
+  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); renderCoC(); return; }
   const obj = EP.objectives.find((o) => near(o.x, o.y, o.r * g0.cell));
-  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); return; }
+  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); renderCoC(); return; }
   const gx = Math.floor((mx - g0.ox) / g0.cell), gy = Math.floor((my - g0.oy) / g0.cell);
-  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); }
+  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); renderCoC(); }
 });
 
 /* ---------- timeline ---------- */
@@ -795,6 +815,72 @@ $("timeline").addEventListener("click", (e) => {
 });
 
 /* ---------- inspector ---------- */
+/* ---------- chain of command ----------
+   The org chart as it stands AT THIS STEP, not as it was issued: succession
+   promotes people mid-episode, so the tree is rebuilt from each station's
+   current `leader` link. Shows what every station was actually ordered to do
+   and how much of it is left standing. Clicking a row selects that station,
+   exactly like clicking it on the map. */
+
+function orderText(s) {
+  if (!s.mission) return '<span class="standby">STANDBY — no orders</span>';
+  const m = s.mission;
+  let txt = m.type;
+  if (m.obj) txt += " OBJ " + m.obj;
+  else if (m.control) txt += " TO " + m.control;
+  else if (m.target) txt += " " + m.target;
+  return `${txt} <span class="since">· since t=${m.since}</span>`;
+}
+
+function renderCoC() {
+  const el = $("coc");
+  if (!EP) { el.innerHTML = '<div class="empty">generate an episode</div>'; return; }
+  const st = EP.steps[t];
+  const byCs = Object.fromEntries(st.soldiers.map((s) => [s.cs, s]));
+  const children = {};
+  const roots = [];
+  st.soldiers.forEach((s) => {
+    if (s.leader && byCs[s.leader]) (children[s.leader] = children[s.leader] || []).push(s.cs);
+    else roots.push(s.cs);
+  });
+
+  const rows = [];
+  const walk = (cs, depth, isLast, prefix) => {
+    const s = byCs[cs];
+    const branch = depth === 0 ? "" : prefix + (isLast ? "└─ " : "├─ ");
+    const hp = Math.max(0, s.hp);
+    const hpColor = hp > 60 ? "var(--good)" : hp > 30 ? "var(--warn)" : "var(--bad)";
+    const acting = s.eff !== s.rank
+      ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff}</span>` : "";
+    const human = s.human
+      ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
+    const picked = sel && sel.type === "soldier" && sel.key === s.cs;
+    rows.push(
+      `<div class="coc-row ${s.alive ? "" : "dead"} ${picked ? "sel" : ""}" data-cs="${s.cs}"
+            title="click for full status">
+         <div class="coc-name"><span class="coc-tick">${branch}</span>
+           <span class="coc-cs">${s.alive ? "" : "✝ "}${s.cs}</span>
+           <span class="coc-rank">${GRADES[s.eff] || s.eff}</span>${acting}${human}</div>
+         <div class="coc-order">${s.alive ? orderText(s) : '<span class="standby">killed in action</span>'}</div>
+         <div class="coc-hp"><div class="bar"><div style="width:${hp}%;background:${hpColor}"></div></div>
+           <span class="pct">${hp}%</span></div>
+       </div>`);
+    const kids = (children[cs] || []).sort();
+    kids.forEach((k, i) =>
+      walk(k, depth + 1, i === kids.length - 1, depth === 0 ? "" : prefix + (isLast ? "   " : "│  ")));
+  };
+  roots.sort().forEach((r) => walk(r, 0, true, ""));
+
+  el.innerHTML = rows.join("");
+  const alive = st.soldiers.filter((s) => s.alive).length;
+  $("coc-note").innerHTML =
+    `<span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">
+       — ${alive}/${st.soldiers.length} effective at t=${st.t}</span>`;
+  el.querySelectorAll(".coc-row").forEach((row) => {
+    row.onclick = () => { sel = { type: "soldier", key: row.dataset.cs }; drawMap(); renderInspector(); renderCoC(); };
+  });
+}
+
 function renderInspector() {
   const el = $("inspector");
   if (!EP || !sel) { el.innerHTML = '<div class="empty">click something on the map</div>'; return; }
