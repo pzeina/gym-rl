@@ -191,3 +191,121 @@ def test_occupancy_is_absent_without_a_preparation_period():
     assert not env._in_preparation()
     # whatever compliance it earns, none of it is prep occupancy
     assert env.spec_cfg.assault_h_hour is None
+
+
+# ---------------------------------------------------------------------- #
+# the announcement on the observable surface (issue #12)
+#
+# The OPORD's "EXPECT ASSAULT AT H PLUS 65" is the first forward-looking
+# content the net has ever carried, and it was reaching an outside monitor
+# nowhere: said once, then dropped at the boundary. Two routes now carry it —
+# language.parse_opord (read it back off the transcript) and briefing()
+# (hold it as header material, before reset and for corpora that predate the
+# clause). What stays behind is the ACTUAL drawn arrival: announced != actual
+# is the inference problem, so the truth lives only in env.oracle().
+# ---------------------------------------------------------------------- #
+
+ANNOUNCED = (BAND[0] + BAND[1]) // 2  # the OPORD says the band's midpoint
+
+
+def _announced_steps_in(transcript):
+    """Every "H PLUS <n>" said on the net, as a set of ints."""
+    import re
+
+    return {int(n) for m in transcript.messages for n in re.findall(r"H PLUS (\d+)", m.text)}
+
+
+def test_the_announced_step_round_trips_out_of_the_opord_text():
+    """Formatter and parser stay inverses over the clause, not just the task."""
+    from cohort.core import language as lang
+    from cohort.core.missions import MissionType
+
+    for step in (0, 7, 65, 1234):
+        text = lang.format_opord("TL1", MissionType.DEFEND, "ALPHA", step)
+        assert lang.parse_opord(text) == {
+            "recipient": "TL1",
+            "mission": "DEFEND",
+            "objective": "ALPHA",
+            "announced_assault_step": step,
+        }
+    # an OPORD with no preparation period parses too, with the clause absent
+    plain = lang.format_opord("SL1", MissionType.SEIZE, "ALPHA")
+    assert lang.parse_opord(plain)["announced_assault_step"] is None
+    assert lang.parse_opord(plain)["mission"] == "SEIZE"
+
+
+def test_the_announced_step_is_recoverable_from_the_episode_transcript():
+    """The path a monitor actually takes: read the net, get the deadline."""
+    from cohort.core import language as lang
+
+    env, _ = _defend()
+    opord = env.transcript.messages[0]
+    assert lang.parse_opord(opord.text)["announced_assault_step"] == ANNOUNCED
+
+
+def test_parse_opord_declines_traffic_that_is_not_an_opord():
+    from cohort.core import language as lang
+
+    env, _ = _defend()
+    env.step({a: 0 for a in env.agents})
+    for msg in env.transcript.messages[1:]:
+        assert lang.parse_opord(msg.text) is None, msg.text
+    assert lang.parse_opord("TL1, THIS IS RFN1: SITREP, GRID 0912, "
+                            "HEALTH 66%, AMMO 24, IN COVER. OVER.") is None
+
+
+def test_the_briefing_carries_the_announced_step_before_reset():
+    """Header material: a pure function of the scenario, so a corpus that
+    predates the clause — or a listener that never heard the broadcast —
+    still gives a monitor the deadline."""
+    import json
+
+    from cohort.config import briefing
+
+    brief = briefing("fireteam_defend")
+    json.dumps(brief)
+    assert brief["announced_assault_step"] == ANNOUNCED
+    env, _ = _defend()
+    assert env.briefing()["announced_assault_step"] == env._h_hour_nominal
+    for name in ("fireteam", "squad", "squad_recon", "defend_brique"):
+        assert briefing(name)["announced_assault_step"] is None
+
+
+def test_the_actual_assault_step_never_reaches_an_observable_payload():
+    """The announcement is public; the draw is the answer, and stays hidden."""
+    from cohort.core import language as lang
+
+    jittered = [s for s in range(12) if _defend(seed=s)[0]._h_hour != ANNOUNCED]
+    assert jittered, "the band must jitter, or this asserts nothing"
+    for seed in jittered:
+        env, _ = _defend(seed=seed)
+        actual = env._h_hour
+        assert env.briefing()["announced_assault_step"] == ANNOUNCED != actual
+        # the briefing cannot carry the draw at all: it is the same dict in
+        # every episode, whatever this episode's H turned out to be
+        assert env.briefing() == _defend(seed=seed + 100)[0].briefing()
+        for msg in env.transcript.messages:
+            parsed = lang.parse_opord(msg.text)
+            if parsed is not None:
+                assert parsed["announced_assault_step"] == ANNOUNCED
+        assert env.oracle()["actual_assault_step"] == actual, "the truth is oracle-side"
+
+
+def test_no_message_ever_names_the_actual_assault_step():
+    """Including after H: the assault arriving is not itself announced."""
+    seed = next(s for s in range(12) if _defend(seed=s)[0]._h_hour != ANNOUNCED)
+    env, _ = _defend(seed=seed)
+    for _ in range(env._h_hour + 5):
+        env.step({a: 0 for a in env.agents})
+    assert _announced_steps_in(env.transcript) == {ANNOUNCED}
+
+
+def test_the_oracle_carries_both_the_announcement_and_the_truth():
+    env, _ = _defend()
+    snap = env.oracle()
+    assert snap["announced_assault_step"] == ANNOUNCED
+    assert BAND[0] <= snap["actual_assault_step"] <= BAND[1]
+    plain = make_env("fireteam")
+    plain.reset(seed=2)
+    assert plain.oracle()["announced_assault_step"] is None
+    assert plain.oracle()["actual_assault_step"] is None
