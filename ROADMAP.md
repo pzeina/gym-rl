@@ -2,9 +2,10 @@
 
 ## ⟳ Session handoff — resume here (2026-08-06)
 
-**State**: `multi-agent-dev` at `7f1fb42`, **ahead of `main`/origin by 6 commits —
-not yet pushed**; latest tag v1.9.0; **367 tests green, ruff clean**; nothing
-training. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
+**State**: `multi-agent-dev` at `d3174b3`, **14 commits ahead of `main`**; latest
+tag v1.9.0; **395 tests green, ruff clean**; nothing training. **The repo has NO
+git remote configured** (`git remote -v` is empty) — the older "= origin" note was
+wrong; a remote must be added before anything can be pushed. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
 **Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
 The fleet has NOT been retrained — the v1.9 numbers below are the standing
 baseline, not v1.10 results.
@@ -1028,3 +1029,27 @@ terrain (still deferred).
   which lives only on the assurance layer's own `assurance-integration`
   branch and is theirs to edit. This side supplies the data; the header
   writer stays with them. 375 → 391 tests.
+- **2026-08-06** — **dashboard: usable again, and organised by doctrine.** Three
+  fixes, one of them a regression this session caused:
+  * **blank episodes fixed.** Every checkpoint is Box(166); v1.10 made the env
+    Box(220), so loading one died inside a forward pass with a torch
+    `RuntimeError` the handler did not catch — the request died and the UI
+    showed nothing. `checkpoint_meta()` now refuses incompatible checkpoints up
+    front with a readable reason, the handler catches everything, and failures
+    render in the sidebar.
+  * **picker: task → echelon → version** (was one ~100-entry list), all derived
+    from `ScenarioSpec` via `scenario_facets()`, with a test asserting
+    (task, echelon) stays unique. The threat qualifies the task — `Defend` vs
+    `Defend · irregular` — since both are DEFEND at fireteam level.
+  * **legacy checkpoints replay without retraining** (`scripts/legacy_trace.py`).
+    A shim was never an option: BOTH the observation layout and the action
+    indices moved between eras, so a padded observation would silently mean the
+    wrong thing. Instead the run is replayed at its OWN release tag in a
+    throwaway worktree and written out as plain JSON — a trace is data, not a
+    model, so it survives every future space break. `ERA_REF`: 137 → v1.8.0,
+    166 → v1.9.0, 220 → in-process. Traces are gitignored (deterministic from
+    tag+scenario+seed, ~0.5 MB each).
+  * **chain-of-command panel** under the episode: the org chart as it stands at
+    the current step (succession re-parents it live), each station's standing
+    order and the step it was issued, health, and click-through to the
+    inspector. 393 → 395 tests.
