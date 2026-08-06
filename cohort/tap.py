@@ -63,8 +63,11 @@ def _callsign(env: CohortEnv, agent_id: int) -> str:
 #: alternative is unambiguous.
 _PHRASE_RE = re.compile(
     r"(?P<task>[A-Z]+)"
-    r"(?: FLANK OBJ (?P<obj2>[A-Z]+)| OBJ (?P<obj>[A-Z]+)| ON ME| POSITION| (?P<unit>[A-Z]+\d+))"
+    r"(?: FLANK OBJ (?P<obj2>[A-Z]+)| TO (?P<cmk>WP|PL) (?P<cm>[A-Z]+)| OBJ (?P<obj>[A-Z]+)"
+    r"| ON ME| POSITION| (?P<unit>[A-Z]+\d+))"
 )
+#: A5-3 formation orders: an element stance, not a mission.
+_FORMATION_RE = re.compile(r"FORMATION (?P<f>COLUMN|LINE|WEDGE)")
 _CONTACT_RE = re.compile(r"CONTACT, GRID (?P<grid>\d{4}), (?P<n>\d+) x ENEMY")
 _SITREP_RE = re.compile(r"SITREP, GRID (?P<grid>\d{4}), HEALTH (?P<health>\d+)%, AMMO (?P<ammo>\d+)")
 _CASUALTY_RE = re.compile(r"ALL STATIONS: (?P<cs>[A-Z]+\d+) IS DOWN")
@@ -84,23 +87,33 @@ def _parse_phrase(text: str) -> dict:
     # because the false match is a genuine substring (bug found by the
     # squad_screen random corpus, PLAN.md 12.26).
     body = text.split(": ", 1)[1] if ": " in text else text
+    f = _FORMATION_RE.search(body)
+    if f is not None:
+        # stance order (A5-3): shapes movement, never a mission
+        return {"formation": f.group("f").lower()}
     m = _PHRASE_RE.search(body)
     if m is None:
         raise ValueError(f"unparseable mission phrase in {text!r}")
     task = m.group("task")
     obj = m.group("obj") or m.group("obj2")
     unit = m.group("unit")
+    cm = m.group("cm")
     if unit:
         rebuilt = f"{task} {unit}"
     elif m.group("obj2"):
         rebuilt = f"{task} FLANK OBJ {obj}"
+    elif cm:
+        rebuilt = f"{task} TO {m.group('cmk')} {cm}"
     elif obj:
         rebuilt = f"{task} OBJ {obj}"
     else:
         rebuilt = f"{task} ON ME" if task == "RALLY" else f"{task} POSITION"
     if rebuilt not in body:
         raise ValueError(f"round-trip mismatch: {rebuilt!r} not in {text!r}")
-    return {"task": task.lower(), "objective": obj, "unit": unit}
+    # ADVANCE targets a control measure; the truth stream stores the bare
+    # measure name (extra['control']), so the WP/PL prefix is presentation
+    # -- strip it here to keep hypotheses comparable.
+    return {"task": task.lower(), "objective": cm or obj, "unit": unit}
 
 
 def _payload(m: Message) -> dict:
@@ -186,6 +199,11 @@ def _state_record(env: CohortEnv, episode: int, step: int) -> dict:
             sup_id = s.mission.extra.get("supported_id")
             if sup_id is not None and sup_id in env.roster.by_id:
                 target = env.roster.by_id[sup_id].callsign
+            # A5: ADVANCE targets a named control measure ('WP GOLD' /
+            # 'PL AMBER'), stored in extra -- surface it as the target so
+            # truth matches the order text's phrase.
+            if s.mission.extra.get("control"):
+                target = s.mission.extra["control"]
             mission[s.callsign] = {
                 "type": s.mission.type.value,
                 "objective": None if obj_id is None else env.world.objectives[obj_id].name,
