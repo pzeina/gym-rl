@@ -75,8 +75,13 @@ def test_mission_complete_truthful_vs_false():
     assert infos["RFN1"]["components"]["report"] < 0, "false MISSION COMPLETE is penalized"
     assert sld.mission is not None, "mission stands until actually complete"
 
-    # now truthfully: stand on BRAVO with no enemies near it
+    # now truthfully: stand on BRAVO with no enemies near it. The v1.10
+    # done_cooldown bars a re-claim for a few steps after a rejection, so wait
+    # it out first -- the honest claim is delayed, never denied.
     sld.pos = obj.pos
+    for _ in range(env.spec_cfg.done_cooldown):
+        _step_all(env, {})
+        sld.pos = obj.pos
     *_, infos = _step_all(env, {"RFN1": DONE})
     assert infos["RFN1"]["components"]["report"] > 0
     assert sld.mission is None, "honest completion clears the mission"
@@ -97,8 +102,12 @@ def test_done_verdict_lands_on_the_net():
     reject = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_reject")
     assert reject.text == "RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT."
     assert sld.mission is not None
-    # truthful claim → ROGER ... CONFIRMED, mission cleared
+    # truthful claim → ROGER ... CONFIRMED, mission cleared (after the v1.10
+    # re-claim cooldown the rejection opened)
     sld.pos = obj.pos
+    for _ in range(env.spec_cfg.done_cooldown):
+        _step_all(env, {})
+        sld.pos = obj.pos
     _step_all(env, {"RFN1": DONE})
     confirm = next(m for m in reversed(env.transcript.messages) if m.kind.value == "done_confirm")
     assert confirm.text == "RFN1, THIS IS TL1: ROGER, SEIZE OBJ BRAVO CONFIRMED. OUT."

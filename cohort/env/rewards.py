@@ -60,7 +60,19 @@ class RewardConfig:
     sitrep_overdue: float = -0.02     # per step out of contact past the mandated
     #                                   cadence without a SITREP (doctrine only)
     done_true: float = 1.0
-    done_false: float = -0.5
+    done_false: float = -2.0          # v1.10: -0.5 → -2.0. B2 measured 53-84% of
+    #                                   DONE claims rejected as premature, and at
+    #                                   -0.5 that was RATIONAL, not a training
+    #                                   failure: claiming pays whenever
+    #                                   p x done_true > (1-p) x |done_false|, i.e.
+    #                                   p > 0.33. The break-even is now p > 0.67.
+    #                                   Deliberately moderate — the B5 precedent is
+    #                                   that over-pricing a speech act suppresses the
+    #                                   HONEST one too, and a cohort that stops
+    #                                   transmitting DONE never closes the grace
+    #                                   window or earns root_done_bonus. The spam
+    #                                   half of the problem is handled structurally
+    #                                   by ScenarioSpec.done_cooldown instead.
 
     # Objective-lost pressure (v1.4 retrain diagnosis): on DEFEND/DENY root
     # missions, every living agent bleeds this per step while any living

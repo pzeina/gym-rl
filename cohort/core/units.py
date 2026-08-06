@@ -87,6 +87,9 @@ class Soldier:
     reported_enemy_ids: set[int] = field(default_factory=set)
     last_contact_report_step: int = -10_000
     last_order_step: int = -10_000        # when this agent last *received* an order
+    last_done_reject_step: int = -10_000  # when a MISSION COMPLETE claim was last
+    #                                       rejected — gates the DONE re-claim
+    #                                       cooldown (ScenarioSpec.done_cooldown)
     last_issued: dict[int, tuple] = field(default_factory=dict)  # sub_id → (mission, obj)
 
     @property

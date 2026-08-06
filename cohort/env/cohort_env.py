@@ -1110,6 +1110,9 @@ class CohortEnv(ParallelEnv):
                 lang.format_done_reject(soldier.callsign, responder_cs),
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
+            # a rejected claim cannot be re-rolled every tick (v1.10): the
+            # superior said continue the mission, so continue it
+            soldier.last_done_reject_step = self._step_count
 
     def _sync_propose(self, soldier: Soldier) -> None:
         """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
@@ -1787,6 +1790,7 @@ class CohortEnv(ParallelEnv):
             in_range and soldier.ammo > 0,
             bool(visible),
             order_cooldown=self.spec_cfg.order_cooldown,
+            done_cooldown=self.spec_cfg.done_cooldown,
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,

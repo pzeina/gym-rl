@@ -107,6 +107,15 @@ class ScenarioSpec:
     order_cooldown: int = 8       # steps a leader cannot re-task the same subordinate
     #                               (masked); lifted early if the leader's own mission
     #                               changed or a CONTACT hit the net since. 0 → off.
+    done_cooldown: int = 8        # steps an agent cannot re-claim MISSION COMPLETE
+    #                               after a DONE_REJECT (masked). A rejected claim
+    #                               does not clear the mission, and DONE was
+    #                               admissible on EVERY step, so a premature claimant
+    #                               could re-roll each tick until one landed — the
+    #                               structural half of the 53-84% false-COMPLETE rate
+    #                               B2 measured. Mirrors order_cooldown, the mechanism
+    #                               that made orders bind in B5: price the act, and
+    #                               rate-limit the retry. 0 → off (pre-v1.10 behavior).
     grace_window: int = 12        # steps the episode stays open after the root-mission
     #                               success condition is first met, giving the root time
     #                               to transmit MISSION COMPLETE; a truthful root DONE

@@ -912,3 +912,26 @@ terrain (still deferred).
   If the retrain misses, the oracle should separate them: cover occupancy
   under threat is the prep-period metric, off-objective fight distance the
   occupancy-pay metric. 357 → 360 tests.
+- **2026-08-06** — **false-COMPLETE priced and rate-limited** (owner's call).
+  B2 measured **53–84% of DONE claims rejected as premature** wherever DONE is
+  admissible. The diagnosis before changing anything: a penalty already existed
+  (`done_false` −0.5 against `done_true` +1.0), and under it over-claiming was
+  **rational, not a training failure** — claiming pays whenever
+  `p × done_true > (1−p) × |done_false|`, i.e. **p > 0.33**. A 53% rejection
+  rate is p≈0.47, comfortably profitable. Two levers, both applied:
+  * **price** — `done_false` −0.5 → **−2.0**, moving the break-even to
+    **p > 0.67**. Deliberately moderate, not −9: the B5 precedent is that
+    over-pricing a speech act suppresses the *honest* one too, and a cohort
+    that stops transmitting DONE never closes the grace window or earns
+    `root_done_bonus`. **A mute cohort is a worse failure than an
+    over-claiming one.**
+  * **structure** — `ScenarioSpec.done_cooldown` = **8**, masking DONE for 8
+    steps after a DONE_REJECT. A rejected claim never cleared the mission and
+    DONE was admissible on *every* step, so a premature claimant could re-roll
+    each tick until one landed. Mirrors `order_cooldown`, the mechanism that
+    made orders bind in B5: price the act, rate-limit the retry. Only the
+    *retry* is limited — an honest first claim is never delayed.
+  New regression-hazard test file (`tests/test_false_complete.py`) encodes the
+  muteness hazard explicitly: the honest claim must stay reachable, the first
+  claim must never be rate-limited, and the break-even is asserted directly.
+  360 → 367 tests.
