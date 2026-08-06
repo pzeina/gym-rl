@@ -1314,3 +1314,56 @@ terrain (still deferred).
   This trap caught two consecutive sessions — squad_v6 at N=20 and nearly v9 —
   which is why it is now a printed verdict rather than two numbers a reader is
   trusted to subtract.
+
+- **2026-08-06** — **Unattended cycle 7: `fireteam_defend_v10` — the contact
+  reprice works, and it isolates what does not.** One variable off v9
+  (`contact_redundant` −0.02 → −0.25). All three at N=100:
+
+  | | v8 | v9 | v10 |
+  |---|---|---|---|
+  | success | 0.87 ± 0.07 | 0.88 ± 0.06 | 0.89 ± 0.06 |
+  | report precision | 0.376 | 0.464 | **0.602** |
+  | report recall | 0.855 | 0.098 | **0.732** |
+  | contact reports | 769 | 69 | 347 |
+  | obedience latency | 1.26 | 11.24 | 13.06 |
+  | doctrine preference | 0.172 | 0.0015 | 0.0016 |
+  | human death rate | 0.08 | 0.18 | 0.07 |
+
+  Stability: `best-final gap 10 pts [converged]` — the first converged run since
+  v8, and a data point *against* the blanket "v1.10 destabilised training" claim
+  from cycle 6, which now needs narrowing rather than accepting.
+  **The reprice is the best comms result the defend line has had**: precision
+  0.602 at recall 0.732, versus v6's 0.79 precision bought at recall 0.42. Human
+  death also recovered (0.18 → 0.07).
+  **Correction to cycle 5's mechanism.** I predicted recall would recover if
+  contact economics changed, and it did (0.098 → 0.732) — but not for the reason
+  I gave. I framed it as a break-even DONE act displacing a *profitable* contact
+  act; on that story, making redundant contacts costlier should have made the
+  channel less attractive still. The better reading: at −0.02 the channel carried
+  almost no gradient — informative and redundant reports were worth nearly the
+  same, so the policy could not learn *which* report to send and abandoned the
+  whole act. At −0.25 the channel is **learnable** (send informative, skip
+  duplicates) and the policy re-engaged. The fix was making the signal shaped,
+  not making it dearer.
+  **What the reprice did NOT fix, now cleanly attributable**: obedience latency
+  (1.26 → 11.24 → 13.06) and doctrine preference (0.172 → 0.0015 → 0.0016) both
+  arrived with the root-claim change in v9 and are untouched by contact pricing.
+  They are the next target, and the ADVANCE-under-DEFEND doctrine gap is the
+  leading suspect for the doctrine half.
+  **Success has not moved across v8/v9/v10** — three changes, all overlapping
+  intervals. Everything gained this cycle is behavioural quality, not outcome.
+
+- **2026-08-06** — **A run must hold ONE snapshot of the code.** v10 trained
+  3.5M steps and produced **no evaluation**: `post-training artifact FAILED:
+  evaluate (ImportError: cannot import name 'is_done_admissible' from
+  'cohort.env.actions')`. It started at `a6a4335`, so its in-memory
+  `cohort.env.actions` predates `dac323a`; the *newer* `cohort.metrics` it then
+  read off disk at the end could not import the name. Editing the tree during a
+  run is normal here — losing a finished run to it is not. `train.py` now
+  imports `evaluate` and `plot_training` **before** `trainer.train()`, pinned by
+  a test that reads `main()`'s source and asserts both imports precede the
+  training call. Cycle 1's artifact guard is validated a second time and in a
+  way I did not design it for: it caught this, named it precisely in the log,
+  and still produced the curves. `platoon_v4` (launched 19:42, also pre-`dac323a`)
+  **will hit the same ImportError** — its eval is recoverable by hand afterwards,
+  and its curves and checkpoints are safe. 431 → 432 tests.

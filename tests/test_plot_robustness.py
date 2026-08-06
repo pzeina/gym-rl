@@ -100,6 +100,31 @@ def test_smooth_ignores_nan_and_keeps_empty_windows_nan():
     assert all(math.isnan(v) for v in _smooth([math.nan] * 5, k=3))
 
 
+def test_post_training_entry_points_are_imported_before_training():
+    """A run must hold one code snapshot for its whole life.
+
+    fireteam_defend_v10 trained 3,500,000 steps and produced no evaluation: it
+    started before ``is_done_admissible`` existed, so its in-memory
+    ``cohort.env.actions`` lacked the name, and the newer ``cohort.metrics``
+    it lazily read off disk at the end could not import it. Resolving the
+    post-training entry points *before* ``trainer.train()`` is what stops a
+    mid-run edit from costing a finished run its artifacts.
+    """
+    import inspect
+
+    from cohort.training import train as train_mod
+
+    src = inspect.getsource(train_mod.main)
+    train_call = src.index("trainer.train(")
+    for name in ("from cohort.training.evaluate import evaluate",
+                 "from cohort.viz.plots import plot_training"):
+        assert name in src, f"{name} must be imported in main()"
+        assert src.index(name) < train_call, (
+            f"{name} is imported after trainer.train() — a mid-run edit to the "
+            "tree can then break it, which is how v10 lost its evaluation"
+        )
+
+
 def test_post_training_artifacts_are_independent(monkeypatch, tmp_path):
     """A broken plotter must not suppress the evaluation (the v7 loss)."""
     import cohort.viz.plots as plots_mod
