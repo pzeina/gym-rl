@@ -1160,3 +1160,34 @@ terrain (still deferred).
   (the fix working), success holding at v8's level (no regression), and
   `false_complete_rate` becoming *defined* — it is currently undefined for
   want of a denominator, which is not the same as improved.
+
+- **2026-08-06** — **Unattended cycle 4: `squad_v6` is a MISS — 0.83 ± 0.07 (N=100)
+  against the published 0.93 ± 0.05.** Logged with its numbers per the honest-DoD
+  rule. The run first read as a triumph — `train_status` shows "succ 97%" and the
+  N=20 behavior suite said **0.95 ± 0.10** — and both are artefacts:
+  * `ckpt_best.pt` captures the best *rolling window*, not the final policy. The
+    curve is `▂▆▇▁▁█▇▅▆▅`: it reached 98% rolling, **collapsed twice**, and ended
+    the final decile at **65%**. The eval scores the peak; the run ended far
+    below it. Any run whose curve is non-monotonic needs both numbers quoted.
+  * N=20 (±0.10) to N=100 (±0.07) moved the point estimate 0.95 → 0.83. N=20
+    remains a smoke test, never a verdict.
+  Not attributable: `squad_v5` is a pre-`14b83ca` 166-dim checkpoint, so this is
+  the same orphaned-baseline problem as the defend line — v6 is the first
+  in-space squad run and the comparison spans the whole v1.10 change set.
+  Two candidate mechanisms, neither yet tested: **(a)** the unsolved D4
+  peak-then-collapse; **(b)** `human_death` −25 → 0, with the eval-time human
+  death rate at **0.45** (v5 trained at 0.207 → 0.395). Preservation was moved
+  from priced to measured, and the measurement says the humans now die roughly
+  twice as often. Also down: orders/ep 17.99 → 8.15, re-tasks 12.10 → 3.25,
+  doctrine preference 0.694 → 0.460 — the squad commands far less than v5 did.
+  **Fleet-wide confirmation of the contact-spam finding**: precision 0.16 at
+  n=2208 reports (v5: 0.12 at n=2594). The spam is not a defend quirk; every
+  scenario measured sits far below the 5.8% break-even the old price implied,
+  which is exactly why `contact_redundant` was repriced this session. `squad_v6`
+  and `platoon_v4` bracket the change — v6 trained at −0.02, v4 at −0.25 — so
+  the next squad run is the clean read.
+  **New open item**: `done_reports` is **0** in both squad_v5 and squad_v6, even
+  though squad's root mission is SEIZE and therefore always was completable. The
+  mask was never the obstacle here, so this is a second, *different* silence from
+  the DEFEND one fixed in cycle 2 — opening the channel is necessary but may not
+  be sufficient. Worth diagnosing once v9 reports.
