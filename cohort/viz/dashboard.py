@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import threading
+import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,8 +37,9 @@ import numpy as np
 from cohort.config import SCENARIOS
 from cohort.core.language import OrderParseError
 from cohort.core.missions import MissionType
-from cohort.env.actions import CATALOG
+from cohort.env.actions import CATALOG, N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
+from cohort.env.observations import OBS_DIM
 
 MISSION_NAMES = [m.name for m in MissionType]
 
@@ -324,6 +326,57 @@ def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) ->
 # ---------------------------------------------------------------------- #
 
 
+#: cache of checkpoint metadata keyed by (path, mtime, size) — /api/state is
+#: polled, and torch.load over every run's checkpoints on each poll is waste
+_CKPT_META_CACHE: dict[tuple, dict] = {}
+
+
+def checkpoint_meta(path: Path) -> dict:
+    """Spaces a checkpoint was trained on, and whether this build can load it.
+
+    A checkpoint stores the ``obs_dim``/``n_actions`` it was built for. When a
+    breaking cycle moves either (v1.9 → Box(166), v1.10 → Box(220)), older
+    checkpoints cannot be loaded at all: the shape mismatch surfaces deep in a
+    forward pass as an opaque ``mat1 and mat2 shapes cannot be multiplied``.
+    Checking up front turns that into a sentence a human can act on.
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"loadable": False, "reason": "checkpoint file missing"}
+    key = (str(path), stat.st_mtime, stat.st_size)
+    if key in _CKPT_META_CACHE:
+        return _CKPT_META_CACHE[key]
+
+    import torch
+
+    meta: dict
+    try:
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        obs_dim, n_actions = int(ckpt["obs_dim"]), int(ckpt["n_actions"])
+        loadable = obs_dim == OBS_DIM and n_actions == N_ACTIONS
+        reason = ""
+        if not loadable:
+            reason = (
+                f"trained on Discrete({n_actions})/Box({obs_dim}); this build is "
+                f"Discrete({N_ACTIONS})/Box({OBS_DIM}) — incompatible, needs a retrain"
+            )
+        meta = {
+            "obs_dim": obs_dim,
+            "n_actions": n_actions,
+            "loadable": loadable,
+            "reason": reason,
+            "env_steps": ckpt.get("env_steps"),
+        }
+    except Exception as exc:
+        # This probes whatever files happen to sit in runs/, so it must never
+        # raise: a truncated, half-written or non-torch file is a checkpoint we
+        # cannot offer, not a reason to take the whole dashboard down.
+        meta = {"loadable": False, "reason": f"unreadable checkpoint: {exc}"}
+    _CKPT_META_CACHE[key] = meta
+    return meta
+
+
 def scan_runs(runs_dir: Path) -> list[dict]:
     """Discover training runs with their config and latest metrics row."""
     runs = []
@@ -354,7 +407,9 @@ def scan_runs(runs_dir: Path) -> list[dict]:
                 "config": config,
                 "last": last,
                 "checkpoints": [
-                    kind for kind in ("best", "latest") if (run / f"ckpt_{kind}.pt").is_file()
+                    {"kind": kind, **checkpoint_meta(run / f"ckpt_{kind}.pt")}
+                    for kind in ("best", "latest")
+                    if (run / f"ckpt_{kind}.pt").is_file()
                 ],
                 "behavior": (run / "behavior.json").is_file(),
             }
@@ -427,6 +482,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not path.is_file():
             msg = f"no ckpt_{parts[2]}.pt in run {parts[1]!r}"
             raise ValueError(msg)
+        # refuse up front rather than failing inside a forward pass with an
+        # opaque shape error the UI cannot explain
+        meta = checkpoint_meta(path)
+        if not meta["loadable"]:
+            msg = f"{parts[1]} · ckpt_{parts[2]}: {meta['reason']}"
+            raise ValueError(msg)
         return str(path)
 
     def do_GET(self) -> None:
@@ -488,6 +549,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, 404)
         except (KeyError, ValueError, OSError) as exc:
             self._json({"error": str(exc)}, 400)
+        except Exception as exc:
+            # Anything else (notably torch RuntimeErrors from a checkpoint whose
+            # spaces do not match this build) used to escape the handler, kill
+            # the connection, and leave the UI showing nothing at all. Report it.
+            traceback.print_exc()
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _safe_run(self, name: str) -> str:
         if name not in {r["name"] for r in scan_runs(self.runs_dir)}:

@@ -53,7 +53,13 @@ def test_scan_runs(tmp_path):
     assert runs[0]["name"] == "myrun"
     assert runs[0]["scenario"] == "fireteam"
     assert runs[0]["last"]["env_steps"] == "1024"
-    assert runs[0]["checkpoints"] == ["best"]
+    # v1.10: each checkpoint carries the spaces it was trained on, so the UI
+    # can refuse an incompatible one up front instead of failing inside a
+    # forward pass. A stub file is reported unloadable, never raised on --
+    # scan_runs walks whatever happens to be in runs/.
+    assert [c["kind"] for c in runs[0]["checkpoints"]] == ["best"]
+    assert runs[0]["checkpoints"][0]["loadable"] is False
+    assert "unreadable checkpoint" in runs[0]["checkpoints"][0]["reason"]
     assert runs[0]["behavior"] is False
 
 
@@ -104,3 +110,39 @@ def test_http_endpoints(tmp_path):
         server.shutdown()
         server.server_close()
         DashboardHandler.runs_dir = None
+
+
+def test_checkpoint_meta_flags_incompatible_spaces(tmp_path):
+    """A breaking cycle must surface as a sentence, not a matmul error.
+
+    Before v1.10 an old checkpoint failed deep inside a forward pass with
+    "mat1 and mat2 shapes cannot be multiplied", the handler did not catch
+    RuntimeError, the connection died, and the dashboard showed nothing at
+    all. The spaces are checked up front now.
+    """
+    import torch
+
+    from cohort.env.actions import N_ACTIONS
+    from cohort.env.observations import OBS_DIM
+    from cohort.viz.dashboard import checkpoint_meta
+
+    stale = tmp_path / "stale.pt"
+    torch.save({"obs_dim": OBS_DIM - 54, "n_actions": N_ACTIONS, "model": {}}, stale)
+    meta = checkpoint_meta(stale)
+    assert meta["loadable"] is False
+    assert "incompatible" in meta["reason"]
+    assert str(OBS_DIM) in meta["reason"], "the reason names the build's own spaces"
+
+    current = tmp_path / "current.pt"
+    torch.save({"obs_dim": OBS_DIM, "n_actions": N_ACTIONS, "model": {}}, current)
+    assert checkpoint_meta(current)["loadable"] is True
+
+
+def test_checkpoint_meta_never_raises_on_junk(tmp_path):
+    """It walks whatever sits in runs/ — junk is unloadable, not fatal."""
+    from cohort.viz.dashboard import checkpoint_meta
+
+    junk = tmp_path / "truncated.pt"
+    junk.write_bytes(b"not a torch file")
+    assert checkpoint_meta(junk)["loadable"] is False
+    assert checkpoint_meta(tmp_path / "does_not_exist.pt")["loadable"] is False

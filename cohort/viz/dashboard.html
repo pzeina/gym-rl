@@ -67,6 +67,8 @@
   .badge { display: inline-block; padding: 1px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; }
   .hidden { display: none !important; }
   .empty { color: var(--dim); text-align: center; padding: 30px 10px; }
+  .compat { color: var(--warn); background: #2a2411; border: 1px solid #4a3f1a; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-bottom: 7px; }
+  .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -96,7 +98,9 @@
   <div class="sidebar hidden" id="side-episode">
     <div class="card"><h3>Generate episode</h3>
       <div class="field"><span>scenario</span><select id="ep-scenario"></select></div>
-      <div class="field"><span>policy</span><select id="ep-policy"></select></div>
+      <div class="field"><span>version</span><select id="ep-run"></select></div>
+      <div class="field"><span>policy</span><select id="ep-ckpt"></select></div>
+      <div id="ep-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="ep-seed" value="1">
         <button class="small" id="ep-dice" title="random seed">🎲</button></div></div>
@@ -117,7 +121,9 @@
   <div class="sidebar hidden" id="side-command">
     <div class="card"><h3>Live session</h3>
       <div class="field"><span>scenario</span><select id="lv-scenario"></select></div>
-      <div class="field"><span>policy</span><select id="lv-policy"></select></div>
+      <div class="field"><span>version</span><select id="lv-run"></select></div>
+      <div class="field"><span>policy</span><select id="lv-ckpt"></select></div>
+      <div id="lv-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="lv-seed" value="1">
         <button class="small" id="lv-dice" title="random seed">🎲</button></div></div>
@@ -362,22 +368,89 @@ $("msgfilters").querySelectorAll(".chip").forEach((el) => el.onclick = () => {
   el.classList.toggle("on"); renderMsgs();
 });
 
+/* ---------- policy selection: version, then exact checkpoint ----------
+   One flat list of every run x every checkpoint ran to ~100 entries, which is
+   unusable. Split in two: pick the RUN (grouped by scenario, so the list is
+   short and ordered), then the exact checkpoint within it. The wire format the
+   API expects is unchanged: "random" | "run:<name>:<best|latest>". */
+
+function runsByScenario() {
+  const groups = {};
+  STATE.runs.forEach((r) => {
+    if (!r.checkpoints.length) return;
+    const key = r.scenario || "unknown scenario";
+    (groups[key] = groups[key] || []).push(r);
+  });
+  return groups;
+}
+
+function fillRunSelect(prefix) {
+  const sel = $(prefix + "-run"), cur = sel.value;
+  const groups = runsByScenario();
+  let opts = '<option value="random">random (masked) baseline</option>';
+  Object.keys(groups).sort().forEach((sc) => {
+    opts += `<optgroup label="${sc}">`;
+    groups[sc].forEach((r) => {
+      // a run whose every checkpoint is unloadable is marked, not hidden —
+      // it is still the run you may want to look at the training curves for
+      const dead = r.checkpoints.every((c) => !c.loadable);
+      opts += `<option value="${r.name}">${dead ? "⚠ " : ""}${r.name}</option>`;
+    });
+    opts += "</optgroup>";
+  });
+  sel.innerHTML = opts;
+  if (cur) sel.value = cur;
+  if (!sel.value) {
+    // prefer a run that can actually be loaded by this build
+    const live = STATE.runs.find((r) => r.checkpoints.some((c) => c.loadable));
+    sel.value = live ? live.name : "random";
+  }
+  fillCkptSelect(prefix);
+}
+
+function fillCkptSelect(prefix) {
+  const runName = $(prefix + "-run").value;
+  const sel = $(prefix + "-ckpt"), cur = sel.value;
+  const run = STATE.runs.find((r) => r.name === runName);
+  if (!run) {                       // random baseline: nothing to choose
+    sel.innerHTML = '<option value="">— (no checkpoint)</option>';
+    sel.disabled = true;
+    showCompat(prefix, null);
+    return;
+  }
+  sel.disabled = false;
+  sel.innerHTML = run.checkpoints.map((c) => {
+    const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M steps` : "";
+    return `<option value="${c.kind}">${c.loadable ? "" : "⚠ "}ckpt_${c.kind}${steps}</option>`;
+  }).join("");
+  if (cur && run.checkpoints.some((c) => c.kind === cur)) sel.value = cur;
+  const chosen = run.checkpoints.find((c) => c.kind === sel.value);
+  showCompat(prefix, chosen && !chosen.loadable ? chosen.reason : null);
+}
+
+/* Selected policy in the wire format the API expects. */
+function policyValue(prefix) {
+  const runName = $(prefix + "-run").value;
+  if (!runName || runName === "random") return "random";
+  const kind = $(prefix + "-ckpt").value || "best";
+  return `run:${runName}:${kind}`;
+}
+
+/* Incompatible checkpoints are the single most likely reason a generate does
+   nothing, so say it in the sidebar rather than only in the status bar. */
+function showCompat(prefix, reason) {
+  const el = $(prefix + "-compat");
+  if (!reason) { el.classList.add("hidden"); el.textContent = ""; return; }
+  el.textContent = "⚠ " + reason;
+  el.classList.remove("hidden");
+}
+
 function fillEpisodeSelectors() {
   const sc = $("ep-scenario");
   const cur = sc.value;
   sc.innerHTML = Object.keys(STATE.scenarios).map((s) => `<option>${s}</option>`).join("");
   if (cur) sc.value = cur;
-  const pol = $("ep-policy"), curp = pol.value;
-  let opts = '<option value="random">random (masked) baseline</option>';
-  STATE.runs.forEach((r) => r.checkpoints.forEach((k) => {
-    opts += `<option value="run:${r.name}:${k}">${r.name} · ckpt_${k}</option>`;
-  }));
-  pol.innerHTML = opts;
-  if (curp) pol.value = curp;
-  if (!curp) { // default to the first best checkpoint if any
-    const first = STATE.runs.find((r) => r.checkpoints.includes("best"));
-    if (first) pol.value = `run:${first.name}:best`;
-  }
+  fillRunSelect("ep");
   loadBehavior();
 }
 
@@ -398,8 +471,8 @@ const BEHAVIOR_ROWS = [
 ];
 async function loadBehavior() {
   const card = $("behavior-card");
-  const m = ($("ep-policy").value || "").match(/^run:(.+):(?:best|latest)$/);
-  const run = m && STATE.runs.find((r) => r.name === m[1]);
+  const runName = $("ep-run").value;
+  const run = runName && runName !== "random" && STATE.runs.find((r) => r.name === runName);
   if (!run || !run.behavior) { card.classList.add("hidden"); return; }
   try {
     const b = await api(`/api/behavior?run=${encodeURIComponent(run.name)}`);
@@ -413,7 +486,8 @@ async function loadBehavior() {
     card.classList.remove("hidden");
   } catch (e) { card.classList.add("hidden"); }
 }
-$("ep-policy").onchange = loadBehavior;
+$("ep-run").onchange = () => { fillCkptSelect("ep"); loadBehavior(); };
+$("ep-ckpt").onchange = () => { fillCkptSelect("ep"); loadBehavior(); };
 
 $("ep-dice").onclick = () => { $("ep-seed").value = Math.floor(Math.random() * 100000); };
 $("ep-generate").onclick = generateEpisode;
@@ -425,7 +499,7 @@ async function generateEpisode() {
   $("status").textContent = "simulating episode…";
   try {
     const trace = await api(`/api/episode?scenario=${$("ep-scenario").value}` +
-      `&policy=${encodeURIComponent($("ep-policy").value)}` +
+      `&policy=${encodeURIComponent(policyValue("ep"))}` +
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
     stopAuto(); MODE = "replay";
@@ -440,7 +514,12 @@ async function generateEpisode() {
     $("ep-info").innerHTML = `<b>${EP.outcome.toUpperCase()}</b> in ${EP.length} steps · ${EP.opord}<br>policy: ${EP.policy.split("/").pop()}`;
     drawTimeline(); seek(0);
     $("status").textContent = "";
-  } catch (e) { $("status").textContent = "error: " + e.message; }
+  } catch (e) {
+    // a failed generate used to leave the map blank with only a faint status
+    // line — say what went wrong where the controls are
+    $("status").textContent = "episode failed";
+    $("ep-info").innerHTML = `<div class="errbox">could not simulate: ${e.message}</div>`;
+  }
   $("ep-generate").disabled = false; $("ep-generate").textContent = "▶ Generate";
 }
 
@@ -779,16 +858,25 @@ let liveAuto = null;      // interval id while auto-advancing
 
 function fillLiveSelectors() {
   $("lv-scenario").innerHTML = $("ep-scenario").innerHTML;
-  $("lv-policy").innerHTML = $("ep-policy").innerHTML;
-  if ($("ep-policy").value) $("lv-policy").value = $("ep-policy").value;
+  if ($("ep-scenario").value) $("lv-scenario").value = $("ep-scenario").value;
+  fillRunSelect("lv");
+  // mirror the Episode tab's choice on first fill, so the two tabs agree
+  const epRun = $("ep-run").value;
+  if (epRun && [...$("lv-run").options].some((o) => o.value === epRun)) {
+    $("lv-run").value = epRun;
+    fillCkptSelect("lv");
+    const epK = $("ep-ckpt").value;
+    if (epK && [...$("lv-ckpt").options].some((o) => o.value === epK)) $("lv-ckpt").value = epK;
+  }
 }
+$("lv-run").onchange = () => fillCkptSelect("lv");
 
 async function liveStart() {
   stopAuto();
   $("lv-start").disabled = true; $("lv-start").textContent = "⏳ starting…";
   try {
     const snap = await api(`/api/live/start?scenario=${$("lv-scenario").value}` +
-      `&policy=${encodeURIComponent($("lv-policy").value)}&seed=${+$("lv-seed").value}`);
+      `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
     EP = snap; MODE = "live";
     epRequest++;                       // invalidate any in-flight replay fetch
     $("pb-slider").max = EP.steps.length - 1;
@@ -797,7 +885,10 @@ async function liveStart() {
     $("lv-info").innerHTML = `${snap.opord}<br>policy: ${String(snap.policy).split("/").pop()}`;
     sel = null; seek(EP.steps.length - 1);
     $("lv-orderstatus").textContent = "";
-  } catch (e) { $("lv-info").textContent = "error: " + e.message; }
+  } catch (e) {
+    $("status").textContent = "live session failed";
+    $("lv-info").innerHTML = `<div class="errbox">could not start: ${e.message}</div>`;
+  }
   $("lv-start").disabled = false; $("lv-start").textContent = "⚑ Start session";
 }
 
