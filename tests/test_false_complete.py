@@ -1,18 +1,27 @@
-"""False-COMPLETE pricing (v1.10): done_false + ScenarioSpec.done_cooldown.
+"""False-COMPLETE pricing: done_false + ScenarioSpec.done_cooldown.
 
 B2 measured 53-84% of DONE claims rejected as premature wherever DONE is
-admissible. At the shipped prices that was *rational*, not a training failure:
-claiming pays whenever ``p x done_true > (1-p) x |done_false|``, which at
-+1.0/-0.5 means any p above one third. Two levers answer it — the price
-(break-even moves to p > 0.67) and a structural re-claim cooldown, since a
-rejected claim never cleared the mission and DONE was admissible on every step.
+admissible. At +1.0/-0.5 that was *rational*, not a training failure: claiming
+pays whenever ``p x done_true > (1-p) x |done_false|``, i.e. any p above one
+third. v1.10 pulled both levers — the price (-0.5 → -2.0, break-even p > 0.67)
+and a structural re-claim cooldown, since a rejected claim never cleared the
+mission and DONE was admissible on every step.
 
-The regression hazard runs the OTHER way, and is encoded below: over-pricing a
-speech act suppresses the HONEST one too. That is exactly what B5's re-task
-pricing did to initial tasking ("an order that is never issued cannot bind"),
-and it cost a retrain to undo. A cohort that stops transmitting DONE never
-closes the grace window and never earns root_done_bonus — a worse failure than
-one that over-claims.
+**The hazard this docstring predicted is the one that fired.** Over-pricing a
+speech act suppresses the HONEST one too — B5's re-task pricing did it to
+initial tasking ("an order that is never issued cannot bind"), and -2.0 did it
+to DONE. Under -2.0 the final-decile false-DONE rate fell to ~0 across squad,
+squad_recon, squad_screen and fireteam, and the two report-centric scenarios
+lost their terminal income outright: squad_recon_v6 and squad_screen_v4 both
+ended at 0% with terminal 0.0000 and episodes pinned at max_steps. A cohort
+that stops transmitting DONE never closes the grace window and never earns
+root_done_bonus — the worse failure, as written here before it happened.
+
+The price is back at -0.5. The structural half (done_cooldown) stays: it cannot
+suppress an honest claim, only a repeated one. The standing constraint, pinned
+below, is that a claim's break-even must not exceed the confidence an agent can
+actually form — and RECON/SCREEN completion is team-adjudicated through
+``_team_observe_steps``, which no observation slot carries.
 """
 
 from dataclasses import replace
@@ -56,15 +65,26 @@ def _tasked_far_from_bravo(env):
 # ---------------------------------------------------------------------- #
 
 
-def test_claiming_needs_two_thirds_confidence_to_pay():
-    """The break-even is the thing being changed, so assert it directly."""
+def test_the_claiming_break_even_stays_inside_estimable_confidence():
+    """The break-even is the thing that broke the fleet, so assert it directly.
+
+    Raising it past ~0.5 asks the agent for a confidence it has no observation
+    to form: a RECON/SCREEN root completes on the TEAM observation counter, and
+    that counter is in no obs slot. Silence is then correct play, and silence
+    scores 0. Move this bound only together with an obs slot for mission
+    completion progress — the two are one change, not two.
+    """
     cfg = RewardConfig()
     break_even = abs(cfg.done_false) / (cfg.done_true + abs(cfg.done_false))
-    assert break_even > 0.6, f"claiming is +EV from p={break_even:.2f} — too cheap"
+    assert break_even <= 0.5, (
+        f"claiming needs p>{break_even:.2f} — more confidence than the "
+        "observation supports; this is what muted squad_recon_v6/squad_screen_v4"
+    )
     assert cfg.done_true > 0, "honesty must still pay"
+    assert cfg.done_false < 0, "a false claim must still cost"
 
 
-def test_false_complete_costs_more_than_it_did():
+def test_a_rejected_claim_is_priced_and_does_not_clear_the_mission():
     env = _flat_env()
     sld, _ = _tasked_far_from_bravo(env)
     *_, infos = _step(env, {"RFN1": DONE})
