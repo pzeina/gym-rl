@@ -5,7 +5,7 @@ import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 
-from cohort.viz.dashboard import DashboardHandler, record_episode, scan_runs
+from cohort.viz.dashboard import DashboardHandler, load_behavior, record_episode, scan_runs
 
 
 def test_episode_trace_structure():
@@ -54,6 +54,24 @@ def test_scan_runs(tmp_path):
     assert runs[0]["scenario"] == "fireteam"
     assert runs[0]["last"]["env_steps"] == "1024"
     assert runs[0]["checkpoints"] == ["best"]
+    assert runs[0]["behavior"] is False
+
+
+def test_behavior_json_discovery_and_load(tmp_path):
+    run = tmp_path / "myrun"
+    run.mkdir()
+    (run / "metrics.csv").write_text("iteration,env_steps\n1,1024\n")
+    (run / "behavior.json").write_text(json.dumps({"episodes": 30, "metrics": {"coverage_time": 0.9}}))
+
+    runs = scan_runs(tmp_path)
+    assert runs[0]["behavior"] is True
+    payload = load_behavior(tmp_path, "myrun")
+    assert payload["metrics"]["coverage_time"] == 0.9
+    try:
+        load_behavior(tmp_path, "no_behavior_here")
+        raise AssertionError("expected ValueError")
+    except ValueError:
+        pass
 
 
 def test_http_endpoints(tmp_path):

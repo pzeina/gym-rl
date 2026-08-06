@@ -1,0 +1,404 @@
+"""Behavioral metrics suite (B2): pure metric math + trace recording.
+
+The metric functions are tested against constructed mini-episodes where the
+value of every metric is known by hand; the recorder is tested against the
+real environment for structure, determinism, and the guarantee that
+recording never perturbs a seeded episode.
+"""
+
+import json
+
+import numpy as np
+
+from cohort.env.cohort_env import make_env
+from cohort.metrics import (
+    TraceRecorder,
+    aggregate_behavior,
+    episode_behavior,
+    format_behavior_table,
+)
+from cohort.training.evaluate import evaluate, run_episode
+
+# ---------------------------------------------------------------------- #
+# constructed-trace helpers
+# ---------------------------------------------------------------------- #
+
+
+def sold(cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(), comp=None, sees=()):
+    return {
+        "cs": cs,
+        "alive": alive,
+        "pos": list(pos),
+        "mission": mission,
+        "since": since,
+        "auth": auth,
+        "subs": list(subs),
+        "comp": comp,
+        "sees": list(sees),
+    }
+
+
+def enemy(eid, *, alive=True, pos=(30, 30)):
+    return {"id": eid, "alive": alive, "pos": list(pos)}
+
+
+def msg(kind, frm, to, mission=None, text=""):
+    return {"kind": kind, "from": frm, "to": to, "mission": mission, "text": text}
+
+
+def step(t, soldiers, enemies=(), messages=()):
+    return {"t": t, "soldiers": soldiers, "enemies": list(enemies), "messages": list(messages)}
+
+
+def trace(steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20, ttl=40):
+    return {
+        "scenario": "test",
+        "outcome": outcome,
+        "length": steps[-1]["t"],
+        "root_mission": "SEIZE",
+        "root_objective": list(root_objective) if root_objective else None,
+        "ring_radius": 7.0,
+        "contact_refresh_age": refresh_age,
+        "knowledge_ttl": ttl,
+        "human": human,
+        "reported": reported or {},
+        "steps": steps,
+    }
+
+
+# ---------------------------------------------------------------------- #
+# obedience latency
+# ---------------------------------------------------------------------- #
+
+
+def test_obedience_latency_by_hand():
+    # RFN1 ordered at t=2, first positive compliance at t=5 -> latency 3.
+    # TL1 ordered at t=2 already in position (comp>0 immediately) -> latency 0.
+    steps = [
+        step(0, [sold("TL1"), sold("RFN1")]),
+        step(1, [sold("TL1"), sold("RFN1")]),
+        step(2, [sold("TL1", mission="HOLD", since=2, comp=0.5), sold("RFN1", mission="HOLD", since=2, comp=0.0)]),
+        step(3, [sold("TL1", mission="HOLD", since=2, comp=0.5), sold("RFN1", mission="HOLD", since=2, comp=0.0)]),
+        step(4, [sold("TL1", mission="HOLD", since=2, comp=0.5), sold("RFN1", mission="HOLD", since=2, comp=-0.2)]),
+        step(5, [sold("TL1", mission="HOLD", since=2, comp=0.5), sold("RFN1", mission="HOLD", since=2, comp=0.4)]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert sorted(ep["obedience_latencies"]) == [0, 3]
+    assert ep["obedience_censored"] == 0
+
+
+def test_obedience_opord_counts_from_t0():
+    steps = [
+        step(0, [sold("TL1", mission="SEIZE", since=0)]),
+        step(1, [sold("TL1", mission="SEIZE", since=0, comp=0.0)]),
+        step(2, [sold("TL1", mission="SEIZE", since=0, comp=0.3)]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["obedience_latencies"] == [2]
+
+
+def test_obedience_censored_on_retask_and_death():
+    # RFN1's first order is superseded at t=3 before compliance; the second
+    # is never complied with before the episode ends -> both censored.
+    # RFN2 dies at t=3 without complying -> censored.
+    steps = [
+        step(0, [sold("RFN1"), sold("RFN2")]),
+        step(1, [sold("RFN1", mission="HOLD", since=1, comp=0.0), sold("RFN2", mission="HOLD", since=1, comp=0.0)]),
+        step(2, [sold("RFN1", mission="HOLD", since=1, comp=0.0), sold("RFN2", mission="HOLD", since=1, comp=0.0)]),
+        step(3, [sold("RFN1", mission="OBSERVE", since=3, comp=0.0), sold("RFN2", alive=False)]),
+        step(4, [sold("RFN1", mission="OBSERVE", since=3, comp=0.0), sold("RFN2", alive=False)]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["obedience_latencies"] == []
+    assert ep["obedience_censored"] == 3
+
+
+# ---------------------------------------------------------------------- #
+# report precision / recall
+# ---------------------------------------------------------------------- #
+
+
+def test_report_precision_recall_by_hand():
+    # Enemy 0 reported new (t=2), re-reported fresh (t=3, redundant), then
+    # re-reported at age >= refresh_age (t=6, refresh). Enemy 1 is seen but
+    # never reported. -> precision 2/3, recall 1/2.
+    enemies = [enemy(0), enemy(1)]
+
+    def rec(sees):
+        return [sold("RFN1", sees=sees), sold("RFN2", sees=[1])]
+
+    steps = [
+        step(0, rec([]), enemies),
+        step(1, rec([0]), enemies),
+        step(2, rec([0]), enemies, [msg("contact", "RFN1", "TL1")]),
+        step(3, rec([0]), enemies, [msg("contact", "RFN1", "TL1")]),
+        step(4, rec([0]), enemies),
+        step(5, rec([0]), enemies),
+        step(6, rec([0]), enemies, [msg("contact", "RFN1", "TL1")]),
+    ]
+    ep = episode_behavior(trace(steps, reported={"RFN1": [0]}, refresh_age=3, ttl=10))
+    assert ep["contacts"] == 3
+    assert ep["contacts_informative"] == 2
+    assert ep["enemies_seen"] == 2
+    assert ep["enemies_reported"] == 1
+
+
+def test_report_picture_expires_after_ttl():
+    # After knowledge_ttl steps without a refresh the entry expires, so a
+    # later report of the same enemy is new intel again.
+    enemies = [enemy(0)]
+    steps = [step(t, [sold("RFN1", sees=[0])], enemies) for t in range(10)]
+    steps[2] = step(2, [sold("RFN1", sees=[0])], enemies, [msg("contact", "RFN1", "TL1")])
+    steps[9] = step(9, [sold("RFN1", sees=[0])], enemies, [msg("contact", "RFN1", "TL1")])
+    ep = episode_behavior(trace(steps, reported={"RFN1": [0]}, refresh_age=2, ttl=4))
+    assert ep["contacts"] == 2
+    assert ep["contacts_informative"] == 2  # the picture expired in between
+
+
+def test_report_edges_no_contacts_no_enemies():
+    ep = episode_behavior(trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])]))
+    assert ep["contacts"] == 0 and ep["enemies_seen"] == 0
+    agg = aggregate_behavior([ep])
+    assert agg["report_precision"] is None
+    assert agg["report_recall"] is None
+
+
+# ---------------------------------------------------------------------- #
+# doctrine preference
+# ---------------------------------------------------------------------- #
+
+
+def test_doctrine_preference_within_step_ordering():
+    # SL1 (SEIZE) orders SEIZE (preferred) at t=1; at t=2 SL1 orders OBSERVE
+    # (allowed, not preferred) to TL1 and TL1 — under its NEW mission, applied
+    # earlier in the same step — orders OBSERVE to RFN1 (preferred for an
+    # OBSERVE holder). The HQ OPORD is never counted.
+    steps = [
+        step(0, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"]), sold("TL1", subs=["RFN1"]), sold("RFN1")],
+             messages=[msg("opord", "HQ", "SL1", "SEIZE")]),
+        step(1, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"]),
+                 sold("TL1", mission="SEIZE", since=1, subs=["RFN1"]), sold("RFN1")],
+             messages=[msg("order", "SL1", "TL1", "SEIZE")]),
+        step(2, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"]),
+                 sold("TL1", mission="OBSERVE", since=2, subs=["RFN1"]),
+                 sold("RFN1", mission="OBSERVE", since=2)],
+             messages=[msg("order", "SL1", "TL1", "OBSERVE"), msg("order", "TL1", "RFN1", "OBSERVE")]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["orders_issued"] == 3
+    assert ep["orders_preferred"] == 2
+    assert aggregate_behavior([ep])["doctrine_preference_rate"] == 2 / 3
+
+
+def test_doctrine_no_orders_is_none():
+    ep = episode_behavior(trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])]))
+    assert ep["orders_issued"] == 0
+    assert aggregate_behavior([ep])["doctrine_preference_rate"] is None
+
+
+# ---------------------------------------------------------------------- #
+# false COMPLETE
+# ---------------------------------------------------------------------- #
+
+
+def test_false_complete_rate():
+    steps = [
+        step(0, [sold("TL1")]),
+        step(1, [sold("TL1")], messages=[msg("done", "TL1", "HQ"), msg("done_reject", "HQ", "TL1")]),
+        step(2, [sold("TL1")], messages=[msg("done", "TL1", "HQ"), msg("done_confirm", "HQ", "TL1")]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["done_reports"] == 2 and ep["done_rejected"] == 1
+    assert aggregate_behavior([ep])["false_complete_rate"] == 0.5
+
+
+# ---------------------------------------------------------------------- #
+# succession recovery
+# ---------------------------------------------------------------------- #
+
+
+def _succession_steps(retask_step=None):
+    tl_alive = [sold("TL1", auth=1, mission="SEIZE", since=0, subs=["RFN1", "RFN2"], comp=0.1)]
+    riflemen = [sold("RFN1", mission="HOLD", since=1, comp=0.1), sold("RFN2", mission="HOLD", since=1, comp=0.1)]
+    steps = [
+        step(0, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=["RFN1", "RFN2"]), sold("RFN1"), sold("RFN2")]),
+        step(1, tl_alive + riflemen),
+        step(2, tl_alive + riflemen),
+        step(3, tl_alive + riflemen),
+    ]
+    down = "ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT."
+    for t in range(4, 9):
+        rfn2_mission = ("OBSERVE", retask_step) if retask_step is not None and t >= retask_step else ("HOLD", 1)
+        steps.append(
+            step(
+                t,
+                [
+                    sold("TL1", alive=False),
+                    sold("RFN1", auth=1, mission="SEIZE", since=0, subs=["RFN2"], comp=0.1),
+                    sold("RFN2", mission=rfn2_mission[0], since=rfn2_mission[1], comp=0.1),
+                ],
+                messages=[msg("taking_command", "RFN1", "ALL", text=down)] if t == 4 else [],
+            )
+        )
+    return steps
+
+
+def test_succession_recovery_by_hand():
+    ep = episode_behavior(trace(_succession_steps(retask_step=7)))
+    assert ep["succession_events"] == 1
+    assert ep["succession_recovery"] == [3]  # died t=4, RFN2 re-tasked t=7
+    assert ep["succession_unrecovered"] == 0
+
+
+def test_succession_unrecovered_is_censored():
+    ep = episode_behavior(trace(_succession_steps(retask_step=None)))
+    assert ep["succession_events"] == 1
+    assert ep["succession_recovery"] == []
+    assert ep["succession_unrecovered"] == 1
+
+
+def test_death_without_subordinates_is_no_event():
+    steps = [
+        step(0, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=[]), sold("RFN1")]),
+        step(1, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=[], comp=0.1), sold("RFN1", alive=False)]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["succession_events"] == 0
+    assert aggregate_behavior([ep])["succession_recovery_mean"] is None
+
+
+# ---------------------------------------------------------------------- #
+# subordinate coverage
+# ---------------------------------------------------------------------- #
+
+
+def test_coverage_time_by_hand():
+    steps = [
+        step(0, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=["RFN1", "RFN2"]), sold("RFN1"), sold("RFN2")]),
+        # one subordinate untasked -> gap
+        step(1, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=["RFN1", "RFN2"], comp=0.1),
+                 sold("RFN1", mission="HOLD", since=1, comp=0.1), sold("RFN2")]),
+        # everyone tasked -> covered
+        step(2, [sold("TL1", auth=1, mission="SEIZE", since=0, subs=["RFN1", "RFN2"], comp=0.1),
+                 sold("RFN1", mission="HOLD", since=1, comp=0.1), sold("RFN2", mission="HOLD", since=2, comp=0.1)]),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert (ep["coverage_pairs"], ep["coverage_covered"]) == (2, 1)
+    assert aggregate_behavior([ep])["coverage_time"] == 0.5
+
+
+# ---------------------------------------------------------------------- #
+# human exposure
+# ---------------------------------------------------------------------- #
+
+
+def test_human_exposure_by_hand():
+    # Objective at (10,10), ring radius 7. The human spawns inside the ring
+    # (entry #1), leaves, and re-enters (entry #2). Enemy distance is only
+    # averaged over steps with a living enemy.
+    e = [enemy(0, pos=(10, 14))]
+    steps = [
+        step(0, [sold("TL1", pos=(10, 10))], e),                      # dist 4, inside
+        step(1, [sold("TL1", pos=(20, 10))], e),                      # dist 10.77, outside
+        step(2, [sold("TL1", pos=(10, 12))], [enemy(0, alive=False, pos=(10, 14))]),  # inside again, enemy dead
+    ]
+    ep = episode_behavior(trace(steps, human="TL1", root_objective=(10, 10)))
+    assert ep["human_died"] is False
+    assert ep["human_ring_entries"] == 2
+    assert abs(ep["human_mean_enemy_dist"] - (4 + np.hypot(10, 4)) / 2) < 1e-9
+    assert ep["human_mean_objective_dist"] is not None
+
+
+def test_human_death_and_no_human_edges():
+    e = [enemy(0)]
+    died = [
+        step(0, [sold("TL1", pos=(0, 0))], e),
+        step(1, [sold("TL1", alive=False)], e),
+    ]
+    ep = episode_behavior(trace(died, human="TL1", root_objective=(10, 10)))
+    assert ep["human_died"] is True
+    ep2 = episode_behavior(trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])]))
+    assert ep2["human_died"] is None and ep2["human_ring_entries"] is None
+    agg = aggregate_behavior([ep2])
+    assert agg["human_death_rate"] is None
+
+
+# ---------------------------------------------------------------------- #
+# aggregation + table
+# ---------------------------------------------------------------------- #
+
+
+def test_aggregate_pools_events_across_episodes():
+    a = episode_behavior(trace(_succession_steps(retask_step=7)))
+    b = episode_behavior(trace(_succession_steps(retask_step=5), outcome="timeout"))
+    agg = aggregate_behavior([a, b])
+    assert agg["episodes"] == 2
+    assert agg["success_rate"] == 0.5
+    assert agg["succession_events"] == 2
+    assert agg["succession_recovery_mean"] == 2.0  # (3 + 1) / 2
+    table = format_behavior_table(agg)
+    assert "succession recovery" in table and "obedience latency" in table
+    assert "—" in table  # undefined metrics render as em dash, never 0
+
+
+# ---------------------------------------------------------------------- #
+# recorder integration (real environment)
+# ---------------------------------------------------------------------- #
+
+
+def test_recorder_does_not_perturb_the_episode():
+    env = make_env("fireteam")
+    plain = run_episode(env, None, seed=17, rng=np.random.default_rng(17))
+    rec = TraceRecorder()
+    recorded = run_episode(env, None, seed=17, rng=np.random.default_rng(17), recorder=rec)
+    assert plain == recorded, "recording must not consume RNG or alter the episode"
+
+
+def test_recorder_trace_structure_and_determinism():
+    def record(seed):
+        env = make_env("fireteam")
+        rec = TraceRecorder()
+        run_episode(env, None, seed=seed, rng=np.random.default_rng(seed), recorder=rec)
+        return rec.trace
+
+    a, b = record(23), record(23)
+    assert json.dumps(a) == json.dumps(b), "same seed -> identical trace"
+    assert a["scenario"] == "fireteam"
+    assert a["human"] == "TL1"
+    assert a["steps"][0]["t"] == 0
+    assert a["outcome"] in ("success", "defeat", "timeout")
+    assert a["length"] == len(a["steps"]) - 1
+    # the OPORD is on the t=0 record and parsed into a mission
+    opord = [m for m in a["steps"][0]["messages"] if m["kind"] == "opord"]
+    assert opord and opord[0]["mission"] == "SEIZE"
+    # every metric computes on a real trace and the result is serializable
+    ep = episode_behavior(a)
+    json.dumps(ep)
+    agg = aggregate_behavior([ep])
+    assert agg["episodes"] == 1
+    assert agg["coverage_time"] is None or 0.0 <= agg["coverage_time"] <= 1.0
+
+
+def test_evaluate_writes_behavior_json(tmp_path, capsys):
+    out = tmp_path / "behavior.json"
+    summary = evaluate(
+        None, scenario="fireteam", episodes=1, seed=41, behavior=True, behavior_path=str(out)
+    )
+    assert "behavior" in summary
+    payload = json.loads(out.read_text())
+    assert payload["scenario"] == "fireteam"
+    assert payload["episodes"] == 1
+    assert set(payload["metrics"]) >= {
+        "obedience_latency_mean",
+        "report_precision",
+        "report_recall",
+        "doctrine_preference_rate",
+        "false_complete_rate",
+        "succession_recovery_mean",
+        "coverage_time",
+        "human_death_rate",
+        "human_mean_enemy_dist",
+        "human_ring_entries_mean",
+    }
+    assert len(payload["per_episode"]) == 1
+    assert "behavior over 1 episodes" in capsys.readouterr().out
