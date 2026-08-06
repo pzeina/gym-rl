@@ -57,6 +57,32 @@ state lives in `runs/<name>/` and is re-readable in ~30 lines at any time.
 
 Slash commands: `/train`, `/train-status`, `/train-report`.
 
+## Operating guide (established practice — follow unless the owner redirects)
+
+- **Session start**: read the "⟳ Session handoff" block at the top of ROADMAP.md —
+  it carries current state, verdicts, and the prioritized next steps.
+- **Delegation**: substantial build/retrain campaigns run in ONE background
+  general-purpose agent with a precise phased brief: one commit per phase,
+  pytest+ruff green per commit, spaces frozen unless the cycle is explicitly
+  breaking, NO git push from agents, honest-DoD protocol (one retrain + one
+  diagnosed adjustment, then document the miss and stop). Agents idle out while
+  their nohup trainings run — resume them via SendMessage with the active-polling
+  reminder (`until ! ps -p $(cat PIDFILE) ...` in <9-min Bash calls). Training
+  *launch/monitor* ops go to the cheap-model workflow below, never general-purpose.
+- **Shipping** (main session only): review gate (full pytest + ruff + a functional
+  spot-check) → push `multi-agent-dev` → merge `main` (fast-forward, re-test) →
+  annotated monotonic tag `vX.Y.0` for milestone-sized ships (at v1.9.0).
+- **Design decisions are the owner's**: reward structure, vocabulary, scenario
+  semantics, breaking cycles — present options + a recommendation and ask; don't
+  autopilot. Diagnose with the oracle (`env.oracle()`) BEFORE changing rewards.
+- **Honesty**: misses ship with numbers and diagnosis in ROADMAP's progress log;
+  regression-hazard tests (terminal dominance, churn/rotation, weapons-tight,
+  Message text-only schema) each encode a real exploit — keep them green.
+- **Assurance layer** (separate project, contract in ASSURANCE-SYNC.md): the Stop
+  hook queues commits automatically and surfaces new GitHub issues once — handle
+  via ONE dedicated fix agent, commits `refs #N`, NEVER close/comment issues,
+  never touch ~/Documents/gym-rl-fork or delete ~/Documents/gym-rl-sync.
+
 ## Architecture (see docs/architecture.md)
 
 - `cohort/core/` — pure domain logic, no RL deps: ranks/authority, missions/doctrine/

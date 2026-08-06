@@ -1,5 +1,42 @@
 # Roadmap
 
+## ⟳ Session handoff — resume here (2026-08-06)
+
+**State**: `multi-agent-dev` = `main` = origin at `d152621`; latest tag **v1.9.0**;
+340 tests green; nothing training; every agent's work committed and pushed. Spaces are
+Discrete(228)/Box(166) since v1.9 (pre-v1.9 checkpoints incompatible). The user
+deleted `COMMENTS.md` locally (uncommitted, intentional).
+
+**Published fleet (N=100 ± CI)**: fireteam 84±7 · squad 93±5 · platoon **98±3** ·
+recon 94±5 · screen 98±3 · patrol_brique 95±4 · defend_brique 85±7 ·
+**fireteam_defend 51±10** (v6 — the diagnosed v7 retrain missed at 35±9; see log).
+
+**Verdicts that shape what's next**:
+- Orders now *bind* (v1.8 economics: patrol anchor rotations 1364→1) and the
+  vocabulary now *names maneuver* (v1.9: ADVANCE/waypoints/phase lines, timing +
+  EXECUTE, formations, trinôme voice sync) — but the transparency probe still trails
+  the OPORD-only baseline (best-ever squad gap −0.090 against a harder stick);
+  residuals named in `docs/transparency.md` §A5.
+- fireteam_defend is the open wound: two documented misses under the new economics;
+  the lead clue is its ~0.52 human-death rate in v7 training (the −25 human-death
+  term may dominate defend's terminal structure).
+- D4 (post-convergence collapse) remains the recurring tax; the ckpt gate helps,
+  collapse itself is unsolved (correlates with human-death penalty bursts).
+
+**Next recommended, in order**:
+1. **Defend root problem** — start:
+   `.venv/bin/python scripts/run_report.py fireteam_defend_v7 --vs fireteam_defend_v6`,
+   then oracle-diagnose the human-death interaction before any reward change.
+2. **Probe vs baseline** — implement the two named residual fixes
+   (probe formation/order primacy; fireteam churn-through-pricing).
+3. **A3 self-play**, buildings+pathfinding (v1.4 deferral), false-COMPLETE judgment.
+
+**How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
+the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
+new GitHub issues → ONE dedicated fix agent, commits `refs #N`, never close issues).
+
+---
+
 Tracks planned work and its advancement. Update statuses in place; append outcomes to
 the [progress log](#progress-log) with a date and, where relevant, a run name or commit.
 
