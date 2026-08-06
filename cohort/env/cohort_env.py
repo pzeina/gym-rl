@@ -54,7 +54,13 @@ from cohort.core.units import (
     voice_peers,
 )
 from cohort.core.world import World, dist
-from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
+from cohort.env.actions import (
+    CATALOG,
+    N_ACTIONS,
+    ActionSpec,
+    compute_mask,
+    is_root_opord_claim,
+)
 from cohort.env.observations import OBS_DIM, AgentView, build_observation
 from cohort.env.rewards import RewardConfig, RewardLedger
 
@@ -1058,11 +1064,9 @@ class CohortEnv(ParallelEnv):
             if self.spec_cfg.root_objective
             else None
         )
-        is_root_mission_claim = (
-            soldier is self.roster.root()
-            and mission.issuer_id == HQ_ID
-            and mission.type is self.spec_cfg.root_mission
-            and mission.objective_id == (root_objective.id if root_objective else None)
+        # same predicate the action mask admits on — see is_root_opord_claim
+        is_root_mission_claim = is_root_opord_claim(
+            soldier, self.roster, self.spec_cfg.root_mission, self._root_objective_id()
         )
         # The root's OPORD claim reports the *operation*: it is judged against
         # the team success condition (e.g. objective clear AND held by anyone),
@@ -1799,6 +1803,8 @@ class CohortEnv(ParallelEnv):
             bool(visible),
             order_cooldown=self.spec_cfg.order_cooldown,
             done_cooldown=self.spec_cfg.done_cooldown,
+            root_mission=self.spec_cfg.root_mission,
+            root_objective_id=self._root_objective_id(),
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,
@@ -2111,6 +2117,14 @@ class CohortEnv(ParallelEnv):
             dist(s.pos, root_obj.pos) <= root_obj.radius + 1.0 for s in self.roster.living
         )
         return clear and manned
+
+    def _root_objective_id(self) -> int | None:
+        """Objective id named by the OPORD, or None when the scenario has none."""
+        name = self.spec_cfg.root_objective
+        if not name:
+            return None
+        obj = self.world.objective_by_name(name)
+        return obj.id if obj is not None else None
 
     def _check_success(self, root_obj: Any) -> bool:
         mission = self.spec_cfg.root_mission
