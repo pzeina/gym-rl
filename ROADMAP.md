@@ -1530,3 +1530,45 @@ terrain (still deferred).
   `obedience_by_task` for SUPPORT. `squad_recon` is the scenario where the
   owner's specific complaint — no support to the reconning element — should
   show most, since RECON derives SUPPORT second.
+
+- **2026-08-06** — **Cycle 8's `is_pending` hypothesis was not just untested, it
+  had the sign backwards — and it was the metric, not the policy (refs #15).**
+  Cycle 8 called AMC staging "the leading hypothesis" for ADVANCE latency 1.01
+  → 16.21: staging time counted *as disobedience*, inflating latency. An
+  outside tap refuted it from the net — v8 staged **0.878** of its ADVANCE
+  orders and held them **44.4** steps against v10's 0.369 / 20.7, so the
+  checkpoint that stages more and longer measured **16× lower** latency.
+  Incidence and duration both ran backwards.
+  **They ran backwards because staging *deflates* the metric.** The environment
+  scores a pending order as HOLD at the staging spot — where the recipient
+  already stands (`extra["staging"] = recipient.pos`) — so a staged agent's
+  compliance is positive from the tick the order lands. `_obedience` booked
+  that tick as an order event and resolved it at latency **0**, while an
+  identical *un-staged* ADVANCE whose recipient never moved was censored. And
+  since release restamps `step_assigned`, the real event was booked again at
+  the release tick: every staged order donated a free zero to its task's mean.
+  Measured on the checkpoints themselves (greedy, seeds 500-511, 12 eps —
+  read-only, nothing written under `runs/`):
+
+  | | v8 | v10 |
+  |---|---|---|
+  | ADVANCE latency, staged ticks counted | **0.00** (n=19) | — (n=1, censored) |
+  | ADVANCE latency, staged ticks skipped | *no events* | unchanged |
+  | staged / released / abandoned | 19 / **0** / **19** | 0 / 0 / 0 |
+
+  **Every ADVANCE "obedience" event v8 has at these seeds is a staged order
+  that is never released.** v8's 1.01 was not a fast policy; it was staging
+  measured as obedience. v10, which stages nothing here, is bit-identical
+  before and after — the correction touches exactly the staging policy.
+  Fixed by skipping pending ticks in `_obedience` and recording pendingness in
+  the trace (`TraceRecorder` now scores a staged mission as HOLD, as the
+  environment pays it — it was scoring it as the ordered task). What the fix
+  removes is not deleted but *named*: new `_staging` reports `orders_staged`,
+  `staged_released`, `staged_abandoned`, `staging_gap_mean` in `behavior.json`
+  and every digest — abandonment being the fault worth seeing (the tap found
+  61 of v8's 130 staged orders never released; greedy here says 19 of 19).
+  No reward changed: same shape as #13/#14, a measurement rather than a knob.
+  447 → 451 tests; each part fails without its fix. **Pinned corpora move**:
+  any behavior number from a staging checkpoint is now different, and more
+  honest. The within-task ADVANCE rise remains unexplained — the correction
+  *widens* the v8/v10 gap rather than closing it.

@@ -59,6 +59,40 @@ episode ends before compliance, the event counts (`obedience_orders`) but
 contributes no latency (`obedience_censored`). *Edge cases*: no orders ever
 applied → `null`. OPORD latency is measured from `t=0`.
 
+*Staged orders are not order events* (issue #15). While an A5-2 order is
+pending — `AT MY COMMAND` before its `EXECUTE`, `AT T PLUS n` before its tick
+— the recipient is obeying by **not** executing, and the environment scores it
+as `HOLD` at the staging spot, i.e. exactly where it already stands. Its
+compliance is therefore positive from the tick the order lands, and counting
+that tick as an order event made every staged order resolve at latency **0**:
+an identical un-staged ADVANCE whose recipient never moved was censored, while
+the staged one read "obeyed instantly". Release restamps `step_assigned`, so
+the order books its real event at the release tick regardless — the staged
+tick was a second, free, zero-latency copy of the same order, and the mean
+fell toward 0 in proportion to how much a policy staged. Pending ticks are
+skipped, and staging is measured separately below.
+
+### A5-2 staging (issue #15)
+
+A *staging span* runs from the tick a pending order lands to the tick it
+becomes effective (release restamps `step_assigned` to that tick, which is how
+a span is recognised as released).
+
+* `orders_staged` — spans opened.
+* `staged_released` — spans that reached their `EXECUTE` / due tick.
+* `staged_abandoned` — spans that did not: re-tasked or killed while staged,
+  or still staged when the episode ended. This is the one that reads as a
+  fault — an order transmitted, a recipient held in place, and no execution
+  ever ordered. An outside tap measured 61 of one checkpoint's 130 staged
+  orders in that state.
+* `staging_gap_mean` — mean steps from landing to release, over released
+  spans only; `null` when nothing was released.
+
+*Edge case*: a staged order superseded **at its release tick** by a fresh
+immediate order of the same task is indistinguishable from a release in the
+trace (same mission, same restamped `since`). It is a coincidence of one tick
+and one task, and it can only under-count abandonment.
+
 ### Report precision / recall
 
 Ground truth is the oracle-side visibility recorded per step.
