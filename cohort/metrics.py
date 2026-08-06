@@ -9,6 +9,9 @@ behaves* while doing so, per evaluation run:
 * doctrine-preference rate — share of issued orders that were the preferred
   derivation of the issuer's own mission
 * false-COMPLETE rate    — MISSION COMPLETE claims rejected by the umpire
+* COMPLETE claim rate    — claims transmitted over the agent-steps at which
+  claiming was admissible (refs issue #13: zero DONE reports is either a shut
+  channel or a declined opportunity, and only this denominator says which)
 * succession recovery    — leader death → all orphaned subordinates re-tasked
 * subordinate coverage   — share of steps every living subordinate is tasked
 * human exposure         — the human root's distance to the nearest living
@@ -49,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 from cohort.core import language as lang
 from cohort.core.missions import IN_POSITION_RADIUS, MissionType, allowed_derivations, compliance
 from cohort.core.units import CombatParams
+from cohort.env.actions import is_done_admissible
 
 if TYPE_CHECKING:
     from cohort.env.cohort_env import CohortEnv
@@ -143,6 +147,9 @@ class TraceRecorder:
 
     def _step_record(self, env: CohortEnv, *, initial: bool) -> dict:
         soldiers = []
+        # succession moves the root mid-episode, so who holds the OPORD is a
+        # function of the step, not of the roster at reset
+        root = env.roster.root()
         for s in env.roster.soldiers:
             comp = None
             if not initial and s.alive and s.mission is not None:
@@ -167,6 +174,20 @@ class TraceRecorder:
                     "sees": [e.id for e in env._visible_enemies(s)] if s.alive else [],
                     # A5-3: the element stance set ON this soldier (leaders only)
                     "formation": s.formation.name if s.formation is not None else None,
+                    # was MISSION COMPLETE admissible to this agent at this
+                    # state? Read off the mask's own predicate, so a run's
+                    # DONE silence is attributable: no admissible step means
+                    # the channel was shut, admissible steps with no claim
+                    # means the policy declined it (refs #13).
+                    "done_ok": is_done_admissible(
+                        s,
+                        env.roster,
+                        root_mission=env.spec_cfg.root_mission,
+                        root_objective_id=env._root_objective_id(),
+                        step=env._step_count,
+                        done_cooldown=env.spec_cfg.done_cooldown,
+                    ),
+                    "root": s is root,
                 }
             )
         messages = env.transcript.messages if initial else env.last_messages
@@ -454,6 +475,31 @@ def _false_complete(trace: dict) -> tuple[int, int]:
     return dones, rejected
 
 
+def _done_opportunity(trace: dict) -> dict[str, int]:
+    """Agent-steps at which MISSION COMPLETE was admissible (all / the root's).
+
+    The denominator ``done_reports`` never had (refs #13). Zero DONE reports
+    is two opposite findings wearing the same face: an admissible-step count
+    of zero means the channel was shut and no price was ever consulted (the
+    ``is_root_opord_claim`` mask bug, which sat unseen for a generation
+    because the pipeline could not see this); a large count with no claims
+    means the policy was *offered* the act and declined it, which is a
+    statement about the price of a false claim, not about reachability.
+
+    Counted over every recorded state but the last — the terminal state is
+    followed by no action, so it is not an opportunity anybody had.
+    """
+    admissible = 0
+    root_admissible = 0
+    for step in trace["steps"][:-1]:
+        for rec in step["soldiers"]:
+            if not rec.get("done_ok"):
+                continue
+            admissible += 1
+            root_admissible += bool(rec.get("root"))
+    return {"done_admissible": admissible, "done_admissible_root": root_admissible}
+
+
 def _succession(trace: dict) -> tuple[int, list[int], int]:
     """(leader-death events, recovery times, unrecovered events).
 
@@ -644,6 +690,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_reports(trace),
         "done_reports": dones,
         "done_rejected": rejected,
+        **_done_opportunity(trace),
         "succession_events": events,
         "succession_recovery": recovery,
         "succession_unrecovered": unrecovered,
@@ -720,6 +767,11 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "false_complete_rate": _ratio(total("done_rejected"), total("done_reports")),
         "done_reports": total("done_reports"),
         "done_rejected": total("done_rejected"),
+        # refs #13: the opportunity denominator. done_claim_rate is None only
+        # when the channel was never open — which is itself the finding.
+        "done_admissible": total("done_admissible"),
+        "done_admissible_root": total("done_admissible_root"),
+        "done_claim_rate": _ratio(total("done_reports"), total("done_admissible")),
         "succession_recovery_mean": _mean(recovery),
         "succession_events": total("succession_events"),
         "succession_unrecovered": total("succession_unrecovered"),
@@ -816,6 +868,7 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("report_recall", "report recall", "{:.2f}"),
     ("doctrine_preference_rate", "doctrine preference", "{:.2f}"),
     ("false_complete_rate", "false-COMPLETE rate", "{:.2f}"),
+    ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
     ("coverage_time", "subordinate coverage time", "{:.2f}"),
     ("advance_orders_per_episode", "ADVANCE orders / ep", "{:.1f}"),
@@ -847,6 +900,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         "report_precision": f"n={agg['contact_reports']}",
         "doctrine_preference_rate": f"n={agg['orders_issued']}",
         "false_complete_rate": f"n={agg['done_reports']}",
+        "done_claim_rate": (
+            f"{agg.get('done_admissible', 0)} admissible agent-steps "
+            f"({agg.get('done_admissible_root', 0)} the root's)"
+        ),
         "succession_recovery_mean": (
             f"n={agg['succession_events']}, unrecovered {agg['succession_unrecovered']}"
         ),

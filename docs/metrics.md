@@ -131,6 +131,30 @@ answered on the net (`DONE_CONFIRM` / `DONE_REJECT`, issue #4), so the rate
 is exactly the share of claims the umpire judged false. *Edge case*: no DONE
 → `null`.
 
+### COMPLETE claim rate (issue #13)
+
+DONE transmitted / `done_admissible`, where `done_admissible` counts the
+agent-steps at which MISSION COMPLETE was admissible — read off
+`cohort.env.actions.is_done_admissible`, the same predicate the action mask
+admits on, so the metric and the mask cannot drift. `done_admissible_root` is
+the root's share of it.
+
+This is the denominator `done_reports` never had. Zero DONE reports is the
+same number for two opposite findings, and only the denominator separates
+them:
+
+* `done_admissible == 0` — **absence**: the channel was shut and no price was
+  ever consulted. This was true of every DEFEND-rooted run before `cc07199`,
+  and the silence read as a taught behaviour for a whole generation.
+* `done_admissible >> 0`, `done_reports == 0` — **suppression**: the act was
+  offered and declined, which is a statement about `done_false`, not about
+  reachability. Measured on `squad_v6` (`scripts/done_probe.py`, 10 episodes
+  from seed 500): 11,528 admissible agent-steps, 0 claims, against an oracle
+  regime taking 57 confirmed completions on the same seeds.
+
+*Edge case*: no admissible step → `null`, never `0.0` — an undefined rate and
+a declined opportunity are the distinction the metric exists to preserve.
+
 ### Succession recovery time
 
 A *leader death* is the death of an agent with living direct subordinates.

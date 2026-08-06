@@ -49,6 +49,36 @@ def deciles(rows: list[dict], n: int = 10) -> list[list[dict]]:
     return [rows[i * size: (i + 1) * size] for i in range(n) if rows[i * size:]]
 
 
+#: best-minus-final rolling success, in points, past which a run is not a
+#: converged result. Set at 15 because squad_v5 — the last pre-v1.10 run that
+#: trained cleanly — gave back 5, while every post-v1.10 run measured so far
+#: gave back 10 (defend_v8), 17 (defend_v9), 33 (squad_v6) and 68 (fireteam_v7).
+COLLAPSE_POINTS = 15
+
+
+def stability(best: float, final: float) -> str:
+    """One line separating "this run converged" from "this run peaked".
+
+    Every published number comes from ``ckpt_best``, which captures the best
+    ROLLING WINDOW, not the policy the run ended with. On a run that spikes and
+    falls back, evaluating ckpt_best measures the peak and says nothing about
+    convergence — squad_v6 read 0.95 at N=20 off a policy whose final decile
+    was 65%, and fireteam_v7 evaluates at 0.95 off a final decile of 26%.
+    Nothing in the digest used to say so, and the trap caught two consecutive
+    sessions, so it is stated on its own line.
+    """
+    if best != best or final != final:  # NaN
+        return "stability  —  (no rolling-success rows)"
+    drop = (best - final) * 100
+    if drop >= COLLAPSE_POINTS * 2:
+        verdict = "COLLAPSED — ckpt_best is a peak, NOT a result; quote both numbers"
+    elif drop >= COLLAPSE_POINTS:
+        verdict = "UNSTABLE — ckpt_best overstates this run; quote both numbers"
+    else:
+        verdict = "converged"
+    return f"stability  best-final gap {drop:.0f} pts  [{verdict}]"
+
+
 def curve(rows: list[dict]) -> str:
     """Ten-bucket sparkline of rolling success, plus the numbers that matter."""
     blocks = "▁▂▃▄▅▆▇█"
@@ -71,7 +101,9 @@ def report(run: str, show_components: bool) -> dict:
     print(f"  scenario {cfg.get('scenario','?')}  seed {cfg.get('seed','?')}  "
           f"steps {int(fnum(rows[-1],'env_steps') or 0):,}/{cfg.get('total_steps',0):,}  "
           f"lr {cfg.get('lr','?')}  ent {cfg.get('ent_coef','?')}  n_envs {cfg.get('n_envs','?')}")
-    print(f"  curve   {curve(rows)}   best rolling {best:.0%}   final {mean(last,'success_rate_rolling'):.0%}")
+    final_roll = mean(last, "success_rate_rolling")
+    print(f"  curve   {curve(rows)}   best rolling {best:.0%}   final {final_roll:.0%}")
+    print(f"  {stability(best, final_roll)}")
     print("  final decile vs first decile:")
     summary = {}
     for key, label in [
