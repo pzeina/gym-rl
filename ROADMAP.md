@@ -137,11 +137,18 @@ terrain (still deferred).
   columns `human_death_rate`/`false_complete_rate`; human-exposure block
   added per the #9 finding. Definitions + the published-checkpoint baseline
   (N=30, seeds 500–529): `docs/metrics.md`. See the progress log.)*
-- `[ ]` **B3. Hierarchy ablation** — same parameter count, three arms: (i) full
+- `[x]` **B3. Hierarchy ablation** — same parameter count, three arms: (i) full
   hierarchy + masked doctrine, (ii) hierarchy without doctrine masks, (iii) flat team
   with free comms and no ranks.
   **DoD**: sample-efficiency and final-success comparison across ≥3 seeds per arm,
   written up in `docs/ablation.md`. This is the publishable claim if it holds.
+  *(done 2026-08-06 — 9 runs from scratch on squad, 2.5M steps each. The claim
+  holds for final performance vs flat (0.92/0.91 vs 0.85 at N=100; flat wipes
+  2.2×) and for interpretability (100% vs 40% doctrine-valid net traffic;
+  completion reporting survives only under masks), and for efficiency only
+  WITHIN hierarchy (masks: 436 ± 30k to sustained-80% vs 583 ± 182k without) —
+  the flat all-tasked team is fastest to 80% (310k) on this 7-agent scenario.
+  Full write-up + curves: `docs/ablation.md`; see the progress log.)*
 - `[ ]` **B4. Transparency probe** — can a reader predict behavior from the net alone?
   **DoD**: a scripted probe (show transcript-so-far, predict each agent's next
   destination/posture; measure accuracy) — a proxy for the founding promise that
@@ -496,6 +503,25 @@ terrain (still deferred).
      combat pay still *attracts* the root forward; rolling success is
      blind to this, so P3-style metrics must drive checkpoint selection
      for human-preservation claims (B2 candidate metric).
+- **2026-08-06** — **B3 done: hierarchy ablation** (228 → 242 tests; commits
+  34da151 + the campaign). Arms as env knobs (`ScenarioSpec.ablation`:
+  full | nomask | flat; default untouched, spaces frozen 157/137, masking-only).
+  Campaign: squad, 3 arms × 3 seeds (3/5/7), 2.5M steps each from scratch,
+  identical PPO defaults, all evals on gated `ckpt_best`. Headline
+  (mean ± sd across seeds): N=100 success full **0.92 ± 0.01**, nomask
+  **0.91 ± 0.03**, flat **0.85 ± 0.06** (defeats 5.0/4.7/**11.0** per 100);
+  sustained-80% at 436 ± 30k / 583 ± 182k / **310 ± 80k** — flat is fastest
+  to threshold (tasking arrives free at reset) but finishes worst and least
+  stable; doctrine masks halve the within-hierarchy efficiency spread.
+  Interpretability probe (30 eps/run): doctrine-valid orders 100% (full,
+  by construction) vs 33–48% (nomask, incl. 109 orders from unmissioned
+  leaders); DONE claims 128 vs ~0 per 30 eps — completion reporting only
+  survives under masks. **D4 data point**: 6/6 hierarchy seeds hit a deep
+  self-recovered collapse at 0.99–1.37M vs 1/3 flat seeds — collapse
+  concentrates in the order-capable arms under identical death economics.
+  Honest verdict in `docs/ablation.md`: robustness + interpretability
+  claim holds; raw sample efficiency vs flat does not at this scale
+  (platoon-depth rerun is the follow-up).
 - **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
   `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
   only, consumes no RNG — recorded episodes bit-identical, tested) and
