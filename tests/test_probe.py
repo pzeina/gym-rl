@@ -107,7 +107,7 @@ def test_sitrep_evidence_shortcuts_arrival():
     p = NetPredictor(make_briefing("squad"))
     p.observe(0, [order("SL1", "TL1", MissionType.OBSERVE, "BRAVO")])
     assert p.predict("TL1") == (obj_class("BRAVO"), MOVING)
-    sitrep = lang.format_sitrep("SL1", "TL1", 100, 30, (34, 10))  # 2 cells off BRAVO
+    sitrep = lang.format_sitrep("SL1", "TL1", 100, 30, (34, 10), in_cover=False)  # 2 cells off BRAVO
     p.observe(5, [m("sitrep", "TL1", "SL1", sitrep)])
     assert p.predict("TL1") == (obj_class("BRAVO"), STATIC)
 
@@ -174,8 +174,8 @@ def test_contact_predicts_firing_and_ages_out_screen_stays_tight():
     p = NetPredictor(make_briefing("squad"))
     p.observe(0, [order("SL1", "TL1", MissionType.DEFEND, "ALPHA"),
                   order("SL1", "TL2", MissionType.SCREEN, "BRAVO")])
-    p.observe(1, [m("sitrep", "TL1", "SL1", lang.format_sitrep("SL1", "TL1", 100, 30, (33, 33))),
-                  m("sitrep", "TL2", "SL1", lang.format_sitrep("SL1", "TL2", 100, 30, (35, 9)))])
+    p.observe(1, [m("sitrep", "TL1", "SL1", lang.format_sitrep("SL1", "TL1", 100, 30, (33, 33), in_cover=False)),
+                  m("sitrep", "TL2", "SL1", lang.format_sitrep("SL1", "TL2", 100, 30, (35, 9), in_cover=False))])
     assert p.predict("TL1")[1] == STATIC  # in position, net quiet
     p.observe(2, [m("contact", "RFN1", "SL1", lang.format_contact("SL1", "RFN1", 2, (33, 30)))])
     assert p.predict("TL1")[1] == FIRING  # fresh contact 3 cells from its station
@@ -202,7 +202,7 @@ def test_hot_destination_within_reach_predicts_firing():
     contact = lang.format_contact("SL1", "RFN1", 2, (33, 32))  # at the objective
     p.observe(1, [m("contact", "RFN1", "SL1", contact)])
     assert p.predict("TL1")[1] == MOVING  # station hot but ~50 steps out
-    p.observe(2, [m("sitrep", "TL1", "SL1", lang.format_sitrep("SL1", "TL1", 100, 30, (26, 26)))])
+    p.observe(2, [m("sitrep", "TL1", "SL1", lang.format_sitrep("SL1", "TL1", 100, 30, (26, 26), in_cover=False))])
     p.observe(3, [m("contact", "RFN1", "SL1", contact)])
     assert p.predict("TL1")[1] == FIRING  # reaches the hot station inside the window
 

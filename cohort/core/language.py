@@ -251,9 +251,60 @@ def format_contact(leader_cs: str, sender_cs: str, n_hostiles: int, pos: tuple[i
     return f"{leader_cs}, THIS IS {sender_cs}: CONTACT, {grid_ref(pos)}, {n_hostiles} x ENEMY. OVER."
 
 
-def format_sitrep(leader_cs: str, sender_cs: str, health: int, ammo: int, pos: tuple[int, int]) -> str:
-    """Situation report."""
-    return f"{leader_cs}, THIS IS {sender_cs}: SITREP, {grid_ref(pos)}, HEALTH {health}%, AMMO {ammo}. OVER."
+#: Spoken forms of the SITREP posture clause (v1.10, issue #10).
+COVER_PHRASE, OPEN_PHRASE = "IN COVER", "IN THE OPEN"
+
+#: Machine-readable shape of a SITREP, for monitors that read the net.
+_SITREP_RE = re.compile(
+    r"SITREP,\s*GRID\s*(\d{2})(\d{2}),\s*HEALTH\s*(\d+)%,\s*AMMO\s*(\d+)"
+    rf",\s*(?P<posture>{COVER_PHRASE}|{OPEN_PHRASE})",
+    re.IGNORECASE,
+)
+
+
+def format_sitrep(
+    leader_cs: str,
+    sender_cs: str,
+    health: int,
+    ammo: int,
+    pos: tuple[int, int],
+    *,
+    in_cover: bool,
+) -> str:
+    """Situation report, including the sender's own terrain posture.
+
+    The posture clause is **self-reported**, like grid, health and ammo: it
+    is what the soldier says about the ground it is on, not a readout of the
+    ground itself. That keeps it radio-legitimate — per-step cover remains
+    ground truth in ``env.oracle()`` and never enters the observable stream
+    by any other route — while making the strongest known correlate of
+    defend performance measurable from the net alone (issue #10, and the
+    fight-disposition metrics of #11 that motivated the request).
+    """
+    posture = COVER_PHRASE if in_cover else OPEN_PHRASE
+    return (
+        f"{leader_cs}, THIS IS {sender_cs}: SITREP, {grid_ref(pos)}, "
+        f"HEALTH {health}%, AMMO {ammo}, {posture}. OVER."
+    )
+
+
+def parse_sitrep(text: str) -> dict | None:
+    """Read a SITREP back into its reported fields, or None if it is not one.
+
+    Shipped so a monitor never has to hand-roll a regex over the transcript —
+    the failure mode issue #10 reported for objective coordinates, in
+    miniature. Returns ``{"grid", "health", "ammo", "in_cover"}``; inverse of
+    :func:`format_sitrep` over exactly the fields it formats.
+    """
+    m = _SITREP_RE.search(text)
+    if m is None:
+        return None
+    return {
+        "grid": (int(m.group(1)), int(m.group(2))),
+        "health": int(m.group(3)),
+        "ammo": int(m.group(4)),
+        "in_cover": m.group("posture").upper() == COVER_PHRASE,
+    }
 
 
 def format_done(leader_cs: str, sender_cs: str, mission: MissionType, target: str | None) -> str:

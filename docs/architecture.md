@@ -230,3 +230,15 @@ Two hard rules, both covered by tests:
 The intended consumer is an external assurance layer: treat the enemy side of the
 snapshot as hidden ground truth and measure how well it can be inferred from the
 friendly side alone (own units + radio traffic).
+
+### The other side of that line: `env.briefing()`
+
+`env.briefing()` / `cohort.config.briefing(scenario)` returns the **static operations
+overlay** — objective and control-measure coordinates, map size, spawn, root tasking,
+the doctrinal terrain guarantees, and the engagement envelope. It is the opposite of
+the oracle in every respect that matters: a pure function of the `ScenarioSpec`,
+identical across episodes, valid before `reset()`, and therefore legitimate for an
+external monitor to consume — a real one reads it off the overlay before H-hour. There
+is no terrain layer in it, because the grid is regenerated at every `reset()`
+(`terrain_static: false` says so explicitly). Per-step cover stays in the oracle; the
+radio-legitimate view of it is the sender's own SITREP posture clause.

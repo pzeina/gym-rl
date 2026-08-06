@@ -85,3 +85,79 @@ def test_transcript_starts_with_opord():
     assert first.kind.value == "opord"
     assert "OPORD" in first.text
     assert "SEIZE OBJ ALPHA" in first.text
+
+
+# ---------------------------------------------------------------------- #
+# static briefing / observable-stream header (issue #10)
+# ---------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("scenario", sorted(SCENARIOS))
+def test_briefing_is_static_json_ready_and_scenario_derived(scenario):
+    """Header material: identical across episodes, valid before reset, and
+    carrying every anchor a monitor would otherwise hand-pin in a table."""
+    import json
+
+    from cohort.config import briefing, get_scenario
+
+    env = make_env(scenario)
+    before = env.briefing()                       # available with no world built
+    json.dumps(before)                            # JSON-ready: it is a stream header
+    assert before == briefing(scenario)           # same from the scenario name alone
+
+    spec = get_scenario(scenario)
+    assert before["map_size"] == list(spec.map_size)
+    assert before["root_mission"] == spec.root_mission.name
+    assert set(before["objectives"]) == {name for name, _ in spec.objectives}
+    assert set(before["waypoints"]) == {name for name, _ in spec.waypoints}
+    assert set(before["phase_lines"]) == {name for name, *_ in spec.phase_lines}
+    assert before["terrain_static"] is False, "the grid is regenerated every reset"
+
+    # the coordinates are the ones the episode actually uses, and they do not
+    # drift between episodes — the era-sensitivity issue #10 reported
+    env.reset(seed=1)
+    for name, pos in before["objectives"].items():
+        assert list(env.world.objective_by_name(name).pos) == pos
+    for name, pos in before["waypoints"].items():
+        assert list(env.world.control_by_name(name).pos) == pos
+    env.reset(seed=99)
+    assert env.briefing() == before
+
+
+def test_briefing_carries_the_defend_objective_coordinates():
+    """The concrete case from issue #10: OBJ ALPHA of `fireteam_defend`."""
+    from cohort.config import briefing
+
+    assert briefing("fireteam_defend")["objectives"] == {"ALPHA": [18, 18]}
+    assert briefing("fireteam_defend")["objective_cover"] is True
+
+
+def test_sitrep_posture_matches_the_ground_the_sender_stands_on():
+    """The self-report must be true: what the soldier says about its cover is
+    what `world.cover_at` says (issue #10 — the correlate is only worth
+    measuring if the net's version of it is honest)."""
+    from cohort.core.language import parse_sitrep
+    from cohort.env.actions import CATALOG
+
+    sitrep_idx = next(s.index for s in CATALOG if s.kind == "sitrep")
+    env = make_env("fireteam_defend")
+    obs, _ = env.reset(seed=4)
+    seen = set()
+    for _ in range(40):
+        acts = {}
+        for a in env.agents:
+            mask = obs[a]["action_mask"]
+            acts[a] = sitrep_idx if mask[sitrep_idx] else int(np.flatnonzero(mask)[0])
+        obs, *_ = env.step(acts)
+        for m in env.last_messages:
+            if m.kind.value != "sitrep":
+                continue
+            reported = parse_sitrep(m.text)
+            assert reported is not None, f"every SITREP must parse: {m.text!r}"
+            sender = env.roster.by_id[m.sender_id]
+            assert reported["grid"] == tuple(sender.pos)
+            assert reported["in_cover"] == env.world.cover_at(sender.pos)
+            seen.add(reported["in_cover"])
+        if not env.agents:
+            break
+    assert seen, "no SITREP was transmitted — the test asserted nothing"

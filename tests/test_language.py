@@ -160,3 +160,41 @@ def test_succession_formatters():
         format_assuming_position("RFN2", "RFN1")
         == "ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT."
     )
+
+
+# ---------------------------------------------------------------------- #
+# SITREP posture (issue #10)
+# ---------------------------------------------------------------------- #
+
+
+def test_sitrep_reports_its_own_terrain_posture():
+    from cohort.core.language import format_sitrep
+
+    assert (
+        format_sitrep("TL1", "RFN1", 66, 24, (9, 12), in_cover=True)
+        == "TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24, IN COVER. OVER."
+    )
+    assert format_sitrep("TL1", "RFN1", 66, 24, (9, 12), in_cover=False).endswith(
+        "AMMO 24, IN THE OPEN. OVER."
+    )
+
+
+@pytest.mark.parametrize("in_cover", [True, False])
+def test_sitrep_round_trips_through_its_parser(in_cover):
+    """format_sitrep / parse_sitrep are inverses over the fields formatted."""
+    from cohort.core.language import format_sitrep, parse_sitrep
+
+    text = format_sitrep("SL1", "TL2", 33, 7, (18, 4), in_cover=in_cover)
+    assert parse_sitrep(text) == {
+        "grid": (18, 4),
+        "health": 33,
+        "ammo": 7,
+        "in_cover": in_cover,
+    }
+
+
+def test_parse_sitrep_ignores_other_traffic():
+    from cohort.core.language import format_contact, format_order, parse_sitrep
+
+    assert parse_sitrep(format_contact("TL1", "RFN1", 2, (5, 5))) is None
+    assert parse_sitrep(format_order("SL1", "TL1", MissionType.DEFEND, "ALPHA")) is None

@@ -950,7 +950,12 @@ class CohortEnv(ParallelEnv):
                 soldier.id,
                 soldier.leader_id,
                 lang.format_sitrep(
-                    self._addressee(soldier), soldier.callsign, soldier.health, soldier.ammo, soldier.pos
+                    self._addressee(soldier),
+                    soldier.callsign,
+                    soldier.health,
+                    soldier.ammo,
+                    soldier.pos,
+                    in_cover=self.world.cover_at(soldier.pos),
                 ),
             )
         elif spec.kind == "done":
@@ -2260,8 +2265,21 @@ class CohortEnv(ParallelEnv):
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 
     # ------------------------------------------------------------------ #
-    # ground-truth oracle (external observers only)
+    # static briefing + ground-truth oracle (external observers only)
     # ------------------------------------------------------------------ #
+
+    def briefing(self) -> dict:
+        """Static operations overlay for this env's scenario (issue #10).
+
+        Objective/control-measure coordinates, map size, root tasking and the
+        engagement envelope — pure function of the scenario, identical across
+        episodes, valid before ``reset()``. Header material for an episode
+        stream: it leaks no per-episode state, which is exactly why an
+        external monitor may consume it. See ``cohort.config.briefing``.
+        """
+        from cohort.config import briefing
+
+        return briefing(self.spec_cfg)
 
     def oracle(self) -> dict:
         """Ground-truth snapshot incl. OpFor internals — for external observers.

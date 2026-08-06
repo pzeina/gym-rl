@@ -993,3 +993,38 @@ terrain (still deferred).
   no retrain — the fleet is unloadable under the open v1.10 space break, and
   the gate is meant to judge the next defend run, not to be tuned against the
   old ones. 367 → 375 tests.
+- **2026-08-06** — **static briefing + SITREP posture** (refs #10, external
+  request). The assurance layer's fight-disposition instrument (the companion
+  to #11) needed two things this repo was not publishing, and was
+  compensating with a hand-maintained coordinate table — silently
+  era-sensitive, since `fireteam_defend` moved OBJ ALPHA from (12,12) to
+  (18,18), so re-tapping a `_v4`-era checkpoint against today's table gives
+  wrong numbers with no error to show for it.
+  * **`cohort.config.briefing(scenario)` / `env.briefing()`** — the static
+    operations overlay as a JSON-ready dict: objective coordinates by name,
+    waypoint/phase-line geometry, map size, spawn, root tasking, the
+    doctrinal terrain guarantees (`objective_cover`,
+    `observation_concealment`) and the engagement envelope (weapon/vision
+    ranges, so an outside monitor can define "under threat" the way
+    `metrics.py` does). Pure function of the `ScenarioSpec` — identical
+    across episodes, valid *before* `reset()`, which is what makes it header
+    material rather than a leak. Read from the scenario a checkpoint names,
+    it cannot go stale.
+  * **No terrain layer, deliberately.** The grid is regenerated at every
+    `reset()` from the episode seed, so no static cover map exists to
+    publish; `terrain_static: false` states that in the payload rather than
+    leaving a consumer to infer it from an absent key.
+  * **SITREP posture clause** — `..., AMMO 24, IN COVER. OVER.` /
+    `IN THE OPEN`. Self-reported, exactly like grid/health/ammo: what the
+    soldier *says* about its ground, not a readout of the ground. Per-step
+    cover stays ground truth in `env.oracle()` and enters the observable
+    stream by no other route, while the strongest known correlate of defend
+    performance becomes measurable from the transcript alone.
+    `language.parse_sitrep` ships with it (inverse of the formatter over the
+    fields it formats), so no monitor hand-rolls a regex — the #10 failure
+    mode in miniature. A regression test asserts the self-report is
+    *truthful*: what a station claims must equal `world.cover_at`.
+  Note on the request's wording: it asked for the change in `cohort/tap.py`,
+  which lives only on the assurance layer's own `assurance-integration`
+  branch and is theirs to edit. This side supplies the data; the header
+  writer stays with them. 375 → 391 tests.

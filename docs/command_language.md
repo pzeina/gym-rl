@@ -13,7 +13,7 @@ grammar, tested by round-trip tests.
 | ORDER | leader → subordinate | `RFN1, THIS IS TL1: SEIZE OBJ ALPHA. OUT.` |
 | ACK | subordinate → leader (auto) | `TL1, THIS IS RFN1: WILCO. OUT.` |
 | CONTACT | agent → its leader | `TL1, THIS IS RFN2: CONTACT, GRID 1716, 2 x ENEMY. OVER.` |
-| SITREP | agent → its leader | `TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24. OVER.` |
+| SITREP | agent → its leader | `TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24, IN COVER. OVER.` |
 | DONE | agent → its leader | `TL1, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.` |
 | DONE_CONFIRM | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.` |
 | DONE_REJECT | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT.` |
@@ -180,3 +180,45 @@ SITREP every `N` steps —
 With a cadence set, silence acquires semantics: a station that is neither in contact
 nor reporting is *failing* to report — which is what lets a commander (or an external
 observer) distinguish "nothing to report" from "unable to report".
+
+## SITREP posture: what a station says about its own ground (issue #10)
+
+A SITREP carries the sender's **self-reported terrain posture** — `IN COVER` or
+`IN THE OPEN` — next to grid, health and ammo:
+
+```
+TL1, THIS IS RFN1: SITREP, GRID 0912, HEALTH 66%, AMMO 24, IN COVER. OVER.
+```
+
+It is a *report*, not a sensor readout, and that is the point. Per-step cover is
+ground truth and stays in `env.oracle()`; nothing about it enters the observable
+stream by any other route. But a soldier obviously knows whether it is behind a
+tree, and saying so on the net is exactly the kind of thing voice procedure is
+for. The clause makes the strongest known correlate of defend performance
+(`docs/metrics.md`, the fight-disposition gate of issue #11) measurable from the
+transcript alone, without any observer needing ground state.
+
+`language.parse_sitrep(text)` reads it back — `{grid, health, ammo, in_cover}`,
+or `None` for traffic that is not a SITREP — so a monitor never hand-rolls a
+regex over the transcript. Formatter and parser are inverses over exactly the
+fields formatted (round-trip test).
+
+## The operations overlay: `env.briefing()` (issue #10)
+
+`cohort.config.briefing(scenario)` — also `env.briefing()` — returns the static,
+pre-mission overlay as a JSON-ready dict: objective coordinates by name,
+waypoint and phase-line geometry, map size, spawn, the root tasking, the
+doctrinal terrain guarantees (`objective_cover`, `observation_concealment`) and
+the engagement envelope (weapon/vision ranges).
+
+It is a pure function of the `ScenarioSpec`, so it is identical across every
+episode and valid **before `reset()`** — header material for an episode stream,
+leaking no per-episode state. An external monitor that reads it from the
+scenario the checkpoint names cannot drift: `fireteam_defend` moved OBJ ALPHA
+from (12,12) to (18,18), and a hand-maintained coordinate table gives wrong
+numbers on a re-tap of a `_v4`-era checkpoint with no error to show for it.
+
+There is deliberately **no terrain layer** in the briefing: the grid is
+regenerated at every `reset()` from the episode seed, so no static cover map
+exists to publish. `terrain_static: false` says so in the payload rather than
+leaving it to be inferred from an absent key.
