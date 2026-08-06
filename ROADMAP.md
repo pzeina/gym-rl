@@ -1092,3 +1092,71 @@ terrain (still deferred).
   `assurance-integration` branch and is theirs to edit. This side supplies
   the data and the parser; the payload writer stays with them. 395 → 402
   tests, ruff clean.
+
+- **2026-08-06** — **Unattended cycle 1: a completed run must never lose its
+  artifacts.** `fireteam_v7` trained all 2,500,000 steps (44 min CPU) and kept
+  only its checkpoints — no curves, no eval, no transcript, no gif, no
+  `behavior.json`. Cause: the positional regression gate (`91e5d05`, refs #11)
+  added `cover_under_threat` / `objective_dist_under_threat`, which **only
+  DEFEND roots record**; every other scenario writes them blank, and
+  `plot_training` called `float('')` on row 1. `train.py` plots *before* it
+  evaluates, so one un-parseable cell discarded the whole post-training phase —
+  and would have taken every fireteam/squad/platoon run launched after 17:01
+  with it. `squad_v6` was live at the time and was saved only because that
+  import is lazy.
+  Fixed at two independent layers, since either alone still loses artifacts:
+  `plots.py` degrades blank/junk cells to NaN and drops all-NaN series from
+  their panel (a metric a scenario never records now *gaps* the curve); and
+  `train.py` attempts each post-training artifact independently, collecting
+  failures and still exiting non-zero so `train_status.py` keeps calling a
+  damaged run FAILED. `tests/test_plot_robustness.py` pins both, including the
+  exact v7 shape and an "empty metrics.csv still raises" case so tolerance for
+  blanks never becomes tolerance for a run that recorded nothing. v7's curves
+  are recovered. 402 → 408 tests. (`56849ac`)
+
+- **2026-08-06** — **Unattended cycle 2: the DEFEND root could never report its
+  OPORD complete.** Diagnosis first, per the standing rule. `fireteam_defend_v8`
+  emitted **0 DONE reports in 100 episodes**, which read as a policy taught
+  silence by `done_false` −2.0 — the exact over-pricing failure `rewards.py`
+  predicts in its own comment. **That reading was wrong**, and a new read-only
+  probe (`scripts/done_probe.py`) proved it: the action mask gated MISSION
+  COMPLETE on `mission.type in COMPLETABLE`, while `_report_done`'s root branch
+  gated on `mission.type is spec.root_mission`. On a DEFEND- or DENY-rooted
+  scenario those cannot both hold, so the root's claim was **hard-masked on
+  every step of every episode** and the root branch was unreachable code.
+  `root_done_bonus` (3.0) was unearnable, and `grace_window` could only ever
+  expire by timeout. Measured: 0 admissible root claims, 0 truthful-and-
+  admissible agent-steps, 30 episodes. **The v1.10 false-COMPLETE pricing was
+  therefore never tested by this scenario** — it remains unvalidated, not
+  vindicated. v6's 90-claims/90-rejections were subordinates claiming ADVANCE
+  complete without reaching the waypoint, a different failure.
+  Fixed at the source of the divergence rather than by patching one side:
+  `is_root_opord_claim()` is now the single predicate both `compute_mask` and
+  `_report_done` consult. After the change (done_probe, 10 eps, seed 500, v8
+  checkpoint): admissible root steps 0 → 1424; golden steps 0 → 120 (= 10 × the
+  12-step grace window, exactly); episodes with an opportunity 0/10 → 10/10;
+  oracle-regime accept rate 1.000; naive-regime 0.096, so random claiming stays
+  −EV while a claim timed at T0 pays +4.0 against −2.0 (break-even p > 0.33).
+  No observation change — `OBS_DIM` and existing checkpoints are unaffected.
+  408 → 416 tests. (`cc07199`)
+  **Also found, not yet fixed**: the oracle probe shows ADVANCE at 0.545 of
+  threatened agent-steps in a DEFEND while the team sits 2.73 from the
+  objective at 95.5% cover — the TL issues ~4.9 ADVANCE orders/ep to control
+  measures the fireteam never travels to, so those missions never complete
+  (8885 ADVANCE agent-steps, **0** completions). And report precision has
+  collapsed to 0.38 at N=100 (v6: 0.79) while recall rose to 0.86: true
+  positives 127 → 289, but false reports 34 → **480**. `contact_redundant`
+  −0.02 against `contact_new` +0.5 means spamming stays +EV until precision
+  falls below ~3.8%, so the pricing has no precision defence at all. Both are
+  open items for the next cycles.
+
+- **2026-08-06** — `fireteam_defend_v9` launched (3.5M steps, seed 12, lr 3e-4 —
+  **identical to v8 so the root-claim fix is the only variable**). v8
+  (0.87 ± 0.07, N=100) is the baseline and the *only* in-space defend run:
+  v6 and v7 are both pre-`14b83ca` 166-dim checkpoints and **cannot be loaded
+  into the 220-dim env at all**, so no oracle-level comparison against them is
+  possible — a constraint the v1.10 break imposed on every defend comparison
+  from here. Watch: `done_reports/ep` off zero with a non-zero accept rate
+  (the fix working), success holding at v8's level (no regression), and
+  `false_complete_rate` becoming *defined* — it is currently undefined for
+  want of a denominator, which is not the same as improved.

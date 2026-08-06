@@ -40,6 +40,7 @@ from cohort.core.missions import (
     is_pending,
     min_hold_authority,
 )
+from cohort.core.orders import HQ_ID
 
 if TYPE_CHECKING:
     from cohort.core.units import Roster, Soldier
@@ -174,6 +175,41 @@ def action_name(index: int) -> str:
     return CATALOG[index].name
 
 
+def is_root_opord_claim(
+    soldier: Soldier,
+    roster: Roster,
+    root_mission: MissionType | None,
+    root_objective_id: int | None,
+) -> bool:
+    """Is this the root reporting the *operation* complete?
+
+    The root's OPORD claim is judged against the team success condition, not
+    against the claimant's personal end state — a commander reports the
+    mission complete when the unit achieved it, wherever it stands. That makes
+    it admissible even when the root's mission type is a continuous posture
+    (DEFEND, DENY) that no individual can ever "finish", which is why this
+    predicate exists instead of a plain ``type in COMPLETABLE`` test.
+
+    Single source of truth on purpose. ``compute_mask`` and
+    ``CohortEnv._report_done`` both call it, because when they disagreed the
+    result was silent: the mask required ``COMPLETABLE`` while the
+    adjudicator's root branch required ``type is root_mission``, so on every
+    DEFEND- or DENY-rooted scenario the root branch was unreachable, the root
+    never transmitted MISSION COMPLETE at all, ``root_done_bonus`` was dead
+    reward, and the completion grace window could only ever expire by timeout.
+    Measured on fireteam_defend_v8: 0 admissible root claims in 30 episodes.
+    """
+    mission = soldier.mission
+    return (
+        mission is not None
+        and soldier is roster.root()
+        and mission.issuer_id == HQ_ID
+        and root_mission is not None
+        and mission.type is root_mission
+        and mission.objective_id == root_objective_id
+    )
+
+
 def compute_mask(
     soldier: Soldier,
     roster: Roster,
@@ -183,6 +219,8 @@ def compute_mask(
     *,
     order_cooldown: int = 0,
     done_cooldown: int = 0,
+    root_mission: MissionType | None = None,
+    root_objective_id: int | None = None,
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
@@ -230,10 +268,16 @@ def compute_mask(
             mask[spec.index] = 1
         elif spec.kind == "done":
             # a pending order (A5-2) is not yet executing: nothing to report;
-            # and a rejected claim cannot be re-rolled every tick (v1.10)
+            # and a rejected claim cannot be re-rolled every tick (v1.10).
+            # Completable-by-type OR the root's own OPORD: a DEFEND/DENY root
+            # can never "finish" its posture, but it can and must report that
+            # the *operation* succeeded (see is_root_opord_claim).
+            claimable = soldier.mission is not None and (
+                soldier.mission.type in COMPLETABLE
+                or is_root_opord_claim(soldier, roster, root_mission, root_objective_id)
+            )
             if (
-                soldier.mission is not None
-                and soldier.mission.type in COMPLETABLE
+                claimable
                 and not is_pending(soldier.mission, step)
                 and step - soldier.last_done_reject_step >= done_cooldown
             ):

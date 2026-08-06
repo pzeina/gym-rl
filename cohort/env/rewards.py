@@ -47,7 +47,23 @@ class RewardConfig:
     transmission_cost: float = -0.01
 
     contact_new: float = 0.5          # first report of an enemy the team didn't know
-    contact_redundant: float = -0.02  # pure noise: every reported enemy fresh on the picture
+    contact_redundant: float = -0.25  # v1.11: -0.02 → -0.25. Pure noise: every reported
+    #                                   enemy already fresh on the picture. At -0.02 a
+    #                                   redundant report cost -0.03 all-in against an
+    #                                   informative one's +0.49, so spamming stayed
+    #                                   profitable down to a precision of 5.8% — no
+    #                                   defence at all, and fireteam_defend_v8 duly sat
+    #                                   at 0.38 (N=100: 289 informative, 480 noise).
+    #                                   Break-even is now p > 0.35.
+    #                                   The B5 "over-pricing suppresses the honest act"
+    #                                   hazard is much weaker here than it was for
+    #                                   done_false: avoiding a duplicate needs no
+    #                                   inference about hidden state, only the memory
+    #                                   that you just sent it. scripts/contact_probe.py
+    #                                   measured 91% of redundant reports at age 0-1 and
+    #                                   NONE past half the cliff — duplicate storms, not
+    #                                   near-miss refreshes — which is also why this is a
+    #                                   flat price and not an age-decayed one.
     contact_refresh_age: int = 20     # a re-report is a legitimate picture REFRESH (worth
     #                                   exactly 0, not the noise penalty) once at least one
     #                                   reported enemy's picture entry is this many steps
