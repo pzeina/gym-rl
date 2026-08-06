@@ -57,6 +57,14 @@ recipient almost certainly already sees what is being reported. The reward pays
 for reporting, so agents report; but reporting is not *load-bearing*. A
 decentralized policy loses almost nothing by ignoring the net.
 
+> **Measured, after this was written — the paragraph above holds for one
+> scenario family and fails for the other two.** The three-cells-apart claim is
+> right (sighting-set Jaccard 0.56–0.86 for such pairs), but the cohort rarely
+> stands that way: a CONTACT report is novel to 65.5% of listeners at squad
+> scale and 83.5% at platoon scale, against 13.3% at `fireteam_defend`. The
+> numbers and what they change are in **§6.1** (refs #17). This does not
+> overturn the §0 decisions — it narrows where the payoff is expected.
+
 Vision arcs break common knowledge structurally, and they do it in a way that
 range reduction alone cannot: **two soldiers standing on the same cell facing
 different ways see different worlds.** That makes a sighting genuinely private,
@@ -419,6 +427,54 @@ One confound to control for: halving vision also makes the scenario *harder*, so
 a drop in success rate is expected and is not itself evidence either way. The
 number that matters is the probe **gap** against the OPORD-only baseline computed
 on the same run, which is already how `docs/transparency.md` reports it.
+
+### 6.1 Measured pre-arc baseline — the premise is only true for one family (refs #17)
+
+Issue #17 pre-registers an expectation for V1: that the sighting-knowledge
+lattice will become **non-constant under arcs**, "where today there is none".
+Pre-registration is only worth anything against a baseline measured *before*
+the change, so here is that baseline, taken on the shipped v1.10 checkpoints
+from `env.oracle()` alone (truth stream, sampled actions, seeds 500+):
+
+| | `fireteam_defend_v10` | `squad_v6` | `platoon_v4` |
+|---|---|---|---|
+| map / living stations | 36×36 / ~3.9 | 42×42 / ~5.8 | 54×54 / ~13.2 |
+| a living enemy seen by **all** stations | 4.0% | 0.3% | **0.0%** |
+| seen by **no** station | 92.7% | 94.9% | 93.2% |
+| **split** (some see it, some do not) | 3.3% | 4.8% | 6.8% |
+| split, *given ≥1 station sees it* | **44.8%** | **93.6%** | **100.0%** |
+| mean pairwise sighting-set Jaccard | 0.680 | 0.206 | 0.080 |
+| …for pairs ≤3 cells apart | 0.857 | 0.595 | 0.555 |
+| share of station pairs that are ≤3 cells apart | 67.4% | 25.7% | **6.0%** |
+| CONTACT content **novel** to a listener | 13.3% | **65.5%** | **83.5%** |
+| in-range (soldier, enemy) pairs denied by LOS | 26.4% | 16.8% | 11.7% |
+
+Three things follow, and they matter for how V1 is read.
+
+1. **The lattice is already non-constant.** Whenever a sighting exists at all,
+   it is a minority sighting 45–100% of the time. #17's baseline assumption —
+   that today the answer to "does HQ know there is an enemy at grid X" is
+   trivially yes — is inverted: 93–97% of living enemies are absent from the
+   team picture entirely. Where the lattice *is* constant it is constant at
+   ¬K, not at K.
+2. **§1's premise is right locally and wrong globally.** "Two soldiers three
+   cells apart see very nearly the same world" holds (Jaccard 0.56–0.86). The
+   conclusion drawn from it — that a CONTACT report is close to a no-op — does
+   not, because the cohort does not stand three cells apart: at platoon scale
+   only 6.0% of station pairs are that close, and 83.5% of report/listener
+   pairs learn something they could not see.
+3. **Arcs bite where the picture is already shared.** The families ordered by
+   co-location are exactly the families ordered by how much arcs can add:
+   `fireteam_defend` (67% of pairs co-located, reports 87% redundant) has the
+   most to gain, `platoon` (6%, reports 84% novel) the least. So the §6 probe
+   run on `squad` measures the *middle* of that range, and V1's effect should
+   be expected to be strongly family-dependent rather than fleet-wide.
+
+Vision is not "isotropic and long" today in the sense the argument needs: it
+is 10 cells on maps of 36–54, and 12–26% of in-range pairs are already denied
+by walls. The information asymmetry the design wants to create largely exists;
+what arcs would add is asymmetry *between co-located agents*, which §6's own
+caveat already identifies as the part the probe cannot see.
 
 ---
 

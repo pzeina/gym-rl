@@ -163,3 +163,66 @@ def test_dead_units_are_down_only():
     snap = env.oracle()
     foe = next(e for e in snap["enemies"] if e["id"] == env.enemies[1].id)
     assert foe["tags"] == ["down"]
+
+
+def test_sighting_sets_match_the_environments_own_visibility():
+    """``sees`` is the per-agent sighting set the truth stream promises (#17).
+
+    It must equal ``env._visible_enemies`` exactly — same members, same
+    nearest-first order — for every living soldier, at every step of a real
+    rollout. Consumers previously had to transpose ``seen_by`` to get this,
+    which disagreed with the simulation on 36-47% of agent-steps because
+    ``seen_by`` was also computed for the dead.
+    """
+    env = make_env("squad")
+    obs, _ = env.reset(seed=11)
+    rng = np.random.default_rng(11)
+    checked = 0
+    for _ in range(60):
+        if not env.agents:
+            break
+        snap = env.oracle()
+        by_cs = {s["cs"]: s for s in snap["soldiers"]}
+        for s in env.roster.soldiers:
+            if not s.alive:
+                continue
+            assert by_cs[s.callsign]["sees"] == [e.id for e in env._visible_enemies(s)]
+            checked += 1
+        env.step({
+            a: int(rng.choice(np.flatnonzero(obs[a]["action_mask"]))) for a in env.agents
+        })
+        obs = env._all_observations()
+    assert checked > 100, "the rollout must actually exercise living agents"
+
+
+def test_the_dead_neither_see_nor_are_seen():
+    """A corpse is not an observer and is not an observation (#17).
+
+    Without this, a dead unit kept reporting sightings from its last position,
+    and those entries dominated the stream: 8,901 of 9,647 enemy ``seen_by``
+    entries over eight ``squad`` episodes named dead enemies.
+    """
+    env = _flat_env()
+    rfn = env.roster.by_callsign["RFN1"]
+    foe = env.enemies[0]
+    foe.pos = (rfn.pos[0] + 1, rfn.pos[1])  # point blank, open ground: mutually visible
+    foe.prev_pos = foe.pos
+    env.step({a: STAY for a in env.agents})
+
+    snap = env.oracle()
+    live = next(e for e in snap["enemies"] if e["id"] == foe.id)
+    me = next(s for s in snap["soldiers"] if s["cs"] == "RFN1")
+    assert rfn.callsign in live["seen_by"], "precondition: the live enemy is spotted"
+    assert foe.id in me["sees"], "precondition: RFN1 sees the live enemy"
+
+    foe.alive = False
+    snap = env.oracle()
+    dead = next(e for e in snap["enemies"] if e["id"] == foe.id)
+    me = next(s for s in snap["soldiers"] if s["cs"] == "RFN1")
+    assert dead["seen_by"] == [], "a dead enemy is not being observed"
+    assert foe.id not in me["sees"], "a dead enemy is not a sighting"
+
+    rfn.alive = False
+    snap = env.oracle()
+    me = next(s for s in snap["soldiers"] if s["cs"] == "RFN1")
+    assert me["seen_by"] == [] and me["sees"] == [], "a dead soldier neither sees nor is seen"
