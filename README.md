@@ -507,6 +507,20 @@ masks) — but not on raw speed-to-threshold, where the all-tasked flat team is
 fastest on a scenario this small. Full tables, learning curves, and the honest
 verdict: [docs/ablation.md](docs/ablation.md).
 
+### Can you predict the cohort from its radio net? (transparency probe)
+
+The founding promise — the net alone explains the behavior — is measured, not
+asserted: `python -m cohort.probe runs/<run>/ckpt_best.pt` replays evaluation
+episodes and scores a deterministic net-following reader (transcript-so-far +
+briefing material only, no positions) at predicting each agent's next-15-step
+destination and posture, against majority and random baselines. The honest
+verdict is mixed: posture beats random on all 8 published checkpoints, and
+stable-anchor defenses are genuinely readable (the defend-BRIQUE team leader is
+predictable at 0.99) — but destination *loses* to an OPORD-only reader
+everywhere, because doctrine-valid order traffic churns objectives faster than
+execution binds them. Method, tables, failure modes:
+[docs/transparency.md](docs/transparency.md).
+
 ## Project layout
 
 ```
@@ -526,6 +540,8 @@ cohort/
     cohort_env.py      the PettingZoo ParallelEnv
   metrics.py           behavioral metrics suite (docs/metrics.md): obedience,
                        reporting P/R, doctrine preference, succession, exposure
+  probe.py             transparency probe (docs/transparency.md): predict behavior
+                       from the radio net alone, scored vs honest baselines
   training/
     ppo.py             masked PPO + GAE buffer (handles agent death)
     train.py           training CLI, metrics, checkpoints, --init-from
@@ -533,11 +549,12 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 242 tests: ranks, language, doctrine, succession, masking,
+tests/                 267 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
                        SITREP cadence, BRIQUE band + traps, behavioral metrics,
-                       hierarchy-ablation arms, dashboard, training smoke
+                       hierarchy-ablation arms, transparency probe, dashboard,
+                       training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 
