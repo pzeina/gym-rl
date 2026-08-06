@@ -1859,3 +1859,34 @@ deliberately deferred (`docs/vision.md` §2c).
   `timeout_rate_rolling` sits at 1.0 for a decile? That changes campaign
   semantics (a killed run has no `ckpt_latest` to diagnose), so only the
   measurement half was built.
+  **Owner's answers (2026-08-07)**: (a) **charge it** — shipped as `cf3f5fe`;
+  (b) **log only**, and `done_false` **stays at −0.5**.
+- **2026-08-07** — **Learning rate is eliminated too: `squad_screen_v7` failed a
+  third way.** The lr hypothesis was the best of the three and it is also wrong.
+  Sorted by best-final gap, every v1.10 run at 1e-4 had converged (`patrol_
+  brique_v4` 3, `platoon_v4` 7, `defend_brique_v3` 8) and every collapse was at
+  3e-4 (33/39/68/97/100/100), while the *pre*-v1.10 `squad_screen_v3` ran 3e-4
+  at `OBS_DIM` 166 and converged with a gap of 5. So: `squad_screen` again,
+  seed 17, 2M steps, **one variable — `lr` 1e-4** — against `squad_screen_v5`.
+  **It never learned at all**, and not in the stall's shape: best rolling 29%,
+  final **3%**, `ep_return` **−0.278** (negative), `human_death_rate` **0.983**,
+  entropy 1.668 → **0.453**, episodes *short* at 73 steps. The new clock gate
+  correctly **passed** (`timeout_rate` 0.033 — this is not a stall, it is a
+  cohort that dies), which is the first evidence the #18 gate is specific and
+  not a catch-all. Two failure modes, one scenario: at 3e-4 it learns a 100%
+  policy and then pours 93% of its traffic into the free SYNC channel until the
+  clock expires; at 1e-4 it goes deterministic early and everyone dies.
+  **Checked before concluding**: `git diff ac1fb19 2d14510 -- cohort/training/
+  train.py` is purely additive accounting (`message_total += len(env.last_
+  messages)` plus two derived stats) — the rollout, loss and optimizer are
+  untouched — so the instrumentation did not cause this and the result is
+  attributable to `lr`.
+  **`OBS_DIM` 166 → 220 is now the last suspect standing**, by elimination
+  rather than by evidence, which is a weaker position than it sounds: three
+  hypotheses have been tested and killed (`done_false`, `contact_redundant` via
+  the `squad_v6` control, `lr`), and the space change is what remains, not what
+  has been shown. The v1.10 fleet stands at **4 converged** (`fireteam_defend_
+  v10` 0.89±0.06 with both gates green, `platoon_v4` 0.93±0.05, `patrol_brique_
+  v4` 97% final, `defend_brique_v3` 90% final) and **4 collapsed** (`squad`,
+  `fireteam`, `squad_recon`, `squad_screen`). Nothing republishes until the
+  second half is understood; `fireteam_defend_v10`'s publish is held with them.
