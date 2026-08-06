@@ -1796,3 +1796,66 @@ deliberately deferred (`docs/vision.md` §2c).
   known to buy nothing (false-DONE ~0.005 at either price), but the revert's
   stated reasoning in `ac1fb19` did not survive contact with the test, and that
   commit message should be read with this entry.
+
+- **2026-08-07** — **Correction: the collapsed runs did not go quiet, they went
+  free. Issue #18 confirmed on the clock, falsified on the chatter.** The
+  assurance layer re-measured the two v1.10 collapses from the outside and
+  proposed a net-only stall detector: command traffic down 13×, voice-sync up
+  5×, episodes pinned at `max_steps`. Reproduced exactly here at 30 episodes,
+  seeds 500–529 — `squad_screen_v4` 30/30 success from `ckpt_best` and 30/30
+  timeout from `ckpt_latest`; `squad_recon_v6` 29/30 and 30/30; orders/episode
+  66.4 → 6.0 with sync bounds 80.8 → 436.9. Its **correction of us is right**
+  too: `squad_recon_v6`'s *succeeding* checkpoint emits **0 DONE reports in 30
+  episodes**, so completion silence is present in the winner and cannot be the
+  collapse.
+  **Two things in its diagnosis do not survive measurement, and one of ours
+  does not either.**
+  1. *"The policy is farming SYNC_PROPOSE/SYNC_GO."* It is not. Sync is
+     **voice** (A5-4): uncharged, never net-arbitrated. Re-scoring
+     `squad_screen_v4/ckpt_latest` with `bound_bonus=0` changes its compliance
+     income by **3.65 over 10 episodes** — 0.0001/agent-step, 0.2% of the
+     0.0624 it actually draws — against **12,388 sync messages**. The traffic
+     earns nothing. It is where a policy's action mass drifts when every other
+     transmission costs −0.01 and the mission income is a posture drip: a free
+     sink, not a farm. The stall arithmetic stands unchanged (compliance
+     0.0624 + command 0.0042 − time 0.0100 ≈ 0.056/agent-step ≈ 21.2 measured
+     `ep_return`), and `max_step_farm()` (0.09) still dominates it — the
+     terminal-dominance invariant never broke, terminal simply became
+     *unreachable*.
+  2. *"A traffic-composition check would have flagged both runs."* It would
+     also have flagged healthy ones. Across every checkpoint that loads under
+     v1.10 (10 eps, seeds 500–509): healthy `fireteam_defend_v10/best` 8/10 at
+     a **0.026** command share, *below* collapsed `squad_recon_v6/latest` 0/10
+     at **0.022**; `fireteam_v7/latest` 8/10 at 1.5 orders/episode. Command
+     share is scenario idiom, not a threshold. **The clock separates the record
+     completely**: 0.0–0.2 healthy against exactly **1.0** for all three stalls
+     (`squad_recon_v6`, `squad_screen_v4`, `squad_screen_v5` at `ckpt_latest`).
+  3. *Ours*: the entry above says "the whole radio goes quiet". **It does not.**
+     `squad_screen_v4/ckpt_latest` carries **1326 messages/episode** against its
+     own `ckpt_best`'s 537 — 2.5× *louder*. We read that off `tx/agent-step`,
+     which counts **charged** transmissions only, so the free channel was
+     invisible to the one volume number in the digest. The conclusions that
+     entry drew about `done_false` are unaffected (they rest on claim rates and
+     terminal income); the sentence about the radio is wrong and is corrected
+     here.
+  **Shipped** (`5626977`, `1f0326a`): `timeout_rate` in the behavior suite and
+  in `regression_gates` **for every root mission** at ≤ 0.5 (the middle of the
+  empty band); `max_steps` in the trace so a length reads against its own
+  ceiling; `messages_per_episode` / `command_traffic_share` /
+  `voice_traffic_share` as reported diagnosis, never gated, with the
+  false-positive measurement pinned in a test; `timeout_rate_rolling` and
+  `messages_per_agent_step` per training iteration, so the stall is visible
+  ~3M steps before anyone evaluates a checkpoint; the digest now names the
+  checkpoint `behavior.json` was measured on (on `squad_screen_v4` it printed
+  "success 1.00 ± 0.00" three lines under a curve ending at 0%). 475 tests.
+  **Open questions for the owner** (both design, neither taken):
+  (a) **Should voice stay free?** A4 charges every *learned* transmission
+  −0.01; A5-4 exempts SYNC by fiat, and that exemption is what makes a stalled
+  policy's radio load *rise*. Charging it would make the airtime rule uniform;
+  leaving it free keeps the trinôme bound cheap to coordinate. Either is
+  defensible — it is a vocabulary/economics call, and no measurement here says
+  the exemption *caused* anything.
+  (b) **Should the training loop act on the stall gate**, e.g. abort a run whose
+  `timeout_rate_rolling` sits at 1.0 for a decile? That changes campaign
+  semantics (a killed run has no `ckpt_latest` to diagnose), so only the
+  measurement half was built.
