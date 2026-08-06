@@ -156,7 +156,9 @@ def test_terminal_dominates_stalling():
     over the longest episode any scenario allows (600 steps after the v1.4
     maps x1.5), INCLUDING the bounded observation-progress payout (which
     telescopes: at most observe_progress x the 10-step success threshold per
-    episode, so it cannot tip the balance toward stalling).
+    episode, so it cannot tip the balance toward stalling) and the B5
+    standing-order tenure multiplier at its ceiling (max_step_farm accounts
+    for it; success_team was raised 45 → 60 to keep this margin).
     """
     from cohort.config import SCENARIOS
     from cohort.core.missions import RECON_OBSERVE_STEPS
