@@ -960,3 +960,36 @@ terrain (still deferred).
   muteness hazard explicitly: the honest claim must stay reachable, the first
   claim must never be rate-limited, and the break-even is asserted directly.
   360 → 367 tests.
+- **2026-08-06** — **positional regression gate for DEFEND roots** (refs #11,
+  external measurement). The assurance layer re-measured the defend family
+  from the outside and demolished the handoff's lead clue: `_v7` **halved**
+  the root-death rate the ROADMAP had blamed (26/30 → 14/30) and fired on
+  essentially every threatened step (p(fire | threatened) 0.005 → 1.000), yet
+  success went **14/30 → 12/30**. Human mortality is not the binding
+  constraint — `defend_brique_v2` carries the same 14/30 root-death rate and
+  still wins 25/30. What separates the record is *where the unit fights*:
+  every defend policy that ever cleared its bound fought ≤ 2.9 cells from OBJ
+  with cover ≥ 0.79 (`_v5` 24/30 at 0.793/2.90, `brique_v1` 27/30 at
+  0.956/1.99); the two that missed sat at 0.496/3.46 and **0.060/9.09**.
+  Shipped as a gate rather than a reward change (rewards are the owner's
+  call, and the v1.10 prep period is already an untested bet on exactly this
+  mechanism):
+  * `cohort.metrics` now scores **fight disposition** over the *(living
+    soldier, step)* pairs **under threat** — a living enemy within the
+    scenario's weapon range. Conditioning on threat is the point: averaged
+    over an episode an approach march and a prepared defense look alike.
+  * `regression_gates(agg)` fails a DEFEND retrain below **cover 0.40** or
+    above **5.0 cells** from the objective. Bounds sit in the empty band
+    between the two groups above, so the gate separates every checkpoint on
+    record. DEFEND only — an assault is *supposed* to leave its start point.
+    An unmeasured gate reports `passed: null`; unmeasured is not a pass.
+  * DEFEND runs log `cover_under_threat` / `objective_dist_under_threat` per
+    iteration in `metrics.csv` (blank, never `0`, when nothing was
+    threatened), so the collapse is visible while the run is still cheap to
+    kill. `_v7` spent a 3M-step budget before anyone saw it. No other root
+    mission pays for the scan.
+  Sanity check on the shipped instrument: the masked-random baseline on
+  `fireteam_defend` scores 0.216 / 6.20 and fails both gates. **Not done**:
+  no retrain — the fleet is unloadable under the open v1.10 space break, and
+  the gate is meant to judge the next defend run, not to be tuned against the
+  old ones. 367 → 375 tests.

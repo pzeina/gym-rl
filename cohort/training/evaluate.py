@@ -7,7 +7,9 @@ Usage:
 By default every evaluation also computes the behavioral metrics suite
 (``cohort.metrics``, ROADMAP B2) over the same episodes — printed as a table
 and written to ``behavior.json`` next to the checkpoint. ``--no-behavior``
-skips it.
+skips it. Any regression gates that apply to the run's root mission
+(``cohort.metrics.regression_gates`` — currently the positional gate on
+DEFEND roots, issue #11) are printed under the table and stored alongside it.
 """
 
 from __future__ import annotations
@@ -163,12 +165,21 @@ def evaluate(
         print(f"  {k}: {v}")
 
     if behavior:
-        from cohort.metrics import aggregate_behavior, format_behavior_table
+        from cohort.metrics import (
+            aggregate_behavior,
+            format_behavior_table,
+            format_gate_report,
+            regression_gates,
+        )
 
         per_episode = [episode_behavior(r.trace) for r in recorders]
         agg = aggregate_behavior(per_episode)
+        gates = regression_gates(agg)
         summary["behavior"] = agg
+        summary["gates"] = gates
         print(format_behavior_table(agg))
+        if gates:
+            print(format_gate_report(gates))
         out = behavior_path
         if out is None and checkpoint is not None:
             out = str(Path(checkpoint).parent / "behavior.json")
@@ -181,6 +192,7 @@ def evaluate(
                 "greedy": greedy,
                 "success_ci95": summary["success_ci95"],
                 "metrics": agg,
+                "gates": gates,
                 "per_episode": per_episode,
             }
             Path(out).write_text(json.dumps(payload, indent=1) + "\n")
