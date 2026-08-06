@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scripts/train.sh:*)",
+      "Bash(scripts/train_queue.sh:*)",
+      "Bash(scripts/train_wait.sh:*)",
+      "Bash(.venv/bin/python scripts/train_status.py:*)",
+      "Bash(.venv/bin/python scripts/run_report.py:*)",
+      "Bash(.venv/bin/python -m pytest:*)",
+      "Bash(.venv/bin/python -m ruff:*)",
+      "Bash(.venv/bin/python -m cohort.training.evaluate:*)",
+      "Bash(.venv/bin/python -c:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(ls:*)",
+      "Bash(cat runs/*/config.json)",
+      "Bash(cat runs/*/behavior.json)"
+    ],
+    "deny": [
+      "Read(./runs/*/metrics.csv)",
+      "Read(./runs/*/tb/**)",
+      "Read(./logs/*.log)"
+    ]
+  }
+}

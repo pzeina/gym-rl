@@ -21,11 +21,22 @@ the legacy repo died of framework version drift, so the trainer here depends onl
 ## Commands
 
 ```bash
+# launch DETACHED (preferred — survives terminal/session exit, nohup'd)
 # defaults: 8 envs, horizon 128, lr 3e-4 annealed, CPU
-python -m cohort.training.train --scenario fireteam --total-steps 1500000
-python -m cohort.training.train --scenario squad --total-steps 3000000 --run-name squad_v1
+scripts/train.sh fireteam_v7 --scenario fireteam --total-steps 1500000
+scripts/train.sh squad_v6    --scenario squad --total-steps 3000000 --seed 12
+scripts/train_queue.sh jobs.txt          # a campaign: one "<run> <args...>" per line
+scripts/train_wait.sh <run>              # block until done, then print a digest
 
-# monitor
+# the raw entry point (foreground; dies with the terminal — prefer scripts/train.sh)
+python -m cohort.training.train --scenario fireteam --total-steps 1500000
+
+# monitor — cheap, one screen, no raw CSV
+python scripts/train_status.py           # all live + recent runs
+python scripts/train_status.py <run>     # progress, ETA, trend, log tail
+python scripts/run_report.py <run> --vs <baseline>   # ~30-line post-hoc digest
+
+# monitor — heavyweight/interactive
 python -m cohort.viz.dashboard            # interactive dashboard (live charts + episode explorer)
 tensorboard --logdir runs
 python -m cohort.viz.plots runs/<run>     # regenerate curves PNG anytime, even mid-run
