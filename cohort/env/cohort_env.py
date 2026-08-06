@@ -1855,6 +1855,26 @@ class CohortEnv(ParallelEnv):
                 anchor = cm.nearest_point(soldier.pos)
         return anchor
 
+    def _anchor_moved(self, soldier: Soldier) -> bool:
+        """Did this soldier's mission anchor move this step?
+
+        Only anchors that are themselves soldiers can move — SUPPORT's
+        supported unit and RALLY's leader. A fixed anchor (objective,
+        waypoint, phase line) never does, so this reads False and those
+        missions keep their existing semantics untouched.
+        """
+        mission = soldier.mission
+        if mission is None or is_pending(mission, self._step_count):
+            return False
+        anchor_soldier = None
+        if mission.type is MissionType.SUPPORT:
+            anchor_soldier = self.roster.by_id.get(mission.extra.get("supported_id"))
+        elif mission.type is MissionType.RALLY:
+            anchor_soldier = self.roster.leader_of(soldier)
+        if anchor_soldier is None or not anchor_soldier.alive:
+            return False
+        return anchor_soldier.pos != anchor_soldier.prev_pos
+
     def _anchor_distance(self, soldier: Soldier) -> float:
         anchor = self._mission_anchor(soldier)
         if anchor is None:
@@ -1952,7 +1972,17 @@ class CohortEnv(ParallelEnv):
         if dist_now is None:
             dist_now = self._anchor_distance(soldier)
         anchor = self._mission_anchor(soldier)
-        in_position = dist_now <= IN_POSITION_RADIUS[mission.type]
+        radius = IN_POSITION_RADIUS[mission.type]
+        if mission.type is MissionType.SUPPORT:
+            # "In support position" must MEAN the umbrella can do its work.
+            # The table said 10.0 while combat.support_umbrella is 8.0, so a
+            # supporter could sit at 9-10 cells drawing full posture pay while
+            # covering nothing at all — the reward describing support the
+            # environment never delivered. Bind the two: the station is the
+            # umbrella, per scenario, so tuning one can never silently
+            # decouple it from the other again.
+            radius = min(radius, float(self.combat.support_umbrella))
+        in_position = dist_now <= radius
         if mission.type in LOS_REQUIRED:
             in_position = in_position and self.world.line_of_sight(
                 soldier.pos, (int(anchor[0]), int(anchor[1]))
@@ -2080,6 +2110,7 @@ class CohortEnv(ParallelEnv):
             dist_now=dist_now,
             in_position=in_position,
             stationary=soldier.pos == soldier.prev_pos,
+            anchor_moved=self._anchor_moved(soldier),
             fired=soldier.fired_this_step,
             visible_enemies=len(view.visible_enemies),
             enemies_at_objective=enemies_at_obj,

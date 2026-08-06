@@ -1488,3 +1488,45 @@ terrain (still deferred).
   `squad_v7` launched: squad + the contact reprice (the root-claim fix is inert
   on squad, whose SEIZE root was always completable), testing whether the
   defend line's precision win reproduces where squad_v6 measured 0.16.
+
+- **2026-08-06** — **Owner-reported doctrine defect: OBSERVE ordered where
+  SUPPORT belongs. The reward was paying for exactly the observed behaviour.**
+  Diagnosed before changing anything. SUPPORT (APPUYER — unit-targeted fire
+  support, *"pas un pas sans appui"*) shared OBSERVE's compliance branch
+  verbatim: full pay only when in position **and stationary**. But SUPPORT's
+  anchor is the supported *soldier*. Measured on the squad map, six steps of a
+  bounding element:
+
+  | supporter behaviour | per step | total |
+  |---|---|---|
+  | follows the bound (correct doctrine) | **0.10** | 0.60 |
+  | stands still, element walks away | **0.60** | 3.60 |
+  | OBSERVE, static objective | 0.60 | 3.60 |
+
+  **A 6× premium for not supporting**, and OBSERVE paid the same for watching a
+  point that cannot outrun you. The order shares follow the incentive exactly:
+  OBSERVE beats SUPPORT **0.098 vs 0.010** in `fireteam_defend_v8` and **0.057
+  vs 0.016** in `platoon_v4`. The policy was behaving correctly against a wrong
+  reward — the same shape as the contact-spam finding, and the third time this
+  session that a "policy problem" has turned out to be a pricing problem.
+  **Second defect, found while measuring**: `IN_POSITION_RADIUS[SUPPORT]` was
+  **10.0** while `CombatConfig.support_umbrella` is **8.0**, so a supporter drew
+  full posture pay from 9-10 cells while `_covered_by_support` protected nobody
+  — the reward describing support the environment never delivered. That is
+  literally the owner's "staying remote… no support".
+  Fixed structurally rather than by tuning: SUPPORT gets its own compliance
+  branch keyed on a new `ComplianceContext.anchor_moved` (true only for anchors
+  that are themselves soldiers — SUPPORT's supported unit, RALLY's leader), so
+  **movement is excused exactly when the element moved**; drifting while the
+  element holds is still 0.1, so it cannot pay for wandering. And the station is
+  now `min(table radius, combat.support_umbrella)`, read per scenario, so pay
+  and mechanism can never decouple again. OBSERVE is untouched — its anchor
+  cannot move, so settling is correct. 440 → 447 tests; four fail without the
+  fix. (`d780a3e`)
+  **Not yet retrained.** `squad_v7` (contact reprice vs squad_v6) and
+  `squad_recon_v6` both launched *before* this landed, so neither tests it —
+  they stay valid for what they do test. Next: `squad_v8` = `squad_v7` + this,
+  one variable, watching the SUPPORT/OBSERVE order share invert and
+  `obedience_by_task` for SUPPORT. `squad_recon` is the scenario where the
+  owner's specific complaint — no support to the reconning element — should
+  show most, since RECON derives SUPPORT second.

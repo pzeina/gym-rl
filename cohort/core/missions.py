@@ -335,6 +335,12 @@ class ComplianceContext:
     visible_enemies: int           # enemies currently visible to the agent
     enemies_at_objective: int      # living enemies within the objective radius
     dist_to_leader: float          # distance to the direct leader (inf if none)
+    #: did the mission ANCHOR move this step? False for a fixed anchor (an
+    #: objective, a waypoint); meaningful for the anchors that are themselves
+    #: soldiers — SUPPORT's supported unit, RALLY's leader. Displacing to hold
+    #: station on a bounding element is execution, not drift, and only this
+    #: flag can tell the two apart.
+    anchor_moved: bool = False
 
 
 def _progress(ctx: ComplianceContext) -> float:
@@ -355,10 +361,28 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         if ctx.fired:
             return -0.6
         return 0.6 if ctx.in_position else _progress(ctx)
-    if mission in (MissionType.OBSERVE, MissionType.SUPPORT):
-        # static postures: full pay only when static in position
+    if mission is MissionType.OBSERVE:
+        # a genuinely static posture: the anchor never moves, so settle on it
         if ctx.in_position:
             return 0.6 if ctx.stationary else 0.1
+        return _progress(ctx)
+    if mission is MissionType.SUPPORT:
+        # APPUYER is overwatch of a MOVING element — "pas un pas sans appui".
+        # It was scored as a static posture identical to OBSERVE, and that
+        # inverted the doctrine: the anchor is the supported soldier, so a
+        # supporter displacing to hold range and LOS on a bounding element
+        # broke ``stationary`` and collected 0.1, while a supporter that let
+        # its element walk away and stood still collected 0.6. Measured on the
+        # squad map, six steps of a bounding element: following it paid 0.60
+        # total, abandoning it paid 3.60 — a 6x premium for not supporting,
+        # and OBSERVE offered the same 3.60 for watching a fixed point that
+        # can never outrun you. Hence OBSERVE ordered 3.6-10x more than
+        # SUPPORT across every corpus that used either.
+        # Movement is excused exactly when the element itself moved: keeping
+        # station is execution. If the element is holding, so should its
+        # support — which is what stops this paying for aimless drift.
+        if ctx.in_position:
+            return 0.6 if (ctx.stationary or ctx.anchor_moved) else 0.1
         return _progress(ctx)
     if mission is MissionType.COVER:
         if ctx.in_position:
