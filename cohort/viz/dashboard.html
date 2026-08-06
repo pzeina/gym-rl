@@ -97,9 +97,9 @@
   <!-- ============ EPISODE ============ -->
   <div class="sidebar hidden" id="side-episode">
     <div class="card"><h3>Generate episode</h3>
-      <div class="field"><span>scenario</span><select id="ep-scenario"></select></div>
-      <div class="field"><span>version</span><select id="ep-run"></select></div>
-      <div class="field"><span>policy</span><select id="ep-ckpt"></select></div>
+      <div class="field"><span>task</span><select id="ep-task"></select></div>
+      <div class="field"><span>echelon</span><select id="ep-echelon"></select></div>
+      <div class="field"><span>version</span><select id="ep-version"></select></div>
       <div id="ep-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="ep-seed" value="1">
@@ -120,9 +120,9 @@
   <!-- ============ COMMAND (live) ============ -->
   <div class="sidebar hidden" id="side-command">
     <div class="card"><h3>Live session</h3>
-      <div class="field"><span>scenario</span><select id="lv-scenario"></select></div>
-      <div class="field"><span>version</span><select id="lv-run"></select></div>
-      <div class="field"><span>policy</span><select id="lv-ckpt"></select></div>
+      <div class="field"><span>task</span><select id="lv-task"></select></div>
+      <div class="field"><span>echelon</span><select id="lv-echelon"></select></div>
+      <div class="field"><span>version</span><select id="lv-version"></select></div>
       <div id="lv-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="lv-seed" value="1">
@@ -368,89 +368,108 @@ $("msgfilters").querySelectorAll(".chip").forEach((el) => el.onclick = () => {
   el.classList.toggle("on"); renderMsgs();
 });
 
-/* ---------- policy selection: version, then exact checkpoint ----------
-   One flat list of every run x every checkpoint ran to ~100 entries, which is
-   unusable. Split in two: pick the RUN (grouped by scenario, so the list is
-   short and ordered), then the exact checkpoint within it. The wire format the
-   API expects is unchanged: "random" | "run:<name>:<best|latest>". */
+/* ---------- picking a policy: task -> echelon -> version ----------
+   A flat list of every run x every checkpoint ran to ~100 entries. The three
+   menus mirror how the work is actually organised: what the unit is ordered to
+   do, at what echelon, and which trained version of it. (task, echelon)
+   identifies a scenario uniquely -- the server derives both from the
+   ScenarioSpec, so this list never drifts from the scenarios that exist. */
 
-function runsByScenario() {
-  const groups = {};
-  STATE.runs.forEach((r) => {
-    if (!r.checkpoints.length) return;
-    const key = r.scenario || "unknown scenario";
-    (groups[key] = groups[key] || []).push(r);
-  });
-  return groups;
+const ECHELON_ORDER = ["fireteam", "squad", "platoon"];
+
+function tasks() {
+  const t = [...new Set(Object.values(STATE.scenarios).map((s) => s.task))];
+  // real tasks first, ablation arms last: they are research arms, not doctrine
+  return t.sort((a, b) => (a.startsWith("Ablation") - b.startsWith("Ablation")) || a.localeCompare(b));
 }
 
-function fillRunSelect(prefix) {
-  const sel = $(prefix + "-run"), cur = sel.value;
-  const groups = runsByScenario();
-  let opts = '<option value="random">random (masked) baseline</option>';
-  Object.keys(groups).sort().forEach((sc) => {
-    opts += `<optgroup label="${sc}">`;
-    groups[sc].forEach((r) => {
-      // a run whose every checkpoint is unloadable is marked, not hidden —
-      // it is still the run you may want to look at the training curves for
-      const dead = r.checkpoints.every((c) => !c.loadable);
-      opts += `<option value="${r.name}">${dead ? "⚠ " : ""}${r.name}</option>`;
+function echelonsFor(task) {
+  const e = [...new Set(Object.entries(STATE.scenarios)
+    .filter(([, s]) => s.task === task).map(([, s]) => s.echelon))];
+  return e.sort((a, b) => ECHELON_ORDER.indexOf(a) - ECHELON_ORDER.indexOf(b));
+}
+
+function scenarioOf(prefix) {
+  const task = $(prefix + "-task").value, ech = $(prefix + "-echelon").value;
+  const hit = Object.entries(STATE.scenarios).find(([, s]) => s.task === task && s.echelon === ech);
+  return hit ? hit[0] : null;
+}
+
+/* "squad_v4b" under scenario "squad" -> "v4b"; anything else keeps its name. */
+function versionLabel(runName, scenario) {
+  return runName.startsWith(scenario + "_") ? runName.slice(scenario.length + 1) : runName;
+}
+function versionRank(label) {
+  const m = label.match(/^v(\d+)([a-z]*)$/);
+  return m ? [parseInt(m[1], 10), m[2] || ""] : [-1, label];
+}
+
+function fillTask(prefix) {
+  const sel = $(prefix + "-task"), cur = sel.value;
+  sel.innerHTML = tasks().map((t) => `<option>${t}</option>`).join("");
+  if (cur && tasks().includes(cur)) sel.value = cur;
+  fillEchelon(prefix);
+}
+
+function fillEchelon(prefix) {
+  const sel = $(prefix + "-echelon"), cur = sel.value;
+  const opts = echelonsFor($(prefix + "-task").value);
+  sel.innerHTML = opts.map((e) => `<option>${e}</option>`).join("");
+  if (cur && opts.includes(cur)) sel.value = cur;
+  fillVersion(prefix);
+}
+
+/* Versions of the resolved scenario, newest first, checkpoint folded in.
+   Default is the newest version -- the run you almost always want. */
+function fillVersion(prefix) {
+  const sel = $(prefix + "-version"), cur = sel.value;
+  const scenario = scenarioOf(prefix);
+  const runs = STATE.runs.filter((r) => r.scenario === scenario && r.checkpoints.length);
+  runs.sort((a, b) => {
+    const [an, as] = versionRank(versionLabel(a.name, scenario));
+    const [bn, bs] = versionRank(versionLabel(b.name, scenario));
+    return bn - an || bs.localeCompare(as);
+  });
+  let opts = "";
+  runs.forEach((r) => {
+    r.checkpoints.forEach((c) => {
+      // a checkpoint this build cannot load is still viewable IF a trace was
+      // recorded at its own revision -- mark which, rather than hiding either
+      const replay = !c.loadable && r.traces.some((t) => t.startsWith(`${scenario}_${c.kind}_`));
+      const mark = c.loadable ? "" : (replay ? "▣ " : "⚠ ");
+      const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M` : "";
+      opts += `<option value="run:${r.name}:${c.kind}">${mark}${versionLabel(r.name, scenario)} · ${c.kind}${steps}</option>`;
     });
-    opts += "</optgroup>";
   });
+  opts += '<option value="random">random (masked) baseline</option>';
   sel.innerHTML = opts;
-  if (cur) sel.value = cur;
-  if (!sel.value) {
-    // prefer a run that can actually be loaded by this build
-    const live = STATE.runs.find((r) => r.checkpoints.some((c) => c.loadable));
-    sel.value = live ? live.name : "random";
-  }
-  fillCkptSelect(prefix);
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  showVersionNote(prefix);
 }
 
-function fillCkptSelect(prefix) {
-  const runName = $(prefix + "-run").value;
-  const sel = $(prefix + "-ckpt"), cur = sel.value;
-  const run = STATE.runs.find((r) => r.name === runName);
-  if (!run) {                       // random baseline: nothing to choose
-    sel.innerHTML = '<option value="">— (no checkpoint)</option>';
-    sel.disabled = true;
-    showCompat(prefix, null);
-    return;
-  }
-  sel.disabled = false;
-  sel.innerHTML = run.checkpoints.map((c) => {
-    const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M steps` : "";
-    return `<option value="${c.kind}">${c.loadable ? "" : "⚠ "}ckpt_${c.kind}${steps}</option>`;
-  }).join("");
-  if (cur && run.checkpoints.some((c) => c.kind === cur)) sel.value = cur;
-  const chosen = run.checkpoints.find((c) => c.kind === sel.value);
-  showCompat(prefix, chosen && !chosen.loadable ? chosen.reason : null);
+function selectedCheckpoint(prefix) {
+  const parts = ($(prefix + "-version").value || "").split(":");
+  if (parts.length !== 3) return null;
+  const run = STATE.runs.find((r) => r.name === parts[1]);
+  return run ? { run, ckpt: run.checkpoints.find((c) => c.kind === parts[2]) } : null;
 }
 
-/* Selected policy in the wire format the API expects. */
-function policyValue(prefix) {
-  const runName = $(prefix + "-run").value;
-  if (!runName || runName === "random") return "random";
-  const kind = $(prefix + "-ckpt").value || "best";
-  return `run:${runName}:${kind}`;
-}
-
-/* Incompatible checkpoints are the single most likely reason a generate does
-   nothing, so say it in the sidebar rather than only in the status bar. */
-function showCompat(prefix, reason) {
+function showVersionNote(prefix) {
   const el = $(prefix + "-compat");
-  if (!reason) { el.classList.add("hidden"); el.textContent = ""; return; }
-  el.textContent = "⚠ " + reason;
+  const sel = selectedCheckpoint(prefix);
+  if (!sel || !sel.ckpt || sel.ckpt.loadable) { el.classList.add("hidden"); el.textContent = ""; return; }
+  const scenario = scenarioOf(prefix);
+  const replay = sel.run.traces.some((t) => t.startsWith(`${scenario}_${sel.ckpt.kind}_`));
+  el.textContent = replay
+    ? "▣ Recorded replay — this checkpoint predates the current spaces, so it plays back from a trace captured at its own code revision."
+    : "⚠ " + sel.ckpt.reason;
   el.classList.remove("hidden");
 }
 
+function policyValue(prefix) { return $(prefix + "-version").value || "random"; }
+
 function fillEpisodeSelectors() {
-  const sc = $("ep-scenario");
-  const cur = sc.value;
-  sc.innerHTML = Object.keys(STATE.scenarios).map((s) => `<option>${s}</option>`).join("");
-  if (cur) sc.value = cur;
-  fillRunSelect("ep");
+  fillTask("ep");
   loadBehavior();
 }
 
@@ -471,8 +490,8 @@ const BEHAVIOR_ROWS = [
 ];
 async function loadBehavior() {
   const card = $("behavior-card");
-  const runName = $("ep-run").value;
-  const run = runName && runName !== "random" && STATE.runs.find((r) => r.name === runName);
+  const sel = selectedCheckpoint("ep");
+  const run = sel && sel.run;
   if (!run || !run.behavior) { card.classList.add("hidden"); return; }
   try {
     const b = await api(`/api/behavior?run=${encodeURIComponent(run.name)}`);
@@ -486,8 +505,9 @@ async function loadBehavior() {
     card.classList.remove("hidden");
   } catch (e) { card.classList.add("hidden"); }
 }
-$("ep-run").onchange = () => { fillCkptSelect("ep"); loadBehavior(); };
-$("ep-ckpt").onchange = () => { fillCkptSelect("ep"); loadBehavior(); };
+$("ep-task").onchange = () => { fillEchelon("ep"); loadBehavior(); };
+$("ep-echelon").onchange = () => { fillVersion("ep"); loadBehavior(); };
+$("ep-version").onchange = () => { showVersionNote("ep"); loadBehavior(); };
 
 $("ep-dice").onclick = () => { $("ep-seed").value = Math.floor(Math.random() * 100000); };
 $("ep-generate").onclick = generateEpisode;
@@ -498,7 +518,7 @@ async function generateEpisode() {
   $("ep-generate").disabled = true; $("ep-generate").textContent = "⏳ simulating…";
   $("status").textContent = "simulating episode…";
   try {
-    const trace = await api(`/api/episode?scenario=${$("ep-scenario").value}` +
+    const trace = await api(`/api/episode?scenario=${scenarioOf("ep")}` +
       `&policy=${encodeURIComponent(policyValue("ep"))}` +
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
@@ -857,25 +877,26 @@ let MODE = "replay";      // replay (Episode tab) | live (Command tab)
 let liveAuto = null;      // interval id while auto-advancing
 
 function fillLiveSelectors() {
-  $("lv-scenario").innerHTML = $("ep-scenario").innerHTML;
-  if ($("ep-scenario").value) $("lv-scenario").value = $("ep-scenario").value;
-  fillRunSelect("lv");
-  // mirror the Episode tab's choice on first fill, so the two tabs agree
-  const epRun = $("ep-run").value;
-  if (epRun && [...$("lv-run").options].some((o) => o.value === epRun)) {
-    $("lv-run").value = epRun;
-    fillCkptSelect("lv");
-    const epK = $("ep-ckpt").value;
-    if (epK && [...$("lv-ckpt").options].some((o) => o.value === epK)) $("lv-ckpt").value = epK;
-  }
+  fillTask("lv");
+  // mirror the Episode tab's choice on fill, so the two tabs agree
+  ["task", "echelon"].forEach((k) => {
+    const v = $("ep-" + k).value;
+    if (v && [...$("lv-" + k).options].some((o) => o.value === v)) $("lv-" + k).value = v;
+  });
+  fillVersion("lv");
+  const epv = $("ep-version").value;
+  if (epv && [...$("lv-version").options].some((o) => o.value === epv)) $("lv-version").value = epv;
+  showVersionNote("lv");
 }
-$("lv-run").onchange = () => fillCkptSelect("lv");
+$("lv-task").onchange = () => fillEchelon("lv");
+$("lv-echelon").onchange = () => fillVersion("lv");
+$("lv-version").onchange = () => showVersionNote("lv");
 
 async function liveStart() {
   stopAuto();
   $("lv-start").disabled = true; $("lv-start").textContent = "⏳ starting…";
   try {
-    const snap = await api(`/api/live/start?scenario=${$("lv-scenario").value}` +
+    const snap = await api(`/api/live/start?scenario=${scenarioOf("lv")}` +
       `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
     EP = snap; MODE = "live";
     epRequest++;                       // invalidate any in-flight replay fetch

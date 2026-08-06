@@ -5,6 +5,8 @@ import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 
+import pytest
+
 from cohort.viz.dashboard import DashboardHandler, load_behavior, record_episode, scan_runs
 
 
@@ -146,3 +148,63 @@ def test_checkpoint_meta_never_raises_on_junk(tmp_path):
     junk.write_bytes(b"not a torch file")
     assert checkpoint_meta(junk)["loadable"] is False
     assert checkpoint_meta(tmp_path / "does_not_exist.pt")["loadable"] is False
+
+
+def test_scenario_facets_uniquely_identify_every_scenario():
+    """The picker resolves a scenario from (task, echelon), so the pair must be
+    unique — otherwise two scenarios collide behind one menu selection."""
+    from cohort.config import SCENARIOS
+    from cohort.viz.dashboard import scenario_facets
+
+    seen: dict[tuple[str, str], str] = {}
+    for name, spec in SCENARIOS.items():
+        f = scenario_facets(spec)
+        key = (f["task"], f["echelon"])
+        assert key not in seen, f"{name} collides with {seen[key]} on {key}"
+        seen[key] = name
+        assert f["echelon"] == spec.org
+    # the threat qualifies the task: defending a position against a mechanised
+    # assault and against an irregular band are different problems
+    tasks = {n: scenario_facets(s)["task"] for n, s in SCENARIOS.items()}
+    assert tasks["fireteam_defend"] != tasks["defend_brique"]
+    assert tasks["squad_nomask"].startswith("Ablation")
+
+
+def test_recorded_trace_serves_a_legacy_checkpoint(tmp_path):
+    """A checkpoint from a previous era replays from a recorded trace instead
+    of erroring — and a loadable one is never served from a trace."""
+    import json
+
+    import torch
+
+    from cohort.env.actions import N_ACTIONS
+    from cohort.env.observations import OBS_DIM
+    from cohort.viz.dashboard import DashboardHandler
+
+    run = tmp_path / "legacy_v1"
+    (run / "traces").mkdir(parents=True)
+    (run / "metrics.csv").write_text("iteration,env_steps\n1,1024\n")
+    (run / "config.json").write_text('{"scenario": "fireteam"}')
+    torch.save({"obs_dim": OBS_DIM - 54, "n_actions": N_ACTIONS, "model": {}},
+               run / "ckpt_best.pt")
+    (run / "traces" / "fireteam_best_seed1.json").write_text(
+        json.dumps({"outcome": "success", "length": 12, "steps": []})
+    )
+
+    handler = DashboardHandler.__new__(DashboardHandler)
+    handler.runs_dir = tmp_path
+    trace = handler._recorded_trace("run:legacy_v1:best", "fireteam", 1)
+    assert trace["replayed_from_trace"] is True
+    assert trace["outcome"] == "success"
+
+    # a seed with no recorded trace explains how to record one
+    with pytest.raises(ValueError, match=r"legacy_trace\.py"):
+        handler._recorded_trace("run:legacy_v1:best", "fireteam", 99)
+
+    # a current-era checkpoint is always simulated live, never replayed
+    current = tmp_path / "current_v1"
+    (current / "traces").mkdir(parents=True)
+    torch.save({"obs_dim": OBS_DIM, "n_actions": N_ACTIONS, "model": {}},
+               current / "ckpt_best.pt")
+    (current / "traces" / "fireteam_best_seed1.json").write_text('{"outcome": "x"}')
+    assert handler._recorded_trace("run:current_v1:best", "fireteam", 1) is None

@@ -326,6 +326,34 @@ def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) ->
 # ---------------------------------------------------------------------- #
 
 
+#: Task labels for the scenario picker, derived from the spec rather than
+#: hand-maintained: the mission the OPORD assigns, qualified by the threat it
+#: assigns it against (a DEFEND against a mechanised assault and a DEFEND
+#: against an irregular band are different problems). (task, echelon) uniquely
+#: identifies a scenario, which is what lets the UI pick one with two menus.
+_TASK_LABELS = {
+    ("SEIZE", "garrison"): "Attack",
+    ("SEIZE", "assault"): "Attack",
+    ("SEIZE", "brique"): "Patrol · irregular",
+    ("DEFEND", "assault"): "Defend",
+    ("DEFEND", "garrison"): "Defend",
+    ("DEFEND", "brique"): "Defend · irregular",
+    ("RECON", "garrison"): "Recon",
+    ("SCREEN", "garrison"): "Screen",
+}
+
+
+def scenario_facets(spec) -> dict:
+    """The (task, echelon) a scenario belongs to, for the two-menu picker."""
+    if spec.ablation != "full":
+        task = f"Ablation · {spec.ablation}"
+    else:
+        task = _TASK_LABELS.get(
+            (spec.root_mission.name, spec.opfor_mode), spec.root_mission.name.title()
+        )
+    return {"task": task, "echelon": spec.org, "description": spec.description}
+
+
 #: cache of checkpoint metadata keyed by (path, mtime, size) — /api/state is
 #: polled, and torch.load over every run's checkpoints on each poll is waste
 _CKPT_META_CACHE: dict[tuple, dict] = {}
@@ -412,6 +440,12 @@ def scan_runs(runs_dir: Path) -> list[dict]:
                     if (run / f"ckpt_{kind}.pt").is_file()
                 ],
                 "behavior": (run / "behavior.json").is_file(),
+                # replayable traces recorded at this run's own code revision
+                # (scripts/legacy_trace.py) — how a pre-break checkpoint is
+                # still viewable without retraining it
+                "traces": sorted(p.name for p in (run / "traces").glob("*.json"))
+                if (run / "traces").is_dir()
+                else [],
             }
         )
     return runs
@@ -466,6 +500,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _json(self, payload: object, status: int = 200) -> None:
         self._send(status, json.dumps(payload).encode(), "application/json")
 
+    def _recorded_trace(self, policy: str, scenario: str, seed: int) -> dict | None:
+        """A pre-recorded trace for a checkpoint this build cannot load.
+
+        Legacy checkpoints are not lost, just unloadable: both the observation
+        layout AND the action indices moved between eras, so no shim could
+        interpret one honestly. `scripts/legacy_trace.py` instead replays the
+        run at its OWN git revision and writes the episode as plain JSON, which
+        stays readable through any number of future space breaks. Loadable
+        checkpoints are always simulated live — a trace is the fallback, never
+        a silent substitute.
+        """
+        parts = policy.split(":")
+        if len(parts) != 3 or parts[0] != "run":
+            return None
+        run, kind = parts[1], parts[2]
+        ckpt = self.runs_dir / run / f"ckpt_{kind}.pt"
+        if not ckpt.is_file() or checkpoint_meta(ckpt)["loadable"]:
+            return None  # live simulation is available and always preferred
+        path = self.runs_dir / run / "traces" / f"{scenario}_{kind}_seed{seed}.json"
+        if not path.is_file():
+            available = sorted(p.name for p in (self.runs_dir / run / "traces").glob("*.json")) \
+                if (self.runs_dir / run / "traces").is_dir() else []
+            hint = f" recorded traces: {', '.join(available)}." if available else ""
+            msg = (
+                f"{run} · ckpt_{kind} predates this build's spaces, so it cannot be "
+                f"simulated live, and no trace is recorded for {scenario} seed {seed}."
+                f"{hint} Record one (seconds, no retrain): "
+                f"scripts/legacy_trace.py {run} --seed {seed}"
+            )
+            raise ValueError(msg)
+        trace = json.loads(path.read_text())
+        trace["replayed_from_trace"] = True
+        return trace
+
     def _resolve_policy(self, policy: str) -> str | None:
         """'random' → None; 'run:<name>:<best|latest>' → validated ckpt path."""
         if policy in ("", "random"):
@@ -502,7 +570,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     {
                         "runs": scan_runs(self.runs_dir),
                         "scenarios": {
-                            name: spec.description for name, spec in SCENARIOS.items()
+                            name: scenario_facets(spec) for name, spec in SCENARIOS.items()
                         },
                     }
                 )
@@ -511,10 +579,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif url.path == "/api/behavior":
                 self._json(load_behavior(self.runs_dir, self._safe_run(query["run"])))
             elif url.path == "/api/episode":
+                scenario = self._safe_scenario(query.get("scenario", "fireteam"))
+                seed = int(query.get("seed", 0))
+                recorded = self._recorded_trace(query.get("policy", "random"), scenario, seed)
+                if recorded is not None:
+                    self._json(recorded)
+                    return
                 trace = record_episode(
-                    self._safe_scenario(query.get("scenario", "fireteam")),
+                    scenario,
                     self._resolve_policy(query.get("policy", "random")),
-                    int(query.get("seed", 0)),
+                    seed,
                     greedy=query.get("greedy", "0") == "1",
                 )
                 self._json(trace)
