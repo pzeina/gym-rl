@@ -1191,3 +1191,48 @@ terrain (still deferred).
   mask was never the obstacle here, so this is a second, *different* silence from
   the DEFEND one fixed in cycle 2 — opening the channel is necessary but may not
   be sufficient. Worth diagnosing once v9 reports.
+
+- **2026-08-06** — **Unattended cycle 5: `fireteam_defend_v9` — the fix works, the
+  policy traded it badly.** Clean A/B: identical config and seed to v8, the
+  root-claim mask the *only* variable. Both at N=100:
+
+  | | v8 | v9 |
+  |---|---|---|
+  | success | 0.87 ± 0.07 | **0.88 ± 0.06** |
+  | DONE reports / rejected | 0 / 0 | **188 / 126** |
+  | false_complete_rate | *undefined* | **0.670** |
+  | contact reports | 769 | **69** |
+  | report recall | 0.855 | **0.098** |
+  | report precision | 0.376 | 0.464 |
+  | obedience latency | 1.26 | **11.24** |
+  | doctrine preference | 0.172 | **0.001** |
+
+  **The channel is alive and the metric got its denominator back** — exactly the
+  thing to watch. `false_complete_rate` is 0.670, i.e. an accept rate of 0.33,
+  sitting almost exactly on the break-even the pricing implies (p > 0.33). The
+  policy learned to claim at the point of economic indifference.
+  **Success did not move**: the intervals overlap almost completely. So the fix
+  bought no success — it was still right (it made unreachable code reachable and
+  dead reward earnable), but it is not a win on its own.
+  **What it cost**: the team stopped reporting contacts (769 → 69 reports, recall
+  0.855 → 0.098 — the picture is now essentially blind), obedience latency went
+  1.26 → 11.24 with 361 censored orders, and doctrine preference collapsed to
+  **0.001 at n=689** — not one doctrine-preferred order in 689.
+  **Mechanism, falsifiable**: comms actions are mutually exclusive per agent-step,
+  so opening an always-admissible break-even action displaces a profitable one.
+  v8 earned roughly 289 informative contacts × 0.49 ≈ 142 from the contact
+  channel; v9 earns ~32 × 0.49 ≈ 16 there, plus 62 confirmed DONE × 4.0 = 248
+  less 126 rejected × 2.0 = 252, i.e. **≈ −4 net** from a channel it reorganised
+  its whole comms behaviour around. It abandoned a profitable channel for a
+  break-even one. *Refuted if* v10 (contact spam repriced) leaves recall at ~0.1:
+  that would mean the displacement is not about relative comms value.
+  Corroborating: `done_probe` shows subordinate golden steps 0 → 825, so the subs
+  now actually complete their ADVANCE missions — the TL shifted to ADVANCE-heavy
+  ordering (4.88 → 6.6/ep), which is *not* doctrine-valid under a DEFEND root and
+  explains the doctrine collapse. **The open ADVANCE-under-DEFEND item is no
+  longer cosmetic — it is now the policy's preferred strategy.**
+  **Cycle 1 validated in production**: v9 is the first run to finish under the
+  artifact guard and produced every artifact — curves, eval, transcript, gif,
+  behavior.json.
+  `fireteam_defend_v10` launched: v9 + `contact_redundant` −0.25, one variable,
+  v9 as baseline.
