@@ -494,6 +494,19 @@ Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fir
 first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on up to
 `platoon` (use a lower `--lr` when fine-tuning a converged checkpoint).
 
+### Does the hierarchy actually help? (ablation)
+
+Measured, not assumed: a 3-arm × 3-seed ablation on the squad scenario (same
+network, same spaces, 2.5M steps from scratch each) compared the shipped system
+against a hierarchy *without* doctrine masks and against a flat, order-less team
+where every agent gets the OPORD directly. Structured command wins on **outcome
+robustness** (N=100 success 0.92 ± 0.01 vs 0.85 ± 0.06 flat, which wipes 2.2× as
+often) and on **interpretability** (100% doctrine-valid radio traffic by
+construction vs 40% without masks; completion reporting only survives under
+masks) — but not on raw speed-to-threshold, where the all-tasked flat team is
+fastest on a scenario this small. Full tables, learning curves, and the honest
+verdict: [docs/ablation.md](docs/ablation.md).
+
 ## Project layout
 
 ```
@@ -520,11 +533,11 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 228 tests: ranks, language, doctrine, succession, masking,
+tests/                 242 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
                        SITREP cadence, BRIQUE band + traps, behavioral metrics,
-                       dashboard, training smoke
+                       hierarchy-ablation arms, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 
