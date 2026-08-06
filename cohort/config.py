@@ -94,6 +94,16 @@ class ScenarioSpec:
     forest_density: float = 1.0
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
+    experiment_arm: str | None = None
+    #                             a named experimental arm of another scenario, for
+    #                             labelling ONLY — it never changes behavior. The
+    #                             `ablation` field cannot serve here: it drives
+    #                             `env/actions.compute_mask`, so labelling through it
+    #                             would silently alter the order vocabulary. Arms that
+    #                             differ by a tuned parameter (e.g. `squad_short_vision`)
+    #                             set this so the dashboard picker can tell them apart
+    #                             from their control, which `tests/test_dashboard.py`
+    #                             requires of every registered scenario.
     root_human: bool = True       # the root commander is a human embodied in the sim
     #                               (observable to teammates; its death costs the
     #                               rank-weighted teammate penalty, plus
@@ -402,6 +412,34 @@ SCENARIOS["squad_flat"] = replace(
         "the OPORD directly at reset; comms limited to reports."
     ),
     ablation="flat",
+)
+
+# Information-asymmetry probe (v1.11 gate, docs/vision.md §6): the squad
+# scenario with eyes halved and nothing else touched — same geometry, OpFor,
+# rewards, spaces, and ablation arm. It tests the hypothesis behind directional
+# vision *before* the feature is built: if the transparency probe trails the
+# OPORD-only baseline because every agent already sees what its neighbours see,
+# then shrinking vision should narrow the gap. If the gap does not move, vision
+# arcs are unlikely to rescue it either.
+#
+# The forest ratio is preserved deliberately (6/10 = 3/5): only the *scale* of
+# what a soldier can see changes, not how forest attenuates it, so the result
+# cannot be confounded by a shift in the cover economics.
+#
+# It is a lower bound on the effect, not a full proxy: isotropic reduction
+# creates asymmetry only between SEPARATED agents, while arcs also split the
+# picture between co-located ones. Read a null result accordingly.
+SCENARIOS["squad_short_vision"] = replace(
+    SCENARIOS["squad"],
+    name="squad_short_vision",
+    description=(
+        "Information-asymmetry probe: the squad scenario with vision halved "
+        "(10 → 5 cells, forest 6 → 3) and everything else identical."
+    ),
+    # derived from the squad's own combat model, not a fresh CombatParams(), so
+    # the arm cannot silently drift from its control if squad is ever retuned
+    combat=replace(SCENARIOS["squad"].combat, vision_range=5.0, forest_vision_range=3.0),
+    experiment_arm="short vision",
 )
 
 

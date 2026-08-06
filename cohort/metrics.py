@@ -4,6 +4,12 @@ Success rate says *whether* the cohort wins; this module measures *how it
 behaves* while doing so, per evaluation run:
 
 * obedience latency      — order received → first compliant action
+* A5-2 staging           — orders staged (AT MY COMMAND / AT T PLUS n), how
+  many were released and after how long, and how many were **abandoned**:
+  staged and then never released (refs issue #15: obedience latency cannot
+  see a staged order, because its recipient complies by standing still —
+  which is exactly why counting the staged tick made staging read as instant
+  obedience and pulled the latency mean toward 0)
 * report precision/recall — CONTACT reports vs. enemies actually seen
   (the oracle-side ground truth: per-step visibility)
 * doctrine-preference rate — share of issued orders that were the preferred
@@ -55,7 +61,13 @@ import math
 from typing import TYPE_CHECKING, Any
 
 from cohort.core import language as lang
-from cohort.core.missions import IN_POSITION_RADIUS, MissionType, allowed_derivations, compliance
+from cohort.core.missions import (
+    IN_POSITION_RADIUS,
+    MissionType,
+    allowed_derivations,
+    compliance,
+    is_pending,
+)
 from cohort.core.units import CombatParams
 from cohort.env.actions import is_done_admissible
 
@@ -157,9 +169,15 @@ class TraceRecorder:
         root = env.roster.root()
         for s in env.roster.soldiers:
             comp = None
+            # A5-2: a pending order stages its recipient, and the environment
+            # scores it as HOLD at the staging spot — not as the ordered task.
+            # Scoring it as the ordered task here made a staged ADVANCE read
+            # 0.5 ("in position") the tick it landed, which is the opposite of
+            # what the recipient is doing: nothing, on purpose.
+            pending = s.mission is not None and is_pending(s.mission, env._step_count)
             if not initial and s.alive and s.mission is not None:
                 ctx = env._compliance_ctx(s, self._prev_dist.get(s.callsign), env._make_view(s))
-                comp = compliance(s.mission.type, ctx)
+                comp = compliance(MissionType.HOLD if pending else s.mission.type, ctx)
             leader = env.roster.leader_of(s)
             soldiers.append(
                 {
@@ -168,6 +186,11 @@ class TraceRecorder:
                     "pos": list(s.pos),
                     "mission": s.mission.type.name if s.mission is not None else None,
                     "since": s.mission.step_assigned if s.mission is not None else None,
+                    # A5-2: is the standing order staged (AT MY COMMAND not yet
+                    # EXECUTEd, AT T PLUS n not yet due)? A staged recipient is
+                    # obeying by NOT executing, so obedience is not measurable
+                    # until release — see _obedience and _staging.
+                    "pending": pending,
                     "auth": s.effective_authority,
                     "subs": [x.callsign for x in s.living_subordinates(env.roster)],
                     "leader": leader.callsign if leader is not None else None,
@@ -271,6 +294,26 @@ def _obedience(trace: dict) -> tuple[list[int], int, dict[str, dict]]:
     of orders went 0.69 → 0.99 — and an ADVANCE to a distant control measure
     cannot resolve as fast as a DEFEND in place. Which of those two it is
     cannot be read off the pooled number, so it is no longer only pooled.
+
+    **Staged orders are not order events** (refs issue #15). A pending A5-2
+    order (AT MY COMMAND before EXECUTE, AT T PLUS n before its tick) is one
+    the recipient is obeying *by not executing*, and the environment scores it
+    as HOLD at the staging spot — where the recipient already stands, so its
+    compliance is positive from the tick the order lands. Booking that as an
+    order event made every staged order resolve at latency **0**: an identical
+    un-staged ADVANCE whose recipient never moved was censored, while the
+    staged one read "obeyed instantly" (measured, fireteam seed 3). Because
+    release restamps ``step_assigned``, the order books its real event at the
+    release tick anyway — so the staged tick was a second, free, zero-latency
+    copy of the same order, and the metric fell toward 0 in proportion to how
+    much a policy staged. That is the *opposite* sign to cycle 8's hypothesis
+    that staging inflates latency, and it is why the outside tap found
+    incidence and duration both running backwards: v8 staged 0.878 of its
+    ADVANCE orders and measured 1.01 steps, v10 staged 0.369 and measured
+    16.21. Staged ticks are therefore skipped here and counted by
+    :func:`_staging` instead, which also names the orders that are never
+    released at all (61 of v8's 130) — those now leave no obedience event,
+    which is correct: an order that never became effective was never binding.
     """
     steps = trace["steps"]
     latencies: list[int] = []
@@ -288,6 +331,8 @@ def _obedience(trace: dict) -> tuple[list[int], int, dict[str, dict]]:
         for rec in step["soldiers"]:
             if not (rec["alive"] and rec["mission"] is not None and rec["since"] == t0):
                 continue
+            if rec.get("pending"):
+                continue  # staged: not binding yet, and release restamps
             resolved = False
             for later in steps[max(i, 1):]:
                 later_rec = _soldier_at(later, rec["cs"])
@@ -298,6 +343,8 @@ def _obedience(trace: dict) -> tuple[list[int], int, dict[str, dict]]:
                     or later_rec["since"] != t0
                 ):
                     break  # re-tasked, cleared, or dead before complying
+                if later_rec.get("pending"):
+                    continue  # compliance while staged is HOLD, not the task
                 if later_rec["comp"] is not None and later_rec["comp"] > 0.0:
                     latencies.append(later["t"] - t0)
                     book(rec["mission"], later["t"] - t0)
@@ -307,6 +354,52 @@ def _obedience(trace: dict) -> tuple[list[int], int, dict[str, dict]]:
                 censored += 1
                 book(rec["mission"], None)
     return latencies, censored, by_task
+
+
+def _staging(trace: dict) -> dict[str, Any]:
+    """A5-2 staging: how many orders staged, how many released, how long held.
+
+    The counterpart to :func:`_obedience` skipping staged ticks (refs issue
+    #15). Obedience cannot see a staged order — the recipient is complying by
+    standing still — so without this the whole AT MY COMMAND / AT T PLUS n
+    channel would be invisible in the behavior suite, and the interesting
+    failure it can hide would be invisible with it: an order that is *issued
+    and then abandoned*, staged until the episode ends because its issuer
+    never sends EXECUTE. An outside tap found 61 of 130 of one checkpoint's
+    staged orders in that state.
+
+    A *staging span* runs from the tick a pending order lands to the tick it
+    becomes effective — release restamps ``step_assigned`` to that tick, so a
+    span is released exactly when the same soldier's next record carries the
+    same mission, not pending, with ``since == t``. Anything else closes the
+    span **abandoned**: re-tasked while staged, killed while staged, or still
+    staged at the end of the episode. (A staged order superseded at its
+    release tick by a fresh immediate order of the same task is
+    indistinguishable from a release in the trace; it is a coincidence of one
+    tick and one task, and it can only under-count abandonment.)
+    """
+    spans: dict[str, tuple[str, int]] = {}  # callsign -> (mission, staged-at)
+    staged = 0
+    released = 0
+    gaps: list[int] = []
+    for step in trace["steps"]:
+        t = step["t"]
+        for rec in step["soldiers"]:
+            cs = rec["cs"]
+            if rec["alive"] and rec["mission"] is not None and rec.get("pending"):
+                key = (rec["mission"], rec["since"])
+                if spans.get(cs) != key:  # a different staged order: the old one lapsed
+                    spans[cs] = key
+                    staged += 1
+                continue
+            span = spans.pop(cs, None)
+            if span is None:
+                continue
+            mission, since = span
+            if rec["alive"] and rec["mission"] == mission and rec["since"] == t:
+                released += 1
+                gaps.append(t - since)
+    return {"orders_staged": staged, "staged_released": released, "staging_gaps": gaps}
 
 
 def _reports(trace: dict) -> dict[str, int]:
@@ -740,6 +833,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "obedience_latencies": latencies,
         "obedience_censored": censored,
         "obedience_by_task": obedience_by_task,
+        **_staging(trace),
         **_doctrine(trace),
         **_retasks(trace),
         **_reports(trace),
@@ -833,6 +927,13 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "obedience_orders": len(latencies) + total("obedience_censored"),
         "obedience_censored": total("obedience_censored"),
         "obedience_by_task": obedience_task_summary,
+        # A5-2 staging (refs #15): the channel obedience latency deliberately
+        # cannot see. `staged_abandoned` is the one that reads as a fault —
+        # an order issued AT MY COMMAND whose EXECUTE never came.
+        "orders_staged": total("orders_staged"),
+        "staged_released": total("staged_released"),
+        "staged_abandoned": total("orders_staged") - total("staged_released"),
+        "staging_gap_mean": _mean([g for ep in episodes for g in ep.get("staging_gaps", [])]),
         "report_precision": _ratio(total("contacts_informative"), total("contacts")),
         "report_recall": _ratio(total("enemies_reported"), total("enemies_seen")),
         "contact_reports": total("contacts"),
@@ -1019,6 +1120,24 @@ def format_order_task_mix(agg: dict[str, Any], top: int = 3) -> str:
     )
 
 
+def format_staging(agg: dict[str, Any]) -> str:
+    """``staged N, released N (gap X), abandoned N`` — the A5-2 staging channel.
+
+    Empty when nothing was ever staged. ``abandoned`` is the number worth
+    reading: those orders were transmitted, staged a recipient, and never
+    released, so they bought a held agent and no execution (refs #15).
+    """
+    staged = agg.get("orders_staged") or 0
+    if not staged:
+        return ""
+    gap = agg.get("staging_gap_mean")
+    shown = f"{gap:.1f}" if gap is not None else "—"
+    return (
+        f"staged {staged}, released {agg.get('staged_released', 0)} "
+        f"(mean gap {shown} steps), abandoned {agg.get('staged_abandoned', 0)}"
+    )
+
+
 def format_behavior_table(agg: dict[str, Any]) -> str:
     """Human-readable table of an aggregated behavior summary."""
     by_rank = ", ".join(
@@ -1027,7 +1146,11 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
     )
     task_mix = format_order_task_mix(agg)
     notes = {
-        "obedience_latency_mean": f"n={agg['obedience_orders']}, censored {agg['obedience_censored']}",
+        "obedience_latency_mean": (
+            f"n={agg['obedience_orders']}, censored {agg['obedience_censored']}"
+            + (f", staged {agg['orders_staged']} excluded" if agg.get("orders_staged") else "")
+        ),
+        "timed_orders_per_episode": format_staging(agg),
         "retasks_per_episode": (
             f"priced {agg.get('retasks_priced', 0)}, excepted {agg.get('retasks_excepted', 0)}, "
             f"rotations {agg.get('retask_rotations', 0)}"
@@ -1048,6 +1171,7 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         ),
         "cover_occupancy_under_threat": f"n={agg.get('threat_pairs', 0)} threatened agent-steps",
     }
+    notes = {k: v for k, v in notes.items() if v}
     lines = [f"behavior over {agg['episodes']} episodes:"]
     for key, label, fmt in _TABLE_ROWS:
         value = agg.get(key)
