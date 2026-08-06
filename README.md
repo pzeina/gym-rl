@@ -196,6 +196,17 @@ cat episode.txt         # the episode as pure radio traffic
 
 # compare against the untrained baseline
 python -m cohort.training.evaluate --random --scenario fireteam
+```
+
+Every evaluation also computes the **behavioral metrics suite** (obedience
+latency, report precision/recall, doctrine preference, false-COMPLETE rate,
+succession recovery, subordinate coverage, human exposure) over the same
+episodes — printed as a table, written to `runs/<run>/behavior.json`, and
+shown in the dashboard's Episode sidebar. Definitions and the published-
+checkpoint baseline: [`docs/metrics.md`](docs/metrics.md). `--no-behavior`
+skips it.
+
+```bash
 
 # watch + steer it live in the terminal: type orders, read the net
 python -m cohort.play --checkpoint runs/<run-name>/ckpt_best.pt
@@ -500,17 +511,20 @@ cohort/
     observations.py    per-agent observation builder
     rewards.py         reward weights + per-component ledger
     cohort_env.py      the PettingZoo ParallelEnv
+  metrics.py           behavioral metrics suite (docs/metrics.md): obedience,
+                       reporting P/R, doctrine preference, succession, exposure
   training/
     ppo.py             masked PPO + GAE buffer (handles agent death)
     train.py           training CLI, metrics, checkpoints, --init-from
-    evaluate.py        eval CLI, GIF + transcript export
+    evaluate.py        eval CLI, GIF + transcript export, behavior.json
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 201 tests: ranks, language, doctrine, succession, masking,
+tests/                 228 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
-                       SITREP cadence, BRIQUE band + traps, dashboard, training smoke
+                       SITREP cadence, BRIQUE band + traps, behavioral metrics,
+                       dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 
