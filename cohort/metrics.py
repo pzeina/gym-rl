@@ -120,6 +120,7 @@ class TraceRecorder:
             if not initial and s.alive and s.mission is not None:
                 ctx = env._compliance_ctx(s, self._prev_dist.get(s.callsign), env._make_view(s))
                 comp = compliance(s.mission.type, ctx)
+            leader = env.roster.leader_of(s)
             soldiers.append(
                 {
                     "cs": s.callsign,
@@ -129,7 +130,9 @@ class TraceRecorder:
                     "since": s.mission.step_assigned if s.mission is not None else None,
                     "auth": s.effective_authority,
                     "subs": [x.callsign for x in s.living_subordinates(env.roster)],
+                    "leader": leader.callsign if leader is not None else None,
                     "comp": comp,
+                    "fired": bool(s.fired_this_step) if s.alive else False,
                     "sees": [e.id for e in env._visible_enemies(s)] if s.alive else [],
                 }
             )
