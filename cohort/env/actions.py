@@ -210,6 +210,45 @@ def is_root_opord_claim(
     )
 
 
+def is_done_admissible(
+    soldier: Soldier,
+    roster: Roster,
+    *,
+    root_mission: MissionType | None,
+    root_objective_id: int | None,
+    step: int,
+    done_cooldown: int,
+) -> bool:
+    """May this agent transmit MISSION COMPLETE *this step*?
+
+    The DONE branch of :func:`compute_mask`, lifted out so that anything
+    needing to know whether the completion channel was *open* reads the same
+    predicate the mask admits on. ``cohort.metrics.TraceRecorder`` does: a run
+    that emits zero DONE reports is either a channel that was never open
+    (nothing was priced — the ``is_root_opord_claim`` bug) or a policy that
+    declined an open one (the price suppressed the act), and only the
+    admissible-step count separates the two. Re-deriving the condition there
+    would let the two drift, which is exactly the failure mode that made the
+    first silence invisible for a whole training generation.
+    """
+    mission = soldier.mission
+    if not soldier.alive or mission is None:
+        return False
+    # a pending order (A5-2) is not yet executing: nothing to report;
+    # and a rejected claim cannot be re-rolled every tick (v1.10).
+    # Completable-by-type OR the root's own OPORD: a DEFEND/DENY root
+    # can never "finish" its posture, but it can and must report that
+    # the *operation* succeeded (see is_root_opord_claim).
+    claimable = mission.type in COMPLETABLE or is_root_opord_claim(
+        soldier, roster, root_mission, root_objective_id
+    )
+    return bool(
+        claimable
+        and not is_pending(mission, step)
+        and step - soldier.last_done_reject_step >= done_cooldown
+    )
+
+
 def compute_mask(
     soldier: Soldier,
     roster: Roster,
@@ -267,19 +306,13 @@ def compute_mask(
         elif spec.kind == "sitrep":
             mask[spec.index] = 1
         elif spec.kind == "done":
-            # a pending order (A5-2) is not yet executing: nothing to report;
-            # and a rejected claim cannot be re-rolled every tick (v1.10).
-            # Completable-by-type OR the root's own OPORD: a DEFEND/DENY root
-            # can never "finish" its posture, but it can and must report that
-            # the *operation* succeeded (see is_root_opord_claim).
-            claimable = soldier.mission is not None and (
-                soldier.mission.type in COMPLETABLE
-                or is_root_opord_claim(soldier, roster, root_mission, root_objective_id)
-            )
-            if (
-                claimable
-                and not is_pending(soldier.mission, step)
-                and step - soldier.last_done_reject_step >= done_cooldown
+            if is_done_admissible(
+                soldier,
+                roster,
+                root_mission=root_mission,
+                root_objective_id=root_objective_id,
+                step=step,
+                done_cooldown=done_cooldown,
             ):
                 mask[spec.index] = 1
         elif spec.kind == "execute":
