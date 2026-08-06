@@ -122,6 +122,17 @@ class RewardConfig:
     # is shaped, the manual's formations are doctrine, not physics (pp. 14-15).
     formation_bonus: float = 0.03
 
+    # Trinôme bound (A5-4): a synchronized mover (inside the 8-step window a
+    # SYNC_GO opens) closing NEW ground toward its own mission anchor while
+    # >= 1 synchronized group-mate COVERS the bound (static with LOS to a
+    # threat, or overwatching the mover) earns this per step. Watermarked on
+    # the standing order like formation_bonus — repeated propose/GO cycles
+    # cannot re-earn covered ground, so it telescopes and stays out of
+    # max_step_farm(). The covered mover also gets the P2 covered-movement
+    # accuracy debuff applied against attackers ("bond par binôme", manual
+    # pp. 14-15).
+    bound_bonus: float = 0.05
+
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.1        # some living subordinate left untasked, per step.
     #                                   Raised -0.02 → -0.1 in the B5 campaign (the one

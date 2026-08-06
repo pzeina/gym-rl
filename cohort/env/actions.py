@@ -90,6 +90,10 @@ def _build_catalog() -> list[ActionSpec]:
     # A5-2: broadcast EXECUTE, releasing ALL of this issuer's pending
     # AT-MY-COMMAND orders at once (the COMMANDEMENT DU BOND's "EN AVANT !")
     add("execute", "EXECUTE_SIGNAL")
+    # A5-4: trinôme peer synchronization by VOICE (any rank; the manual's
+    # bond par binôme, commanded "à la voix ou aux gestes", pp. 14-15)
+    add("sync_propose", "SYNC_PROPOSE")
+    add("sync_go", "SYNC_GO")
     for slot in range(MAX_SUB_SLOTS):
         for mission in MissionType:
             if mission is MissionType.SUPPORT:
@@ -181,6 +185,8 @@ def compute_mask(
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
+    has_voice_peer: bool = False,
+    has_pending_sync: bool = False,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -235,6 +241,14 @@ def compute_mask(
                 and sub.mission.issuer_id == soldier.id
                 for sub in soldier.living_subordinates(roster)
             ):
+                mask[spec.index] = 1
+        elif spec.kind == "sync_propose":
+            # A5-4: any agent with >= 1 trinôme peer within voice range
+            if has_voice_peer:
+                mask[spec.index] = 1
+        elif spec.kind == "sync_go":
+            # A5-4: only the proposer of a still-live (unexpired) proposal
+            if has_pending_sync:
                 mask[spec.index] = 1
 
     # Order vocabulary: command ranks only, doctrine-constrained ("full").

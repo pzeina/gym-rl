@@ -242,8 +242,8 @@ def test_every_preset_has_control_measures():
 
 def test_obs_dim_math():
     # 13 self + 17 mission + 5 leader + 20 subs + 16 enemies + 12 obj
-    # + 12 wp + 9 pl + 5 comms + 50 patch = 164 (mission block 22 incl. pending + stance)
-    assert OBS_DIM == 164
+    # + 12 wp + 9 pl + 5 comms + 50 patch = 166 (mission 22 + sync 2)
+    assert OBS_DIM == 166
     assert N_OBJECTIVE_SLOTS == 4
     assert N_WAYPOINT_SLOTS == 4
     assert N_PHASE_LINE_SLOTS == 3

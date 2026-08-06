@@ -208,6 +208,18 @@ def format_formation_order(issuer_cs: str, recipient_cs: str, formation: Formati
     return f"{recipient_cs}, THIS IS {issuer_cs}: FORMATION {formation.name}. OUT."
 
 
+def format_sync_propose(proposer_cs: str, peer_css: list[str]) -> str:
+    """Trinôme bound proposal, by VOICE (A5-4, manual pp. 14-15):
+    'RFN2 RFN3, THIS IS RFN1: PREPARE TO BOUND ON MY SIGNAL. OUT.'"""
+    peers = " ".join(peer_css) if peer_css else "ALL NEARBY"
+    return f"{peers}, THIS IS {proposer_cs}: PREPARE TO BOUND ON MY SIGNAL. OUT."
+
+
+def format_sync_go(proposer_cs: str) -> str:
+    """The bound signal, by voice: 'RFN1: GO! OUT.' (the manual's EN AVANT !)"""
+    return f"{proposer_cs}: GO! OUT."
+
+
 def format_opord(recipient_cs: str, mission: MissionType, target: str | None) -> str:
     """Initial operations order from higher HQ to the senior agent."""
     return f"{recipient_cs}, THIS IS HQ: OPORD — {mission_phrase(mission, target)}. OUT."

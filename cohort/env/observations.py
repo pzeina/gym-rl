@@ -55,12 +55,15 @@ _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 #: leader block: present, dx, dy, mission index, leader-is-human
 _LEADER_BLOCK = 5
 
-#: 13 self + 22 mission/stance + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
-#: + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a phase line
-#: dx/dy point at its nearest segment point) + 5 comms + patch (50)
-#: = 13 + 22 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 164
+#: sync block (A5-4): pending-bound flag + synchronized-window remaining
+_SYNC_BLOCK = 2
+
+#: 13 self + 22 mission/stance + 2 sync + 5 leader + 5*N_SUB + 4*N_ENEMY
+#: + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a
+#: phase line dx/dy point at its nearest segment point) + 5 comms + patch (50)
+#: = 13 + 22 + 2 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 166
 OBS_DIM = (
-    _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
+    _SELF_BLOCK + _MISSION_BLOCK + _SYNC_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
     + 4 * N_ENEMY_SLOTS
     + 3 * N_OBJECTIVE_SLOTS
@@ -83,6 +86,11 @@ class AgentView:
     #: set, it replaces the comms-summary "known enemy present" flag — a slot
     #: fully redundant with the known-count field — so OBS_DIM is unchanged.
     sitrep_due: float | None = None
+    #: trinôme sync (A5-4): the agent is party to a live PREPARE-TO-BOUND
+    #: proposal (as proposer or registered peer) awaiting its GO
+    sync_pending: bool = False
+    #: fraction of the synchronized window remaining after a GO, in [0, 1]
+    sync_active: float = 0.0
 
 
 def _mission_idx(mission_type: MissionType | None) -> float:
@@ -163,6 +171,11 @@ def build_observation(
     if stance is not None:
         out[i + FORMATION_ORDER.index(stance)] = 1.0
     i += len(FORMATION_ORDER)
+
+    # --- trinôme sync (A5-4, 2) ---
+    out[i] = 1.0 if view.sync_pending else 0.0
+    out[i + 1] = view.sync_active
+    i += 2
 
     # --- leader (5) ---
     if leader is not None:

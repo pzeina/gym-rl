@@ -118,6 +118,10 @@ class ScenarioSpec:
     #                               high-power station: HQ traffic is always heard and
     #                               HQ always hears the root).
     comm_range: float = 12.0      # audible radius under comm_model="range"
+    voice_range: float = 6.0      # shouting distance (A5-4): trinôme sync proposals
+    #                               register the peers within this radius at
+    #                               propose time; voice traffic is not radio —
+    #                               never net-arbitrated, never airtime-costed
     sitrep_cadence: int | None = None  # reporting doctrine: an agent not in contact
     #                               owes a SITREP every this-many steps; overdue draws
     #                               RewardConfig.sitrep_overdue per step and is surfaced

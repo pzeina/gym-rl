@@ -51,6 +51,7 @@ from cohort.core.units import (
     enemy_decide,
     resolve_fire,
     validate_human_ranks,
+    voice_peers,
 )
 from cohort.core.world import World, dist
 from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
@@ -59,6 +60,11 @@ from cohort.env.rewards import RewardConfig, RewardLedger
 
 #: Steps after which an unrefreshed contact report goes stale.
 KNOWLEDGE_TTL = 40
+
+#: A5-4 trinôme sync: how long a PREPARE-TO-BOUND proposal stays live
+#: awaiting its GO, and how long the synchronized window lasts after it.
+SYNC_PROPOSE_TTL = 20
+SYNC_WINDOW = 8
 
 #: Net arbitration priority for LEARNED transmissions (A4): lower wins.
 #: CONTACT (perishable intel) > DONE (command state) > orders (EXECUTE is
@@ -135,6 +141,15 @@ class CohortEnv(ParallelEnv):
         #: distance reached under the current (mission, stance) — the bonus
         #: pays only on NEW closure, so it telescopes and cannot be farmed
         self._formation_watermark: dict[int, tuple] = {}
+        #: trinôme sync (A5-4): proposer id -> (propose step, registered peer
+        #: ids — those in voice range at propose time); GO consumes the entry
+        self._sync_pending: dict[int, tuple[int, tuple[int, ...]]] = {}
+        #: agent id -> (last synchronized step, group key) after a GO
+        self._sync_until: dict[int, tuple[int, tuple]] = {}
+        #: per-agent watermark of best own-anchor distance for the bound
+        #: bonus — keyed by the standing order, NOT the window, so repeated
+        #: propose/GO cycles can never re-earn already-covered ground
+        self._bound_watermark: dict[int, tuple] = {}
 
     @property
     def outcome(self) -> str | None:
@@ -238,6 +253,9 @@ class CohortEnv(ParallelEnv):
         self._element_casualty_step = {}
         self._retask_log = []
         self._formation_watermark = {}
+        self._sync_pending = {}
+        self._sync_until = {}
+        self._bound_watermark = {}
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -724,6 +742,10 @@ class CohortEnv(ParallelEnv):
         # advance and cannot be farmed by circling or pacing
         self._formation_shaping(ledger)
 
+        # trinôme bound shaping (A5-4): synchronized movers under a covering
+        # peer earn the bound bonus on NEW closure toward their own anchor
+        self._bound_shaping(ledger)
+
         # objective-lost pressure for DEFEND / DENY campaigns: while a living
         # enemy stands on the root objective, every living agent bleeds —
         # a defense that ceded its ground is failing, hiding included
@@ -911,6 +933,10 @@ class CohortEnv(ParallelEnv):
             self._report_done(soldier, ledger)
         elif spec.kind == "execute":
             self._execute_signal(soldier, ledger)
+        elif spec.kind == "sync_propose":
+            self._sync_propose(soldier)
+        elif spec.kind == "sync_go":
+            self._sync_go(soldier)
         elif spec.kind == "order":
             self._issue_order(soldier, spec, ledger)
 
@@ -1060,6 +1086,115 @@ class CohortEnv(ParallelEnv):
                 lang.format_done_reject(soldier.callsign, responder_cs),
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
+
+    def _sync_propose(self, soldier: Soldier) -> None:
+        """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
+
+        Registers a pending bound with every peer currently within
+        ``voice_range`` (same element or adjacent trinôme). A re-proposal
+        overwrites the previous one. Voice is never net-arbitrated and
+        costs no airtime; it still appears on the transcript, flagged.
+        """
+        peers = voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
+        if not peers:
+            return  # mask guards; defensive
+        self._sync_pending[soldier.id] = (self._step_count, tuple(p.id for p in peers))
+        self._say(
+            MessageKind.SYNC_PROPOSE,
+            soldier.id,
+            None,
+            lang.format_sync_propose(soldier.callsign, [p.callsign for p in peers]),
+            voice=True,
+        )
+
+    def _sync_go(self, soldier: Soldier) -> None:
+        """The bound signal (A5-4): GO! Synchronizes the proposer and every
+        registered peer still alive for the next ``SYNC_WINDOW`` steps."""
+        pending = self._sync_pending.pop(soldier.id, None)
+        if pending is None:
+            return
+        propose_step, peer_ids = pending
+        if self._step_count - propose_step > SYNC_PROPOSE_TTL:
+            return  # stale proposal: the moment has passed
+        group = (soldier.id, self._step_count)
+        until = self._step_count + SYNC_WINDOW
+        self._sync_until[soldier.id] = (until, group)
+        for pid in peer_ids:
+            peer = self.roster.by_id.get(pid)
+            if peer is not None and peer.alive:
+                self._sync_until[pid] = (until, group)
+        self._say(
+            MessageKind.SYNC_GO, soldier.id, None,
+            lang.format_sync_go(soldier.callsign), voice=True,
+        )
+
+    def _synchronized(self, soldier: Soldier) -> tuple | None:
+        """The soldier's active sync-group key, or None outside a window.
+
+        The window spans ``SYNC_WINDOW`` ticks starting at the GO tick
+        itself (exclusive upper bound, so ``sync_active`` in the obs reaches
+        0 exactly when the window closes)."""
+        entry = self._sync_until.get(soldier.id)
+        if entry is None or not soldier.alive:
+            return None
+        until, group = entry
+        return group if self._step_count < until else None
+
+    def _sync_cover_peers(self, soldier: Soldier, group: tuple) -> list[Soldier]:
+        """Synchronized group-mates COVERING this soldier's bound: static
+        this tick with line of sight to a visible threat, or overwatching
+        the mover itself (LOS to it)."""
+        covering: list[Soldier] = []
+        for other in self.roster.living:
+            if other.id == soldier.id or self._synchronized(other) != group:
+                continue
+            if other.pos != other.prev_pos:
+                continue  # the cover element does not move during the bound
+            watches_threat = any(
+                dist(other.pos, e.pos) <= self.combat.weapon_range
+                and self.world.line_of_sight(other.pos, e.pos)
+                for e in self._visible_enemies(other)
+            )
+            overwatches_mover = self.world.line_of_sight(other.pos, soldier.pos)
+            if watches_threat or overwatches_mover:
+                covering.append(other)
+        return covering
+
+    def _covered_by_sync(self, target: Soldier) -> bool:
+        """Covered bound (A5-4): the target is mid-bound (synchronized and
+        moved this tick) with >= 1 group-mate covering it — the existing
+        covered-movement accuracy debuff applies (B5/P2 machinery at the
+        binôme scale)."""
+        group = self._synchronized(target)
+        if group is None or target.pos == target.prev_pos:
+            return False
+        return bool(self._sync_cover_peers(target, group))
+
+    def _bound_shaping(self, ledger: RewardLedger) -> None:
+        """Pay the A5-4 bound bonus: a synchronized mover that closes NEW
+        ground toward its own mission anchor while >= 1 group-mate covers it.
+        Watermark keyed by the standing order — repeated propose/GO cycles
+        never re-earn covered ground, so this telescopes like A5-3."""
+        bonus = self.rewards_cfg.bound_bonus
+        if bonus == 0.0:
+            return
+        for s in self.roster.living:
+            group = self._synchronized(s)
+            if group is None or s.mission is None or s.pos == s.prev_pos:
+                continue
+            if is_pending(s.mission, self._step_count):
+                continue
+            key = (s.mission.step_assigned,)
+            d = self._anchor_distance(s)
+            stored = self._bound_watermark.get(s.id)
+            if stored is None or stored[0] != key:
+                self._bound_watermark[s.id] = (key, d)
+                continue
+            if d >= stored[1] - 1e-9:
+                continue
+            self._bound_watermark[s.id] = (key, d)
+            if self._sync_cover_peers(s, group):
+                ledger.add(s.callsign, "compliance", bonus)
 
     def _execute_signal(self, soldier: Soldier, ledger: RewardLedger) -> None:
         """EXECUTE (A5-2): release ALL of this issuer's pending AT-MY-COMMAND
@@ -1484,9 +1619,11 @@ class CohortEnv(ParallelEnv):
             enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
             # covered movement: firing at a supported element from inside an
-            # in-position supporter's umbrella degrades the attacker's accuracy
+            # in-position supporter's umbrella degrades the attacker's
+            # accuracy; a covered trinôme bound (A5-4) earns the same debuff
+            # (effects do not stack — one covered-movement modifier applies)
             modifier = 1.0
-            if self._covered_by_support(target, enemy.pos):
+            if self._covered_by_support(target, enemy.pos) or self._covered_by_sync(target):
                 modifier = self.combat.support_cover_accuracy
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
@@ -1552,11 +1689,24 @@ class CohortEnv(ParallelEnv):
             if cadence
             else None
         )
+        # trinôme sync (A5-4): party to a live proposal / inside a GO window
+        step = self._step_count
+        sync_pending = any(
+            step - propose_step <= SYNC_PROPOSE_TTL
+            and (proposer_id == soldier.id or soldier.id in peer_ids)
+            for proposer_id, (propose_step, peer_ids) in self._sync_pending.items()
+        )
+        entry = self._sync_until.get(soldier.id)
+        sync_active = (
+            max(0.0, (entry[0] - step) / SYNC_WINDOW) if entry is not None else 0.0
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
             step=self._step_count,
             sitrep_due=sitrep_due,
+            sync_pending=sync_pending,
+            sync_active=sync_active,
         )
 
     def _compute_views(self) -> dict[str, AgentView]:
@@ -1565,6 +1715,7 @@ class CohortEnv(ParallelEnv):
     def _mask_for(self, soldier: Soldier) -> np.ndarray:
         visible = self._visible_enemies(soldier)
         in_range = any(dist(soldier.pos, e.pos) <= self.combat.weapon_range for e in visible)
+        pending_sync = self._sync_pending.get(soldier.id)
         return compute_mask(
             soldier,
             self.roster,
@@ -1575,6 +1726,13 @@ class CohortEnv(ParallelEnv):
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,
+            has_voice_peer=bool(
+                voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
+            ),
+            has_pending_sync=(
+                pending_sync is not None
+                and self._step_count - pending_sync[0] <= SYNC_PROPOSE_TTL
+            ),
         )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:
@@ -1891,8 +2049,14 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
-    def _say(self, kind: MessageKind, sender: int, recipient: int | None, text: str) -> None:
-        msg = Message(step=self._step_count, kind=kind, sender_id=sender, recipient_id=recipient, text=text)
+    def _say(
+        self, kind: MessageKind, sender: int, recipient: int | None, text: str,
+        *, voice: bool = False,
+    ) -> None:
+        msg = Message(
+            step=self._step_count, kind=kind, sender_id=sender,
+            recipient_id=recipient, text=text, voice=voice,
+        )
         self.transcript.add(msg)
         self.last_messages.append(msg)
 
