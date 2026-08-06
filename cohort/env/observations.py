@@ -41,8 +41,10 @@ N_PHASE_LINE_SLOTS = 3
 PATCH_RADIUS = 2
 
 #: mission block: one-hot over the 12 tasks (11 MICAT + ADVANCE) + has-mission
-#: flag + 4 anchor fields (dx, dy, has-objective, age)
-_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4
+#: flag + 4 anchor fields (dx, dy, has-objective, age) + 2 pending fields
+#: (A5-2: pending flag; time-to-effective — 1.0 while AT MY COMMAND, else
+#: remaining/20 capped at 1)
+_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4 + 2
 
 #: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
 _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
@@ -50,10 +52,10 @@ _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 #: leader block: present, dx, dy, mission index, leader-is-human
 _LEADER_BLOCK = 5
 
-#: 13 self + 17 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
+#: 13 self + 19 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
 #: + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a phase line
 #: dx/dy point at its nearest segment point) + 5 comms + patch (50)
-#: = 13 + 17 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 159
+#: = 13 + 19 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 161
 OBS_DIM = (
     _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
@@ -109,7 +111,7 @@ def build_observation(
     out[i] = 1.0 if soldier.human else 0.0
     i += 1
 
-    # --- mission (17) ---
+    # --- mission (19) ---
     m = soldier.mission
     if m is not None:
         out[i + MISSION_ORDER.index(m.type)] = 1.0
@@ -135,6 +137,20 @@ def build_observation(
         out[i + 2] = 1.0 if m.objective_id is not None else 0.0
         out[i + 3] = min(1.0, (view.step - m.step_assigned) / 50.0)
     i += 4
+    # pending state (A5-2): staged until "AT T PLUS n" comes due or the
+    # issuer's EXECUTE releases an "AT MY COMMAND" order
+    if m is not None:
+        pending = m.awaiting_signal or (
+            m.effective_at is not None and view.step < m.effective_at
+        )
+        if pending:
+            out[i] = 1.0
+            out[i + 1] = (
+                1.0
+                if m.awaiting_signal
+                else min(1.0, (m.effective_at - view.step) / 20.0)
+            )
+    i += 2
 
     # --- leader (5) ---
     leader = roster.leader_of(soldier)

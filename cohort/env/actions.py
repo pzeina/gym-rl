@@ -36,6 +36,7 @@ from cohort.core.missions import (
     NEEDS_OBJECTIVE,
     MissionType,
     allowed_derivations,
+    is_pending,
     min_hold_authority,
 )
 
@@ -68,6 +69,7 @@ class ActionSpec:
     order_objective: str | None = None      # objective name, or None
     order_support_slot: int | None = None   # supported unit's slot (SUPPORT only)
     order_control: str | None = None        # control-measure name (ADVANCE only)
+    order_amc: bool = False                 # "AT MY COMMAND" variant (A5-2, ADVANCE only)
 
 
 def _build_catalog() -> list[ActionSpec]:
@@ -83,6 +85,9 @@ def _build_catalog() -> list[ActionSpec]:
     add("contact", "REPORT_CONTACT")
     add("sitrep", "REPORT_SITREP")
     add("done", "REPORT_MISSION_COMPLETE")
+    # A5-2: broadcast EXECUTE, releasing ALL of this issuer's pending
+    # AT-MY-COMMAND orders at once (the COMMANDEMENT DU BOND's "EN AVANT !")
+    add("execute", "EXECUTE_SIGNAL")
     for slot in range(MAX_SUB_SLOTS):
         for mission in MissionType:
             if mission is MissionType.SUPPORT:
@@ -98,14 +103,27 @@ def _build_catalog() -> list[ActionSpec]:
                         order_support_slot=other,
                     )
             elif mission in NEEDS_CONTROL:
-                # ADVANCE targets a control measure: WP GOLD ... PL CRIMSON
+                # ADVANCE targets a control measure: WP GOLD ... PL CRIMSON.
+                # Each target also has an AT-MY-COMMAND variant (A5-2): the
+                # order stages the recipient until the issuer's EXECUTE —
+                # the learnable half of the timing vocabulary ("AT T PLUS n"
+                # is unbounded and stays human/inject-only).
                 for cm in CONTROL_NAMES:
+                    stem = f"ORDER_S{slot}_{mission.name}_{control_phrase(cm).replace(' ', '_')}"
                     add(
                         "order",
-                        f"ORDER_S{slot}_{mission.name}_{control_phrase(cm).replace(' ', '_')}",
+                        stem,
                         order_slot=slot,
                         order_mission=mission,
                         order_control=cm,
+                    )
+                    add(
+                        "order",
+                        f"{stem}_AMC",
+                        order_slot=slot,
+                        order_mission=mission,
+                        order_control=cm,
+                        order_amc=True,
                     )
             elif mission in NEEDS_OBJECTIVE:
                 for obj in OBJECTIVE_NAMES:
@@ -189,7 +207,22 @@ def compute_mask(
         elif spec.kind == "sitrep":
             mask[spec.index] = 1
         elif spec.kind == "done":
-            if soldier.mission is not None and soldier.mission.type in COMPLETABLE:
+            # a pending order (A5-2) is not yet executing: nothing to report
+            if (
+                soldier.mission is not None
+                and soldier.mission.type in COMPLETABLE
+                and not is_pending(soldier.mission, step)
+            ):
+                mask[spec.index] = 1
+        elif spec.kind == "execute":
+            # legal only while >= 1 living subordinate holds an AT-MY-COMMAND
+            # order of THIS issuer still awaiting the signal
+            if soldier.effective_authority > 0 and any(
+                sub.mission is not None
+                and sub.mission.awaiting_signal
+                and sub.mission.issuer_id == soldier.id
+                for sub in soldier.living_subordinates(roster)
+            ):
                 mask[spec.index] = 1
 
     # Order vocabulary: command ranks only, doctrine-constrained ("full").

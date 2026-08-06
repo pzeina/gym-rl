@@ -61,9 +61,9 @@ def _put_enemy_in_view(env, callsign, enemy_idx=0):
 
 
 def test_spaces_are_frozen_at_v14():
-    """Spaces at the A5 layout (breaking cycle): Discrete(185) / Box(159)."""
-    assert N_ACTIONS == 185
-    assert OBS_DIM == 159
+    """Spaces at the A5 layout (breaking cycle): Discrete(214) / Box(161)."""
+    assert N_ACTIONS == 214
+    assert OBS_DIM == 161
 
 
 # ---------------------------------------------------------------------- #

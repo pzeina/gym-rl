@@ -247,7 +247,22 @@ class Mission:
     step_assigned: int
     observe_steps: int = 0         # RECON / SCREEN progress (team-mirrored on OPORDs)
     team_observation: bool = False  # root OPORD RECON/SCREEN: team-adjudicated
+    # --- timing qualifiers (A5-2): a pending order stages, then executes ---
+    effective_at: int | None = None  # "AT T PLUS n": tick the order becomes effective
+    awaiting_signal: bool = False    # "AT MY COMMAND": pending until the issuer's EXECUTE
     extra: dict = field(default_factory=dict)
+
+
+def is_pending(mission: Mission, step: int) -> bool:
+    """A pending order (A5-2) has been received but is not yet in effect.
+
+    Until it is, the recipient's compliance is judged as HOLD near the
+    position where the order landed (staging, ``extra["staging"]``), the
+    mission cannot complete, and the pending state is observable.
+    """
+    return mission.awaiting_signal or (
+        mission.effective_at is not None and step < mission.effective_at
+    )
 
 
 @dataclass(frozen=True)

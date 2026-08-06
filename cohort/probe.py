@@ -231,6 +231,16 @@ class _Task:
     origin: tuple[float, float]      # recipient's estimated position at that moment
     team: bool = False               # root OPORD RECON/SCREEN: team-adjudicated (#9)
     control: str | None = None       # control-measure name (ADVANCE — A5)
+    # timing qualifiers (A5-2): a pending order predicts staging, then the target
+    delay: int | None = None         # "AT T PLUS n": effective at step + n
+    awaiting: bool = False           # "AT MY COMMAND": until the issuer's EXECUTE
+    issuer: str | None = None        # who issued it (matches EXECUTE broadcasts)
+
+    @property
+    def effective_step(self) -> int:
+        """When the order starts (or started) executing; progress counts
+        from here, not from receipt — the recipient stages in between."""
+        return self.step + (self.delay or 0)
 
 
 _GRID_RE = re.compile(r"GRID (\d{2})(\d{2})")
@@ -238,6 +248,7 @@ _DOWN_RE = re.compile(r"ALL STATIONS: ([A-Za-z]{2,3}\d+) IS DOWN")
 _TAKING_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+): ([A-Za-z]{2,3}\d+) IS DOWN\. I AM ASSUMING COMMAND")
 _FILLING_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+): ASSUMING ([A-Za-z]{2,3}\d+)'S POSITION")
 _TRAP_RE = re.compile(r"ALL STATIONS: ([A-Za-z]{2,3}\d+) HIT A DEVICE AT GRID (\d{2})(\d{2})")
+_EXECUTE_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+|HQ): EXECUTE")
 
 
 class NetPredictor:
@@ -296,6 +307,9 @@ class NetPredictor:
                 origin=self._est_pos(cs),
                 team=team,
                 control=parsed.control_name,
+                delay=parsed.delay,
+                awaiting=parsed.at_my_command,
+                issuer=m.get("from"),
             )
         elif kind == "sitrep":
             grid = _GRID_RE.search(text)
@@ -312,6 +326,17 @@ class NetPredictor:
             self.task[m["to"]] = None
         elif kind == "support_end":
             self.task[m["from"]] = None  # supported unit fell: standing by
+        elif kind == "execute":
+            # "ALL STATIONS, THIS IS X: EXECUTE." releases every AT-MY-COMMAND
+            # order X issued (A5-2): those tasks start executing NOW
+            exe = _EXECUTE_RE.search(text)
+            if exe:
+                sender = exe.group(1)
+                for cs, task in self.task.items():
+                    if task is not None and task.awaiting and task.issuer == sender:
+                        self.task[cs] = replace(
+                            task, awaiting=False, step=self.t, origin=self._est_pos(cs)
+                        )
         elif kind == "casualty":
             down = _DOWN_RE.search(text)
             if down:
@@ -366,23 +391,35 @@ class NetPredictor:
 
     # -- net-derived position estimates ---------------------------------- #
 
+    def _pending(self, task: _Task) -> bool:
+        """Is the order still staged (A5-2)? AT MY COMMAND until the EXECUTE
+        broadcast (consumed in :meth:`_consume`), AT T PLUS n until it is due."""
+        return task.awaiting or self.t < task.effective_step
+
     def _est_pos(self, cs: str, seen: frozenset = frozenset()) -> tuple[float, float]:
         """Best position estimate from the net: assumed progress toward the
         mission anchor from the latest evidence point (order receipt, or a
-        later reported grid) at one cell per step, else the last reported
-        grid, else the spawn area."""
+        later reported grid) at one cell per step — counted from the order's
+        EFFECTIVE step for timed orders (staging in between) — else the last
+        reported grid, else the spawn area."""
         task = self.task.get(cs)
         sit = self.sitrep.get(cs)
         if task is not None and cs not in seen:
+            if self._pending(task):
+                # staging: holding near where the order landed
+                if sit is not None and sit[0] >= task.step:
+                    return sit[1]
+                return task.origin
             anchor = self._anchor_est(cs, task, seen | {cs})
             if anchor is not None:
-                step, pos = task.step, task.origin
-                if sit is not None and sit[0] >= step:
-                    step, pos = sit
+                start, pos = task.effective_step, task.origin
+                if sit is not None and sit[0] >= task.step:
+                    pos = sit[1]
+                    start = max(sit[0], start)
                 total = _manhattan(pos, anchor)
                 if total <= 1e-9:
                     return anchor
-                frac = max(0.0, min(1.0, (self.t - step) / total))
+                frac = max(0.0, min(1.0, (self.t - start) / total))
                 return (
                     pos[0] + frac * (anchor[0] - pos[0]),
                     pos[1] + frac * (anchor[1] - pos[1]),
@@ -425,14 +462,16 @@ class NetPredictor:
 
         From the latest evidence point (order receipt, or a later SITREP /
         TRAP grid), assume 1 cell per step of 4-neighbour movement toward
-        the anchor until inside the mission's in-position radius.
+        the anchor until inside the mission's in-position radius. Timed
+        orders (A5-2) start traveling at their EFFECTIVE step, not receipt.
         """
-        step, pos = task.step, task.origin
+        start, pos = task.effective_step, task.origin
         sit = self.sitrep.get(cs)
-        if sit is not None and sit[0] >= step:
-            step, pos = sit
+        if sit is not None and sit[0] >= task.step:
+            pos = sit[1]
+            start = max(sit[0], start)
         travel = max(0, math.ceil(_manhattan(pos, anchor) - IN_POSITION_RADIUS[task.mission]))
-        return max(0, travel - (self.t - step))
+        return max(0, travel - (self.t - start))
 
     def _arrived(self, cs: str, task: _Task, anchor: tuple[float, float]) -> bool:
         """Transit estimate: has the agent had time to reach its station?"""
@@ -448,6 +487,8 @@ class NetPredictor:
         task = self.task.get(cs)
         if task is None:
             return HOLD  # untasked / completed: standing by where it is
+        if self._pending(task):
+            return HOLD  # staged (A5-2): holding until the order is effective
         if task.team:
             # root OPORD RECON/SCREEN is team-adjudicated (#9): doctrine says
             # the commander observes through the squad and commands from cover
@@ -472,6 +513,8 @@ class NetPredictor:
         task = self.task.get(cs)
         if task is None:
             return STATIC  # standing by
+        if self._pending(task):
+            return STATIC  # staged (A5-2)
         if task.team:
             return STATIC  # commands from cover (#9)
         if task.mission is MissionType.SUPPORT:

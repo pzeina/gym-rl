@@ -36,6 +36,7 @@ from cohort.core.missions import (
     compliance,
     derivation_quality,
     is_complete,
+    is_pending,
     min_hold_authority,
 )
 from cohort.core.orders import HQ_ID, Message, MessageKind, Transcript
@@ -59,10 +60,11 @@ from cohort.env.rewards import RewardConfig, RewardLedger
 KNOWLEDGE_TTL = 40
 
 #: Net arbitration priority for LEARNED transmissions (A4): lower wins.
-#: CONTACT (perishable intel) > DONE (command state) > orders > SITREP
-#: (routine); ties break by agent order. Auto-traffic is not listed — WILCO,
-#: verdicts, CASUALTY, and succession are protocol, not competition for air.
-_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "sitrep": 3}
+#: CONTACT (perishable intel) > DONE (command state) > orders (EXECUTE is
+#: command traffic of the same class) > SITREP (routine); ties break by agent
+#: order. Auto-traffic is not listed — WILCO, verdicts, CASUALTY, and
+#: succession are protocol, not competition for air.
+_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3}
 
 
 class CohortEnv(ParallelEnv):
@@ -545,6 +547,16 @@ class CohortEnv(ParallelEnv):
         self._retask_log = []
         present = list(self.agents)
 
+        # --- timed-order release (A5-2): "AT T PLUS n" comes due ---
+        # Released BEFORE the snapshot so this tick's anchors/compliance are
+        # judged against the now-effective order. Binding (tenure) starts at
+        # execution, not receipt: step_assigned restamps to the release tick.
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.effective_at is not None and step >= m.effective_at:
+                m.effective_at = None
+                m.step_assigned = step
+
         # --- snapshot ---
         for s in self.roster.soldiers:
             s.prev_pos = s.pos
@@ -660,7 +672,14 @@ class CohortEnv(ParallelEnv):
                     # personal progress — a subordinate's own task; the root's
                     # OPORD counter is mirrored from the team counter below
                     soldier.mission.observe_steps += 1
-                score = compliance(soldier.mission.type, ctx)
+                # a pending order (A5-2) is judged as HOLD at the staging
+                # position until it becomes effective
+                effective_type = (
+                    MissionType.HOLD
+                    if is_pending(soldier.mission, step)
+                    else soldier.mission.type
+                )
+                score = compliance(effective_type, ctx)
                 credit = cfg.compliance_weight * score
                 if score > 0.0 and cfg.tenure_factor > 0.0:
                     # standing-order tenure (B5): positive compliance credit
@@ -877,6 +896,8 @@ class CohortEnv(ParallelEnv):
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
+        elif spec.kind == "execute":
+            self._execute_signal(soldier, ledger)
         elif spec.kind == "order":
             self._issue_order(soldier, spec, ledger)
 
@@ -1027,6 +1048,21 @@ class CohortEnv(ParallelEnv):
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
 
+    def _execute_signal(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """EXECUTE (A5-2): release ALL of this issuer's pending AT-MY-COMMAND
+        orders. One broadcast frees every staged recipient at once — the
+        manual's COMMANDEMENT DU BOND ("PREPAREZ-VOUS ... EN AVANT !").
+        Released orders start binding now: step_assigned restamps."""
+        self._charge_transmission(soldier, ledger, "command")
+        self._say(
+            MessageKind.EXECUTE, soldier.id, None, lang.format_execute(soldier.callsign)
+        )
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.awaiting_signal and m.issuer_id == soldier.id:
+                m.awaiting_signal = False
+                m.step_assigned = self._step_count
+
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
         cfg = self.rewards_cfg
         subs = soldier.living_subordinates(self.roster)
@@ -1059,17 +1095,20 @@ class CohortEnv(ParallelEnv):
                 objective_id=obj_id,
                 supported_id=supported_id,
                 control_name=control_name,
+                awaiting_signal=spec.order_amc,
             )
             return
 
         # churn: reissuing the standing order is radio noise, not command —
-        # a no-op (the mission is NOT restamped, so tenure keeps accruing)
+        # a no-op (the mission is NOT restamped, so tenure keeps accruing).
+        # A timing-qualifier change (pending vs. live) is a different order.
         if (
             recipient.mission is not None
             and recipient.mission.type is spec.order_mission
             and recipient.mission.objective_id == obj_id
             and recipient.mission.extra.get("supported_id") == supported_id
             and recipient.mission.extra.get("control") == control_name
+            and bool(recipient.mission.awaiting_signal) == bool(spec.order_amc)
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             return
@@ -1143,6 +1182,7 @@ class CohortEnv(ParallelEnv):
             objective_id=obj_id,
             supported_id=supported_id,
             control_name=control_name,
+            awaiting_signal=spec.order_amc,
         )
         soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
 
@@ -1228,6 +1268,8 @@ class CohortEnv(ParallelEnv):
         objective_id: int | None,
         supported_id: int | None = None,
         control_name: str | None = None,
+        effective_at: int | None = None,
+        awaiting_signal: bool = False,
     ) -> bool:
         """Transmit an order; if the recipient hears it, apply it (+ WILCO).
 
@@ -1235,6 +1277,9 @@ class CohortEnv(ParallelEnv):
         an out-of-earshot recipient never receives the mission: the ORDER
         still lands on the transcript (it was transmitted), but nothing
         changes and no WILCO comes back — silence is the only clue.
+        Timing qualifiers (A5-2): ``effective_at`` = the tick an "AT T PLUS
+        n" order comes due; ``awaiting_signal`` = "AT MY COMMAND". A pending
+        order stages the recipient near its current position until released.
         Returns True if the order was received and applied.
         """
         extra: dict = {}
@@ -1267,11 +1312,21 @@ class CohortEnv(ParallelEnv):
         else:  # HOLD (and any anchor-less mission): anchor where the order was received
             anchor = recipient.pos
             target = None
+        if effective_at is not None or awaiting_signal:
+            # staging: until the order is effective, compliance is HOLD here
+            extra["staging"] = recipient.pos
         self._say(
             MessageKind.ORDER,
             issuer_id,
             recipient.id,
-            lang.format_order(issuer_cs, recipient.callsign, mission_type, target),
+            lang.format_order(
+                issuer_cs,
+                recipient.callsign,
+                mission_type,
+                target,
+                delay=(effective_at - self._step_count) if effective_at is not None else None,
+                at_my_command=awaiting_signal,
+            ),
         )
         if not self._audible_to(recipient, issuer_id):
             return False
@@ -1296,6 +1351,8 @@ class CohortEnv(ParallelEnv):
             issuer_id=issuer_id,
             step_assigned=self._step_count,
             team_observation=team_observation,
+            effective_at=effective_at,
+            awaiting_signal=awaiting_signal,
             extra=extra,
         )
         recipient.last_order_step = self._step_count
@@ -1483,6 +1540,9 @@ class CohortEnv(ParallelEnv):
         mission = soldier.mission
         if mission is None:
             return None
+        if is_pending(mission, self._step_count):
+            # a pending order (A5-2) stages where it was received
+            return mission.extra.get("staging", mission.anchor)
         anchor = mission.anchor
         if mission.type is MissionType.RALLY:
             leader = self.roster.leader_of(soldier)
@@ -1513,6 +1573,7 @@ class CohortEnv(ParallelEnv):
             or mission.type is not MissionType.ADVANCE
             or mission.extra.get("control") is None
             or mission.extra.get("crossed")
+            or is_pending(mission, self._step_count)  # staging: not advancing yet
         ):
             return
         cm = self.world.control_by_name(mission.extra["control"])
@@ -1550,6 +1611,11 @@ class CohortEnv(ParallelEnv):
         mission = soldier.mission
         if mission is None:
             return False
+        if is_pending(mission, self._step_count):
+            # staging (A5-2): in position = holding near where the order landed
+            if dist_now is None:
+                dist_now = self._anchor_distance(soldier)
+            return dist_now <= IN_POSITION_RADIUS[MissionType.HOLD]
         if mission.team_observation and mission.objective_id is not None:
             return self._team_observer(self.world.objectives[mission.objective_id]) is not None
         if dist_now is None:
@@ -1574,6 +1640,8 @@ class CohortEnv(ParallelEnv):
         if not self.rewards_cfg.fire_discipline or soldier.mission is None:
             return 1.0
         mt = soldier.mission.type
+        if is_pending(soldier.mission, self._step_count):
+            mt = MissionType.HOLD  # staging (A5-2): fire pays only from the staging spot
         if mt in WEAPONS_TIGHT:
             return 0.0
         if mt in POSITION_ANCHORED_FIRE:
@@ -1799,7 +1867,30 @@ class CohortEnv(ParallelEnv):
             objective_id=objective.id if objective else None,
             supported_id=supported_id,
             control_name=parsed.control_name,
+            effective_at=(
+                self._step_count + parsed.delay if parsed.delay is not None else None
+            ),
+            awaiting_signal=parsed.at_my_command,
         )
+        return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
+
+    def inject_execute(self, issuer: str = "HQ") -> Message:
+        """A human issuer broadcasts EXECUTE, releasing all its pending
+        AT-MY-COMMAND orders (A5-2). ``issuer`` is "HQ" or a callsign."""
+        if issuer.upper() == "HQ":
+            issuer_id, issuer_cs = HQ_ID, "HQ"
+        else:
+            issuing = self.roster.by_callsign.get(issuer.upper())
+            if issuing is None or not issuing.alive:
+                msg = f"No living station {issuer!r} on the net."
+                raise lang.OrderParseError(msg)
+            issuer_id, issuer_cs = issuing.id, issuing.callsign
+        self._say(MessageKind.EXECUTE, issuer_id, None, lang.format_execute(issuer_cs))
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.awaiting_signal and m.issuer_id == issuer_id:
+                m.awaiting_signal = False
+                m.step_assigned = self._step_count
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 
     # ------------------------------------------------------------------ #

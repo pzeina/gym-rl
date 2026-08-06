@@ -110,6 +110,10 @@ _CONTROL_RE = re.compile(
     + r")\b"
 )
 
+#: Timing qualifiers (A5-2): "at t plus 5" / "at t+5" / "at my command".
+_T_PLUS_RE = re.compile(r"\bat\s+t\s*(?:plus\s+|\+\s*)(\d+)\b")
+_AT_MY_COMMAND_RE = re.compile(r"\bat\s+my\s+command\b")
+
 
 def grid_ref(pos: tuple[int, int]) -> str:
     """Four-digit NATO-style grid reference, e.g. (14, 7) → 'GRID 1407'."""
@@ -125,6 +129,9 @@ class ParsedOrder:
     objective_name: str | None
     target_callsign: str | None = None  # supported unit (SUPPORT only)
     control_name: str | None = None     # control measure (ADVANCE only)
+    # timing qualifiers (A5-2): at most one of the two is set
+    delay: int | None = None            # "... AT T PLUS <n>": effective n ticks from now
+    at_my_command: bool = False         # "... AT MY COMMAND": pending until EXECUTE
 
 
 class OrderParseError(ValueError):
@@ -153,9 +160,36 @@ def mission_phrase(mission: MissionType, target: str | None) -> str:
     return f"{mission.name} POSITION"  # HOLD
 
 
-def format_order(issuer_cs: str, recipient_cs: str, mission: MissionType, target: str | None) -> str:
-    """Radio form of an order: 'TL1, THIS IS SL1: SEIZE OBJ ALPHA. OUT.'"""
-    return f"{recipient_cs}, THIS IS {issuer_cs}: {mission_phrase(mission, target)}. OUT."
+def timing_phrase(delay: int | None = None, at_my_command: bool = False) -> str:
+    """Timing-qualifier suffix (A5-2): '' | ' AT T PLUS n' | ' AT MY COMMAND'."""
+    if at_my_command:
+        return " AT MY COMMAND"
+    if delay is not None:
+        return f" AT T PLUS {int(delay)}"
+    return ""
+
+
+def format_order(
+    issuer_cs: str,
+    recipient_cs: str,
+    mission: MissionType,
+    target: str | None,
+    *,
+    delay: int | None = None,
+    at_my_command: bool = False,
+) -> str:
+    """Radio form of an order: 'TL1, THIS IS SL1: SEIZE OBJ ALPHA. OUT.'
+
+    With a timing qualifier: '... SEIZE OBJ ALPHA AT T PLUS 5. OUT.' or
+    '... ADVANCE TO PL AMBER AT MY COMMAND. OUT.'
+    """
+    phrase = mission_phrase(mission, target) + timing_phrase(delay, at_my_command)
+    return f"{recipient_cs}, THIS IS {issuer_cs}: {phrase}. OUT."
+
+
+def format_execute(issuer_cs: str) -> str:
+    """The issuer releases all its pending AT-MY-COMMAND orders (A5-2)."""
+    return f"ALL STATIONS, THIS IS {issuer_cs}: EXECUTE. OUT."
 
 
 def format_opord(recipient_cs: str, mission: MissionType, target: str | None) -> str:
@@ -255,6 +289,17 @@ def parse_order(text: str) -> ParsedOrder:
     recipient = m.group("recipient").upper()
     body = m.group("body").strip().lower().rstrip(".")
 
+    # timing qualifiers (A5-2), stripped from the body before the mission scan
+    delay: int | None = None
+    at_my_command = False
+    t_match = _T_PLUS_RE.search(body)
+    if t_match:
+        delay = int(t_match.group(1))
+        body = body[: t_match.start()] + body[t_match.end() :]
+    elif _AT_MY_COMMAND_RE.search(body):
+        at_my_command = True
+        body = _AT_MY_COMMAND_RE.sub("", body)
+
     # Unit-targeted SUPPORT: the order names a friendly callsign, not an
     # objective ('support tl1', 'appuyer tl1', 'cover for tl1').
     sup = _SUPPORT_RE.search(body)
@@ -264,6 +309,8 @@ def parse_order(text: str) -> ParsedOrder:
             mission=MissionType.SUPPORT,
             objective_name=None,
             target_callsign=sup.group(1).upper(),
+            delay=delay,
+            at_my_command=at_my_command,
         )
 
     words = re.findall(r"[a-z]+", body)
@@ -311,4 +358,6 @@ def parse_order(text: str) -> ParsedOrder:
         mission=mission,
         objective_name=objective,
         control_name=control,
+        delay=delay,
+        at_my_command=at_my_command,
     )
