@@ -310,7 +310,6 @@ def test_voice_pays_airtime_like_every_other_transmission():
     doctrine.
     """
     env = _flat_squad()
-    rfn1 = env.roster.by_callsign["RFN1"]
     for i, s in enumerate(env.roster.soldiers):
         s.pos = (10 + i, 10)
     cost = env.rewards_cfg.transmission_cost
