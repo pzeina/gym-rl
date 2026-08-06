@@ -150,9 +150,14 @@ class RewardConfig:
     # died in the open 32:5). With the flag on, the shooter's hit/kill rewards
     # are scaled per core/missions.py: SCREEN → 0 (weapons tight); OBSERVE /
     # SUPPORT / COVER / DEFEND / DENY / HOLD → paid only when firing from the
-    # mission position; RECON (may engage) / SEIZE / CLEAR / RALLY / untasked
-    # → unchanged. Teammate kill-shares are NOT scaled (the shooter's
-    # incentive is the lever).
+    # mission position, OR when the target itself stands inside the position's
+    # engagement envelope (anchor distance <= IN_POSITION_RADIUS +
+    # weapon_range) — fire against an enemy assaulting the position is the
+    # mission wherever the melee pushed the defender (v1.9 defend diagnosis:
+    # the human TL fired on 0.5% of threatened opportunities because off its
+    # 3.5-cell disc its fire earned nothing); RECON (may engage) / SEIZE /
+    # CLEAR / RALLY / untasked → unchanged. Teammate kill-shares are NOT
+    # scaled (the shooter's incentive is the lever).
     fire_discipline: bool = True
     hit_enemy: float = 0.2
     kill_enemy: float = 1.0
