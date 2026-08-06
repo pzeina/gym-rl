@@ -1281,3 +1281,36 @@ terrain (still deferred).
   fixing it lets the nominal price mean what it says. But "what a subordinate is
   owed between completing and being re-tasked" is a doctrine question, so it
   waits. Either way the effect is now measurable from `behavior.json` alone.
+
+- **2026-08-06** — **Unattended cycle 6: the fleet's numbers are peaks, not
+  results — and `fireteam_v7` is the proof.** Its N=100 eval reads **0.95 ± 0.04**
+  against a published fireteam baseline of 84 ± 7. It is not a 0.95 policy. Its
+  curve is `▁▃▆▅▅▂▅▃█▂`: best rolling **94%**, final decile **26%**. `ckpt_best.pt`
+  is written on the best rolling *window*, so evaluating it measures the spike.
+  Best-vs-final across everything measured this session:
+
+  | run | best | final | gap |
+  |---|---|---|---|
+  | squad_v5 (pre-v1.10) | 98% | 93% | 5 |
+  | fireteam_defend_v8 | 97% | 87% | 10 |
+  | fireteam_defend_v9 | 96% | 79% | 17 |
+  | squad_v6 | 98% | 65% | **33** |
+  | fireteam_v7 | 94% | 26% | **68** |
+
+  **Claim, falsifiable**: v1.10 destabilised training. The cleanest contrast is
+  squad at fixed scenario/seed/lr — v5 gives back 5 points, v6 gives back 33.
+  *Refuted by* any post-v1.10 run that converges with a gap under ~10 on a
+  scenario where its pre-v1.10 counterpart also did. `fireteam_defend_v10` and
+  `platoon_v4` are both in flight and will be the next two data points.
+  This is the **D4 collapse the roadmap still lists as unsolved**, and it now
+  has a number. It also means the published fleet table is measuring peaks of
+  runs that may never have converged — the comparison that has been driving
+  every verdict in this project is weaker than it looks.
+  **Tooling fix so no future session repeats it** (`scripts/run_report.py`): a
+  `stability` line now prints the best-final gap on every digest and classifies
+  it `converged` / `UNSTABLE` / `COLLAPSED`, with the threshold set at 15 points
+  from the pre-v1.10 baseline's 5. `tests/test_run_report_stability.py` pins each
+  band against the real shapes above. 425 → 431 tests.
+  This trap caught two consecutive sessions — squad_v6 at N=20 and nearly v9 —
+  which is why it is now a printed verdict rather than two numbers a reader is
+  trusted to subtract.
