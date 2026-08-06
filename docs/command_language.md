@@ -203,13 +203,42 @@ or `None` for traffic that is not a SITREP — so a monitor never hand-rolls a
 regex over the transcript. Formatter and parser are inverses over exactly the
 fields formatted (round-trip test).
 
+## The OPORD's assault estimate (issue #12)
+
+In a scenario with a preparation period the OPORD adds a forward-looking clause —
+the only one in the language, and the only traffic that announces something that
+has not happened yet:
+
+```
+TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS 65. OUT.
+```
+
+`language.parse_opord(text)` reads the line back — `{recipient, mission,
+objective, announced_assault_step}`, or `None` for traffic that is not an OPORD
+— so the deadline survives the trip out to a monitor instead of being said once
+and dropped. The clause sits after the task statement, so `parse_order` still
+returns the same tasking with or without it.
+
+The announced step is the **nominal** hour: the midpoint of the scenario's
+arrival band (`cohort.config.announced_assault_step`, the one definition the
+radio wording, the `time_to_contact` observation and the briefing all read).
+The assault actually arrives somewhere in the band, and that draw is never
+spoken — it is ground truth in `env.oracle()["actual_assault_step"]`. So "was
+the position set before the assault came?" stays an inference, not a lookup.
+
+Under `comm_model="range"` this is a single un-repeated broadcast, so whether a
+given subordinate knows when the assault is due is a real per-listener knowledge
+question, with an operational consequence: a soldier that never heard it cannot
+be expected to be set by H.
+
 ## The operations overlay: `env.briefing()` (issue #10)
 
 `cohort.config.briefing(scenario)` — also `env.briefing()` — returns the static,
 pre-mission overlay as a JSON-ready dict: objective coordinates by name,
 waypoint and phase-line geometry, map size, spawn, the root tasking, the
-doctrinal terrain guarantees (`objective_cover`, `observation_concealment`) and
-the engagement envelope (weapon/vision ranges).
+doctrinal terrain guarantees (`objective_cover`, `observation_concealment`), the
+engagement envelope (weapon/vision ranges) and the announced assault step
+(`announced_assault_step`, above — `None` where there is no preparation period).
 
 It is a pure function of the `ScenarioSpec`, so it is identical across every
 episode and valid **before `reset()`** — header material for an episode stream,

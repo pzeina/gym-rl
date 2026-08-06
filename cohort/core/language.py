@@ -224,17 +224,23 @@ def format_opord(
     recipient_cs: str,
     mission: MissionType,
     target: str | None,
-    h_hour: int | None = None,
+    announced_assault_step: int | None = None,
 ) -> str:
     """Initial operations order from higher HQ to the senior agent.
 
-    ``h_hour`` (v1.10) appends the enemy-arrival estimate for scenarios with a
-    preparation period. It is an ESTIMATE — the assault arrives somewhere in
-    the scenario's band — so the wording is "EXPECT", not a timetable. The
-    clause sits after the task statement, where ``parse_order`` ignores it: the
-    task the OPORD assigns is unchanged by when the enemy is due.
+    ``announced_assault_step`` (v1.10) appends the enemy-arrival estimate for
+    scenarios with a preparation period — "H-hour" in doctrine, hence the
+    spoken form "AT H PLUS <n>". It is an ESTIMATE — the assault arrives
+    somewhere in the scenario's band — so the wording is "EXPECT", not a
+    timetable. The clause sits after the task statement, where ``parse_order``
+    ignores it: the task the OPORD assigns is unchanged by when the enemy is
+    due. :func:`parse_opord` reads the whole line back, clause included.
     """
-    warning = f" EXPECT ASSAULT AT H PLUS {h_hour}." if h_hour is not None else ""
+    warning = (
+        f" EXPECT ASSAULT AT H PLUS {announced_assault_step}."
+        if announced_assault_step is not None
+        else ""
+    )
     return (
         f"{recipient_cs}, THIS IS HQ: OPORD — {mission_phrase(mission, target)}."
         f"{warning} OUT."
@@ -361,6 +367,12 @@ def format_assuming_position(new_cs: str, of_cs: str) -> str:
     return f"ALL STATIONS, THIS IS {new_cs}: ASSUMING {of_cs}'S POSITION. OUT."
 
 
+#: Machine-readable shape of an OPORD (issue #12): the task statement is read
+#: by ``_ORDER_RE`` below, these two pick out what is specific to an OPORD —
+#: that it IS one, and the announced assault step ("H-hour") if it carries one.
+_OPORD_RE = re.compile(r"\bOPORD\b", re.IGNORECASE)
+_ANNOUNCED_ASSAULT_RE = re.compile(r"\bEXPECT\s+ASSAULT\s+AT\s+H\s+PLUS\s+(?P<step>\d+)", re.I)
+
 _ORDER_RE = re.compile(
     r"^\s*(?:(?P<issuer>[A-Za-z]{2,3}\d+)\s*(?:,|:)\s*)?"    # optional issuer prefix (ignored)
     r"(?:this\s+is\s+[A-Za-z]{2,3}\d+\s*(?::|,)\s*)?"        # optional 'THIS IS X:'
@@ -466,3 +478,39 @@ def parse_order(text: str) -> ParsedOrder:
         delay=delay,
         at_my_command=at_my_command,
     )
+
+
+def parse_opord(text: str) -> dict | None:
+    """Read an OPORD back into its fields, or None if the line is not one.
+
+    Inverse of :func:`format_opord` over exactly the fields it formats:
+    ``{"recipient", "mission", "objective", "announced_assault_step"}``. The
+    last is the "AT H PLUS <n>" clause — the step HQ says to expect the
+    assault at — and is None when the OPORD carries no such estimate.
+
+    It exists because the announcement is otherwise lost at the boundary: it
+    is said on the net and then nowhere else, so a monitor reading a corpus
+    either hand-rolls a regex over the transcript or drops the only
+    forward-looking content the net carries (issue #12; issue #10 in
+    miniature, and the same remedy as :func:`parse_sitrep`).
+
+    The announced step is an estimate: the assault actually arrives somewhere
+    in the scenario's band, and that draw is ground truth the cohort is never
+    told (``env.oracle()["actual_assault_step"]``). What the radio says is all
+    a listener knows — which is the point, since under ``comm_model="range"``
+    whether a given subordinate heard this single broadcast at all is a
+    genuine per-listener question.
+    """
+    if not _OPORD_RE.search(text):
+        return None
+    try:
+        order = parse_order(text)
+    except OrderParseError:
+        return None
+    announced = _ANNOUNCED_ASSAULT_RE.search(text)
+    return {
+        "recipient": order.recipient_callsign,
+        "mission": order.mission.name if order.mission is not None else None,
+        "objective": order.objective_name,
+        "announced_assault_step": int(announced.group("step")) if announced else None,
+    }

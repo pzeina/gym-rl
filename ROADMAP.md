@@ -1053,3 +1053,42 @@ terrain (still deferred).
     the current step (succession re-parents it live), each station's standing
     order and the step it was issued, health, and click-through to the
     inspector. 393 → 395 tests.
+- **2026-08-06** — **the OPORD's assault estimate reaches a monitor** (refs #12,
+  external request). This session's own preparation period (`75cc51a`) added
+  the first forward-looking clause the net has ever carried — `EXPECT ASSAULT
+  AT H PLUS 65` — and then dropped it at the boundary: said once in the OPORD,
+  recoverable nowhere. It is the substrate for a class of property the
+  assurance layer could not previously express (time-bounded readiness: "by H
+  minus k, is every station set?"), with the deadline named on the radio
+  rather than supplied by hand.
+  * **`language.parse_opord(text)`** — inverse of `format_opord` over exactly
+    the fields it formats: `{recipient, mission, objective,
+    announced_assault_step}`, `None` for traffic that is not an OPORD. Same
+    remedy as `parse_sitrep` for #10: a monitor reads the clause back through
+    the language module instead of hand-rolling a regex that goes stale when
+    the wording moves. `parse_order` still returns the identical tasking with
+    or without the clause — the round trip covers the clause now, not just
+    the task statement.
+  * **`briefing()["announced_assault_step"]`** — the same number as header
+    material, so a corpus that predates the clause (or a listener that never
+    heard the single un-repeated broadcast under `comm_model="range"`) still
+    gives a monitor the deadline. It is a pure function of the scenario, so
+    it stays header material rather than per-episode state.
+  * **One definition of "what HQ announces"**: `config.announced_assault_step`
+    (the band's midpoint). The radio wording, the `time_to_contact`
+    observation and the briefing all read it, so the three cannot drift —
+    the #10 failure mode again, one level up.
+  * **The actual arrival stays hidden, on purpose.** Only the NOMINAL hour is
+    published; the per-episode draw goes to `env.oracle()` as
+    `actual_assault_step` (next to the announcement, so a consumer can score
+    one against the other without re-reading the transcript). The arrival
+    band is deliberately *not* in the briefing either: the spread between
+    announcement and arrival is precisely what an outside monitor should
+    characterise from behaviour. Tests assert no observable payload and no
+    message ever names the drawn step — the transcript's only `H PLUS n` is
+    the nominal 65, before and after H.
+  Same boundary note as #10: the request asked for the parse in
+  `cohort/tap.py`, which exists only on the assurance layer's
+  `assurance-integration` branch and is theirs to edit. This side supplies
+  the data and the parser; the payload writer stays with them. 395 → 402
+  tests, ruff clean.

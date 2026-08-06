@@ -22,7 +22,7 @@ import numpy as np
 from gymnasium import spaces
 from pettingzoo import ParallelEnv
 
-from cohort.config import ScenarioSpec, build_org, get_scenario
+from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
 from cohort.core import language as lang
 from cohort.core.missions import (
     IN_POSITION_RADIUS,
@@ -1758,7 +1758,10 @@ class CohortEnv(ParallelEnv):
             return
         lo, hi = band
         self._h_hour = int(self._rng.integers(lo, hi + 1))
-        self._h_hour_nominal = (lo + hi) // 2
+        # what HQ announces is defined once, in cohort.config, so the radio
+        # wording, the observation countdown and the published briefing
+        # cannot drift apart (issue #12)
+        self._h_hour_nominal = announced_assault_step(self.spec_cfg)
 
     def _in_preparation(self) -> bool:
         """True while the assault is still forming up (v1.10).

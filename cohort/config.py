@@ -414,6 +414,25 @@ def get_scenario(name: str) -> ScenarioSpec:
     return SCENARIOS[name]
 
 
+def announced_assault_step(scenario: str | ScenarioSpec) -> int | None:
+    """The step at which HQ *announces* the assault, or None (refs issue #12).
+
+    This is the "H PLUS <n>" the OPORD says on the net: the midpoint of the
+    scenario's arrival band (``ScenarioSpec.assault_h_hour``), i.e. the nominal
+    hour the cohort plans against. It is a pure function of the scenario, so
+    it is announced identically in every episode and known before ``reset()``.
+
+    The step the assault *actually* arrives at is drawn per episode from the
+    band and is never said out loud — it stays in ``env.oracle()``
+    (``actual_assault_step``). Keeping the announcement's definition here, in
+    one place, is what stops the radio wording, the observation countdown and
+    the published briefing from drifting apart.
+    """
+    spec = get_scenario(scenario) if isinstance(scenario, str) else scenario
+    band = spec.assault_h_hour
+    return None if band is None else (band[0] + band[1]) // 2
+
+
 def briefing(scenario: str | ScenarioSpec) -> dict:
     """The operations overlay: static, pre-mission, JSON-ready (refs issue #10).
 
@@ -456,6 +475,16 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         "root_mission": spec.root_mission.name,
         "root_objective": spec.root_objective,
         "max_steps": spec.max_steps,
+        # the OPORD's forward-looking clause (issue #12): the step HQ names on
+        # the net as when to expect the assault ("EXPECT ASSAULT AT H PLUS
+        # 65"), or None for a scenario with no preparation period. Announced,
+        # therefore header material — a monitor holds the deadline even for a
+        # corpus that predates the clause, or a listener that never heard it.
+        # The arrival band it is drawn from is deliberately NOT published: the
+        # spread between the announcement and the actual arrival is what an
+        # outside monitor is meant to characterise from behaviour, and the
+        # actual arrival itself stays in env.oracle().
+        "announced_assault_step": announced_assault_step(spec),
         # doctrinal terrain guarantees — static facts about the map family,
         # unlike the grid itself
         "objective_cover": spec.objective_cover,
