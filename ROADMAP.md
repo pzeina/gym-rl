@@ -1413,3 +1413,25 @@ terrain (still deferred).
   printed as `TASK share/preference` (`ADVANCE 0.96/0.00`). `doctrine_
   preference_rate` is unchanged to the digit, so the pinned corpora stay
   comparable. 432 → 435 tests.
+
+- **2026-08-06** — **Correction to cycles 5 and 7, owned here rather than buried
+  in the #14 entry.** I twice attributed the doctrine-preference collapse to the
+  root-claim fix ("both arrived with v9", "the ADVANCE-under-DEFEND doctrine gap
+  is the leading suspect for the doctrine half"). **That is refuted by the longer
+  record**: `fireteam_defend_v6` sat at 0.011 and `v7` at 0.003, two epochs
+  before `is_root_opord_claim` existed. I compared v9 against v8 alone and
+  treated a single-run difference as a trend; v8's 0.172 was the outlier in the
+  series, not v9's 0.0015. I also stated ADVANCE under DEFEND was "not
+  doctrine-valid" — it is doctrine-**allowed** (`allowed_derivations(DEFEND)` =
+  DEFEND, SUPPORT, OBSERVE, HOLD, ADVANCE; ADVANCE is simply not `[0]`), and no
+  defend corpus commits a single doctrine violation.
+  **What survives, now properly isolated.** Obedience latency across the whole
+  defend line at N=100: v6 **1.19**, v7 4.67, v8 **1.26**, v9 **11.24**, v10
+  **13.06**. That regression *is* new with v9, is ~9× the v6/v8 level and ~2.7×
+  v7's elevated value, and the contact reprice did not touch it. **Obedience
+  latency alone is the next target**, and it is genuinely attributable to
+  opening the root's MISSION COMPLETE — the one behavioural cost of `cc07199`
+  that stands up to the longer series.
+  **Method note, for the next session**: two of this session's three wrong calls
+  came from A/B-ing against the single most recent run instead of the series.
+  A "collapse" needs at least three prior points before it is a trend.
