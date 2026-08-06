@@ -32,11 +32,13 @@ import argparse
 import gzip
 import json
 import re
+from dataclasses import replace
 from typing import IO
 
 import numpy as np
 import torch
 
+from cohort.config import get_scenario
 from cohort.core.oracle import observe as oracle_observe
 from cohort.core.orders import HQ_ID, Message
 from cohort.env.cohort_env import CohortEnv, make_env
@@ -234,8 +236,23 @@ def tap_episodes(
     truth_path: str,
     *,
     greedy: bool = False,
+    comm_model: str | None = None,
+    comm_range: float | None = None,
 ) -> dict:
-    """Run seeded episodes and write the two streams. Returns summary counts."""
+    """Run seeded episodes and write the two streams. Returns summary counts.
+
+    ``comm_model``/``comm_range`` override the scenario's audibility settings.
+    Under the shipped default (``"global"``) every living station hears every
+    message, so all living agents share one observation history and the
+    assurance layer's per-observer projection is degenerate. ``"range"`` gates
+    audibility by euclidean distance, which is what gives the layer a
+    non-trivial ``obs_a`` to monitor.
+
+    This changes the *system*, not merely the recording: agents genuinely miss
+    traffic, so a checkpoint trained under the global net is off-distribution
+    here. Corpora produced this way are a comms-degradation arm and must be
+    labelled as such -- never a substitute for a range-trained checkpoint.
+    """
     net = None
     if checkpoint is not None:
         from cohort.training.train import load_policy
@@ -245,7 +262,16 @@ def tap_episodes(
     if scenario is None:
         raise ValueError("Need a scenario when tapping the random baseline.")
 
-    env = make_env(scenario)
+    spec = get_scenario(scenario)
+    if comm_model is not None or comm_range is not None:
+        if comm_model is not None and comm_model not in ("global", "range"):
+            raise ValueError(f"comm_model must be 'global' or 'range', got {comm_model!r}")
+        spec = replace(
+            spec,
+            comm_model=comm_model if comm_model is not None else spec.comm_model,
+            comm_range=comm_range if comm_range is not None else spec.comm_range,
+        )
+    env = make_env(spec)
 
     n_msgs = 0
     outcomes: dict[str, int] = {}
@@ -265,6 +291,12 @@ def tap_episodes(
             "base_seed": seed,
             "greedy": greedy,
             "policy": "checkpoint" if net is not None else "masked-random",
+            # Self-describing audibility, for the same reason as `missions`:
+            # the observer sets in this stream mean something different under
+            # each model, and the assurance layer must read the regime rather
+            # than infer it from observer-set sizes.
+            "comm_model": spec.comm_model,
+            "comm_range": spec.comm_range,
         }
         out.write(json.dumps(header, sort_keys=True) + "\n")
         truth.write(json.dumps(header, sort_keys=True) + "\n")
@@ -320,6 +352,15 @@ def main() -> None:
     parser.add_argument("--out", required=True, help="observable stream path (.jsonl or .jsonl.gz)")
     parser.add_argument("--truth", required=True, help="truth stream path (.jsonl or .jsonl.gz)")
     parser.add_argument("--greedy", action="store_true", help="argmax actions instead of sampling")
+    parser.add_argument(
+        "--comm-model",
+        default=None,
+        choices=("global", "range"),
+        help="override scenario audibility; 'range' gates by distance (comms-degradation arm)",
+    )
+    parser.add_argument(
+        "--comm-range", type=float, default=None, help="audible radius under --comm-model range"
+    )
     args = parser.parse_args()
     checkpoint = None if args.random else args.checkpoint
     if checkpoint is None and not args.random:
@@ -332,6 +373,8 @@ def main() -> None:
         args.out,
         args.truth,
         greedy=args.greedy,
+        comm_model=args.comm_model,
+        comm_range=args.comm_range,
     )
     print(json.dumps(summary, sort_keys=True))
 
