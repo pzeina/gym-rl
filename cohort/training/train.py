@@ -457,6 +457,19 @@ def main() -> None:
             default=str,
         )
     )
+    # Import every post-training entry point BEFORE the long run starts, so the
+    # process holds ONE consistent snapshot of the code for its whole life.
+    # These used to be imported lazily at the end, which meant a run that began
+    # at commit A and finished after commit B landed would mix A's
+    # already-imported modules with B's freshly-read ones. fireteam_defend_v10
+    # died exactly that way — it started before `is_done_admissible` existed, so
+    # its in-memory cohort.env.actions had no such name, and the newer
+    # cohort.metrics it then read off disk failed to import it. Three and a half
+    # million steps produced no evaluation. Editing the tree during a run is
+    # normal here; losing a finished run to it is not.
+    from cohort.training.evaluate import evaluate
+    from cohort.viz.plots import plot_training
+
     trainer = Trainer(
         args.scenario, cfg, run_dir, seed=args.seed, tensorboard=not args.no_tb, init_from=args.init_from
     )
@@ -478,13 +491,9 @@ def main() -> None:
             print(f"post-training artifact FAILED: {name} ({type(exc).__name__}: {exc})")
 
     def _curves() -> None:
-        from cohort.viz.plots import plot_training
-
         print(f"curves → {plot_training(run_dir)}")
 
     def _eval() -> None:
-        from cohort.training.evaluate import evaluate
-
         ckpt = run_dir / ("ckpt_best.pt" if (run_dir / "ckpt_best.pt").exists() else "ckpt_latest.pt")
         evaluate(
             str(ckpt),
