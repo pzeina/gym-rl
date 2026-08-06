@@ -149,10 +149,21 @@ terrain (still deferred).
   WITHIN hierarchy (masks: 436 ± 30k to sustained-80% vs 583 ± 182k without) —
   the flat all-tasked team is fastest to 80% (310k) on this 7-agent scenario.
   Full write-up + curves: `docs/ablation.md`; see the progress log.)*
-- `[ ]` **B4. Transparency probe** — can a reader predict behavior from the net alone?
+- `[x]` **B4. Transparency probe** — can a reader predict behavior from the net alone?
   **DoD**: a scripted probe (show transcript-so-far, predict each agent's next
   destination/posture; measure accuracy) — a proxy for the founding promise that
   the command language explains the behavior.
+  *(done 2026-08-06, and the promise is honestly **half-kept**: `cohort/probe.py`
+  — a deterministic net-following rule engine scored per (step × living agent)
+  over all 8 published checkpoints (N=30, seeds 500–529, K=15) against
+  majority + random baselines. Posture beats random everywhere (+0.07…+0.37);
+  destination LOSES to the OPORD-only majority baseline on every checkpoint
+  (−0.16…−0.43) — leaf-level order traffic churns objectives faster than
+  execution and does not bind behavior. Where anchors are stable the net does
+  explain behavior (defenses 0.55–0.60; the defend-BRIQUE TL at 0.99), and
+  FIRING predictability tracks CONTACT discipline exactly (0.57 vs 0.02 recall
+  on the two defenses). Full method, tables, failure modes, and candidate
+  fixes: `docs/transparency.md`; see the progress log.)*
 - `[ ]` **A5. Richer order vocabulary** — phase lines / "AT MY COMMAND" timing,
   ATTACH/DETACH task organization, simple formations (wedge/file/line).
   **DoD**: language round-trip tests for each new form; doctrine + masks extended;
@@ -522,6 +533,33 @@ terrain (still deferred).
   Honest verdict in `docs/ablation.md`: robustness + interpretability
   claim holds; raw sample efficiency vs flat does not at this scale
   (platoon-depth rerun is the follow-up).
+- **2026-08-06** — **B4 done: transparency probe** (262 → 267 tests;
+  commits b0edb48 + 08baa23 + the campaign). `cohort/probe.py`: given ONLY
+  the transcript-so-far plus static briefing (objectives, spawn, org chart
+  — no positions, no oracle), a deterministic rule engine predicts every
+  living agent's next-15-step destination (per-objective / LEADER / HOLD)
+  and posture (STATIC / MOVING / FIRING): standing orders from ORDER/OPORD
+  text, DONE+confirmation clears, succession broadcasts replayed through
+  the roster's devolution rules, SITREP/TRAP grids + assumed 1 cell/step
+  route progress as the only position model, CONTACT grids as the only
+  enemy picture. Scored per (step × agent) on all 8 published checkpoints
+  (B2 protocol; ~239k pairs total) vs majority + random baselines; CLI
+  `python -m cohort.probe`, results in `runs/<run>/probe.json`. **The
+  honest verdict**: posture beats random everywhere (best +0.37); but
+  destination loses to the majority baseline — which IS the OPORD
+  objective — on all 8 checkpoints (squad 0.25 vs 0.52, platoon 0.14 vs
+  0.38 and below random, patrol-BRIQUE 0.24 vs 0.46): **doctrine-valid
+  order traffic churns objectives every cooldown window and does not bind
+  behavior at K=15** — B3's interpretability claim holds for form, not
+  semantics. Counter-evidence that proves the mechanism: stable-anchor
+  defenses probe at 0.55–0.60 (defend-BRIQUE's TL 0.99), and FIRING
+  predictability tracks CONTACT discipline exactly (defenses: FIRING
+  recall 0.57 vs 0.02 at report recall 0.90 vs 0.03). One documented
+  calibration pass (closure-based destination truth replacing a
+  nearest-anchor definition that measured formation geometry). Write-up
+  with failure modes (untasked drift, riposte, no radio form for
+  formation-keeping, commander self-preservation off-net) and candidate
+  order-economics fixes: `docs/transparency.md`.
 - **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
   `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
   only, consumes no RNG — recorded episodes bit-identical, tested) and
