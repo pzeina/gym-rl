@@ -18,6 +18,9 @@ grammar, tested by round-trip tests.
 | DONE_CONFIRM | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.` |
 | DONE_REJECT | leader/HQ → claimant (auto) | `RFN1, THIS IS TL1: NEGATIVE, CONTINUE MISSION. OUT.` |
 | SUPPORT_END | supporter → its leader (auto) | `SL1, THIS IS TL2: SUPPORT ENDED, TL1 IS DOWN. STANDING BY. OVER.` |
+| EXECUTE | issuer → all stations | `ALL STATIONS, THIS IS SL1: EXECUTE. OUT.` — releases every AT-MY-COMMAND order this issuer has pending (A5-2) |
+| SYNC_PROPOSE | agent → nearby peers (**voice**) | `RFN2 RFN3, THIS IS RFN1: PREPARE TO BOUND ON MY SIGNAL. OUT.` (A5-4) |
+| SYNC_GO | proposer → its peers (**voice**) | `RFN1: GO! OUT.` (A5-4) |
 | CASUALTY | HQ → all stations (auto) | `ALL STATIONS: TL1 IS DOWN. OUT.` |
 | TRAP | HQ → all stations (auto) | `ALL STATIONS: RFN2 HIT A DEVICE AT GRID 1110. OUT.` |
 | TAKING_COMMAND | broadcast (auto) | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` — recursive fills further down the chain: `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` |
@@ -41,14 +44,25 @@ WILCO line disappears.
 ## Order grammar (what you can type)
 
 ```
-<CALLSIGN> [,:] <TASK-KEYWORD> [obj|objective] <ALPHA|BRAVO|CHARLIE|DELTA>
+<CALLSIGN> [,:] <TASK-KEYWORD> [obj|objective] <ALPHA|BRAVO|CHARLIE|DELTA>  [<TIMING>]
 <CALLSIGN> [,:] support|appuyer|cover [for] <CALLSIGN>     (unit-targeted SUPPORT)
+<CALLSIGN> [,:] advance [to] [wp|pl] <CONTROL-NAME>        (control-measure ADVANCE, A5)
+<CALLSIGN> [,:] formation column|colonne|line|ligne|wedge  (element stance, A5-3)
 <CALLSIGN> [,:] rally|regroup [on me]
 <CALLSIGN> [,:] hold [position]
+
+TIMING       := at t plus <n> | at t+<n> | at my command          (A5-2)
+CONTROL-NAME := gold|silver|copper|iron  (waypoints, "WP")
+              | amber|cobalt|crimson     (phase lines, "PL")
 ```
 
 Case-insensitive; a trailing `OUT.`/`OVER.` and an issuer prefix (`X, THIS IS Y:`) are
-accepted and ignored. Callsigns are `<RANK><n>`: `SL1`, `TL2`, `RFN3`…
+accepted and ignored. Callsigns are `<RANK><n>`: `SL1`, `TL2`, `RFN3`… A timing
+qualifier may ride on any mission-carrying order: `AT T PLUS <n>` makes it effective
+`n` ticks from now; `AT MY COMMAND` stages it until the issuer's EXECUTE (from the
+console: `env.inject_execute(issuer)`). A pending recipient holds where the order
+landed. FORMATION orders carry no mission — the recipient keeps its task; the order
+sets how its *element* moves and requires a recipient that actually leads one.
 
 ### Tactical tasks and synonyms (MICAT set — see docs/missions.md)
 
@@ -65,6 +79,8 @@ accepted and ignored. Callsigns are `<RANK><n>`: `SL1`, `TL2`, `RFN3`…
 | CLEAR | clear, destroy, engage, attack, eliminate, neutralize, fix |
 | RALLY | rally, regroup, assemble, return |
 | HOLD | hold, halt, stop (no objective ⇒ hold in place) |
+| ADVANCE | advance, proceed — needs a control measure: `advance to wp gold`, `advance pl amber` (A5) |
+| *(stance)* | formation column/colonne, line/ligne, wedge — no mission payload (A5-3) |
 
 ### Validation
 
@@ -116,7 +132,16 @@ who *hears* a transmission, not who may make one — everyone shares the frequen
 
 Airtime itself is costed: every emitted learned transmission draws
 `RewardConfig.transmission_cost` (default −0.01), so speaking is only worth it when
-the message is.
+the message is. The EXECUTE broadcast (A5-2) is order-class command traffic and is
+arbitrated and costed like an order.
+
+### Voice traffic is not radio (A5-4)
+
+`SYNC_PROPOSE` / `SYNC_GO` are **spoken** — the manual's bond par binôme is
+commanded "à la voix ou aux gestes" (pp. 14-15). They carry `voice=True` on the
+transcript, reach only ~`voice_range` (6 cells; peers are registered at propose
+time), are never net-arbitrated, and cost no airtime. The frequency stays free
+while a binôme synchronizes its bound.
 
 ### Dedup doctrine: the first accurate CONTACT wins
 

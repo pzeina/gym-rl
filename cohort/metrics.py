@@ -357,6 +357,59 @@ def _retasks(trace: dict) -> dict[str, Any]:
     }
 
 
+def _vocabulary(trace: dict) -> dict[str, Any]:
+    """A5 vocabulary usage: what share of the traffic uses the new forms.
+
+    Counts ADVANCE orders (control-measure targets), timing-qualified orders
+    (AT T PLUS / AT MY COMMAND) with their EXECUTE releases, FORMATION stance
+    orders, and trinôme sync traffic (proposals / GO bounds); plus the share
+    of living-agent steps governed by a formation stance (own, or the direct
+    leader's — the geometry actually being shaped).
+    """
+    advance = timed = formation = executes = proposals = bounds = 0
+    stance_steps = 0
+    agent_steps = 0
+    for step in trace["steps"]:
+        stanced = {
+            rec["cs"] for rec in step["soldiers"] if rec.get("formation") is not None
+        }
+        for rec in step["soldiers"]:
+            if not rec["alive"]:
+                continue
+            agent_steps += 1
+            if rec["cs"] in stanced or rec.get("leader") in stanced:
+                stance_steps += 1
+        for msg in step["messages"]:
+            kind = msg["kind"]
+            if kind == "execute":
+                executes += 1
+            elif kind == "sync_propose":
+                proposals += 1
+            elif kind == "sync_go":
+                bounds += 1
+            elif kind in ("order", "opord"):
+                try:
+                    parsed = lang.parse_order(msg["text"])
+                except lang.OrderParseError:  # pragma: no cover
+                    continue
+                if parsed.formation is not None:
+                    formation += 1
+                if parsed.mission is MissionType.ADVANCE:
+                    advance += 1
+                if parsed.delay is not None or parsed.at_my_command:
+                    timed += 1
+    return {
+        "advance_orders": advance,
+        "timed_orders": timed,
+        "execute_signals": executes,
+        "formation_orders": formation,
+        "sync_proposals": proposals,
+        "sync_bounds": bounds,
+        "stance_steps": stance_steps,
+        "stance_agent_steps": agent_steps,
+    }
+
+
 def _false_complete(trace: dict) -> tuple[int, int]:
     """(DONE reports transmitted, of which rejected by the superior)."""
     dones = 0
@@ -519,6 +572,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "succession_unrecovered": unrecovered,
         "coverage_pairs": pairs,
         "coverage_covered": covered,
+        **_vocabulary(trace),
         **_human_exposure(trace),
     }
 
@@ -588,6 +642,14 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "succession_events": total("succession_events"),
         "succession_unrecovered": total("succession_unrecovered"),
         "coverage_time": _ratio(total("coverage_covered"), total("coverage_pairs")),
+        # A5 vocabulary usage
+        "advance_orders_per_episode": _ratio(total("advance_orders"), n_eps),
+        "timed_orders_per_episode": _ratio(total("timed_orders"), n_eps),
+        "execute_signals_per_episode": _ratio(total("execute_signals"), n_eps),
+        "formation_orders_per_episode": _ratio(total("formation_orders"), n_eps),
+        "sync_proposals_per_episode": _ratio(total("sync_proposals"), n_eps),
+        "sync_bounds_per_episode": _ratio(total("sync_bounds"), n_eps),
+        "stance_share": _ratio(total("stance_steps"), total("stance_agent_steps")),
         "human_death_rate": _ratio(sum(ep["human_died"] for ep in humans), len(humans)),
         "human_mean_enemy_dist": _mean([ep["human_mean_enemy_dist"] for ep in humans]),
         "human_mean_objective_dist": _mean([ep["human_mean_objective_dist"] for ep in humans]),
@@ -607,6 +669,11 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("false_complete_rate", "false-COMPLETE rate", "{:.2f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
     ("coverage_time", "subordinate coverage time", "{:.2f}"),
+    ("advance_orders_per_episode", "ADVANCE orders / ep", "{:.1f}"),
+    ("timed_orders_per_episode", "timed orders / ep", "{:.2f}"),
+    ("formation_orders_per_episode", "FORMATION orders / ep", "{:.2f}"),
+    ("stance_share", "stance-governed step share", "{:.2f}"),
+    ("sync_bounds_per_episode", "sync bounds (GO) / ep", "{:.2f}"),
     ("human_mean_enemy_dist", "human: mean dist to enemy", "{:.1f}"),
     ("human_ring_entries_mean", "human: ring entries / ep", "{:.2f}"),
     ("human_death_rate", "human: death rate", "{:.2f}"),

@@ -185,12 +185,22 @@ terrain (still deferred).
   vocabulary (formation-keeping/untasked drift/route doglegs have no radio
   form → A5), and the majority baseline rises with the fix. See the progress
   log and `docs/transparency.md` §B5.
-- `[ ]` **A5. Richer order vocabulary** — phase lines / "AT MY COMMAND" timing,
-  ATTACH/DETACH task organization, simple formations (wedge/file/line).
-  **DoD**: language round-trip tests for each new form; doctrine + masks extended;
-  at least one trained scenario exercising the new orders. *(B5 sharpened the
-  case: with churn priced away, the probe's remaining destination error is
-  exactly the vocabulary this item adds.)*
+- `[x]` **A5. Richer order vocabulary** — *(owner scope 2026-08-06: NO
+  FOLLOW-ME order — rejected; ATTACH/DETACH out of scope. In: control
+  measures + ADVANCE, order timing, formations, trinôme sync; one breaking
+  cycle, all scenarios retrained.)* Implemented as A5-1..A5-5: named
+  waypoints/phase lines with `ADVANCE TO WP/PL <X>`; `AT T PLUS n` /
+  `AT MY COMMAND` + EXECUTE staging; `FORMATION COLUMN|LINE|WEDGE` element
+  stances (manual pp. 14-15), reward-shaped, never forced; SYNC_PROPOSE/GO
+  voice bounds with covered-movement debuff. BREAKING: Discrete 157 → 228,
+  Box 137 → 166. **DoD met**: round-trips for every new form, doctrine +
+  masks extended, and every retrained scenario exercises the new orders
+  (platoon: 38.6 ADVANCE + 48.7 FORMATION orders/ep, stance-governed 73%
+  of steps, 101 sync bounds/ep). The A5-5 stretch target — probe beating
+  the OPORD-majority baseline on ≥2 of the three B5 scenarios — was
+  **missed on all three** (documented honestly in
+  `docs/transparency.md` §A5); squad/patrol gaps still improved to the
+  best ever measured. See the progress log.
 
 ## Backlog (unscheduled)
 
@@ -618,6 +628,95 @@ terrain (still deferred).
   A5. Predictor and ground truth untouched (the B4 measuring stick stands).
   metrics.md baseline refreshed for all 8 published checkpoints (the five
   non-B5 checkpoints re-swept bit-identically for the new re-task rows).
+- **2026-08-06** — **A5 mechanics** (282 → 337 tests; commits 8ae8223 /
+  c1d55ae / def4afe / 955ffaa — one breaking cycle, owner scope: no
+  FOLLOW-ME, no ATTACH/DETACH):
+  1. *A5-1 control measures + ADVANCE* — named WAYPOINTS (GOLD/SILVER/
+     COPPER/IRON, standable, objective-like slots in obs) and PHASE LINES
+     (AMBER/COBALT/CRIMSON segments; dynamic nearest-point anchor, crossing
+     by side flip) on every preset — they name the terrain B4/B5 showed
+     routes dogleg through. `MissionType.ADVANCE` (appended; earlier
+     one-hot indices stable) with full round-trips
+     (`TL1, ADVANCE TO WP GOLD`), doctrine (derivable from RECON/SEIZE/
+     DEFEND/DENY; derives ADVANCE/SUPPORT/OBSERVE), rendering
+     (dashboard + matplotlib), and probe truth/predictor support
+     (CM_REGION 4.0).
+  2. *A5-2 timing* — `AT T PLUS n` / `AT MY COMMAND` qualifiers on any
+     order (parser+formatter+inject), pending orders stage the recipient
+     (compliance = HOLD at the staging spot, DONE masked, tenure restamps
+     at release), EXECUTE_SIGNAL broadcasts release all of an issuer's
+     staged orders at once (the COMMANDEMENT DU BOND); learned AMC
+     variants for ADVANCE orders; pending state observable; probe honors
+     timing (staging → target after EXECUTE/T).
+  3. *A5-3 formations* — COLUMN/LINE/WEDGE element stances ordered to
+     LEADERS (`FORMATION COLUMN`; pp. 14-15 — WEDGE stands in for the
+     colonne double per owner scope), persistent, dying with the leader;
+     geometry in the leader's heading frame reward-shaped
+     (`formation_bonus` 0.03, watermark-gated on the leader's best anchor
+     distance so it telescopes — terminal dominance untouched), never
+     masked/forced; stance one-hot in obs; probe predicts untasked
+     stanced members from their leader (first-ever LEADER-class
+     predictions).
+  4. *A5-4 trinôme sync* — SYNC_PROPOSE/SYNC_GO by VOICE (voice_range 6,
+     never net-arbitrated, no airtime; `Message.voice` flag), peers =
+     same element or adjacent trinôme at propose time, 8-step windows;
+     synchronized movers closing NEW ground under a COVERING group-mate
+     earn `bound_bonus` 0.05 (order-keyed watermark: re-bounding old
+     ground pays zero) and the P2 covered-movement debuff vs attackers.
+  BREAKING: Discrete(157) → 228, Discrete obs Box(137) → 166; all
+  pre-A5 checkpoints incompatible by construction.
+- **2026-08-06/07** — **A5-5 retrain campaign + re-probe + republication**
+  (all evals N=100 sampled, 95% CI; bounds = previous published − 5;
+  KL guard + D4 best-save gate on; probe N=30 seeds 500–529):
+  1. *fireteam_v6* (2.5M scratch, seed 1) — **84% ± 7** (bound 73 ✓,
+     prev 78). D4 dips at ~1.0M and ~1.55M, both self-recovered;
+     ckpt_best at a genuine 0.95-rolling peak (1.16M).
+  2. *squad_v5* (3M scratch, seed 3) — **93% ± 5** (bound 77 ✓, prev
+     82 — the strongest squad since v1.2). No terminal collapse; peak
+     0.98.
+  3. *fireteam_defend_v6* (3.5M scratch, seed 12) — **51% ± 10**
+     (bound 68 **✗ by 17**, documented). Never stabilized above 0.54
+     rolling; oracle: deaths ON the objective (mean 5.2 cells), the
+     four-attacker attrition fight is simply lost. Diagnosed adjustment
+     *fireteam_defend_v6b* (ent 0.02, full 3.5M rerun) peaked 0.19 —
+     retrain + adjustment both spent; the miss stands. ckpt_latest
+     measured too (25% ± 8); ckpt_best published.
+  4. *squad_recon_v5* (3M scratch, seed 13; stopped 0.71M at its
+     signature terminal D4 collapse — flat 0.0 for 50k steps, sixth in
+     the scenario's history) — 77% ± 8 (bound 80 ✗ by 3). Diagnosed
+     adjustment *squad_recon_v5b* (ent 0.02 — the recipe that survives
+     recon) survived all 3M: **94% ± 5** (bound 80 ✓, prev 85) —
+     published.
+  5. *squad_screen_v3* (2M scratch, seed 17) — **98% ± 3** (bound 87 ✓,
+     prev 92).
+  6. *patrol_brique_v3* (fine-tune from squad_v5 @1e-4; converged
+     0.96–1.0 from the first window, stopped at 0.81M/3M long-converged
+     per the P6 precedent) — **95% ± 4** (bound 94 ✓).
+  7. *defend_brique_v2* (fine-tune from fireteam_defend_v6 @1e-4;
+     stopped 2.05M/3M in a converged 0.81–0.93 band, ckpt_best at a
+     genuine 0.98 peak) — **85% ± 7** (bound 82 ✓): the 51% assault
+     parent transferred cleanly to the asymmetric-band defense.
+  8. *platoon_v3* (curriculum from squad_v5 @1e-4, seed 7; instant
+     transfer across the space break — ≥0.9 rolling within 50k; stopped
+     0.40M/3M long-converged) — **98% ± 3** (bound 86 ✓, prev 91 — best
+     platoon ever, and its net now carries 39 ADVANCE + 49 FORMATION
+     orders/ep with 101 sync bounds).
+  **Vocabulary adoption** (N=100 eval traffic): ADVANCE 4–39/ep, timed
+  orders 2.6–17/ep with EXECUTE releases, FORMATION 13–49/ep with
+  stances governing 54–76% of agent-steps wherever orderable, sync
+  bounds 6–101/ep. **Probe headline (honest)**: the DoD stretch target —
+  destination beating the OPORD-majority baseline on ≥2 of the three B5
+  scenarios — **missed on all three** (fireteam −0.196, squad −0.090,
+  patrol −0.172 gaps vs majority) under the extended measuring stick
+  (control-measure truth classes; disclosed in transparency.md §A5).
+  Squad and patrol gaps are the best their scenarios have ever measured;
+  the fireteam re-learned churn *through* the new vocabulary (7.1 priced
+  re-tasks/ep — pricing is paid, not avoided). Deviations: recon_v5
+  stopped early at a terminal collapse; patrol/platoon stopped
+  long-converged (P6 precedent); defend spent retrain + adjustment and
+  missed; B2 behavior recorded via each run's `behavior.json` at the
+  N=100 eval (seed 123) rather than a separate N=30/seed-500 sweep —
+  the probe runs carry the seeds-500–529 protocol.
 - **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
   `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
   only, consumes no RNG — recorded episodes bit-identical, tested) and
