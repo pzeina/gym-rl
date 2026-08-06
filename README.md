@@ -58,9 +58,13 @@ commanding a squad — and the action mask expands with the acting rank.
 (`ScenarioSpec.root_human`) — marked with a gold ring in every view, observable to
 teammates (own/leader is-human observation flags). An org must satisfy the
 humans-outrank-all-non-humans invariant (validated at roster build). A human's death
-costs every present agent `RewardConfig.human_death` (−25, mission-failure scale) on
-top of the normal penalties; the episode continues and succession exercises — the
-cohort learns that keeping the commander alive is part of the mission.
+ends nothing — the episode continues and succession exercises. Losing the commander
+costs the rank-weighted `teammate_death` like any casualty, scaled by its authority;
+the separate `RewardConfig.human_death` shock (−25 per present agent) is **disabled by
+default since v1.10**, because a correlated −25 × n_agents hit in a single step is the
+standing suspect behind the D4 convergence collapses. The knob remains — set it
+negative to price the commander again. Human preservation is now *measured* rather than
+priced, via the `human_death_rate` and exposure metrics (see `docs/metrics.md`).
 
 ## Missions and doctrine (MICAT / PROTERRE)
 

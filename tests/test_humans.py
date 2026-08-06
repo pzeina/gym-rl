@@ -65,8 +65,28 @@ def test_human_flags_in_observations():
     assert obs["SL1"]["observation"][LEADER_HUMAN_FIELD] == 0.0, "the root reports to HQ"
 
 
-def test_human_death_penalty_hits_every_present_agent():
-    env = make_env("fireteam")
+def test_human_death_penalty_is_disabled_by_default():
+    """v1.10: the shock term is off by default — the mechanism below stays tested.
+
+    Removed because a correlated -25 x n_agents hit in one step is the standing
+    D4 suspect; the rank-weighted teammate penalty carries the preservation
+    preference, and human_death_rate measures the outcome.
+    """
+    from cohort.env.rewards import RewardConfig
+
+    assert RewardConfig().human_death == 0.0
+    env, infos = _kill_the_human("fireteam")
+    cfg = env.rewards_cfg
+    for cs in ("RFN1", "RFN2", "RFN3"):
+        combat = infos[cs]["components"]["combat"]
+        # only the rank-weighted teammate penalty applies: TL is authority 1
+        expected = cfg.teammate_death * (1.0 + cfg.rank_casualty_scale * 1)
+        assert combat == pytest.approx(expected), f"{cs}: expected {expected}, got {combat}"
+
+
+def _kill_the_human(scenario, reward_config=None):
+    """Walk the human root onto an adjacent enemy until it dies; return (env, infos)."""
+    env = make_env(scenario, reward_config=reward_config)
     env.reset(seed=5)
     env.world.grid[:] = 0
     tl = env.roster.by_callsign["TL1"]  # the human root
@@ -83,24 +103,38 @@ def test_human_death_penalty_hits_every_present_agent():
             break
         *_, infos = env.step({a: 0 for a in env.agents})
     assert not tl.alive, "the adjacent enemy should have killed the human root"
-    cfg = env.rewards_cfg
+    # the episode continues: succession exercises
+    assert env.outcome is None
+    assert env.roster.root() is not None
+    assert env.roster.root().effective_rank is Rank.TL
+    return env, infos
+
+
+def test_human_death_penalty_hits_every_present_agent_when_enabled():
+    """The mechanism is retained even though the default weight is 0 — a future
+    campaign can price the commander again by setting the knob."""
+    from dataclasses import replace
+
+    from cohort.env.rewards import RewardConfig
+
+    cfg = replace(RewardConfig(), human_death=-25.0)
+    _, infos = _kill_the_human("fireteam", reward_config=cfg)
     for cs in ("RFN1", "RFN2", "RFN3"):
         combat = infos[cs]["components"]["combat"]
         assert combat <= cfg.human_death, f"{cs}: human_death must be included, got {combat}"
     # the fallen human pays it too (present that step), on top of its own death
     assert infos["TL1"]["components"]["combat"] <= cfg.human_death + cfg.death
-    # ...and the episode continues: succession exercises
-    assert env.outcome is None
-    assert env.roster.root() is not None
-    assert env.roster.root().effective_rank is Rank.TL
 
 
 def test_non_human_death_costs_only_teammate_death():
+    """With no human in the roster the shock never applies, whatever the knob."""
     from dataclasses import replace
 
     from cohort.config import get_scenario
+    from cohort.env.rewards import RewardConfig
 
-    env = make_env(replace(get_scenario("fireteam"), root_human=False))
+    cfg = replace(RewardConfig(), human_death=-25.0)
+    env = make_env(replace(get_scenario("fireteam"), root_human=False), reward_config=cfg)
     env.reset(seed=5)
     env.world.grid[:] = 0
     tl = env.roster.by_callsign["TL1"]
@@ -118,6 +152,6 @@ def test_non_human_death_costs_only_teammate_death():
     assert not tl.alive
     for cs in ("RFN1", "RFN2", "RFN3"):
         combat = infos[cs]["components"]["combat"]
-        assert combat > env.rewards_cfg.human_death / 2, (
+        assert combat > cfg.human_death / 2, (
             f"{cs}: no human died — only the ordinary teammate penalty applies, got {combat}"
         )

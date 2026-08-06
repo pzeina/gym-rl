@@ -169,10 +169,20 @@ class RewardConfig:
     #                                    agent's effective authority:
     #                                    x (1 + scale x authority) — losing a PL
     #                                    (authority 4) costs twice a rifleman
-    human_death: float = -25.0        # paid by EVERY present agent when a human dies
-    #                                   (on top of the normal death penalties): losing
-    #                                   the human commander is close to mission failure,
-    #                                   but the episode continues — succession exercises
+    human_death: float = 0.0          # paid by EVERY present agent when a human dies,
+    #                                   on top of the normal death penalties. DISABLED
+    #                                   by default since v1.10: at its former -25 this
+    #                                   term delivered a correlated -25 x n_agents shock
+    #                                   in a single step (-100 on a fireteam), and every
+    #                                   D4 collapse onset measured to date coincides with
+    #                                   a human-death burst (value_loss 15-95 through
+    #                                   fireteam_defend_v7) — the suspected destabiliser
+    #                                   of the value function, for a preservation
+    #                                   preference the rank-weighted teammate_death
+    #                                   already expresses in kind. The mechanism is kept
+    #                                   (set it negative to restore the shock); human
+    #                                   preservation is now measured, not priced, via the
+    #                                   human_death_rate / exposure metrics.
 
     # Terminal rewards must DOMINATE any achievable per-step shaping accrual:
     # with ~0.09/step of positive shaping over a 600-step episode (the v1.4
