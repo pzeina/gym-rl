@@ -44,6 +44,16 @@ METRIC_FIELDS = [
     "approx_kl",
     "sps",
     "tx_per_agent_step",
+    # refs issue #18: tx counts CHARGED transmissions only — voice (SYNC
+    # PROPOSE/GO) is free by design, so a policy that stops commanding and
+    # starts talking reads as radio silence here while the net gets louder.
+    # messages_per_agent_step counts everything said; the pair is the
+    # composition. timeout_rate_rolling is the stall itself, over the same
+    # window as success_rate_rolling: a run whose episodes start ending at
+    # the step ceiling is farming the clock, and it says so 3M steps before
+    # anyone evaluates a checkpoint.
+    "messages_per_agent_step",
+    "timeout_rate_rolling",
     # lightweight behavioral tracking (B2), over the episodes completed this
     # iteration: fraction whose human root died (issue #9: rolling success is
     # blind to exposure re-learning), and rejected DONE / total DONE claims
@@ -188,6 +198,7 @@ class Trainer:
         comp_sums = dict.fromkeys(COMPONENTS, 0.0)
         agent_steps = 0
         tx_total = 0
+        message_total = 0
         human_deaths = 0
         done_claims = 0
         done_rejected = 0
@@ -227,6 +238,8 @@ class Trainer:
                     self._ep_return[e] += rewards[a]
                 agent_steps += len(present)
                 tx_total += env.transmissions_last_step
+                # every message, not only the charged ones (refs #18)
+                message_total += len(env.last_messages)
                 self._ep_len[e] += 1
                 if self._track_disposition:
                     pairs, cover, obj_dist = self._disposition(env)
@@ -280,8 +293,18 @@ class Trainer:
                 if self.recent_outcomes
                 else 0.0
             ),
+            # refs #18: the same window, asking how the episodes were LOST.
+            # A rising clock-expiry rate is the stall signature at training
+            # time — squad_screen_v4 and squad_recon_v6 each spent their last
+            # million steps at 1.0 here while nothing else in the row said so.
+            "timeout_rate_rolling": (
+                sum(o == "timeout" for o in self.recent_outcomes) / len(self.recent_outcomes)
+                if self.recent_outcomes
+                else 0.0
+            ),
         }
         stats["tx_per_agent_step"] = tx_total / max(1, agent_steps)
+        stats["messages_per_agent_step"] = message_total / max(1, agent_steps)
         stats["human_death_rate"] = human_deaths / n_eps if outcomes else 0.0
         stats["false_complete_rate"] = done_rejected / max(1, done_claims)
         if self._track_disposition:

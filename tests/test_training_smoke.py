@@ -92,6 +92,34 @@ def test_defend_run_logs_the_positional_gate_columns(tmp_path):
         assert all(r["cover_under_threat"] == "" for r in csv.DictReader(f))
 
 
+def test_run_logs_the_clock_and_the_whole_net(tmp_path):
+    """issue #18: the stall signature must be visible while a run is cheap to kill.
+
+    ``tx_per_agent_step`` charges by design — SYNC PROPOSE / GO are voice and
+    cost nothing — so the collapsed ``squad_screen_v4`` read 0.029 ("the whole
+    radio goes quiet") while carrying 2.5x the messages of its own successful
+    checkpoint. Counting every message alongside the charged ones is what makes
+    that readable, and ``timeout_rate_rolling`` names the failure mode over the
+    same window ``success_rate_rolling`` uses.
+    """
+    cfg = PPOConfig(n_envs=2, horizon=32)
+    trainer = Trainer("fireteam", cfg, tmp_path / "run", seed=5, tensorboard=False)
+    trainer.train(total_steps=256)
+    with (tmp_path / "run" / "metrics.csv").open() as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert {"messages_per_agent_step", "timeout_rate_rolling"} <= set(reader.fieldnames)
+    for row in rows:
+        messages = float(row["messages_per_agent_step"])
+        assert messages >= float(row["tx_per_agent_step"]), (
+            "charged transmissions are a subset of everything said"
+        )
+        assert 0.0 <= float(row["timeout_rate_rolling"]) <= 1.0
+    # the two rolling outcome shares are shares of the same window
+    last = rows[-1]
+    assert float(last["success_rate_rolling"]) + float(last["timeout_rate_rolling"]) <= 1.0
+
+
 def test_rolling_best_gate_requires_full_window_turnover():
     """D4: ckpt_best may only be written once the rolling window contains ONLY
     post-start episodes (the deque fully turned over). Simulates the Trainer's
