@@ -351,6 +351,58 @@ kill; both are blank on iterations with no firefight (never `0`, which would
 read as "fought in the open on the objective") and on every non-DEFEND root,
 which pays nothing for the scan.
 
+### Clock expiry and traffic composition (issue #18)
+
+The stall signature, measured from the transcript and the clock alone — no
+reward, no success flag, no ground truth.
+
+* **`timeout_rate`** — share of evaluated episodes that ended by running the
+  step ceiling out. The environment scores `timeout` exactly when
+  `max_steps` is reached with neither success nor defeat, so this *is*
+  "pinned at `max_steps`"; the trace records `max_steps` so the mean length
+  can be read next to its own ceiling.
+* **`messages_per_episode`** — every message on the transcript, learned or
+  automatic. The suite counted each channel it had a question about and
+  never the total, so composition was not computable: "the net went quiet"
+  and "the net changed hands" read the same.
+* **`command_traffic_share`** — orders and EXECUTE releases over all
+  messages. The OPORD is excluded: it is HQ's, once, and no policy chose it.
+* **`voice_traffic_share`** — SYNC PROPOSE / GO over all messages. Voice is
+  free by design (A5-4): uncharged and never net-arbitrated, so it is the
+  one learned transmission a policy with nothing to say can emit for
+  nothing.
+
+`regression_gates(agg)` gates **`timeout_rate ≤ 0.5` for every root
+mission** — running the clock out is a failure mode no scenario wants, and
+it is not the same finding as a low success rate: it says *how* the episodes
+were lost, and a cohort that rides out the clock is a different repair from
+one that gets killed on the way in.
+
+The bound is the middle of an empty band on the record (10 episodes per
+checkpoint, seeds 500–509, every checkpoint that loads under the v1.10
+spaces): healthy checkpoints run 0.0–0.2 (worst: `fireteam_defend_v9/best`
+and `_v8/latest`, 2/10) and all three stalled ones sit at exactly 1.0
+(`squad_recon_v6`, `squad_screen_v4`, `squad_screen_v5`, at `ckpt_latest`).
+
+**The composition is reported and deliberately not gated.** Measured across
+the same fleet it separates nothing: the healthy `fireteam_defend_v10/best`
+(8/10 success) carries a command share of **0.026**, *below* the collapsed
+`squad_recon_v6/latest` (0/10) at **0.022**, and `fireteam_v7/latest` scores
+8/10 while issuing 1.5 orders per episode. Command share is scenario idiom —
+a fireteam holding ground does not talk like a platoon assaulting. It reads
+as a *within-scenario* contrast instead, and there it is stark:
+`squad_screen_v4` carries 537 messages/episode at 15.5% command from
+`ckpt_best` and 1326 at 0.6% from `ckpt_latest`. The net gets louder and
+emptier at once.
+
+Training runs log the same two facts per iteration —
+`timeout_rate_rolling` (the window `success_rate_rolling` uses) and
+`messages_per_agent_step` — so a stall is visible while the run is still
+cheap to kill. Read `messages_per_agent_step` *next to* `tx_per_agent_step`:
+tx charges by design, so through the `squad_screen_v4` flood it read 0.029
+and the run was written up as "the whole radio goes quiet" when the net had
+got 2.5× louder.
+
 ### Aggregation
 
 Event-level metrics pool events across the run's episodes (one latency mean

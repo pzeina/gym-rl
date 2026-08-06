@@ -124,6 +124,12 @@ def report(run: str, show_components: bool) -> dict:
         ("objective_dist_under_threat", "dist from OBJ (threat)"),
         ("false_complete_rate", "false DONE rate"),
         ("tx_per_agent_step", "tx / agent-step"),
+        # refs #18: tx is the CHARGED traffic only. Read the two together —
+        # tx down with messages up is the stall signature (the cohort stopped
+        # commanding and started talking for free), and tx alone called that
+        # "the whole radio goes quiet" when the net had got 2.5x louder.
+        ("messages_per_agent_step", "messages / agent-step"),
+        ("timeout_rate_rolling", "ran clock out (rolling)"),
         ("approx_kl", "approx KL"),
     ]:
         a, b = mean(first, key), mean(last, key)
@@ -143,8 +149,13 @@ def report(run: str, show_components: bool) -> dict:
     if beh_path.exists():
         b = json.loads(beh_path.read_text())
         m = b.get("metrics", {})
-        print(f"  behavior ({b.get('episodes','?')} eps, greedy={b.get('greedy')}): "
-              f"success {b.get('success_ci95','?')}")
+        # WHICH checkpoint produced these numbers, always: on squad_screen_v4
+        # ckpt_best evaluates 30/30 and ckpt_latest 0/30 on the same seeds, so
+        # a behavior block that does not name its checkpoint is unreadable
+        # next to a curve that ended at 0% (refs #18)
+        scored = Path(b.get("checkpoint") or "?").name or "?"
+        print(f"  behavior ({b.get('episodes','?')} eps, greedy={b.get('greedy')}, "
+              f"{scored}): success {b.get('success_ci95','?')}")
         for key, label, fmt in [
             ("obedience_latency_mean", "obedience latency", "{:.2f}"),
             ("report_precision", "report precision", "{:.2f}"),
@@ -156,6 +167,10 @@ def report(run: str, show_components: bool) -> dict:
             ("false_complete_rate", "false DONE", "{:.3f}"),
             ("cover_occupancy_under_threat", "cover under threat", "{:.3f}"),
             ("mean_distance_from_objective_under_threat", "dist from OBJ", "{:.2f}"),
+            # refs #18: the clock and what the net carried while it ran out
+            ("timeout_rate", "ran the clock out", "{:.2f}"),
+            ("messages_per_episode", "messages / episode", "{:.0f}"),
+            ("command_traffic_share", "of which command", "{:.3f}"),
         ]:
             if (v := m.get(key)) is not None:
                 print(f"    {label:<20} {fmt.format(v)}")

@@ -59,13 +59,14 @@ def step(t, soldiers, enemies=(), messages=()):
 
 def trace(
     steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20,
-    ttl=40, root_mission="SEIZE", threat_radius=8.0,
+    ttl=40, root_mission="SEIZE", threat_radius=8.0, max_steps=375,
 ):
     return {
         "scenario": "test",
         "outcome": outcome,
         "length": steps[-1]["t"],
         "root_mission": root_mission,
+        "max_steps": max_steps,
         "root_objective": list(root_objective) if root_objective else None,
         "ring_radius": 7.0,
         "threat_radius": threat_radius,
@@ -447,12 +448,14 @@ def test_positional_gate_fails_the_v7_disposition():
     # fireteam_defend_v7: cover 0.060 at 9.09 cells — both bounds broken.
     gates = regression_gates(_defend_agg(cover=False, dist_from_obj=9))
     assert [g["name"] for g in gates] == [
+        "timeout_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
     ]
-    assert [g["passed"] for g in gates] == [False, False]
-    report = format_gate_report(gates)
-    assert "FAIL" in report and "PASS" not in report
+    positional = [g for g in gates if g["name"] != "timeout_rate"]
+    assert [g["passed"] for g in positional] == [False, False]
+    assert "FAIL" in format_gate_report(positional)
+    assert "PASS" not in format_gate_report(positional)
 
 
 def test_positional_gate_passes_a_prepared_defense():
@@ -463,11 +466,12 @@ def test_positional_gate_passes_a_prepared_defense():
 
 
 def test_positional_gate_applies_to_defend_roots_only():
-    # The same disposition under a SEIZE root gates on nothing: an assault is
-    # supposed to leave its start point and cross open ground.
+    # The same disposition under a SEIZE root gates on position at all: an
+    # assault is supposed to leave its start point and cross open ground.
+    # Only the universal clock-expiry gate remains (issue #18).
     seize = _defend_agg(cover=False, dist_from_obj=9)
     seize["root_mission"] = "SEIZE"
-    assert regression_gates(seize) == []
+    assert [g["name"] for g in regression_gates(seize)] == ["timeout_rate"]
     assert format_gate_report([]) == ""
 
 
@@ -476,9 +480,9 @@ def test_unmeasured_gate_is_not_a_pass():
     agg = aggregate_behavior(
         [episode_behavior(trace(steps, root_objective=(10, 10), root_mission="DEFEND"))]
     )
-    gates = regression_gates(agg)
-    assert gates and all(g["passed"] is None for g in gates)
-    assert "FAIL" not in format_gate_report(gates)
+    positional = [g for g in regression_gates(agg) if g["name"] != "timeout_rate"]
+    assert positional and all(g["passed"] is None for g in positional)
+    assert "FAIL" not in format_gate_report(positional)
 
 
 def test_recorder_records_cover_and_threat_radius():
@@ -495,6 +499,103 @@ def test_recorder_records_cover_and_threat_radius():
     for g in regression_gates(agg):
         assert g["passed"] in (True, False, None)
         assert g["bound"] > 0
+
+
+# ---------------------------------------------------------------------- #
+# clock expiry + traffic composition (issue #18)
+# ---------------------------------------------------------------------- #
+
+
+def _talk(*kinds):
+    """One step whose traffic is exactly ``kinds``."""
+    return step(1, [sold("TL1")], messages=[msg(k, "TL1", "ALL") for k in kinds])
+
+
+def test_traffic_composition_has_a_denominator():
+    # 8 messages: 2 command (order, execute), 4 voice (SYNC PROPOSE/GO),
+    # and 2 that are neither (a report and its automatic acknowledgement).
+    steps = [
+        step(0, [sold("TL1")]),
+        _talk("order", "ack", "execute", "sync_propose", "sync_go", "sync_propose", "sync_go",
+              "sitrep"),
+    ]
+    ep = episode_behavior(trace(steps))
+    assert ep["messages"] == 8
+    assert ep["messages_command"] == 2
+    assert ep["messages_voice"] == 4
+    agg = aggregate_behavior([ep])
+    assert agg["messages_per_episode"] == 8
+    assert agg["command_traffic_share"] == 0.25
+    assert agg["voice_traffic_share"] == 0.5
+    assert "messages / ep" in format_behavior_table(agg)
+
+
+def _clock_agg(timeouts, successes, *, root_mission="SEIZE"):
+    """Aggregate over ``timeouts`` clock-expiry episodes and ``successes`` wins."""
+    steps = [step(0, [sold("TL1")]), step(1, [sold("TL1")])]
+    eps = [
+        episode_behavior(trace(steps, outcome=out, root_mission=root_mission))
+        for out in ["timeout"] * timeouts + ["success"] * successes
+    ]
+    return aggregate_behavior(eps)
+
+
+def test_clock_expiry_gate_fails_a_stall_under_any_root_mission():
+    # squad_screen_v4 / squad_recon_v6 / squad_screen_v5 at ckpt_latest:
+    # 30/30 episodes pinned at max_steps. The root missions are SCREEN and
+    # RECON, which the positional gate never looked at.
+    agg = _clock_agg(30, 0, root_mission="RECON")
+    assert agg["timeout_rate"] == 1.0
+    gate = next(g for g in regression_gates(agg) if g["name"] == "timeout_rate")
+    assert gate["passed"] is False
+    assert "FAIL" in format_gate_report(regression_gates(agg))
+
+
+def test_clock_expiry_gate_passes_the_healthy_record():
+    # The worst healthy checkpoint measured (fireteam_defend_v9/best,
+    # fireteam_defend_v8/latest): 2 timeouts in 10 episodes.
+    agg = _clock_agg(2, 8)
+    assert agg["timeout_rate"] == 0.2
+    gate = next(g for g in regression_gates(agg) if g["name"] == "timeout_rate")
+    assert gate["passed"] is True
+
+
+def test_traffic_composition_is_diagnosis_not_a_gate():
+    """A command-share bound would flag healthy runs and pass stalled ones.
+
+    Measured at 10 episodes/checkpoint, seeds 500-509: the healthy
+    ``fireteam_defend_v10/ckpt_best`` (8/10 success) carries a command share
+    of 0.026, *below* the collapsed ``squad_recon_v6/ckpt_latest`` (0/10) at
+    0.022. Order rate orders them no better: ``fireteam_v7/ckpt_latest``
+    issues 1.5 orders/episode at 8/10 success. Composition is scenario
+    idiom, so it is reported and never gated — the clock is the separator.
+    """
+    healthy = _clock_agg(0, 10)
+    stalled = _clock_agg(10, 0)
+    for agg, share in ((healthy, 0.026), (stalled, 0.022)):
+        agg["command_traffic_share"] = share
+    verdicts = [
+        next(g for g in regression_gates(a) if g["name"] == "timeout_rate")["passed"]
+        for a in (healthy, stalled)
+    ]
+    assert verdicts == [True, False]
+    assert healthy["command_traffic_share"] > stalled["command_traffic_share"]
+    assert "command_traffic_share" not in [g["name"] for g in regression_gates(stalled)]
+
+
+def test_recorder_records_the_step_ceiling():
+    # "pinned at max_steps" is only a statement the trace can make if it
+    # carries the ceiling the episode was played under.
+    env = make_env("squad_screen")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=11, rng=np.random.default_rng(11), recorder=rec)
+    assert rec.trace["max_steps"] == env.spec_cfg.max_steps
+    agg = aggregate_behavior([episode_behavior(rec.trace)])
+    assert agg["max_steps"] == env.spec_cfg.max_steps
+    assert agg["timeout_rate"] in (0.0, 1.0)
+    assert agg["timeout_rate"] == float(rec.trace["outcome"] == "timeout")
+    if agg["timeout_rate"]:
+        assert agg["episode_length_mean"] == env.spec_cfg.max_steps
 
 
 # ---------------------------------------------------------------------- #
