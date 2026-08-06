@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from cohort.core.missions import MissionType
 from cohort.core.ranks import Rank
@@ -128,6 +128,22 @@ class ScenarioSpec:
     #                               objective. Close reconnaissance of a garrisoned
     #                               objective over featureless ground is impossible in
     #                               reality too — recon presumes concealed OPs.
+    # --- B3 hierarchy ablation (ROADMAP B3) — arms are env knobs ---
+    ablation: str = "full"        # "full" → the shipped system (hierarchy + doctrine
+    #                               masks). "nomask" → hierarchy WITHOUT doctrine masks:
+    #                               a leader may issue any rank-admissible order
+    #                               regardless of its own mission, even with none (the
+    #                               doctrine-derivation constraint is removed from the
+    #                               order mask; rank admissibility, per-echelon hold
+    #                               authority and the order cooldown stay; rewards are
+    #                               untouched — doctrine preference remains a soft
+    #                               signal). "flat" → no ranks in effect: order actions
+    #                               masked off for EVERYONE, every agent receives the
+    #                               OPORD mission directly at reset (all-tasked), comms
+    #                               limited to reports (CONTACT/SITREP/DONE), and the
+    #                               leader coverage reward is neutralized (all-tasked by
+    #                               construction, it would otherwise pay for free).
+    #                               Spaces are frozen across arms: masking-only changes.
     # --- BRIQUE asymmetric OpFor (manual p. 9; used when opfor_mode="brique") ---
     band: BriqueBandConfig = field(default_factory=BriqueBandConfig)
     #                               intent machine tunables of the armed band
@@ -136,6 +152,11 @@ class ScenarioSpec:
     #                               reset. Each damages the first friendly stepping on
     #                               it (revealed once triggered). Oracle ground truth
     #                               from step 0; never in blue observations.
+
+    def __post_init__(self) -> None:
+        if self.ablation not in ("full", "nomask", "flat"):
+            msg = f"Unknown ablation arm {self.ablation!r} (expected full | nomask | flat)"
+            raise ValueError(msg)
 
 
 # v1.4 (P5): all maps, objective/spawn coordinates, and step budgets grew x1.5
@@ -276,6 +297,30 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         max_steps=600,
     ),
 }
+
+
+# B3 hierarchy-ablation arms of the `squad` scenario (ROADMAP B3): identical
+# geometry, OpFor, rewards, and spaces — only `ablation` differs. Registered as
+# first-class presets so training saves and evaluation reloads checkpoints
+# under the correct arm (the checkpoint carries the scenario name).
+SCENARIOS["squad_nomask"] = replace(
+    SCENARIOS["squad"],
+    name="squad_nomask",
+    description=(
+        "B3 ablation arm (ii): the squad scenario with the doctrine-derivation "
+        "constraint removed from the order mask (rank admissibility and cooldown stay)."
+    ),
+    ablation="nomask",
+)
+SCENARIOS["squad_flat"] = replace(
+    SCENARIOS["squad"],
+    name="squad_flat",
+    description=(
+        "B3 ablation arm (iii): flat team — no orders at all; every agent receives "
+        "the OPORD directly at reset; comms limited to reports."
+    ),
+    ablation="flat",
+)
 
 
 def get_scenario(name: str) -> ScenarioSpec:

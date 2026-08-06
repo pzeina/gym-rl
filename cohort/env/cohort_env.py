@@ -232,6 +232,30 @@ class CohortEnv(ParallelEnv):
             root.id,
             lang.format_opord(root.callsign, cfg.root_mission, cfg.root_objective),
         )
+        if cfg.ablation == "flat":
+            # B3 flat arm: no ranks in effect — HQ tasks EVERY agent with the
+            # OPORD mission directly (all-tasked at reset). Order actions are
+            # masked off for everyone (env/actions.py), so this is the only
+            # tasking that ever occurs. Non-root agents hold it as a personal
+            # task (like any subordinate tasking in the full system); the
+            # root keeps the team-adjudicated OPORD semantics above (#9).
+            for s in self.roster.soldiers:
+                if s is root:
+                    continue
+                s.mission = Mission(
+                    type=cfg.root_mission,
+                    objective_id=objective.id if objective else None,
+                    anchor=objective.pos if objective else s.pos,
+                    issuer_id=HQ_ID,
+                    step_assigned=0,
+                )
+                s.last_order_step = 0
+                self._say(
+                    MessageKind.OPORD,
+                    HQ_ID,
+                    s.id,
+                    lang.format_opord(s.callsign, cfg.root_mission, cfg.root_objective),
+                )
 
         observations = self._all_observations()
         infos = {a: {"components": {}, "net_busy": False} for a in self.agents}
@@ -616,8 +640,15 @@ class CohortEnv(ParallelEnv):
                 and step - soldier.last_sitrep_step > cadence
             ):
                 ledger.add(callsign, "report", cfg.sitrep_overdue)
-            # leader coverage
-            if soldier.effective_authority > 0 and soldier.mission is not None:
+            # leader coverage — neutralized in the flat ablation arm (B3):
+            # with no ranks in effect and everyone OPORD-tasked at reset,
+            # the bonus would pay for free (and the gap would punish agents
+            # that finished truthful DONEs, with no way to re-task them)
+            if (
+                soldier.effective_authority > 0
+                and soldier.mission is not None
+                and self.spec_cfg.ablation != "flat"
+            ):
                 subs = soldier.living_subordinates(self.roster)
                 if subs:
                     all_tasked = all(sub.mission is not None for sub in subs)
@@ -1256,6 +1287,7 @@ class CohortEnv(ParallelEnv):
             order_cooldown=self.spec_cfg.order_cooldown,
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
+            ablation=self.spec_cfg.ablation,
         )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:

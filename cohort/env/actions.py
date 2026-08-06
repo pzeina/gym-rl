@@ -138,6 +138,7 @@ def compute_mask(
     order_cooldown: int = 0,
     step: int = 0,
     net_contact_step: int | None = None,
+    ablation: str = "full",
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -145,6 +146,17 @@ def compute_mask(
     steps of its last received order, unless the leader's own mission changed
     since, or a CONTACT report hit the net since (``net_contact_step``).
     Untasked subordinates can always be ordered.
+
+    ``ablation`` (ROADMAP B3, ``ScenarioSpec.ablation``) selects the
+    hierarchy-ablation arm — masking-only changes, spaces frozen:
+
+    * ``"full"`` (default) — the shipped system described above;
+    * ``"nomask"`` — the doctrine-derivation constraint is dropped: a leader
+      may issue any rank-admissible order regardless of its own mission
+      (even with none). Rank admissibility, per-echelon hold authority and
+      the cooldown stay;
+    * ``"flat"`` — no ranks in effect: the order vocabulary is masked off
+      for everyone; comms reduce to reports.
     """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
@@ -168,15 +180,21 @@ def compute_mask(
             if soldier.mission is not None and soldier.mission.type in COMPLETABLE:
                 mask[spec.index] = 1
 
-    # Order vocabulary: command ranks only, doctrine-constrained.
-    if soldier.effective_authority > 0 and soldier.mission is not None:
-        allowed = allowed_derivations(soldier.mission.type)
+    # Order vocabulary: command ranks only, doctrine-constrained ("full").
+    # B3 arms: "flat" removes the order vocabulary outright; "nomask" keeps
+    # rank admissibility and the cooldown but drops the doctrine constraint.
+    if ablation == "flat":
+        return mask
+    if soldier.effective_authority > 0 and (soldier.mission is not None or ablation == "nomask"):
+        allowed = (
+            allowed_derivations(soldier.mission.type) if ablation != "nomask" else None
+        )
         subs = soldier.living_subordinates(roster)
         objective_names = {o.name for o in world.objectives}
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
                 continue
-            if spec.order_mission not in allowed:
+            if allowed is not None and spec.order_mission not in allowed:
                 continue
             if spec.order_objective is not None and spec.order_objective not in objective_names:
                 continue
@@ -193,7 +211,10 @@ def compute_mask(
                 recently_ordered = (
                     sub.mission is not None and step - sub.last_order_step < order_cooldown
                 )
-                intent_changed = soldier.mission.step_assigned > sub.last_order_step
+                intent_changed = (
+                    soldier.mission is not None
+                    and soldier.mission.step_assigned > sub.last_order_step
+                )
                 contact_since = net_contact_step is not None and net_contact_step > sub.last_order_step
                 if recently_ordered and not intent_changed and not contact_since:
                     continue
