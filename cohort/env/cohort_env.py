@@ -129,6 +129,11 @@ class CohortEnv(ParallelEnv):
         self._success_step: int | None = None  # T0: success condition first met
         self._root_done_step: int | None = None  # truthful root-mission DONE step
         self._root_done_callsign: str | None = None
+        #: defend preparation period (v1.10): the step the assault actually
+        #: begins, and the nominal H the OPORD announced. Both None when the
+        #: scenario has no ``assault_h_hour``.
+        self._h_hour: int | None = None
+        self._h_hour_nominal: int | None = None
         self._net_blocked: set[str] = set()  # NET BUSY losers this step (A4)
         self._tx_count = 0  # learned transmissions emitted this step (A4)
         #: soldier id → step of the last casualty in that soldier's element
@@ -248,6 +253,8 @@ class CohortEnv(ParallelEnv):
         self._success_step = None
         self._root_done_step = None
         self._root_done_callsign = None
+        self._h_hour = None
+        self._h_hour_nominal = None
         self._net_blocked = set()
         self._tx_count = 0
         self._element_casualty_step = {}
@@ -1707,7 +1714,21 @@ class CohortEnv(ParallelEnv):
             sitrep_due=sitrep_due,
             sync_pending=sync_pending,
             sync_active=sync_active,
+            episode_progress=min(1.0, step / max(1, self.spec_cfg.max_steps)),
+            time_to_contact=self._time_to_contact(),
         )
+
+    def _time_to_contact(self) -> float:
+        """Countdown to the NOMINAL announced H-hour, 1.0 → 0.0 (v1.10).
+
+        0.0 in scenarios with no preparation period, and once H has passed.
+        The actual arrival is jittered around the nominal H (the OPORD is an
+        estimate, not a timetable), so this warns without guaranteeing.
+        """
+        nominal = self._h_hour_nominal
+        if nominal is None or nominal <= 0 or self._step_count >= nominal:
+            return 0.0
+        return (nominal - self._step_count) / nominal
 
     def _compute_views(self) -> dict[str, AgentView]:
         return {s.callsign: self._make_view(s) for s in self.roster.soldiers}

@@ -844,3 +844,30 @@ terrain (still deferred).
   is visible in the next campaign's digest. Published checkpoints are
   unaffected (rewards are not part of the observation or action spaces); the
   next retrain measures the effect. 340 → 341 tests.
+- **2026-08-06** — **v1.10 breaking cycle opened: observation space Box(166) →
+  Box(220)** (Discrete(228) unchanged). Owner's call to spend a space break, so
+  everything needing one rode in the same break rather than forcing a second:
+  * **tempo block (+2)** — `episode_progress` (step/max_steps, every scenario)
+    and `time_to_contact`, the countdown to the announced H-hour of the defend
+    preparation period. There was previously **no absolute episode-time feature
+    at all**: agents saw only relative times (steps since order, sync window),
+    so an "approximately known" enemy arrival was literally unknowable.
+  * **nearest-cover vector (+3)** — present/dx/dy to the nearest cover cell
+    within `COVER_SEARCH_RADIUS` (8), encoded like objectives and control
+    measures. `World.nearest_cover` is pure and tie-broken by (distance, y, x),
+    so it consumes no RNG and is scan-order free (determinism convention).
+  * **terrain patch 5×5 → 7×7 (+48)** — `PATCH_RADIUS` 2 → 3. At radius 2 an
+    agent 5 cells off the objective could not perceive the `objective_cover`
+    ring (chebyshev 2 around the objective) it is meant to occupy: the defend
+    scenario was paying for ground the policy was partly blind to.
+  * **SITREP due-ness gets its own slot (+1)** — it previously overloaded the
+    comms "known enemy present" flag purely to keep OBS_DIM frozen (a
+    compromise documented at the time); the flag now means what it says.
+  * **derived block offsets** (`OFF_SELF`…`OFF_PATCH` + named field offsets)
+    exported from `env/observations.py`. Tests indexed the layout with magic
+    numbers, so this break broke seven of them for no signal; offsets are now
+    computed from the block constants and a future layout change surfaces as
+    the `OBS_DIM` assertion instead.
+  **Cost, stated plainly**: all eight published checkpoints are unloadable and
+  the whole fleet needs retraining. The v1.9 numbers stay published as the
+  standing baseline until that campaign runs. 341 → 348 tests.

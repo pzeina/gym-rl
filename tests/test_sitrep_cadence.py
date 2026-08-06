@@ -2,8 +2,8 @@
 
 When set, an agent out of contact owes a SITREP every ``sitrep_cadence``
 steps; being overdue draws ``RewardConfig.sitrep_overdue`` per step and the
-due-ness is surfaced in the comms-summary observation slot that is otherwise
-redundant (the "known enemy present" flag, implied by the known-count field).
+due-ness is surfaced in its own comms-summary observation slot (v1.10: it
+previously overloaded the "known enemy present" flag to keep OBS_DIM frozen).
 Default (None) changes nothing.
 """
 
@@ -12,13 +12,14 @@ from dataclasses import replace
 from cohort import make_env
 from cohort.config import get_scenario
 from cohort.env.actions import CATALOG
+from cohort.env.observations import COMMS_KNOWN_PRESENT, COMMS_SITREP_DUE
 
 STAY = 0
 SITREP_IDX = next(s.index for s in CATALOG if s.kind == "sitrep")
 CONTACT_IDX = next(s.index for s in CATALOG if s.kind == "contact")
 
-#: comms summary block starts at 111 (A5-4 layout); slot 113 = known-present / sitrep-due.
-DUE_FIELD = 113
+#: v1.10: due-ness has its own comms slot (it used to overload known-present)
+DUE_FIELD = COMMS_SITREP_DUE
 
 CADENCE = 10
 
@@ -99,7 +100,8 @@ def test_default_none_changes_nothing():
     for _ in range(30):
         *_, infos = _step_all(env)
         assert infos["RFN1"]["components"]["report"] == 0.0, "no doctrine, no penalty"
-    # and the observation slot keeps its known-present semantics
+    # v1.10: due-ness has its own slot, so the known-present flag it used to
+    # displace now means what it says — both are checked independently
     obs, *_ = _step_all(env)
     assert obs["RFN1"]["observation"][DUE_FIELD] == 0.0
     sld = env.roster.by_callsign["RFN2"]
@@ -108,4 +110,5 @@ def test_default_none_changes_nothing():
     enemy.pos = (10, 10)
     enemy.home = enemy.pos
     obs, *_ = _step_all(env, {"RFN2": CONTACT_IDX})
-    assert obs["RFN1"]["observation"][DUE_FIELD] == 1.0, "known-present flag as shipped"
+    assert obs["RFN1"]["observation"][COMMS_KNOWN_PRESENT] == 1.0, "known-present flag"
+    assert obs["RFN1"]["observation"][DUE_FIELD] == 0.0, "doctrine off → due-ness stays 0"
