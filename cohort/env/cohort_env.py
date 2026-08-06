@@ -122,6 +122,12 @@ class CohortEnv(ParallelEnv):
         self._root_done_callsign: str | None = None
         self._net_blocked: set[str] = set()  # NET BUSY losers this step (A4)
         self._tx_count = 0  # learned transmissions emitted this step (A4)
+        #: soldier id → step of the last casualty in that soldier's element
+        #: (its command subtree) — the B5 re-task pricing exception bookkeeping
+        self._element_casualty_step: dict[int, int] = {}
+        #: re-task events of the last step (B5): issuer/recipient, priced or
+        #: excepted (and why), same-anchor or rotation — metrics bookkeeping
+        self._retask_log: list[dict] = []
 
     @property
     def outcome(self) -> str | None:
@@ -135,6 +141,16 @@ class CohortEnv(ParallelEnv):
         (CONTACT / SITREP / DONE / agent-issued orders; auto-traffic and
         NET BUSY-dropped attempts excluded). Training metrics bookkeeping."""
         return self._tx_count
+
+    @property
+    def retask_events_last_step(self) -> list[dict]:
+        """Re-task events applied during the last ``step()`` (B5): every order
+        that replaced a subordinate's standing mission, with issuer callsign /
+        rank / authority, recipient, whether the anchor changed (a rotation),
+        whether the price was waived (and the exception reason), and the cost
+        charged. Read-only bookkeeping for metrics; fresh taskings of untasked
+        subordinates and identical reissues are not re-tasks."""
+        return list(self._retask_log)
 
     # ------------------------------------------------------------------ #
     # spaces
@@ -210,6 +226,8 @@ class CohortEnv(ParallelEnv):
         self._root_done_callsign = None
         self._net_blocked = set()
         self._tx_count = 0
+        self._element_casualty_step = {}
+        self._retask_log = []
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -522,6 +540,7 @@ class CohortEnv(ParallelEnv):
         cfg = self.rewards_cfg
         ledger = RewardLedger()
         self.last_messages = []
+        self._retask_log = []
         present = list(self.agents)
 
         # --- snapshot ---
@@ -569,6 +588,13 @@ class CohortEnv(ParallelEnv):
         for dead in player_deaths:
             # net/umpire convention: the report comes from HQ, not the casualty
             self._say(MessageKind.CASUALTY, HQ_ID, None, lang.format_casualty(dead.callsign))
+            # B5 re-task exception bookkeeping: a casualty is news to every
+            # commander above the fallen agent — their element's picture
+            # changed, so re-tasking within it is free until re-ordered
+            ancestor = self.roster.leader_of(dead)
+            while ancestor is not None:
+                self._element_casualty_step[ancestor.id] = step
+                ancestor = self.roster.leader_of(ancestor)
             # rank-weighted: losing a leader costs more, by effective authority
             weight = 1.0 + cfg.rank_casualty_scale * dead.effective_authority
             for other in self.roster.living:
@@ -631,7 +657,17 @@ class CohortEnv(ParallelEnv):
                     # personal progress — a subordinate's own task; the root's
                     # OPORD counter is mirrored from the team counter below
                     soldier.mission.observe_steps += 1
-                ledger.add(callsign, "compliance", cfg.compliance_weight * compliance(soldier.mission.type, ctx))
+                score = compliance(soldier.mission.type, ctx)
+                credit = cfg.compliance_weight * score
+                if score > 0.0 and cfg.tenure_factor > 0.0:
+                    # standing-order tenure (B5): positive compliance credit
+                    # grows the longer the CURRENT order has been held, so
+                    # settled, executed orders out-earn churned ones. Resets
+                    # with step_assigned on re-tasking; identical reissues are
+                    # no-ops and keep it. Negative scores are never amplified.
+                    held = min(step - soldier.mission.step_assigned, cfg.tenure_horizon)
+                    credit *= 1.0 + cfg.tenure_factor * max(0, held) / cfg.tenure_horizon
+                ledger.add(callsign, "compliance", credit)
             # reporting doctrine: out of contact and past the cadence → overdue
             cadence = self.spec_cfg.sitrep_cadence
             if (
@@ -1019,7 +1055,8 @@ class CohortEnv(ParallelEnv):
             )
             return
 
-        # churn: reissuing the standing order is radio noise, not command
+        # churn: reissuing the standing order is radio noise, not command —
+        # a no-op (the mission is NOT restamped, so tenure keeps accruing)
         if (
             recipient.mission is not None
             and recipient.mission.type is spec.order_mission
@@ -1029,11 +1066,54 @@ class CohortEnv(ParallelEnv):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             return
 
+        standing = recipient.mission
+        intent_changed = (
+            soldier.mission is not None
+            and soldier.mission.step_assigned > recipient.last_order_step
+        )
+
+        # Re-task pricing (B5): replacing a standing order is an act of
+        # command with real weight — the issuer pays
+        #   order_retask_cost_base x (1 + order_retask_rank_scale x authority),
+        # half price when only the mission TYPE changes on the same anchor —
+        # UNLESS the tactical picture changed since the standing order landed
+        # (the doctrine's "major, critical changes" carve-out, free): a
+        # CONTACT on the net since, a casualty in the issuer's element since,
+        # or the issuer's own mission changed since. The fourth exception —
+        # the subordinate's truthful DONE — is structural: the confirmed
+        # claim cleared its mission, so the next order is a fresh tasking,
+        # never a re-task. The steep price never punishes legitimate
+        # intervention; it prices command by whim. Supersedes the old
+        # stability-window churn for tasked subordinates.
+        if standing is not None:
+            excepted, reason = self._retask_exception(soldier, recipient, intent_changed)
+            same_anchor = self._standing_anchor_key(standing) == self._order_anchor_key(
+                spec.order_mission, obj_id, supported_id, recipient
+            )
+            cost = 0.0
+            if not excepted and cfg.order_retask_cost_base != 0.0:
+                cost = cfg.order_retask_cost_base * (
+                    1.0 + cfg.order_retask_rank_scale * soldier.effective_authority
+                )
+                if same_anchor:
+                    cost *= 0.5
+                ledger.add(soldier.callsign, "command", cost)
+            self._retask_log.append(
+                {
+                    "issuer": soldier.callsign,
+                    "rank": soldier.effective_rank.name,
+                    "authority": soldier.effective_authority,
+                    "recipient": recipient.callsign,
+                    "same_anchor": same_anchor,
+                    "excepted": excepted,
+                    "reason": reason,
+                    "cost": cost,
+                }
+            )
+
         # fresh tasking: subordinate untasked, or the issuer's own mission
         # changed after the subordinate was last ordered (propagation credit)
-        fresh_tasking = recipient.mission is None or (
-            soldier.mission is not None and soldier.mission.step_assigned > recipient.last_order_step
-        )
+        fresh_tasking = standing is None or intent_changed
         if fresh_tasking:
             quality = derivation_quality(soldier.mission.type if soldier.mission else None, spec.order_mission)
             if quality >= 1.0:
@@ -1046,10 +1126,6 @@ class CohortEnv(ParallelEnv):
                 and soldier.mission.objective_id == obj_id
             ):
                 ledger.add(soldier.callsign, "command", cfg.order_objective_match)
-        elif self._step_count - recipient.last_order_step < cfg.order_stability_window:
-            # premature re-tasking without new superior intent: churn (the
-            # order still applies — commanding stays possible, just costly)
-            ledger.add(soldier.callsign, "command", cfg.order_churn)
 
         self._assign_mission(
             issuer_id=soldier.id,
@@ -1060,6 +1136,73 @@ class CohortEnv(ParallelEnv):
             supported_id=supported_id,
         )
         soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
+
+    def _retask_exception(
+        self, issuer: Soldier, recipient: Soldier, intent_changed: bool
+    ) -> tuple[bool, str | None]:
+        """Is a re-task of ``recipient`` free for ``issuer`` right now, and why?
+
+        The exception set — the exact conditions under which the tactical
+        picture counts as changed since the recipient's standing order landed
+        (mirrors the order-cooldown lifts, plus element casualties):
+
+        * ``"contact"`` — a CONTACT report hit the net after the standing
+          order was received (strictly later, like the cooldown lift);
+        * ``"casualty"`` — a soldier anywhere in the issuer's element (its
+          command subtree) died at or after the standing order's step (deaths
+          resolve after the order phase, so a same-step casualty is news);
+        * ``"intent"`` — the issuer's own mission changed after the
+          subordinate was last ordered (the cooldown's other lift; this path
+          also earns the fresh-tasking propagation credit).
+
+        The subordinate's truthful DONE needs no clause here: the confirmed
+        claim cleared its mission, so a follow-up order is a fresh tasking and
+        never reaches re-task pricing at all.
+        """
+        if (
+            self._last_net_contact_step is not None
+            and self._last_net_contact_step > recipient.last_order_step
+        ):
+            return True, "contact"
+        casualty_step = self._element_casualty_step.get(issuer.id)
+        if casualty_step is not None and casualty_step >= recipient.last_order_step:
+            return True, "casualty"
+        if intent_changed:
+            return True, "intent"
+        return False, None
+
+    @staticmethod
+    def _standing_anchor_key(mission: Mission) -> tuple:
+        """Identity of a standing mission's anchor, for rotation detection.
+
+        Two orders share an anchor when they name the same objective, support
+        the same soldier, rally (on the leader), or hold the same ground —
+        a mission-TYPE change on the same anchor is half-price re-tasking;
+        an anchor change is a full-price rotation.
+        """
+        if mission.type is MissionType.SUPPORT:
+            return ("support", mission.extra.get("supported_id"))
+        if mission.objective_id is not None:
+            return ("obj", mission.objective_id)
+        if mission.type is MissionType.RALLY:
+            return ("rally",)
+        return ("pos", (int(mission.anchor[0]), int(mission.anchor[1])))
+
+    @staticmethod
+    def _order_anchor_key(
+        mission_type: MissionType,
+        objective_id: int | None,
+        supported_id: int | None,
+        recipient: Soldier,
+    ) -> tuple:
+        """Anchor identity a new order WOULD have (mirrors ``_assign_mission``)."""
+        if mission_type is MissionType.SUPPORT:
+            return ("support", supported_id)
+        if objective_id is not None:
+            return ("obj", objective_id)
+        if mission_type is MissionType.RALLY:
+            return ("rally",)
+        return ("pos", (int(recipient.pos[0]), int(recipient.pos[1])))
 
     def _assign_mission(
         self,

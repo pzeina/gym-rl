@@ -6,7 +6,10 @@ The reward teaches each rank its trade:
 * subordinates — report contacts (only *new* intel pays), send timely
                  SITREPs, report MISSION COMPLETE truthfully
 * leaders      — derive doctrine-preferred orders, keep every living
-                 subordinate tasked (coverage), don't spam re-orders (churn)
+                 subordinate tasked (coverage), don't spam re-orders (churn),
+                 and let standing orders STAND: re-tasking an already-tasked
+                 subordinate is a burden on command, priced by the issuer's
+                 rank, unless the tactical picture changed (B5)
 * team         — win: shared terminal reward plus a speed bonus
 
 Every scalar reward is the sum of named components; the components are
@@ -25,6 +28,16 @@ class RewardConfig:
 
     time_penalty: float = -0.01
     compliance_weight: float = 0.1
+
+    # Binding orders (B5) — standing-order tenure. Positive compliance credit
+    # grows with how long the CURRENT order has been held:
+    #   credit x (1 + tenure_factor x min(steps_held, tenure_horizon) / tenure_horizon)
+    # so a settled, executed order out-earns a churned one. Tenure resets when
+    # the mission is re-assigned (step_assigned restamps); an identical
+    # reissue is a no-op and does NOT reset it. Negative compliance is never
+    # amplified (the multiplier applies to positive scores only). 0 → off.
+    tenure_factor: float = 0.5
+    tenure_horizon: int = 40
 
     # Comms discipline (A4): every LEARNED transmission — CONTACT / SITREP /
     # MISSION COMPLETE / an order — costs airtime, charged at emission.
@@ -75,8 +88,30 @@ class RewardConfig:
     order_preferred: float = 0.15     # doctrine-preferred derivation
     order_allowed: float = 0.05       # doctrine-allowed, not preferred
     order_objective_match: float = 0.05  # subordinate tasked on leader's own objective
-    order_churn: float = -0.1         # reissue / premature re-tasking
-    order_stability_window: int = 10  # steps a standing order should stand
+    order_churn: float = -0.1         # reissuing the identical standing order (a no-op)
+
+    # Binding orders (B5) — re-task pricing. Re-tasking an already-tasked
+    # subordinate (objective change OR mission-type change) is an act of
+    # command with real weight, and the weight grows with rank — a high-rank
+    # order is a broad intent subordinates adapt within, not a knob to twiddle:
+    #   cost = order_retask_cost_base x (1 + order_retask_rank_scale x issuer authority)
+    # (TL -0.75, SL -1.0, PL -1.5 at the defaults). A same-objective
+    # mission-type-only change (e.g. SEIZE→CLEAR on the same objective) is
+    # half price. The cost is WAIVED — legitimate intervention stays free —
+    # exactly when the tactical picture changed since the standing order:
+    #   * a CONTACT hit the net since the subordinate was last ordered,
+    #   * a casualty occurred in the issuer's element (its command subtree)
+    #     since, or
+    #   * the issuer's own mission changed since (propagation of new intent;
+    #     this also pays the fresh-tasking bonuses, as before), or
+    #   * the subordinate truthfully reported DONE (structural: the confirmed
+    #     claim cleared its mission, so the new order is a fresh tasking).
+    # This supersedes the old stability-window churn penalty for tasked
+    # subordinates (the identical-reissue no-op path keeps order_churn).
+    # order_retask_cost_base = 0 → pricing off.
+    order_retask_cost_base: float = -0.5
+    order_retask_rank_scale: float = 0.5
+
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.02       # some living subordinate left untasked
 
@@ -106,12 +141,14 @@ class RewardConfig:
     #                                   but the episode continues — succession exercises
 
     # Terminal rewards must DOMINATE any achievable per-step shaping accrual:
-    # with ~0.06/step of positive shaping over a 600-step episode (the v1.4
-    # platoon cap) an agent can farm ~36 by never finishing — mission success
-    # has to be worth strictly more, or the policy learns to stall at 100%
-    # "in position" and 0% wins (observed in practice on the squad scenario
-    # before this margin was set; raised 25 → 45 for the v1.4 x1.5 maps).
-    success_team: float = 45.0
+    # with ~0.09/step of positive shaping over a 600-step episode (the v1.4
+    # platoon cap; the B5 tenure multiplier raises the per-step ceiling from
+    # 0.06 to 0.09 at full tenure) an agent can farm ~54 by never finishing —
+    # mission success has to be worth strictly more, or the policy learns to
+    # stall at 100% "in position" and 0% wins (observed in practice on the
+    # squad scenario before this margin was set; raised 25 → 45 for the v1.4
+    # x1.5 maps, 45 → 60 for the B5 tenure ceiling).
+    success_team: float = 60.0
     success_speed: float = 15.0       # x fraction of steps remaining at success
     root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
     #                                   DONE inside the completion-report grace window
@@ -122,11 +159,16 @@ class RewardConfig:
     def max_step_farm(self) -> float:
         """Upper bound on per-step reward farmable by stalling (not winning).
 
-        Best-case stall: perfect posture compliance (0.6 x weight) plus the
-        leader coverage bonus, minus the time penalty. Used by tests to prove
-        terminal dominance for every scenario's episode cap.
+        Best-case stall: perfect posture compliance (0.6 x weight) at FULL
+        standing-order tenure (the B5 multiplier's ceiling, 1 + tenure_factor)
+        plus the leader coverage bonus, minus the time penalty. Used by tests
+        to prove terminal dominance for every scenario's episode cap.
         """
-        return self.compliance_weight * 0.6 + self.coverage_bonus + self.time_penalty
+        return (
+            self.compliance_weight * 0.6 * (1.0 + max(0.0, self.tenure_factor))
+            + self.coverage_bonus
+            + self.time_penalty
+        )
 
 
 #: Component names, fixed so metrics stay aligned across runs.

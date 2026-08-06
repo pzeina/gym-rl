@@ -144,6 +144,10 @@ class TraceRecorder:
                 {"id": e.id, "alive": e.alive, "pos": list(e.pos)} for e in env.enemies
             ],
             "messages": [_message_record(env, m) for m in messages],
+            # B5 order economics: this tick's re-task events, straight from
+            # the environment's own adjudication (issuer rank, priced or
+            # excepted and why, anchor rotation or same-anchor type change)
+            "retasks": [] if initial else env.retask_events_last_step,
         }
 
 
@@ -318,6 +322,37 @@ def _doctrine(trace: dict) -> tuple[int, int]:
     return issued, preferred
 
 
+def _retasks(trace: dict) -> dict[str, Any]:
+    """Re-task economics counts (B5), read from the environment's own
+    adjudication recorded per step: total re-tasks (orders replacing a
+    standing mission — fresh taskings and identical reissues are not
+    re-tasks), how many were priced vs. excepted (the tactical-picture
+    carve-out: contact / element casualty / issuer intent change), how many
+    rotated the anchor (vs. same-anchor mission-type changes), and the
+    per-issuer-rank split of priced vs. excepted."""
+    total = priced = excepted = rotations = 0
+    by_rank: dict[str, dict[str, int]] = {}
+    for step in trace["steps"]:
+        for ev in step.get("retasks", []):
+            total += 1
+            bucket = by_rank.setdefault(ev["rank"], {"priced": 0, "excepted": 0})
+            if ev["excepted"]:
+                excepted += 1
+                bucket["excepted"] += 1
+            else:
+                priced += 1
+                bucket["priced"] += 1
+            if not ev["same_anchor"]:
+                rotations += 1
+    return {
+        "retasks": total,
+        "retasks_priced": priced,
+        "retasks_excepted": excepted,
+        "retask_rotations": rotations,
+        "retasks_by_rank": by_rank,
+    }
+
+
 def _false_complete(trace: dict) -> tuple[int, int]:
     """(DONE reports transmitted, of which rejected by the superior)."""
     dones = 0
@@ -471,6 +506,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "obedience_censored": censored,
         "orders_issued": issued,
         "orders_preferred": preferred,
+        **_retasks(trace),
         **_reports(trace),
         "done_reports": dones,
         "done_rejected": rejected,
@@ -507,15 +543,23 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     alongside so a None is always explainable.
     """
     def total(key: str) -> int:
-        return sum(ep[key] for ep in episodes)
+        return sum(ep.get(key, 0) for ep in episodes)
+
+    n_eps = len(episodes)
+    retasks_by_rank: dict[str, dict[str, int]] = {}
+    for ep in episodes:
+        for rank, bucket in ep.get("retasks_by_rank", {}).items():
+            dst = retasks_by_rank.setdefault(rank, {"priced": 0, "excepted": 0})
+            dst["priced"] += bucket.get("priced", 0)
+            dst["excepted"] += bucket.get("excepted", 0)
 
     latencies = [v for ep in episodes for v in ep["obedience_latencies"]]
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
     return {
-        "episodes": len(episodes),
+        "episodes": n_eps,
         "success_rate": _ratio(
-            sum(ep["outcome"] == "success" for ep in episodes), len(episodes)
+            sum(ep["outcome"] == "success" for ep in episodes), n_eps
         ),
         "obedience_latency_mean": _mean(latencies),
         "obedience_orders": len(latencies) + total("obedience_censored"),
@@ -525,6 +569,14 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "contact_reports": total("contacts"),
         "doctrine_preference_rate": _ratio(total("orders_preferred"), total("orders_issued")),
         "orders_issued": total("orders_issued"),
+        "orders_per_episode": _ratio(total("orders_issued"), n_eps),
+        "retasks": total("retasks"),
+        "retasks_priced": total("retasks_priced"),
+        "retasks_excepted": total("retasks_excepted"),
+        "retask_rotations": total("retask_rotations"),
+        "retasks_per_episode": _ratio(total("retasks"), n_eps),
+        "retasks_priced_per_episode": _ratio(total("retasks_priced"), n_eps),
+        "retasks_by_rank": retasks_by_rank,
         "false_complete_rate": _ratio(total("done_rejected"), total("done_reports")),
         "done_reports": total("done_reports"),
         "done_rejected": total("done_rejected"),
@@ -542,6 +594,9 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
 #: (key, label, format) rows of the printed behavior table, in display order.
 _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("obedience_latency_mean", "obedience latency (steps)", "{:.1f}"),
+    ("orders_per_episode", "orders issued / ep", "{:.1f}"),
+    ("retasks_per_episode", "re-tasks / ep", "{:.1f}"),
+    ("retasks_priced_per_episode", "priced re-tasks / ep", "{:.2f}"),
     ("report_precision", "report precision", "{:.2f}"),
     ("report_recall", "report recall", "{:.2f}"),
     ("doctrine_preference_rate", "doctrine preference", "{:.2f}"),
@@ -556,8 +611,17 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
 
 def format_behavior_table(agg: dict[str, Any]) -> str:
     """Human-readable table of an aggregated behavior summary."""
+    by_rank = ", ".join(
+        f"{rank} {b['priced']}p/{b['excepted']}e"
+        for rank, b in sorted(agg.get("retasks_by_rank", {}).items())
+    )
     notes = {
         "obedience_latency_mean": f"n={agg['obedience_orders']}, censored {agg['obedience_censored']}",
+        "retasks_per_episode": (
+            f"priced {agg.get('retasks_priced', 0)}, excepted {agg.get('retasks_excepted', 0)}, "
+            f"rotations {agg.get('retask_rotations', 0)}"
+            + (f"; by rank: {by_rank}" if by_rank else "")
+        ),
         "report_precision": f"n={agg['contact_reports']}",
         "doctrine_preference_rate": f"n={agg['orders_issued']}",
         "false_complete_rate": f"n={agg['done_reports']}",

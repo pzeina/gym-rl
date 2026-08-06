@@ -97,6 +97,33 @@ the policy picks the doctrine-*preferred* option among the legal ones.
 (mission inherited the same tick it issued) is judged against its
 pre-succession mission.
 
+### Order volume and re-task economics (B5)
+
+`orders_per_episode` is `orders_issued / episodes` (agent-issued ORDER
+transmissions, as in the doctrine-preference denominator; HQ traffic
+excluded).
+
+The re-task counts are **not** reconstructed from the transcript: the
+environment adjudicates every applied order that replaced a standing mission
+(a *re-task* — fresh taskings of untasked subordinates and identical
+reissues are not re-tasks) and the recorder copies its per-step event log
+(`env.retask_events_last_step`) into the trace. Per run:
+
+* **`retasks`** (+ `retasks_per_episode`) — all re-task events;
+* **`retasks_priced`** / **`retasks_excepted`** — split by whether the
+  rank-scaled re-task price was charged or waived under the
+  tactical-picture carve-out (a CONTACT on the net since the standing
+  order, a casualty in the issuer's element since, or the issuer's own
+  mission changed since; a truthful DONE never appears here — it clears
+  the mission, so the follow-up order is a fresh tasking);
+* **`retask_rotations`** — re-tasks that changed the order's *anchor*
+  (another objective, another supported unit…), as opposed to same-anchor
+  mission-type changes;
+* **`retasks_by_rank`** — `{issuer effective rank: {priced, excepted}}`,
+  because the price scales with the issuer's authority: under the B5
+  doctrine, priced re-tasks should approach zero and higher ranks should
+  re-task strictly more rarely than lower ones.
+
 ### False-COMPLETE rate
 
 Rejected DONE / total DONE transmitted. Every MISSION COMPLETE claim is

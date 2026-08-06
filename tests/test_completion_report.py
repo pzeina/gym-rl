@@ -232,8 +232,12 @@ def test_root_compliance_pays_from_cover_while_team_observes():
     env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])
     env.roster.by_callsign["SL1"].pos = (5, 21)
     *_, infos = _step_all(env, {})
-    w = env.rewards_cfg.compliance_weight
-    assert infos["SL1"]["components"]["compliance"] == pytest.approx(0.6 * w)
+    cfg = env.rewards_cfg
+    # OPORD held since step 0: 1 step of standing-order tenure at step 1 (B5)
+    tenure = 1.0 + cfg.tenure_factor * 1 / cfg.tenure_horizon
+    assert infos["SL1"]["components"]["compliance"] == pytest.approx(
+        0.6 * cfg.compliance_weight * tenure
+    )
 
     env2 = _recon_env()  # control: nobody observes
     env2.roster.by_callsign["SL1"].pos = (5, 21)
