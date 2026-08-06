@@ -113,7 +113,15 @@ class RewardConfig:
     order_retask_rank_scale: float = 0.5
 
     coverage_bonus: float = 0.01      # all living subordinates tasked
-    coverage_gap: float = -0.02       # some living subordinate left untasked
+    coverage_gap: float = -0.1        # some living subordinate left untasked, per step.
+    #                                   Raised -0.02 → -0.1 in the B5 campaign (the one
+    #                                   diagnosed adjustment): re-task pricing suppressed
+    #                                   ordering so hard that INITIAL tasking collapsed
+    #                                   too (squad coverage time 0.96 → 0.61; a TL2 left
+    #                                   untasked for 100+ steps) — but an order that is
+    #                                   never issued cannot bind. Initial tasking is free
+    #                                   and pays the derivation bonus; silence must cost
+    #                                   more than speaking once.
 
     # Fire discipline by mission (found via oracle diagnosis: combat rewards
     # were dominating mission compliance — recon elements out-shot the static

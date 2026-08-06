@@ -272,6 +272,20 @@ callsigns). Per agent, per step:
   accurate report of an enemy pays in full, a refresh of aging intel is worth exactly
   0, re-reporting fresh intel is penalized noise. See
   [docs/command_language.md](docs/command_language.md).
+* **Binding orders** (B5): an order is meant to be the best predictor of its
+  recipient's near-term behavior, so *changing* one is expensive. Re-tasking an
+  already-tasked subordinate costs the issuer a **rank-scaled price**
+  (`order_retask_cost_base × (1 + rank_scale × authority)` — a TL pays −0.75, an SL
+  −1.0, a PL −1.5; a same-objective mission-type change is half price), **waived
+  exactly when the tactical picture changed** since the standing order: a CONTACT on
+  the net, a casualty in the issuer's element, the issuer's own mission changed, or
+  the subordinate's confirmed MISSION COMPLETE (which clears the mission, so the next
+  order is a fresh — free — tasking). Compliance credit **grows with standing-order
+  tenure** (×1 → ×1.5 over 40 held steps, positive credit only), so settled, executed
+  orders out-earn churned ones; leaving a subordinate untasked bleeds the leader
+  (`coverage_gap`) — silence must cost more than speaking once. Every re-task is
+  logged by the environment (priced vs. excepted and why, anchor rotation vs.
+  type change) and reported per rank in the behavioral metrics suite.
 * **Completion reporting is load-bearing**: when the root-mission success condition is
   first met, the episode stays open for a short window (`ScenarioSpec.grace_window`,
   default 12 steps). A truthful `MISSION COMPLETE` from the senior agent — judged
@@ -310,9 +324,11 @@ scratch (fresh nets; pre-v1.4 runs stay on disk and in git history for provenanc
 Numbers are sampled-policy evaluation success over N=100 episodes with a 95% CI;
 `ckpt_best` is the rolling-best checkpoint of each run. The fireteam and squad
 results were re-published under the **A4 comms discipline** (net-busy arbitration +
-transmission cost + CONTACT dedup — the env every number below is measured in);
-the other scenarios' checkpoints predate A4 and keep their v1.4 numbers (measured
-in the pre-A4 env).
+transmission cost + CONTACT dedup), and the fireteam, squad, and patrol-BRIQUE
+results again under the **B5 binding-order economics** (re-task pricing +
+standing-order tenure — the env every number below is measured in); the other
+scenarios' checkpoints predate those campaigns and keep their earlier numbers
+(their evaluated behavior is unchanged — only reward arithmetic moved).
 
 A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death economics
 (a human commander's death costs every agent −25) the combat-heavy scenarios train
@@ -323,25 +339,29 @@ peaks; the training curves show the collapses honestly.
 
 ### Results (fireteam)
 
-`runs/fireteam_v4d/` — **83% ± 7** (N=100), `fireteam_v4` fine-tuned 1.5M steps under
-the A4 comms discipline. The net transformed: CONTACT reports fell from 22.6 to **2.5
-per episode** (duplicate rate 0.92 → 0.51 — the storm is gone), total learned
-transmissions halved (0.18 → 0.09 per agent-step), SITREPs stayed within doctrine at
-0.98 per agent per 25 steps. **Below the pre-discipline number (92% ± 5, regression
-bound −3)**, documented honestly: the fine-tune took a D4-style mid-run collapse
-(0.93 rolling → 0 at ~0.6M) and self-recovered to 87% rolling but not to its peak;
-the diagnosed gentler rerun (`runs/fireteam_v4e/`, `--lr 5e-5 --ent-coef 0.003`)
-collapsed terminally at ~0.7M — retrain and adjustment both spent (ROADMAP A4/D4).
-The operation still ends on the net (~4.7 DONE reports per episode):
+`runs/fireteam_v5b/` — **78% ± 8** (N=100), retrained from scratch (2.5M steps) under
+the **B5 binding-order economics**. The net now reads like a plan being executed, not
+renegotiated: orders fell from 24.2 to **7.4 per episode** and re-tasks from 21.2 to
+**4.2** (anchor rotations 397 → 70 per 30 episodes) — the TL tasks each rifleman once
+in the opening seconds and the team runs the whole assault on those standing orders:
 
 ```
-[t=146] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
-[t=146] TL1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+[t=  0] TL1, THIS IS HQ: OPORD — SEIZE OBJ ALPHA. OUT.
+[t=  2] RFN3, THIS IS TL1: SEIZE OBJ ALPHA. OUT.
+[t=  4] RFN2, THIS IS TL1: CLEAR OBJ ALPHA. OUT.
+[t= 16] RFN1, THIS IS TL1: SEIZE OBJ ALPHA. OUT.
 ```
 
-![training curves](runs/fireteam_v4d/training_curves.png)
+**At the campaign's −5 regression bound (was 83% ± 7)**, documented honestly: the
+from-scratch run took a D4-style mid-run dip (rolling 6% around 1.65M) and
+self-recovered; the pre-adjustment sibling `runs/fireteam_v5/` (82% ± 8, trained
+before the coverage-pressure adjustment) is kept alongside, as is the A4-era
+`runs/fireteam_v4d/` (83% ± 7) whose comms-discipline numbers (CONTACT storm erased,
+SITREP cadence 0.98/25 steps) carry forward.
 
-![episode](runs/fireteam_v4d/eval.gif)
+![training curves](runs/fireteam_v5b/training_curves.png)
+
+![episode](runs/fireteam_v5b/eval.gif)
 
 The eval GIF shows the map (APP-6 unit symbols, gold-ringed human commander,
 chain-of-command links, mission anchors) side by side with the live radio net. The full
@@ -349,24 +369,23 @@ transcript of the episode is written to `eval_transcript.txt`.
 
 ### Results (squad — two command echelons, 7 agents)
 
-`runs/squad_v3e/` — **84% ± 7** (N=100), fine-tuned from `squad_v3b` under the A4
-comms discipline: SITREPs fell from 2.9 to **0.74 per agent per 25 steps** and total
-learned transmissions halved (0.26 → 0.13 per agent-step) with **zero success
-regression** vs. its parent (84% ± 7). The SL receives the OPORD, tasks its fire-team
-leaders (SUPPORT pairings included: `TL1, THIS IS SL1: SUPPORT TL2. OUT.`), and the
-TLs task their riflemen — now one transmission per tick, on a readable net. Both
-discipline fine-tunes collapsed D4-style (the first at 0.1M, the diagnosed gentler
-rerun at 0.6M after holding 0.81–0.90 for 0.6M steps; `comp_combat` shows the
-human-death shock bursts before the onset); the published checkpoint is the 0.94
-rolling peak, and CONTACT dedup — only 51k discipline steps deep — still re-reports
-fresh intel at a 0.83 rate (documented A4 residual; the fireteam run shows 1.5M steps
-erase the storm entirely). Ancestors `runs/squad_v3b/` (84% ± 7, pre-discipline) and
-`runs/squad_v3/` (85% ± 7) are kept alongside, with the collapsed `runs/squad_v3d/`
-for the D4 record.
+`runs/squad_v4b/` — **82% ± 8** (N=100), retrained from scratch (3M steps, bound: −5
+of the 84% ± 7 A4 number, met) under the **B5 binding-order economics**. Re-tasking
+collapsed from 58.8 to **9.6 per episode** (anchor rotations 1404 → 210 per 30
+episodes) while the two-echelon cascade held: the SL splits the objectives across its
+fire teams inside the first quarter-minute and the orders *stand* — the B4-era
+transcript pattern (the same station rotated across three objectives in 21 steps) no
+longer occurs. The remaining re-tasks are mostly carve-out-legitimate: the TLs'
+re-orders split 91 priced / 99 excepted (contact, casualty, new superior intent) over
+30 episodes. The pre-adjustment sibling `runs/squad_v4/` (81% ± 8, the extreme of
+order thrift: 0.3 re-tasks/ep but subordinate coverage down to 0.61) motivated the
+campaign's one diagnosed adjustment — `coverage_gap` −0.02 → −0.1, because an order
+that is never issued cannot bind — and is kept alongside, with the A4-era
+`runs/squad_v3e/` (84% ± 7) and its ancestors for the record.
 
-![squad curves](runs/squad_v3e/training_curves.png)
+![squad curves](runs/squad_v4b/training_curves.png)
 
-![squad episode](runs/squad_v3e/eval.gif)
+![squad episode](runs/squad_v4b/eval.gif)
 
 ### Results (platoon — three command echelons, 16 agents)
 
@@ -464,16 +483,21 @@ raiding band.
 **Results** (N=100, sampled policy, 95% CI; both fine-tuned 3M steps at `--lr 1e-4`
 under the D4 rolling-best fix):
 
-`runs/patrol_brique_v1/` — **99% ± 2** (99/100, 6.4/7 mean survivors), fine-tuned from
-`squad_v3e`. Oracle before → after (30 fixed-seed episodes, parent vs. trained): total
-casualties **3.2 → 0.8 per episode**, ambushes sprung at all **29/30 → 15/30** (the
-patrol learned routes that refuse the kill zone), casualties inside the sprung-ambush
-window 1.2 → 0.8, **trap casualties 0.63 → 0.0 per episode** (the mined route corridor
-is avoided outright), SUPPORT taskings during movement **1.8 → 3.9 per episode**
-(`TL1, THIS IS SL1: SUPPORT TL2. OUT.` lands at t=11 of the eval transcript — bounding
-starts supported). The mid-run training was rough — rolling oscillated 0.06–0.94 for
-the first ~1.5M steps (the D4 shock signature, amplified by the band deliberately
-targeting the human commander) before converging to 0.96–1.0.
+`runs/patrol_brique_v2b/` — **99% ± 2** (99/100, 6.7/7 mean survivors), fine-tuned 3M
+steps from the B5 squad checkpoint under the **binding-order economics**. The policy
+converged to a **silent rush**: episodes last ~60 steps (v1: 200+), the SL issues ~6
+orders per episode with exactly **one anchor rotation in 30 episodes**, the column
+takes a route that never enters the ambush kill zone (4 CONTACTs in 30 episodes
+because there is rarely anything to report), and the human commander dies 1/30. It is
+tactically the strongest patrol this project has produced and — measured honestly by
+the transparency probe below — the least radio-explained: command economics made
+speed-plus-silence the optimum against a mined ambush corridor. Predecessors kept:
+`runs/patrol_brique_v2/` (97% ± 3, pre-adjustment) and the A4-era
+`runs/patrol_brique_v1/` (99% ± 2, whose oracle record — ambushes refused 29/30 →
+15/30, trap casualties 0.63 → 0.0/ep, SUPPORT bounding 1.8 → 3.9/ep — documents the
+band-fighting behaviors the line evolved from). Training under BRIQUE stayed rough in
+v1 (rolling oscillated 0.06–0.94 for ~1.5M steps — the D4 shock signature); the B5
+fine-tunes transferred instantly and held ≥0.96 rolling throughout.
 
 `runs/defend_brique_v1/` — **87% ± 7** (`ckpt_best`, saved at 2.1M; the final
 checkpoint evaluates the same, 88% ± 6 — zero defeats either way, 3.9/4 mean
@@ -486,9 +510,9 @@ log shows rolling pinned at 1.0 by the parent in the very first window — the o
 would have frozen `ckpt_best` at ~1k steps; the new full-turnover gate saved it at its
 genuine 2.1M peak.
 
-![patrol_brique curves](runs/patrol_brique_v1/training_curves.png)
+![patrol_brique curves](runs/patrol_brique_v2b/training_curves.png)
 
-![patrol_brique episode](runs/patrol_brique_v1/eval.gif)
+![patrol_brique episode](runs/patrol_brique_v2b/eval.gif)
 
 Curriculum tip: checkpoints are scenario-compatible (same spaces) — train `fireteam`
 first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on up to
@@ -513,12 +537,18 @@ The founding promise — the net alone explains the behavior — is measured, no
 asserted: `python -m cohort.probe runs/<run>/ckpt_best.pt` replays evaluation
 episodes and scores a deterministic net-following reader (transcript-so-far +
 briefing material only, no positions) at predicting each agent's next-15-step
-destination and posture, against majority and random baselines. The honest
-verdict is mixed: posture beats random on all 8 published checkpoints, and
-stable-anchor defenses are genuinely readable (the defend-BRIQUE team leader is
-predictable at 0.99) — but destination *loses* to an OPORD-only reader
-everywhere, because doctrine-valid order traffic churns objectives faster than
-execution binds them. Method, tables, failure modes:
+destination and posture, against majority and random baselines. The B4 verdict
+diagnosed **order churn** — doctrine-valid traffic rotated objectives faster
+than execution could bind them — and the **B5 binding-order economics** were
+built and retrained against exactly that finding. After B5 the churn is dead
+(squad re-tasks 58.8 → 9.6/ep; patrol anchor rotations 1364 → 1 per 30
+episodes) and destination accuracy rose sharply where orders bind (fireteam
+0.31 → 0.54, gap vs majority halved) — but the majority baseline stands
+unbeaten on all three retrained checkpoints: the residual error is
+*vocabulary*, not churn (formation-keeping, untasked drift, and route doglegs
+have no radio form — the A5 order-vocabulary item). Stable-anchor defenses
+remain genuinely readable (the defend-BRIQUE team leader at 0.99). Method,
+before/after tables, the honest verdict:
 [docs/transparency.md](docs/transparency.md).
 
 ## Project layout
@@ -549,12 +579,12 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 267 tests: ranks, language, doctrine, succession, masking,
+tests/                 282 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
                        SITREP cadence, BRIQUE band + traps, behavioral metrics,
-                       hierarchy-ablation arms, transparency probe, dashboard,
-                       training smoke
+                       hierarchy-ablation arms, transparency probe, binding-order
+                       economics, dashboard, training smoke
 legacy/                the previous (RLlib-based) implementation, archived
 ```
 
