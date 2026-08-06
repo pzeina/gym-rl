@@ -1236,3 +1236,48 @@ terrain (still deferred).
   behavior.json.
   `fireteam_defend_v10` launched: v9 + `contact_redundant` −0.25, one variable,
   v9 as baseline.
+
+- **2026-08-06** — **Issue #13 (assurance): `done_reports = 0` in squad had a
+  denominator problem, and the fix is a metric, not a price.** Handled by the
+  dedicated fix agent; commit `dac323a`, `refs #13`, issue deliberately left open
+  for the assurance layer to verify and close.
+  #13's diagnosis is confirmed by `done_probe` on `squad_v6` (10 eps, seed 500):
+  the channel is **wide open** — squad's root mission is SEIZE, which was always
+  in `COMPLETABLE`, so `cc07199` never applied here — and the policy declines
+  **every one of 3327 truthful opportunities** (root 96, subordinate 3231); the
+  oracle regime accepts at 1.000. So squad's silence is **suppression, not
+  absence** — a genuinely different failure from the DEFEND mask bug, and the
+  pipeline could not tell them apart because `done_reports = 0` had no
+  denominator. It has one now: `done_admissible`, `done_admissible_root` and
+  `done_claim_rate` in `behavior.json`, with **no opportunity → `null`, never
+  `0.0`** — that distinction is the entire point. `is_done_admissible()` is
+  lifted out of `compute_mask` as a single shared predicate, the same pattern as
+  `is_root_opord_claim` and for the same reason. 421 → 425 tests.
+  **Design decision deferred to the owner — I am not making this one.** The
+  agent recommended `done_false` −2.0 → −0.6. Checked against v9's data I would
+  *not* apply it blindly, because the same price produces opposite behaviour in
+  two scenarios:
+  * **squad**: 0 claims on 3327 truthful opportunities — suppressed;
+  * **fireteam_defend v9**: 188 claims at an accept rate of 0.33 — active, and
+    sitting exactly on break-even.
+  A blanket −0.6 would revive squad while pushing fireteam_defend's root, whose
+  break-even would fall from 0.33 to **0.13**, into claim-spam — and v9 already
+  logs 126 rejected claims. The price is not uniformly wrong; the scenarios
+  differ in whether subordinates hold missions that can actually complete.
+  **The hidden second tax**, found by the agent in `_report_done` and not in
+  #13's economics: a truthful claim sets `soldier.mission = None`, so an honest
+  *subordinate* forfeits its ongoing compliance pay (up to ~0.09/step at full
+  tenure — worth far more than `done_true` +1.0 over a 450-step episode) and
+  forces a re-task its leader pays for. The root is unaffected: its truthful
+  claim ends the episode. So the honest act is priced very differently by role,
+  and the nominal break-even understates the subordinate's.
+  **Options for the owner** — (1) reprice `done_false` toward −0.6, cheap but
+  mis-targeted per the above; (2) accept the silence, which re-kills
+  `root_done_bonus` and the grace window that `cc07199` just resurrected — not
+  recommended; (3) price the two acts by role, or stop the honest claim
+  forfeiting compliance pay until re-tasked, which targets the actual asymmetry.
+  **My recommendation is (3)**, on the reading that an honest report silently
+  costing a soldier its income is a defect rather than a calibration, and that
+  fixing it lets the nominal price mean what it says. But "what a subordinate is
+  owed between completing and being re-tasked" is a doctrine question, so it
+  waits. Either way the effect is now measurable from `behavior.json` alone.
