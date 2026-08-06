@@ -19,6 +19,13 @@ behaves* while doing so, per evaluation run:
   tables, a policy that adopts ADVANCE wholesale scores ~0 preference with
   zero doctrine violations — without the split, catalog adoption is
   indistinguishable from disregarding doctrine)
+* ordered-task availability — the same mix against what the order mask
+  actually offered, per issued order (refs issue #16: the mask does not offer
+  the tasks in equal numbers, so a raw share conflates "the policy declined
+  this" with "this was barely on the menu" — and the confound runs in
+  *opposite directions* by scenario family, so it flatters a policy in one
+  and slanders it in another). ``share / availability`` is the selection
+  lift, with 1.00 the masked-random floor
 * false-COMPLETE rate    — MISSION COMPLETE claims rejected by the umpire
 * COMPLETE claim rate    — claims transmitted over the agent-steps at which
   claiming was admissible (refs issue #13: zero DONE reports is either a shut
@@ -69,7 +76,7 @@ from cohort.core.missions import (
     is_pending,
 )
 from cohort.core.units import CombatParams
-from cohort.env.actions import is_done_admissible
+from cohort.env.actions import is_done_admissible, order_options
 
 if TYPE_CHECKING:
     from cohort.env.cohort_env import CohortEnv
@@ -215,6 +222,13 @@ class TraceRecorder:
                         step=env._step_count,
                         done_cooldown=env.spec_cfg.done_cooldown,
                     ),
+                    # which orders the mask offered this agent at this state,
+                    # by ordered task — the opportunity denominator of the
+                    # ordered-task mix (refs #16). Recomputed from the same
+                    # function that built the observation's own mask a moment
+                    # ago, so it is the vocabulary the policy actually chose
+                    # from, not a re-derivation of it.
+                    "order_opts": order_options(env._mask_for(s)),
                     "root": s is root,
                 }
             )
@@ -479,22 +493,48 @@ def _doctrine(trace: dict) -> dict[str, Any]:
     violations, so the rate reads as a collapse when it is catalog adoption.
     ``orders_by_task`` makes that adoption visible: preference conditioned on
     the ordered task, against the task's share of all orders.
+
+    The task mix in turn needs its own denominator (refs issue #16). Order
+    shares are *availability-confounded*: the order mask offers the tasks in
+    wildly unequal numbers, so a task can be rare because the policy declines
+    it or because it was barely on the menu. ``order_availability`` is the
+    matched control — for every order the policy actually issued, the share of
+    the issuer's admissible order vocabulary that belonged to each task at
+    that exact state (from ``order_opts``, read off the mask at ``steps[i-1]``,
+    which is the observation the issuer acted on). Summed here and divided by
+    ``orders_matched`` at aggregation, it is precisely the expected task mix
+    of a masked-random policy making the same set of order decisions — the
+    floor a preference has to clear to be a preference at all.
     """
     steps = trace["steps"]
     issued = 0
     tiers = dict.fromkeys(DOCTRINE_TIERS, 0)
     by_task: dict[str, dict[str, int]] = {}
+    availability: dict[str, float] = {}
+    matched = 0
     for i in range(1, len(steps)):
         step = steps[i]
         t = step["t"]
-        cur: dict[str, str | None] = {
-            rec["cs"]: rec["mission"] for rec in steps[i - 1]["soldiers"]
+        prev = steps[i - 1]["soldiers"]
+        cur: dict[str, str | None] = {rec["cs"]: rec["mission"] for rec in prev}
+        offered: dict[str, dict[str, int]] = {
+            rec["cs"]: rec.get("order_opts") or {} for rec in prev
         }
         for msg in step["messages"]:
             if msg["kind"] not in ("order", "opord") or msg["mission"] is None:
                 continue
             if msg["kind"] == "order" and msg["from"] != "HQ":
                 issued += 1
+                opts = offered.get(msg["from"]) or {}
+                # An order the issuer's own mask did not offer was injected or
+                # replayed, not selected: it has no opportunity set to compare
+                # against, so it stays out of the matched control. The gap
+                # between orders_matched and orders_issued makes that visible.
+                if msg["mission"] in opts:
+                    matched += 1
+                    total_opts = sum(opts.values())
+                    for task, n in opts.items():
+                        availability[task] = availability.get(task, 0.0) + n / total_opts
                 own = cur.get(msg["from"])
                 allowed = allowed_derivations(MissionType[own]) if own is not None else ()
                 task = MissionType[msg["mission"]]
@@ -524,6 +564,8 @@ def _doctrine(trace: dict) -> dict[str, Any]:
         "orders_violating": tiers["violating"],
         "orders_underivable": tiers["underivable"],
         "orders_by_task": by_task,
+        "order_availability": availability,
+        "orders_matched": matched,
     }
 
 
@@ -891,6 +933,19 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             dst = orders_by_task.setdefault(task, dict.fromkeys(DOCTRINE_TIERS, 0))
             for tier in DOCTRINE_TIERS:
                 dst[tier] += bucket.get(tier, 0)
+    # refs #16: the matched availability control, pooled over the run. Stored
+    # as a share (already divided by orders_matched) so behavior.json carries
+    # something directly comparable to the task mix beside it.
+    availability_sum: dict[str, float] = {}
+    for ep in episodes:
+        for task, value in (ep.get("order_availability") or {}).items():
+            availability_sum[task] = availability_sum.get(task, 0.0) + value
+    orders_matched = total("orders_matched")
+    order_availability = (
+        {task: value / orders_matched for task, value in sorted(availability_sum.items())}
+        if orders_matched
+        else {}
+    )
     # judgeable orders: the issuer held a mission to derive from
     derivable = total("orders_preferred") + total("orders_allowed") + total("orders_violating")
 
@@ -950,6 +1005,14 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "orders_violating": total("orders_violating"),
         "orders_underivable": total("orders_underivable"),
         "orders_by_task": orders_by_task,
+        # refs #16: what the mask offered, for the same order decisions. A
+        # task's share divided by its availability is the *selection lift* —
+        # 1.00 is exactly the masked-random floor, and it is the only form of
+        # the mix that can be compared across scenarios whose order menus
+        # differ. `orders_matched` below the issued count means orders were
+        # seen that the issuer's own mask did not offer (injected traces).
+        "order_availability": order_availability,
+        "orders_matched": orders_matched,
         "orders_issued": total("orders_issued"),
         "orders_per_episode": _ratio(total("orders_issued"), n_eps),
         "retasks": total("retasks"),
@@ -1120,6 +1183,70 @@ def format_order_task_mix(agg: dict[str, Any], top: int = 3) -> str:
     )
 
 
+def order_selection_lift(agg: dict[str, Any]) -> dict[str, float | None]:
+    """``share / availability`` per ordered task — 1.00 is the mask's own floor.
+
+    The availability-corrected form of the ordered-task mix (refs issue #16).
+    A raw share answers "how often was this ordered", which conflates two
+    different findings, because the order mask does not offer the tasks in
+    equal numbers:
+
+    * ``lift > 1`` — the policy chose the task *more* than picking uniformly
+      among the legal orders it was actually holding would have;
+    * ``lift == 1`` — indistinguishable from the mask; no preference at all;
+    * ``lift < 1`` — the policy declined opportunities it had.
+
+    The correction changes what the reading *says*, not just its size.
+    `fireteam_defend` offers SUPPORT 0.219 of the menu against OBSERVE's
+    0.112, so `fireteam_defend_v8`'s raw 0.102/0.010 — read for a generation
+    as a strong OBSERVE preference — is OBSERVE **x0.92** (the floor: no
+    preference at all) against SUPPORT **x0.04**. The finding is SUPPORT
+    avoidance, and the raw ratio understated it while misnaming its cause. In
+    `squad`, where OBSERVE is offered 2.9x more than SUPPORT, the same raw
+    ratio overstates instead — the confound has no fixed sign.
+
+    ``None`` for a task the mask never offered on this corpus: no opportunity,
+    so no selection to measure (SUPPORT under a SCREEN root, which cannot
+    derive it, is the standing example).
+    """
+    by_task = agg.get("orders_by_task") or {}
+    availability = agg.get("order_availability") or {}
+    issued = sum(sum(b.values()) for b in by_task.values())
+    if not issued:
+        return {}
+    lift: dict[str, float | None] = {}
+    for task in sorted(set(by_task) | set(availability)):
+        offered = availability.get(task, 0.0)
+        share = sum(by_task.get(task, {}).values()) / issued
+        lift[task] = share / offered if offered else None
+    return lift
+
+
+def format_order_availability(agg: dict[str, Any], top: int = 3) -> str:
+    """``TASK share/availability (xLIFT)`` for the tasks the mask offered most.
+
+    The companion of :func:`format_order_task_mix`: same mix, read against
+    what was on the menu (refs #16). Ranked by availability rather than by
+    orders issued on purpose — the reading that matters is the task the mask
+    offered and the policy did *not* take, and ranking by issued orders is
+    exactly what hides it.
+    """
+    availability = agg.get("order_availability") or {}
+    by_task = agg.get("orders_by_task") or {}
+    issued = sum(sum(b.values()) for b in by_task.values())
+    if not availability or not issued:
+        return ""
+    lift = order_selection_lift(agg)
+    ranked = sorted(availability.items(), key=lambda kv: -kv[1])[:top]
+    parts = []
+    for task, offered in ranked:
+        share = sum(by_task.get(task, {}).values()) / issued
+        value = lift.get(task)
+        shown = "—" if value is None else f"x{value:.2f}"
+        parts.append(f"{task} {share:.2f}/{offered:.2f} ({shown})")
+    return ", ".join(parts)
+
+
 def format_staging(agg: dict[str, Any]) -> str:
     """``staged N, released N (gap X), abandoned N`` — the A5-2 staging channel.
 
@@ -1158,6 +1285,11 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         ),
         "report_precision": f"n={agg['contact_reports']}",
         "doctrine_preference_rate": f"n={agg['orders_issued']}" + (f"; {task_mix}" if task_mix else ""),
+        # refs #16: the same mix against what the mask offered, so a task
+        # share is readable as a preference instead of as an opportunity count
+        "orders_per_episode": (
+            f"share/avail: {avail}" if (avail := format_order_availability(agg)) else ""
+        ),
         "doctrine_allowed_rate": (
             f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"
         ),

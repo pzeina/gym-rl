@@ -24,6 +24,7 @@ RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 from cohort.metrics import (  # noqa: E402
     format_obedience_by_task,
+    format_order_availability,
     format_order_task_mix,
     format_staging,
 )
@@ -163,6 +164,12 @@ def report(run: str, show_components: bool) -> dict:
         # the ordered-task mix says it is not just adoption of one legal leg
         if mix := format_order_task_mix(m):
             print(f"    {'order task mix':<20} {mix}   (share/preference)")
+        # refs #16: an order share is availability-confounded — the mask offers
+        # the tasks in unequal numbers, and in opposite directions per scenario
+        # family. The lift is the share over the masked-random floor: 1.00 is
+        # no preference, and it is the number a fix has to move.
+        if avail := format_order_availability(m):
+            print(f"    {'order availability':<20} {avail}   (share/avail (xlift))")
         # a pooled obedience mean cannot separate disobedience from a shift to
         # slower-resolving tasks — see format_obedience_by_task
         if obey := format_obedience_by_task(m):

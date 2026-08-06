@@ -168,11 +168,48 @@ N_ACTIONS: int = len(CATALOG)
 #: index lookups used by the mask builder
 _STAY = next(s.index for s in CATALOG if s.kind == "stay")
 _ORDER_SPECS = [s for s in CATALOG if s.kind == "order"]
+#: order entries that carry a mission payload (A5-3 stance orders do not), with
+#: their ordered task — the vocabulary :func:`order_options` reports on.
+_TASK_ORDER_SPECS: tuple[tuple[int, str], ...] = tuple(
+    (s.index, s.order_mission.name) for s in _ORDER_SPECS if s.order_mission is not None
+)
 
 
 def action_name(index: int) -> str:
     """Human-readable name of an action index."""
     return CATALOG[index].name
+
+
+def order_options(mask: np.ndarray) -> dict[str, int]:
+    """Admissible mission-payload order entries in ``mask``, by ordered task.
+
+    The *opportunity* side of the ordered-task mix (refs issue #16). An order
+    share on its own cannot say whether a task is rare because the policy
+    dislikes it or because the mask rarely offers it, and the two differ per
+    task by construction: SUPPORT is unit-targeted, so it needs a second
+    living subordinate slot and vanishes entirely from missions that cannot
+    derive it (SCREEN), while OBSERVE is objective-targeted and admissible
+    wherever it is derivable at all. Measured on the masked-random floor,
+    `squad` offers OBSERVE 2.9x more entries than SUPPORT and
+    `fireteam_defend` offers SUPPORT 1.9x *more* than OBSERVE — so the raw
+    ratio flatters the policy in one family and slanders it in the other.
+
+    Counting *entries* rather than tasks is what makes the baseline exact: a
+    uniform-over-legal policy picks an entry, not a task, so the expected
+    share of orders going to a task is its share of admissible entries.
+    A5-3 stance orders (``FORMATION X``) are excluded because they carry no
+    mission and never enter ``orders_by_task`` either — numerator and
+    denominator must range over the same vocabulary.
+
+    Read off the mask itself, deliberately: re-deriving "could this order have
+    been issued?" beside the mask is how the ``is_root_opord_claim``
+    divergence stayed invisible for a training generation.
+    """
+    options: dict[str, int] = {}
+    for index, task in _TASK_ORDER_SPECS:
+        if mask[index]:
+            options[task] = options.get(task, 0) + 1
+    return options
 
 
 def is_root_opord_claim(
