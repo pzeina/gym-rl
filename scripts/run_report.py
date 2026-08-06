@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 
 sys.path.insert(0, str(ROOT))
-from cohort.metrics import format_order_task_mix  # noqa: E402
+from cohort.metrics import format_obedience_by_task, format_order_task_mix  # noqa: E402
 
 
 def rows_of(run: str) -> list[dict]:
@@ -159,6 +159,10 @@ def report(run: str, show_components: bool) -> dict:
         # the ordered-task mix says it is not just adoption of one legal leg
         if mix := format_order_task_mix(m):
             print(f"    {'order task mix':<20} {mix}   (share/preference)")
+        # a pooled obedience mean cannot separate disobedience from a shift to
+        # slower-resolving tasks — see format_obedience_by_task
+        if obey := format_obedience_by_task(m):
+            print(f"    {'obey latency/task':<20} {obey}   (mean(orders))")
         summary["beh_success"] = m.get("success_rate")
         for g in b.get("gates", []):
             mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")

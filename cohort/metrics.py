@@ -254,8 +254,8 @@ def _soldier_at(step: dict, cs: str) -> dict | None:
     return None
 
 
-def _obedience(trace: dict) -> tuple[list[int], int]:
-    """(latencies, censored): order applied → first step with compliance > 0.
+def _obedience(trace: dict) -> tuple[list[int], int, dict[str, dict]]:
+    """(latencies, censored, by_task): order applied → first step with compliance > 0.
 
     An *order event* is a step where an agent's standing mission carries
     ``step_assigned == t`` (OPORD at t=0 included). The event resolves at the
@@ -263,10 +263,26 @@ def _obedience(trace: dict) -> tuple[list[int], int]:
     compliance score for that mission is positive; it is censored (counted,
     no latency) if the mission is replaced or cleared, the agent dies, or
     the episode ends first.
+
+    ``by_task`` splits both by the ordered mission, because the pooled mean
+    conflates "the cohort became disobedient" with "the cohort was ordered to
+    do slower things". The defend line ran 1.19 / 1.26 steps at v6 / v8 and
+    11.24 / 13.06 at v9 / v10, over the same stretch in which the ADVANCE share
+    of orders went 0.69 → 0.99 — and an ADVANCE to a distant control measure
+    cannot resolve as fast as a DEFEND in place. Which of those two it is
+    cannot be read off the pooled number, so it is no longer only pooled.
     """
     steps = trace["steps"]
     latencies: list[int] = []
     censored = 0
+    by_task: dict[str, dict] = {}
+
+    def book(task: str, latency: int | None) -> None:
+        slot = by_task.setdefault(task, {"latencies": [], "censored": 0})
+        if latency is None:
+            slot["censored"] += 1
+        else:
+            slot["latencies"].append(latency)
     for i, step in enumerate(steps):
         t0 = step["t"]
         for rec in step["soldiers"]:
@@ -284,11 +300,13 @@ def _obedience(trace: dict) -> tuple[list[int], int]:
                     break  # re-tasked, cleared, or dead before complying
                 if later_rec["comp"] is not None and later_rec["comp"] > 0.0:
                     latencies.append(later["t"] - t0)
+                    book(rec["mission"], later["t"] - t0)
                     resolved = True
                     break
             if not resolved:
                 censored += 1
-    return latencies, censored
+                book(rec["mission"], None)
+    return latencies, censored, by_task
 
 
 def _reports(trace: dict) -> dict[str, int]:
@@ -710,7 +728,7 @@ def _fight_disposition(trace: dict) -> dict[str, Any]:
 
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
-    latencies, censored = _obedience(trace)
+    latencies, censored, obedience_by_task = _obedience(trace)
     dones, rejected = _false_complete(trace)
     events, recovery, unrecovered = _succession(trace)
     pairs, covered = _coverage(trace)
@@ -721,6 +739,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "root_mission": trace.get("root_mission"),
         "obedience_latencies": latencies,
         "obedience_censored": censored,
+        "obedience_by_task": obedience_by_task,
         **_doctrine(trace),
         **_retasks(trace),
         **_reports(trace),
@@ -782,6 +801,23 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     derivable = total("orders_preferred") + total("orders_allowed") + total("orders_violating")
 
     latencies = [v for ep in episodes for v in ep["obedience_latencies"]]
+    # refs the v9/v10 obedience regression: pooled latency cannot separate
+    # "the cohort stopped obeying" from "the cohort was ordered to do slower
+    # things", so it is also reported per ordered task
+    obedience_by_task: dict[str, dict] = {}
+    for ep in episodes:
+        for task, bucket in ep.get("obedience_by_task", {}).items():
+            dst = obedience_by_task.setdefault(task, {"latencies": [], "censored": 0})
+            dst["latencies"].extend(bucket["latencies"])
+            dst["censored"] += bucket["censored"]
+    obedience_task_summary = {
+        task: {
+            "latency_mean": _mean(b["latencies"]),
+            "orders": len(b["latencies"]) + b["censored"],
+            "censored": b["censored"],
+        }
+        for task, b in sorted(obedience_by_task.items())
+    }
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
     roots = {ep.get("root_mission") for ep in episodes} - {None}
@@ -796,6 +832,7 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "obedience_latency_mean": _mean(latencies),
         "obedience_orders": len(latencies) + total("obedience_censored"),
         "obedience_censored": total("obedience_censored"),
+        "obedience_by_task": obedience_task_summary,
         "report_precision": _ratio(total("contacts_informative"), total("contacts")),
         "report_recall": _ratio(total("enemies_reported"), total("enemies_seen")),
         "contact_reports": total("contacts"),
@@ -940,6 +977,27 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("cover_occupancy_under_threat", "fight: cover occupancy", "{:.3f}"),
     ("mean_distance_from_objective_under_threat", "fight: dist from OBJ", "{:.2f}"),
 )
+
+
+def format_obedience_by_task(agg: dict[str, Any], top: int = 3) -> str:
+    """``TASK mean(n)`` obedience latency for the most-ordered tasks.
+
+    The pooled mean cannot tell "the cohort stopped obeying" from "the cohort
+    was ordered to do slower things" — the defend line went 1.26 steps at v8 to
+    13.06 at v10 while the ADVANCE share of orders went 0.69 → 0.99, and an
+    ADVANCE to a distant control measure resolves slower than a DEFEND in place
+    no matter how obedient anyone is. Split per task, the two read differently:
+    a rise concentrated in ADVANCE is a mix shift; a rise *within* DEFEND is a
+    real obedience regression.
+    """
+    by_task = agg.get("obedience_by_task") or {}
+    ranked = sorted(by_task.items(), key=lambda kv: -kv[1]["orders"])[:top]
+    parts = []
+    for task, b in ranked:
+        mean = b["latency_mean"]
+        shown = f"{mean:.1f}" if mean is not None else "—"
+        parts.append(f"{task} {shown}({b['orders']})")
+    return ", ".join(parts)
 
 
 def format_order_task_mix(agg: dict[str, Any], top: int = 3) -> str:
