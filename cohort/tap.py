@@ -38,13 +38,20 @@ from typing import IO
 import numpy as np
 import torch
 
-from cohort.config import get_scenario
+from cohort.config import briefing, get_scenario
+from cohort.core.language import parse_opord, parse_sitrep
 from cohort.core.oracle import observe as oracle_observe
 from cohort.core.orders import HQ_ID, Message
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.training.evaluate import _pick_actions
 
-TAP_SCHEMA = "1.0.0"
+#: 1.1.0 (v1.10 era): SITREP payloads gain the self-reported ``in_cover``
+#: posture, OPORD payloads gain ``announced_assault_step`` where the scenario
+#: has a preparation period, and the header gains the ``briefing`` overlay.
+#: All three are additive -- consumers of 1.0.0 corpora see missing keys, not
+#: changed ones -- but the schema is bumped so a corpus states what it can be
+#: asked for rather than leaving the layer to probe.
+TAP_SCHEMA = "1.1.0"
 
 
 def _open(path: str) -> IO[str]:
@@ -131,12 +138,44 @@ def _payload(m: Message) -> dict:
     kind = m.kind.value
     if kind in ("opord", "order", "done"):
         parsed = _parse_phrase(m.text)
+        # v1.10 preparation period: HQ announces when the assault is due. The
+        # clause sits after the task statement, so _parse_phrase ignores it --
+        # dropping it silently was the defect reported as assurance issue #12.
+        # It is the net's first FORWARD-LOOKING content: not a report of what
+        # happened but an announced expectation, which is what makes
+        # time-bounded readiness properties expressible at all.
+        if kind == "opord":
+            spoken = parse_opord(m.text)
+            step = spoken.get("announced_assault_step") if spoken else None
+            if step is not None:
+                parsed = {**parsed, "announced_assault_step": step}
     elif kind == "contact":
         c = _CONTACT_RE.search(m.text)
         parsed = {"grid": c.group("grid"), "count": int(c.group("n"))} if c else {}
     elif kind == "sitrep":
+        # Parsed by the system's own shipped inverse (upstream 6b75cce) rather
+        # than a hand-rolled regex -- exactly the drift the ops-overlay commit
+        # set out to prevent. The local regex stays as a cross-check: the two
+        # must agree on the fields they share, or the format moved under us.
+        spoken = parse_sitrep(m.text)
         s = _SITREP_RE.search(m.text)
-        parsed = {"grid": s.group("grid"), "health": int(s.group("health")), "ammo": int(s.group("ammo"))} if s else {}
+        if spoken is None or s is None:
+            parsed = {}
+        else:
+            grid = f"{spoken['grid'][0]:02d}{spoken['grid'][1]:02d}"
+            if (grid, spoken["health"], spoken["ammo"]) != (
+                s.group("grid"), int(s.group("health")), int(s.group("ammo"))
+            ):
+                raise ValueError(f"SITREP parser disagreement on {m.text!r}")
+            parsed = {
+                "grid": grid,
+                "health": spoken["health"],
+                "ammo": spoken["ammo"],
+                # Self-reported terrain posture (issue #10). NOT a readout of
+                # the ground: it is what the soldier says, so it stays
+                # radio-legitimate and belongs in the observable stream.
+                "in_cover": spoken["in_cover"],
+            }
     elif kind == "casualty":
         c = _CASUALTY_RE.search(m.text)
         parsed = {"casualty": c.group("cs")} if c else {}
@@ -297,6 +336,14 @@ def tap_episodes(
             # than infer it from observer-set sizes.
             "comm_model": spec.comm_model,
             "comm_range": spec.comm_range,
+            # Operations overlay (upstream 6b75cce, assurance issue #10): the
+            # static mission facts a real monitor reads off the overlay before
+            # H-hour -- objective coordinates, control-measure geometry, map
+            # size, terrain guarantees and the engagement envelope. Static and
+            # per-scenario, so no per-episode truth leaks; publishing it here
+            # retires the hand-pinned, silently era-sensitive coordinate table
+            # the layer was carrying (EPISTREAM PLAN.md 12.42/12.45).
+            "briefing": briefing(scenario),
         }
         out.write(json.dumps(header, sort_keys=True) + "\n")
         truth.write(json.dumps(header, sort_keys=True) + "\n")
