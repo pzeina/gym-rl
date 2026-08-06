@@ -21,6 +21,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 
+sys.path.insert(0, str(ROOT))
+from cohort.metrics import format_order_task_mix  # noqa: E402
+
 
 def rows_of(run: str) -> list[dict]:
     path = RUNS / run / "metrics.csv"
@@ -142,6 +145,7 @@ def report(run: str, show_components: bool) -> dict:
             ("report_precision", "report precision", "{:.2f}"),
             ("report_recall", "report recall", "{:.2f}"),
             ("doctrine_preference_rate", "doctrine preference", "{:.3f}"),
+            ("doctrine_allowed_rate", "doctrine containment", "{:.3f}"),
             ("orders_per_episode", "orders / episode", "{:.2f}"),
             ("retasks_per_episode", "retasks / episode", "{:.2f}"),
             ("false_complete_rate", "false DONE", "{:.3f}"),
@@ -151,6 +155,10 @@ def report(run: str, show_components: bool) -> dict:
             if (v := m.get(key)) is not None:
                 print(f"    {label:<20} {fmt.format(v)}")
                 summary[f"beh_{key}"] = v
+        # refs #14: a low preference rate is only a command-quality finding if
+        # the ordered-task mix says it is not just adoption of one legal leg
+        if mix := format_order_task_mix(m):
+            print(f"    {'order task mix':<20} {mix}   (share/preference)")
         summary["beh_success"] = m.get("success_rate")
         for g in b.get("gates", []):
             mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")

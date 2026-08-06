@@ -97,6 +97,34 @@ the policy picks the doctrine-*preferred* option among the legal ones.
 (mission inherited the same tick it issued) is judged against its
 pre-succession mission.
 
+#### Reading it: containment and the ordered-task mix (issue #14)
+
+The preference rate alone is **not** a command-quality score. `preferred` is
+`allowed[0]`, so every order that is not the head of the issuer's derivation
+list scores the same, whether it is a legal alternative or a breach. A5 put
+`ADVANCE` into `DOCTRINE[DEFEND]`, `[SEIZE]` and `[RECON]` as a maneuver leg,
+and `DOCTRINE[DEFEND][0]` is `DEFEND` — so a policy that orders ADVANCE
+wholesale reads ~0.00 preference while violating doctrine zero times. Across
+this repo's own corpora the rate tracks ADVANCE adoption almost exactly: the
+pre-ADVANCE defends sit at 0.31 / 0.21, and every corpus that adopted ADVANCE
+(69–99% of its orders) sits at 0.17 down to 0.0016.
+
+Two companions make that readable, both derived from the same tier split
+(`preferred` / `allowed` / `violating` / `underivable` — the last being an
+issuer with no mission to derive from, which the mask forbids in play):
+
+* **`doctrine_allowed_rate`** ("doctrine containment") — `(preferred +
+  allowed) / derivable`. This is the one that answers *is the mask leaking*;
+  it should be 1.000 under `full`, and it is the arm that moves under B3
+  `nomask`. A low preference rate with containment at 1.000 is catalog
+  adoption, not indiscipline.
+* **`orders_by_task`** — per ordered mission, the same four counts. The
+  digest prints it as `TASK share/preference`, e.g. `ADVANCE 0.96/0.00`:
+  96% of orders were ADVANCE and none of them was the preferred derivation.
+
+Quote the preference rate against the mix, never on its own — the two
+pre-ADVANCE corpora are not comparable to the post-A5 ones on this number.
+
 ### Order volume and re-task economics (B5)
 
 `orders_per_episode` is `orders_issued / episodes` (agent-issued ORDER
@@ -308,7 +336,10 @@ What the baseline says (updated for B5, 2026-08-06):
   reading these rows, not the success curve).
 * Doctrine preference is a *preference* rate among doctrine-legal orders
   (the mask makes illegal ones impossible); 0.2–0.55 is what trained
-  policies actually choose, not a compliance failure.
+  policies actually choose, not a compliance failure. **Post-A5 the number
+  is not comparable to those** — it collapses to 0.00–0.17 wherever the
+  policy adopts ADVANCE, with containment intact; read it with the
+  ordered-task mix (issue #14).
 * `defend_brique_v1`'s precision 0.12 over 900 CONTACTs is the A4 dedup
   residual under siege: the band stays visible for hundreds of steps and
   gets re-reported far inside the refresh age. `patrol_brique_v2b`'s
