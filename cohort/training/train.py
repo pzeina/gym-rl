@@ -14,6 +14,7 @@ import argparse
 import csv
 import json
 import time
+import traceback
 from collections import deque
 from dataclasses import asdict
 from pathlib import Path
@@ -417,14 +418,45 @@ def main() -> None:
     )
     trainer.train(args.total_steps)
 
-    from cohort.viz.plots import plot_training
+    # Post-training artifacts are INDEPENDENT: a run that spent 40 minutes of
+    # CPU must not lose its evaluation because the plotter tripped over a
+    # column. Each step is attempted, failures are collected and reported
+    # together, and the process still exits non-zero so train_status.py keeps
+    # calling the run what it is.
+    failures: list[tuple[str, BaseException]] = []
 
-    print(f"curves → {plot_training(run_dir)}")
-    if not args.no_eval:
+    def artifact(name: str, fn) -> None:
+        try:
+            fn()
+        except BaseException as exc:
+            failures.append((name, exc))
+            traceback.print_exc()
+            print(f"post-training artifact FAILED: {name} ({type(exc).__name__}: {exc})")
+
+    def _curves() -> None:
+        from cohort.viz.plots import plot_training
+
+        print(f"curves → {plot_training(run_dir)}")
+
+    def _eval() -> None:
         from cohort.training.evaluate import evaluate
 
         ckpt = run_dir / ("ckpt_best.pt" if (run_dir / "ckpt_best.pt").exists() else "ckpt_latest.pt")
-        evaluate(str(ckpt), episodes=20, gif_path=str(run_dir / "eval.gif"), transcript_path=str(run_dir / "eval_transcript.txt"))
+        evaluate(
+            str(ckpt),
+            episodes=20,
+            gif_path=str(run_dir / "eval.gif"),
+            transcript_path=str(run_dir / "eval_transcript.txt"),
+        )
+
+    artifact("training_curves.png", _curves)
+    if not args.no_eval:
+        artifact("evaluate", _eval)
+
+    if failures:
+        names = ", ".join(name for name, _ in failures)
+        msg = f"{len(failures)} post-training artifact(s) failed: {names}"
+        raise RuntimeError(msg) from failures[0][1]
 
 
 if __name__ == "__main__":
