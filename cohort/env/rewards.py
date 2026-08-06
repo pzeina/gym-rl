@@ -76,19 +76,34 @@ class RewardConfig:
     sitrep_overdue: float = -0.02     # per step out of contact past the mandated
     #                                   cadence without a SITREP (doctrine only)
     done_true: float = 1.0
-    done_false: float = -2.0          # v1.10: -0.5 → -2.0. B2 measured 53-84% of
-    #                                   DONE claims rejected as premature, and at
-    #                                   -0.5 that was RATIONAL, not a training
-    #                                   failure: claiming pays whenever
-    #                                   p x done_true > (1-p) x |done_false|, i.e.
-    #                                   p > 0.33. The break-even is now p > 0.67.
-    #                                   Deliberately moderate — the B5 precedent is
-    #                                   that over-pricing a speech act suppresses the
-    #                                   HONEST one too, and a cohort that stops
-    #                                   transmitting DONE never closes the grace
-    #                                   window or earns root_done_bonus. The spam
-    #                                   half of the problem is handled structurally
-    #                                   by ScenarioSpec.done_cooldown instead.
+    done_false: float = -0.5          # v1.10 took this -0.5 → -2.0 to move the
+    #                                   claiming break-even from p > 0.33 to
+    #                                   p > 0.67. REVERTED: the B5 hazard the
+    #                                   v1.10 note called "deliberately moderate"
+    #                                   is exactly what happened. Under -2.0 the
+    #                                   final-decile false-DONE rate fell to ~0 in
+    #                                   squad (0.010), squad_recon (0.000),
+    #                                   squad_screen (0.005) and fireteam (0.078)
+    #                                   — not precision, silence — and the two
+    #                                   report-centric scenarios lost their
+    #                                   terminal income entirely: squad_recon_v6
+    #                                   and squad_screen_v4 both ended at 0%
+    #                                   success with terminal 0.0000, episodes
+    #                                   pinned at max_steps and tx/agent-step down
+    #                                   to 0.058/0.029, riding out the clock on
+    #                                   posture compliance. Their predecessors
+    #                                   squad_recon_v5b and squad_screen_v3 both
+    #                                   converged, claiming DONE at 0.767/0.830.
+    #                                   The structural reason the price cannot be
+    #                                   paid: RECON/SCREEN completion is
+    #                                   team-adjudicated (_team_observe_steps vs
+    #                                   TEAM_OBSERVE_STEPS) and that counter is in
+    #                                   no observation slot, so p is not estimable
+    #                                   from what the agent can see. Raise this
+    #                                   again only once mission-completion
+    #                                   progress is IN the observation. The spam
+    #                                   half stays structural: ScenarioSpec
+    #                                   .done_cooldown (8) is unchanged.
 
     # Objective-lost pressure (v1.4 retrain diagnosis): on DEFEND/DENY root
     # missions, every living agent bleeds this per step while any living
