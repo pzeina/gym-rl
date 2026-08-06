@@ -467,6 +467,17 @@ def main() -> None:
     # cohort.metrics it then read off disk failed to import it. Three and a half
     # million steps produced no evaluation. Editing the tree during a run is
     # normal here; losing a finished run to it is not.
+    # Hoisting the ENTRY POINTS is not enough, and assuming it was cost three
+    # more runs on 2026-08-06: evaluate() defers `cohort.metrics` to call time
+    # (evaluate.py:135, :168), so metrics.py landed outside this snapshot and was
+    # still read fresh off disk at the end of training. It imports
+    # `order_options` / `is_done_admissible` from cohort.env.actions at module
+    # level, so squad_v7, squad_recon_v6 and platoon_v4 each finished their full
+    # step budget and then died importing a name their in-memory actions did not
+    # have. Import the deferred modules HERE, by hand: the snapshot has to cover
+    # what the entry points reach, not just the entry points.
+    import cohort.metrics  # imported for the snapshot, not for a name used here
+    import cohort.viz.render  # noqa: F401  # same; reached only when --gif is set
     from cohort.training.evaluate import evaluate
     from cohort.viz.plots import plot_training
 
