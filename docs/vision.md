@@ -280,6 +280,32 @@ flank events (an enemy engaging from outside every arc).
 New behavior-suite metrics: `sector_coverage`, `flank_exposure_rate`,
 `detect_latency`, `facing_changes_per_step`.
 
+**Every one of those needs a denominator, specified before it is first
+measured.** Four consecutive assurance issues — #13, #14, #15, #16 — each turned
+out to be the *metric* at fault rather than the policy, and #16 was exactly this
+failure: an order mix reported as a raw share, with no correction for how often
+each order was even admissible, which made a masking artefact read as a policy
+preference for a whole generation. Three of the four metrics above are the same
+shape and would fail the same way:
+
+* `flank_exposure_rate` — conditioned on a flank being *available* to expose. An
+  agent pinned in a corner cannot be flanked; one in the open almost always can.
+* `facing_changes_per_step` — conditioned on facing changes being useful at that
+  state, not on the raw step count.
+* `sector_coverage` — the union arc must be scored against the arc the element
+  *could* have covered given its living members, not against a flat 360°: a
+  two-survivor element covering 180° with 90° arcs is at 1.00, not 0.5.
+
+`detect_latency` is censored data, not a rate — an enemy never detected has no
+latency, and dropping those episodes silently reports the mean of the *successes*
+only. Report the censoring count beside it, the way `_obedience` was fixed to in
+#15.
+
+The shipped precedent to follow is `env/actions.order_options` +
+`metrics.order_selection_lift` (`a5abdb4`): score against a masked-random floor
+computed from the same mask that built the observation, so 1.00 means "indifferent
+among what was legal" and the number carries its own null hypothesis.
+
 **Naming.** Use `facing` / `sector` vocabulary throughout — **not** `rotation`,
 which already means patrol-anchor rotation in this repo (the v1.8 economics
 result, 1364 → 1). A collision there would make two unrelated metrics read alike.
