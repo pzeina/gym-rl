@@ -97,6 +97,39 @@ def test_defend_pays_only_from_position():
     assert combat_on >= 1.0, "kill from the defended position pays hit + kill"
 
 
+def test_defend_pays_against_assault_on_position():
+    """Defense-of-the-position carve-out (v1.9 defend diagnosis): a defender
+    pushed OFF its disc still earns full pay for fire at an enemy standing
+    inside the position's engagement envelope (anchor distance <=
+    IN_POSITION_RADIUS + weapon_range) — that enemy is assaulting the
+    objective, and killing it IS the mission. The v6 oracle showed the human
+    TL firing on 0.5% of threatened opportunities because its off-position
+    fire earned nothing."""
+    env = _flat_env()
+    rfn = env.roster.by_callsign["RFN1"]
+    obj = env.world.objectives[0]
+
+    # shooter out of position (6 cells west of the anchor, > DEFEND radius
+    # 3.5) kills an adjacent enemy standing 5 cells from the anchor — inside
+    # the envelope (3.5 + weapon_range 8 = 11.5): full pay
+    rfn.pos = (obj.pos[0] - 6, obj.pos[1])
+    mission = Mission(MissionType.DEFEND, 0, obj.pos, issuer_id=-1, step_assigned=0)
+    combat = _point_blank_kill(env, mission=mission)
+    assert combat >= 1.0, "fire against the assault on the position pays in full"
+
+
+def test_screen_stays_tight_despite_assault_carveout():
+    """The carve-out applies to position-anchored missions only — SCREEN
+    (weapons tight) earns nothing even for a target on the objective."""
+    env = _flat_env()
+    rfn = env.roster.by_callsign["RFN1"]
+    obj = env.world.objectives[0]
+    rfn.pos = (obj.pos[0] - 1, obj.pos[1])
+    mission = Mission(MissionType.SCREEN, 0, obj.pos, issuer_id=-1, step_assigned=0)
+    combat = _point_blank_kill(env, mission=mission)
+    assert combat <= 0.0, "SCREEN stays weapons tight inside the envelope too"
+
+
 def test_knob_off_restores_flat_combat_pay():
     env = _flat_env(fire_discipline=False)
     rfn = env.roster.by_callsign["RFN1"]

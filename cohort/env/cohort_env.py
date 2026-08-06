@@ -967,7 +967,7 @@ class CohortEnv(ParallelEnv):
         )
         if hit:
             target.health -= damage
-            discipline = self._fire_discipline_factor(soldier)
+            discipline = self._fire_discipline_factor(soldier, target)
             ledger.add(soldier.callsign, "combat", cfg.hit_enemy * discipline)
             if target.health <= 0:
                 target.alive = False
@@ -1877,7 +1877,7 @@ class CohortEnv(ParallelEnv):
             )
         return in_position
 
-    def _fire_discipline_factor(self, soldier: Soldier) -> float:
+    def _fire_discipline_factor(self, soldier: Soldier, target: Enemy | None = None) -> float:
         """Combat-reward multiplier enforcing fire discipline by mission.
 
         SCREEN is weapons tight: firing earns nothing (and compliance already
@@ -1885,6 +1885,18 @@ class CohortEnv(ParallelEnv):
         HOLD) pay for engagements fought FROM the mission position — chasing
         kills off the position earns nothing. RECON (which may engage, per
         PROTERRE), assault tasks, and untasked agents are free.
+
+        Defense-of-the-position carve-out (v1.9 defend diagnosis): a
+        position-anchored shooter also earns full pay when its TARGET stands
+        inside the position's engagement envelope (anchor distance <=
+        IN_POSITION_RADIUS + weapon_range) — an enemy there is assaulting the
+        position, and fire delivered against the assault is the mission,
+        wherever the melee has pushed the defender. The oracle showed the v6
+        human TL firing on 0.5% of its threatened opportunities (every other
+        agent: 90-99%): off its 3.5-cell disc its fire earned nothing, so the
+        policy never received a gradient toward fighting back. Hunting kills
+        AWAY from the anchor still pays zero — the v1.2 sally exploit
+        (defenders dying 32:5 chasing kills off the objective) stays closed.
         """
         if not self.rewards_cfg.fire_discipline or soldier.mission is None:
             return 1.0
@@ -1894,7 +1906,15 @@ class CohortEnv(ParallelEnv):
         if mt in WEAPONS_TIGHT:
             return 0.0
         if mt in POSITION_ANCHORED_FIRE:
-            return 1.0 if self._in_mission_position(soldier) else 0.0
+            if self._in_mission_position(soldier):
+                return 1.0
+            if target is not None:
+                anchor = self._mission_anchor(soldier)
+                if anchor is not None and dist(
+                    target.pos, (int(anchor[0]), int(anchor[1]))
+                ) <= IN_POSITION_RADIUS[mt] + self.combat.weapon_range:
+                    return 1.0
+            return 0.0
         return 1.0
 
     # ------------------------------------------------------------------ #
