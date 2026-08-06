@@ -32,6 +32,9 @@ class MessageKind(Enum):
     DONE_CONFIRM = "done_confirm"      # superior confirms a truthful DONE (auto)
     DONE_REJECT = "done_reject"        # superior rejects a false DONE (auto)
     SUPPORT_END = "support_end"        # SUPPORT ends: supported unit fell (auto)
+    EXECUTE = "execute"                # issuer releases its AT-MY-COMMAND orders (A5-2)
+    SYNC_PROPOSE = "sync_propose"      # trinôme bound proposal, by voice (A5-4)
+    SYNC_GO = "sync_go"                # the bound signal, by voice (A5-4)
     CASUALTY = "casualty"              # agent down (auto broadcast)
     TRAP = "trap"                      # friendly hit a hidden device (auto broadcast)
     TAKING_COMMAND = "taking_command"  # succession announcement (auto broadcast)
@@ -52,6 +55,10 @@ class Message:
     sender_id: int
     recipient_id: int | None  # None → broadcast to all stations
     text: str
+    #: A5-4: spoken, not transmitted — voice carries ``voice_range`` cells
+    #: (comm_model range rules with that radius), is never net-arbitrated,
+    #: and costs no airtime; it still appears on the transcript.
+    voice: bool = False
 
 
 @dataclass(frozen=True)

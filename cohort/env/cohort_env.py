@@ -35,7 +35,9 @@ from cohort.core.missions import (
     MissionType,
     compliance,
     derivation_quality,
+    in_formation,
     is_complete,
+    is_pending,
     min_hold_authority,
 )
 from cohort.core.orders import HQ_ID, Message, MessageKind, Transcript
@@ -49,6 +51,7 @@ from cohort.core.units import (
     enemy_decide,
     resolve_fire,
     validate_human_ranks,
+    voice_peers,
 )
 from cohort.core.world import World, dist
 from cohort.env.actions import CATALOG, N_ACTIONS, ActionSpec, compute_mask
@@ -58,11 +61,17 @@ from cohort.env.rewards import RewardConfig, RewardLedger
 #: Steps after which an unrefreshed contact report goes stale.
 KNOWLEDGE_TTL = 40
 
+#: A5-4 trinôme sync: how long a PREPARE-TO-BOUND proposal stays live
+#: awaiting its GO, and how long the synchronized window lasts after it.
+SYNC_PROPOSE_TTL = 20
+SYNC_WINDOW = 8
+
 #: Net arbitration priority for LEARNED transmissions (A4): lower wins.
-#: CONTACT (perishable intel) > DONE (command state) > orders > SITREP
-#: (routine); ties break by agent order. Auto-traffic is not listed — WILCO,
-#: verdicts, CASUALTY, and succession are protocol, not competition for air.
-_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "sitrep": 3}
+#: CONTACT (perishable intel) > DONE (command state) > orders (EXECUTE is
+#: command traffic of the same class) > SITREP (routine); ties break by agent
+#: order. Auto-traffic is not listed — WILCO, verdicts, CASUALTY, and
+#: succession are protocol, not competition for air.
+_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3}
 
 
 class CohortEnv(ParallelEnv):
@@ -128,6 +137,19 @@ class CohortEnv(ParallelEnv):
         #: re-task events of the last step (B5): issuer/recipient, priced or
         #: excepted (and why), same-anchor or rotation — metrics bookkeeping
         self._retask_log: list[dict] = []
+        #: formation shaping (A5-3): per-leader watermark of the best anchor
+        #: distance reached under the current (mission, stance) — the bonus
+        #: pays only on NEW closure, so it telescopes and cannot be farmed
+        self._formation_watermark: dict[int, tuple] = {}
+        #: trinôme sync (A5-4): proposer id -> (propose step, registered peer
+        #: ids — those in voice range at propose time); GO consumes the entry
+        self._sync_pending: dict[int, tuple[int, tuple[int, ...]]] = {}
+        #: agent id -> (last synchronized step, group key) after a GO
+        self._sync_until: dict[int, tuple[int, tuple]] = {}
+        #: per-agent watermark of best own-anchor distance for the bound
+        #: bonus — keyed by the standing order, NOT the window, so repeated
+        #: propose/GO cycles can never re-earn already-covered ground
+        self._bound_watermark: dict[int, tuple] = {}
 
     @property
     def outcome(self) -> str | None:
@@ -193,6 +215,8 @@ class CohortEnv(ParallelEnv):
             forest_density=cfg.forest_density,
             wall_density=cfg.wall_density,
             must_connect=[cfg.spawn],
+            waypoint_specs=[(name, pos) for name, pos in cfg.waypoints],
+            phase_line_specs=[(name, a, b) for name, a, b in cfg.phase_lines],
         )
         if cfg.objective_cover and cfg.root_objective:
             self._prepare_defensive_ground(cfg.root_objective)
@@ -228,6 +252,10 @@ class CohortEnv(ParallelEnv):
         self._tx_count = 0
         self._element_casualty_step = {}
         self._retask_log = []
+        self._formation_watermark = {}
+        self._sync_pending = {}
+        self._sync_until = {}
+        self._bound_watermark = {}
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -543,6 +571,16 @@ class CohortEnv(ParallelEnv):
         self._retask_log = []
         present = list(self.agents)
 
+        # --- timed-order release (A5-2): "AT T PLUS n" comes due ---
+        # Released BEFORE the snapshot so this tick's anchors/compliance are
+        # judged against the now-effective order. Binding (tenure) starts at
+        # execution, not receipt: step_assigned restamps to the release tick.
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.effective_at is not None and step >= m.effective_at:
+                m.effective_at = None
+                m.step_assigned = step
+
         # --- snapshot ---
         for s in self.roster.soldiers:
             s.prev_pos = s.pos
@@ -649,6 +687,7 @@ class CohortEnv(ParallelEnv):
                 continue
             ctx = self._compliance_ctx(soldier, prev_dist.get(callsign), views[callsign])
             if soldier.mission is not None:
+                self._update_crossing(soldier)
                 if (
                     soldier.mission.type in (MissionType.RECON, MissionType.SCREEN)
                     and not soldier.mission.team_observation
@@ -657,7 +696,14 @@ class CohortEnv(ParallelEnv):
                     # personal progress — a subordinate's own task; the root's
                     # OPORD counter is mirrored from the team counter below
                     soldier.mission.observe_steps += 1
-                score = compliance(soldier.mission.type, ctx)
+                # a pending order (A5-2) is judged as HOLD at the staging
+                # position until it becomes effective
+                effective_type = (
+                    MissionType.HOLD
+                    if is_pending(soldier.mission, step)
+                    else soldier.mission.type
+                )
+                score = compliance(effective_type, ctx)
                 credit = cfg.compliance_weight * score
                 if score > 0.0 and cfg.tenure_factor > 0.0:
                     # standing-order tenure (B5): positive compliance credit
@@ -689,6 +735,16 @@ class CohortEnv(ParallelEnv):
                 if subs:
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
+
+        # formation shaping (A5-3): members at their formation station while
+        # their leader closes NEW ground toward its mission anchor earn the
+        # formation bonus — watermark-gated, so it telescopes with the
+        # advance and cannot be farmed by circling or pacing
+        self._formation_shaping(ledger)
+
+        # trinôme bound shaping (A5-4): synchronized movers under a covering
+        # peer earn the bound bonus on NEW closure toward their own anchor
+        self._bound_shaping(ledger)
 
         # objective-lost pressure for DEFEND / DENY campaigns: while a living
         # enemy stands on the root objective, every living agent bleeds —
@@ -851,6 +907,7 @@ class CohortEnv(ParallelEnv):
 
         if spec.kind == "move":
             soldier.pos = (soldier.pos[0] + spec.move[0], soldier.pos[1] + spec.move[1])
+            soldier.heading = spec.move  # formation geometry frame (A5-3)
             self._check_trap(soldier, ledger, player_deaths)
         elif spec.kind == "fire":
             self._resolve_player_fire(soldier, ledger, enemy_kills)
@@ -874,6 +931,12 @@ class CohortEnv(ParallelEnv):
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
+        elif spec.kind == "execute":
+            self._execute_signal(soldier, ledger)
+        elif spec.kind == "sync_propose":
+            self._sync_propose(soldier)
+        elif spec.kind == "sync_go":
+            self._sync_go(soldier)
         elif spec.kind == "order":
             self._issue_order(soldier, spec, ledger)
 
@@ -985,7 +1048,9 @@ class CohortEnv(ParallelEnv):
             else is_complete(mission, ctx)
         )
         obj_name = (
-            self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
+            self.world.objectives[mission.objective_id].name
+            if mission.objective_id is not None
+            else mission.extra.get("control")  # ADVANCE: the control-measure name
         )
         self._say(
             MessageKind.DONE,
@@ -1022,7 +1087,175 @@ class CohortEnv(ParallelEnv):
             )
             ledger.add(soldier.callsign, "report", cfg.done_false)
 
+    def _sync_propose(self, soldier: Soldier) -> None:
+        """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
+
+        Registers a pending bound with every peer currently within
+        ``voice_range`` (same element or adjacent trinôme). A re-proposal
+        overwrites the previous one. Voice is never net-arbitrated and
+        costs no airtime; it still appears on the transcript, flagged.
+        """
+        peers = voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
+        if not peers:
+            return  # mask guards; defensive
+        self._sync_pending[soldier.id] = (self._step_count, tuple(p.id for p in peers))
+        self._say(
+            MessageKind.SYNC_PROPOSE,
+            soldier.id,
+            None,
+            lang.format_sync_propose(soldier.callsign, [p.callsign for p in peers]),
+            voice=True,
+        )
+
+    def _sync_go(self, soldier: Soldier) -> None:
+        """The bound signal (A5-4): GO! Synchronizes the proposer and every
+        registered peer still alive for the next ``SYNC_WINDOW`` steps."""
+        pending = self._sync_pending.pop(soldier.id, None)
+        if pending is None:
+            return
+        propose_step, peer_ids = pending
+        if self._step_count - propose_step > SYNC_PROPOSE_TTL:
+            return  # stale proposal: the moment has passed
+        group = (soldier.id, self._step_count)
+        until = self._step_count + SYNC_WINDOW
+        self._sync_until[soldier.id] = (until, group)
+        for pid in peer_ids:
+            peer = self.roster.by_id.get(pid)
+            if peer is not None and peer.alive:
+                self._sync_until[pid] = (until, group)
+        self._say(
+            MessageKind.SYNC_GO, soldier.id, None,
+            lang.format_sync_go(soldier.callsign), voice=True,
+        )
+
+    def _synchronized(self, soldier: Soldier) -> tuple | None:
+        """The soldier's active sync-group key, or None outside a window.
+
+        The window spans ``SYNC_WINDOW`` ticks starting at the GO tick
+        itself (exclusive upper bound, so ``sync_active`` in the obs reaches
+        0 exactly when the window closes)."""
+        entry = self._sync_until.get(soldier.id)
+        if entry is None or not soldier.alive:
+            return None
+        until, group = entry
+        return group if self._step_count < until else None
+
+    def _sync_cover_peers(self, soldier: Soldier, group: tuple) -> list[Soldier]:
+        """Synchronized group-mates COVERING this soldier's bound: static
+        this tick with line of sight to a visible threat, or overwatching
+        the mover itself (LOS to it)."""
+        covering: list[Soldier] = []
+        for other in self.roster.living:
+            if other.id == soldier.id or self._synchronized(other) != group:
+                continue
+            if other.pos != other.prev_pos:
+                continue  # the cover element does not move during the bound
+            watches_threat = any(
+                dist(other.pos, e.pos) <= self.combat.weapon_range
+                and self.world.line_of_sight(other.pos, e.pos)
+                for e in self._visible_enemies(other)
+            )
+            overwatches_mover = self.world.line_of_sight(other.pos, soldier.pos)
+            if watches_threat or overwatches_mover:
+                covering.append(other)
+        return covering
+
+    def _covered_by_sync(self, target: Soldier) -> bool:
+        """Covered bound (A5-4): the target is mid-bound (synchronized and
+        moved this tick) with >= 1 group-mate covering it — the existing
+        covered-movement accuracy debuff applies (B5/P2 machinery at the
+        binôme scale)."""
+        group = self._synchronized(target)
+        if group is None or target.pos == target.prev_pos:
+            return False
+        return bool(self._sync_cover_peers(target, group))
+
+    def _bound_shaping(self, ledger: RewardLedger) -> None:
+        """Pay the A5-4 bound bonus: a synchronized mover that closes NEW
+        ground toward its own mission anchor while >= 1 group-mate covers it.
+        Watermark keyed by the standing order — repeated propose/GO cycles
+        never re-earn covered ground, so this telescopes like A5-3."""
+        bonus = self.rewards_cfg.bound_bonus
+        if bonus == 0.0:
+            return
+        for s in self.roster.living:
+            group = self._synchronized(s)
+            if group is None or s.mission is None or s.pos == s.prev_pos:
+                continue
+            if is_pending(s.mission, self._step_count):
+                continue
+            key = (s.mission.step_assigned,)
+            d = self._anchor_distance(s)
+            stored = self._bound_watermark.get(s.id)
+            if stored is None or stored[0] != key:
+                self._bound_watermark[s.id] = (key, d)
+                continue
+            if d >= stored[1] - 1e-9:
+                continue
+            self._bound_watermark[s.id] = (key, d)
+            if self._sync_cover_peers(s, group):
+                ledger.add(s.callsign, "compliance", bonus)
+
+    def _execute_signal(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """EXECUTE (A5-2): release ALL of this issuer's pending AT-MY-COMMAND
+        orders. One broadcast frees every staged recipient at once — the
+        manual's COMMANDEMENT DU BOND ("PREPAREZ-VOUS ... EN AVANT !").
+        Released orders start binding now: step_assigned restamps."""
+        self._charge_transmission(soldier, ledger, "command")
+        self._say(
+            MessageKind.EXECUTE, soldier.id, None, lang.format_execute(soldier.callsign)
+        )
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.awaiting_signal and m.issuer_id == soldier.id:
+                m.awaiting_signal = False
+                m.step_assigned = self._step_count
+
+    def _issue_formation(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
+        """Element stance order (A5-3): set the recipient LEADER's formation.
+
+        A stance, not a mission — the recipient keeps its task, nothing is
+        re-tasked or priced; reissuing the standing stance is churn. The
+        stance persists until changed and dies with the leader.
+        """
+        cfg = self.rewards_cfg
+        subs = soldier.living_subordinates(self.roster)
+        if spec.order_slot >= len(subs):
+            return
+        recipient = subs[spec.order_slot]
+        if not recipient.living_subordinates(self.roster):
+            return  # not an element leader (mask guards; defensive)
+        self._charge_transmission(soldier, ledger, "command")
+        if not self._audible_to(recipient, soldier.id):
+            self._say(
+                MessageKind.ORDER,
+                soldier.id,
+                recipient.id,
+                lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+            )
+            return
+        if recipient.formation is spec.order_formation:
+            ledger.add(soldier.callsign, "command", cfg.order_churn)
+            return
+        recipient.formation = spec.order_formation
+        self._say(
+            MessageKind.ORDER,
+            soldier.id,
+            recipient.id,
+            lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+        )
+        if self.spec_cfg.auto_ack:
+            self._say(
+                MessageKind.ACK,
+                recipient.id,
+                soldier.id,
+                lang.format_ack(soldier.callsign, recipient.callsign),
+            )
+
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
+        if spec.order_formation is not None:
+            self._issue_formation(soldier, spec, ledger)
+            return
         cfg = self.rewards_cfg
         subs = soldier.living_subordinates(self.roster)
         if spec.order_slot >= len(subs):
@@ -1032,6 +1265,7 @@ class CohortEnv(ParallelEnv):
             self.world.objective_by_name(spec.order_objective) if spec.order_objective else None
         )
         obj_id = objective.id if objective else None
+        control_name = spec.order_control  # ADVANCE: control-measure name
         # unit-targeted SUPPORT: the supported unit is the sibling in slot j
         supported_id: int | None = None
         if spec.order_mission is MissionType.SUPPORT:
@@ -1052,16 +1286,21 @@ class CohortEnv(ParallelEnv):
                 mission_type=spec.order_mission,
                 objective_id=obj_id,
                 supported_id=supported_id,
+                control_name=control_name,
+                awaiting_signal=spec.order_amc,
             )
             return
 
         # churn: reissuing the standing order is radio noise, not command —
-        # a no-op (the mission is NOT restamped, so tenure keeps accruing)
+        # a no-op (the mission is NOT restamped, so tenure keeps accruing).
+        # A timing-qualifier change (pending vs. live) is a different order.
         if (
             recipient.mission is not None
             and recipient.mission.type is spec.order_mission
             and recipient.mission.objective_id == obj_id
             and recipient.mission.extra.get("supported_id") == supported_id
+            and recipient.mission.extra.get("control") == control_name
+            and bool(recipient.mission.awaiting_signal) == bool(spec.order_amc)
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             return
@@ -1088,7 +1327,7 @@ class CohortEnv(ParallelEnv):
         if standing is not None:
             excepted, reason = self._retask_exception(soldier, recipient, intent_changed)
             same_anchor = self._standing_anchor_key(standing) == self._order_anchor_key(
-                spec.order_mission, obj_id, supported_id, recipient
+                spec.order_mission, obj_id, supported_id, recipient, control_name
             )
             cost = 0.0
             if not excepted and cfg.order_retask_cost_base != 0.0:
@@ -1134,6 +1373,8 @@ class CohortEnv(ParallelEnv):
             mission_type=spec.order_mission,
             objective_id=obj_id,
             supported_id=supported_id,
+            control_name=control_name,
+            awaiting_signal=spec.order_amc,
         )
         soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
 
@@ -1175,13 +1416,16 @@ class CohortEnv(ParallelEnv):
     def _standing_anchor_key(mission: Mission) -> tuple:
         """Identity of a standing mission's anchor, for rotation detection.
 
-        Two orders share an anchor when they name the same objective, support
-        the same soldier, rally (on the leader), or hold the same ground —
-        a mission-TYPE change on the same anchor is half-price re-tasking;
-        an anchor change is a full-price rotation.
+        Two orders share an anchor when they name the same objective, the
+        same control measure, support the same soldier, rally (on the
+        leader), or hold the same ground — a mission-TYPE change on the same
+        anchor is half-price re-tasking; an anchor change is a full-price
+        rotation.
         """
         if mission.type is MissionType.SUPPORT:
             return ("support", mission.extra.get("supported_id"))
+        if mission.extra.get("control") is not None:
+            return ("cm", mission.extra["control"])
         if mission.objective_id is not None:
             return ("obj", mission.objective_id)
         if mission.type is MissionType.RALLY:
@@ -1194,10 +1438,13 @@ class CohortEnv(ParallelEnv):
         objective_id: int | None,
         supported_id: int | None,
         recipient: Soldier,
+        control_name: str | None = None,
     ) -> tuple:
         """Anchor identity a new order WOULD have (mirrors ``_assign_mission``)."""
         if mission_type is MissionType.SUPPORT:
             return ("support", supported_id)
+        if control_name is not None:
+            return ("cm", control_name)
         if objective_id is not None:
             return ("obj", objective_id)
         if mission_type is MissionType.RALLY:
@@ -1212,6 +1459,9 @@ class CohortEnv(ParallelEnv):
         mission_type: MissionType,
         objective_id: int | None,
         supported_id: int | None = None,
+        control_name: str | None = None,
+        effective_at: int | None = None,
+        awaiting_signal: bool = False,
     ) -> bool:
         """Transmit an order; if the recipient hears it, apply it (+ WILCO).
 
@@ -1219,6 +1469,9 @@ class CohortEnv(ParallelEnv):
         an out-of-earshot recipient never receives the mission: the ORDER
         still lands on the transcript (it was transmitted), but nothing
         changes and no WILCO comes back — silence is the only clue.
+        Timing qualifiers (A5-2): ``effective_at`` = the tick an "AT T PLUS
+        n" order comes due; ``awaiting_signal`` = "AT MY COMMAND". A pending
+        order stages the recipient near its current position until released.
         Returns True if the order was received and applied.
         """
         extra: dict = {}
@@ -1227,6 +1480,20 @@ class CohortEnv(ParallelEnv):
             anchor = supported.pos  # dynamic thereafter: tracks the supported soldier
             target = supported.callsign
             extra["supported_id"] = supported_id
+        elif control_name is not None:
+            # ADVANCE to a control measure: waypoint → its point; phase line →
+            # the nearest point of the segment (dynamic — recomputed as the
+            # agent moves); the side at receipt detects a later crossing
+            cm = self.world.control_by_name(control_name)
+            if cm is None:
+                return False  # masked/validated upstream; defensive
+            if hasattr(cm, "nearest_point"):
+                anchor = cm.nearest_point(recipient.pos)
+                extra["side"] = cm.side(recipient.pos)
+            else:
+                anchor = cm.pos
+            target = control_name
+            extra["control"] = control_name
         elif objective_id is not None:
             anchor = self.world.objectives[objective_id].pos
             target = self.world.objectives[objective_id].name
@@ -1237,11 +1504,21 @@ class CohortEnv(ParallelEnv):
         else:  # HOLD (and any anchor-less mission): anchor where the order was received
             anchor = recipient.pos
             target = None
+        if effective_at is not None or awaiting_signal:
+            # staging: until the order is effective, compliance is HOLD here
+            extra["staging"] = recipient.pos
         self._say(
             MessageKind.ORDER,
             issuer_id,
             recipient.id,
-            lang.format_order(issuer_cs, recipient.callsign, mission_type, target),
+            lang.format_order(
+                issuer_cs,
+                recipient.callsign,
+                mission_type,
+                target,
+                delay=(effective_at - self._step_count) if effective_at is not None else None,
+                at_my_command=awaiting_signal,
+            ),
         )
         if not self._audible_to(recipient, issuer_id):
             return False
@@ -1266,6 +1543,8 @@ class CohortEnv(ParallelEnv):
             issuer_id=issuer_id,
             step_assigned=self._step_count,
             team_observation=team_observation,
+            effective_at=effective_at,
+            awaiting_signal=awaiting_signal,
             extra=extra,
         )
         recipient.last_order_step = self._step_count
@@ -1340,9 +1619,11 @@ class CohortEnv(ParallelEnv):
             enemy.fired_this_step = True  # oracle bookkeeping only
             target: Soldier = arg
             # covered movement: firing at a supported element from inside an
-            # in-position supporter's umbrella degrades the attacker's accuracy
+            # in-position supporter's umbrella degrades the attacker's
+            # accuracy; a covered trinôme bound (A5-4) earns the same debuff
+            # (effects do not stack — one covered-movement modifier applies)
             modifier = 1.0
-            if self._covered_by_support(target, enemy.pos):
+            if self._covered_by_support(target, enemy.pos) or self._covered_by_sync(target):
                 modifier = self.combat.support_cover_accuracy
             d = dist(enemy.pos, target.pos)
             hit, damage = resolve_fire(
@@ -1408,11 +1689,24 @@ class CohortEnv(ParallelEnv):
             if cadence
             else None
         )
+        # trinôme sync (A5-4): party to a live proposal / inside a GO window
+        step = self._step_count
+        sync_pending = any(
+            step - propose_step <= SYNC_PROPOSE_TTL
+            and (proposer_id == soldier.id or soldier.id in peer_ids)
+            for proposer_id, (propose_step, peer_ids) in self._sync_pending.items()
+        )
+        entry = self._sync_until.get(soldier.id)
+        sync_active = (
+            max(0.0, (entry[0] - step) / SYNC_WINDOW) if entry is not None else 0.0
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
             step=self._step_count,
             sitrep_due=sitrep_due,
+            sync_pending=sync_pending,
+            sync_active=sync_active,
         )
 
     def _compute_views(self) -> dict[str, AgentView]:
@@ -1421,6 +1715,7 @@ class CohortEnv(ParallelEnv):
     def _mask_for(self, soldier: Soldier) -> np.ndarray:
         visible = self._visible_enemies(soldier)
         in_range = any(dist(soldier.pos, e.pos) <= self.combat.weapon_range for e in visible)
+        pending_sync = self._sync_pending.get(soldier.id)
         return compute_mask(
             soldier,
             self.roster,
@@ -1431,6 +1726,13 @@ class CohortEnv(ParallelEnv):
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,
+            has_voice_peer=bool(
+                voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
+            ),
+            has_pending_sync=(
+                pending_sync is not None
+                and self._step_count - pending_sync[0] <= SYNC_PROPOSE_TTL
+            ),
         )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:
@@ -1448,10 +1750,14 @@ class CohortEnv(ParallelEnv):
 
     def _mission_anchor(self, soldier: Soldier) -> tuple[float, float] | None:
         """Current anchor point of the soldier's mission (dynamic for
-        RALLY — the leader — and SUPPORT — the supported soldier)."""
+        RALLY — the leader —, SUPPORT — the supported soldier — and
+        ADVANCE to a phase line — the segment's nearest point)."""
         mission = soldier.mission
         if mission is None:
             return None
+        if is_pending(mission, self._step_count):
+            # a pending order (A5-2) stages where it was received
+            return mission.extra.get("staging", mission.anchor)
         anchor = mission.anchor
         if mission.type is MissionType.RALLY:
             leader = self.roster.leader_of(soldier)
@@ -1461,6 +1767,10 @@ class CohortEnv(ParallelEnv):
             supported = self.roster.by_id.get(mission.extra.get("supported_id"))
             if supported is not None and supported.alive:
                 anchor = supported.pos
+        elif mission.type is MissionType.ADVANCE and mission.extra.get("control") is not None:
+            cm = self.world.control_by_name(mission.extra["control"])
+            if cm is not None and hasattr(cm, "nearest_point"):
+                anchor = cm.nearest_point(soldier.pos)
         return anchor
 
     def _anchor_distance(self, soldier: Soldier) -> float:
@@ -1468,6 +1778,62 @@ class CohortEnv(ParallelEnv):
         if anchor is None:
             return 0.0
         return dist(soldier.pos, anchor)
+
+    def _formation_shaping(self, ledger: RewardLedger) -> None:
+        """Pay the A5-3 formation bonus for this tick.
+
+        For every living leader with a stance and an effective mission that
+        MOVED this tick: if the leader's anchor distance sets a new minimum
+        under the current (mission, stance) — genuine progress on the march —
+        every element member standing at its formation station (geometry in
+        the leader's heading frame, ``core.missions.in_formation``) earns
+        ``RewardConfig.formation_bonus``. The watermark makes the total
+        payout per (order, stance) bounded by the initial distance: no
+        perpetual farm, so ``max_step_farm`` is unaffected.
+        """
+        bonus = self.rewards_cfg.formation_bonus
+        if bonus == 0.0:
+            return
+        step = self._step_count
+        for leader in self.roster.living:
+            if leader.formation is None or leader.mission is None:
+                continue
+            if is_pending(leader.mission, step):
+                continue
+            key = (leader.mission.step_assigned, leader.formation)
+            d = self._anchor_distance(leader)
+            stored = self._formation_watermark.get(leader.id)
+            if stored is None or stored[0] != key:
+                self._formation_watermark[leader.id] = (key, d)
+                continue
+            if leader.pos == leader.prev_pos or d >= stored[1] - 1e-9:
+                continue  # not marching, or no new closure
+            self._formation_watermark[leader.id] = (key, d)
+            for member in leader.living_subordinates(self.roster):
+                if in_formation(leader.formation, leader.pos, leader.heading, member.pos):
+                    ledger.add(member.callsign, "compliance", bonus)
+
+    def _update_crossing(self, soldier: Soldier) -> None:
+        """ADVANCE to a phase line: mark the mission crossed when the agent's
+        side of the line flips relative to where the order was received."""
+        mission = soldier.mission
+        if (
+            mission is None
+            or mission.type is not MissionType.ADVANCE
+            or mission.extra.get("control") is None
+            or mission.extra.get("crossed")
+            or is_pending(mission, self._step_count)  # staging: not advancing yet
+        ):
+            return
+        cm = self.world.control_by_name(mission.extra["control"])
+        if cm is None or not hasattr(cm, "side"):
+            return  # waypoint: reach, not cross
+        side_now = cm.side(soldier.pos)
+        side_then = mission.extra.get("side", 0)
+        if side_then == 0 and side_now != 0:
+            mission.extra["side"] = side_now  # order received ON the line
+        elif side_now != 0 and side_now != side_then:
+            mission.extra["crossed"] = True
 
     def _team_observer(self, objective: Any) -> Soldier | None:
         """The first living soldier observing ``objective``: on the RECON
@@ -1494,6 +1860,11 @@ class CohortEnv(ParallelEnv):
         mission = soldier.mission
         if mission is None:
             return False
+        if is_pending(mission, self._step_count):
+            # staging (A5-2): in position = holding near where the order landed
+            if dist_now is None:
+                dist_now = self._anchor_distance(soldier)
+            return dist_now <= IN_POSITION_RADIUS[MissionType.HOLD]
         if mission.team_observation and mission.objective_id is not None:
             return self._team_observer(self.world.objectives[mission.objective_id]) is not None
         if dist_now is None:
@@ -1518,6 +1889,8 @@ class CohortEnv(ParallelEnv):
         if not self.rewards_cfg.fire_discipline or soldier.mission is None:
             return 1.0
         mt = soldier.mission.type
+        if is_pending(soldier.mission, self._step_count):
+            mt = MissionType.HOLD  # staging (A5-2): fire pays only from the staging spot
         if mt in WEAPONS_TIGHT:
             return 0.0
         if mt in POSITION_ANCHORED_FIRE:
@@ -1676,8 +2049,14 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
-    def _say(self, kind: MessageKind, sender: int, recipient: int | None, text: str) -> None:
-        msg = Message(step=self._step_count, kind=kind, sender_id=sender, recipient_id=recipient, text=text)
+    def _say(
+        self, kind: MessageKind, sender: int, recipient: int | None, text: str,
+        *, voice: bool = False,
+    ) -> None:
+        msg = Message(
+            step=self._step_count, kind=kind, sender_id=sender,
+            recipient_id=recipient, text=text, voice=voice,
+        )
         self.transcript.add(msg)
         self.last_messages.append(msg)
 
@@ -1708,6 +2087,29 @@ class CohortEnv(ParallelEnv):
                 msg = f"{issuing.callsign} does not outrank {recipient.callsign}."
                 raise PermissionError(msg)
             issuer_id, issuer_cs = issuing.id, issuing.callsign
+        # element stance order (A5-3): no mission payload — set and return
+        if parsed.formation is not None:
+            if not recipient.living_subordinates(self.roster):
+                msg = (
+                    f"{recipient.callsign} leads no element: FORMATION is an "
+                    "element-level stance, ordered to a leader."
+                )
+                raise PermissionError(msg)
+            recipient.formation = parsed.formation
+            self._say(
+                MessageKind.ORDER,
+                issuer_id,
+                recipient.id,
+                lang.format_formation_order(issuer_cs, recipient.callsign, parsed.formation),
+            )
+            if self.spec_cfg.auto_ack:
+                self._say(
+                    MessageKind.ACK,
+                    recipient.id,
+                    issuer_id,
+                    lang.format_ack(issuer_cs, recipient.callsign),
+                )
+            return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
         # per-echelon admissibility (manual p. 8): e.g. DENY is a section
         # mission — a fire team or rifleman can never hold it
         if recipient.effective_authority < min_hold_authority(parsed.mission):
@@ -1732,6 +2134,9 @@ class CohortEnv(ParallelEnv):
         if parsed.objective_name and objective is None:
             msg = f"No objective named {parsed.objective_name!r} on this map."
             raise lang.OrderParseError(msg)
+        if parsed.control_name and self.world.control_by_name(parsed.control_name) is None:
+            msg = f"No control measure named {parsed.control_name!r} on this map."
+            raise lang.OrderParseError(msg)
         self._assign_mission(
             issuer_id=issuer_id,
             issuer_cs=issuer_cs,
@@ -1739,7 +2144,31 @@ class CohortEnv(ParallelEnv):
             mission_type=parsed.mission,
             objective_id=objective.id if objective else None,
             supported_id=supported_id,
+            control_name=parsed.control_name,
+            effective_at=(
+                self._step_count + parsed.delay if parsed.delay is not None else None
+            ),
+            awaiting_signal=parsed.at_my_command,
         )
+        return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
+
+    def inject_execute(self, issuer: str = "HQ") -> Message:
+        """A human issuer broadcasts EXECUTE, releasing all its pending
+        AT-MY-COMMAND orders (A5-2). ``issuer`` is "HQ" or a callsign."""
+        if issuer.upper() == "HQ":
+            issuer_id, issuer_cs = HQ_ID, "HQ"
+        else:
+            issuing = self.roster.by_callsign.get(issuer.upper())
+            if issuing is None or not issuing.alive:
+                msg = f"No living station {issuer!r} on the net."
+                raise lang.OrderParseError(msg)
+            issuer_id, issuer_cs = issuing.id, issuing.callsign
+        self._say(MessageKind.EXECUTE, issuer_id, None, lang.format_execute(issuer_cs))
+        for s in self.roster.living:
+            m = s.mission
+            if m is not None and m.awaiting_signal and m.issuer_id == issuer_id:
+                m.awaiting_signal = False
+                m.step_assigned = self._step_count
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 
     # ------------------------------------------------------------------ #

@@ -93,6 +93,29 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
             ha="center", fontsize=7, color="#444444",
         )
 
+    # control measures (A5): waypoints as small diamonds, phase lines as thin
+    # dashed lines — both labeled, drawn under the unit symbology
+    for wp in world.waypoints:
+        x, y, r = wp.pos[0], wp.pos[1], 0.4
+        ax.add_patch(
+            Polygon([(x, y - r), (x + r, y), (x, y + r), (x - r, y)], closed=True,
+                    fill=False, edgecolor="#7a6f9a", linewidth=1.0, ls="--", zorder=2)
+        )
+        ax.annotate(
+            f"WP {wp.name}", wp.pos, textcoords="offset points", xytext=(0, -11),
+            ha="center", fontsize=6.5, color="#7a6f9a",
+        )
+    for pl in world.phase_lines:
+        ax.plot(
+            [pl.a[0], pl.b[0]], [pl.a[1], pl.b[1]],
+            color="#7a6f9a", lw=0.9, ls="--", alpha=0.85, zorder=2,
+        )
+        mid = ((pl.a[0] + pl.b[0]) / 2, (pl.a[1] + pl.b[1]) / 2)
+        ax.annotate(
+            f"PL {pl.name}", mid, textcoords="offset points", xytext=(4, 4),
+            fontsize=6.5, color="#7a6f9a",
+        )
+
     # chain-of-command links
     for s in env.roster.soldiers:
         if s.alive and s.leader_id is not None:

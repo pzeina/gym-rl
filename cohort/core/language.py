@@ -29,10 +29,27 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from cohort.core.missions import NEEDS_OBJECTIVE, MissionType
+from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, Formation, MissionType
 
 #: Objective slot names, addressed as "OBJ ALPHA" etc. (NATO phonetic).
 OBJECTIVE_NAMES: tuple[str, ...] = ("ALPHA", "BRAVO", "CHARLIE", "DELTA")
+
+#: Control-measure names (A5). Waypoints take metal names ("WP GOLD"); phase
+#: lines take mineral/color names ("PL AMBER"). Disjoint from objective names
+#: and from each other, so a bare name resolves its kind unambiguously.
+WAYPOINT_NAMES: tuple[str, ...] = ("GOLD", "SILVER", "COPPER", "IRON")
+PHASE_LINE_NAMES: tuple[str, ...] = ("AMBER", "COBALT", "CRIMSON")
+CONTROL_NAMES: tuple[str, ...] = WAYPOINT_NAMES + PHASE_LINE_NAMES
+
+
+def control_phrase(name: str) -> str:
+    """Spoken form of a control measure: 'WP GOLD' / 'PL AMBER'."""
+    if name in WAYPOINT_NAMES:
+        return f"WP {name}"
+    if name in PHASE_LINE_NAMES:
+        return f"PL {name}"
+    msg = f"Unknown control measure {name!r} (known: {', '.join(CONTROL_NAMES)})"
+    raise ValueError(msg)
 
 _SYNONYMS: dict[str, MissionType] = {
     "recon": MissionType.RECON,
@@ -74,6 +91,8 @@ _SYNONYMS: dict[str, MissionType] = {
     "hold": MissionType.HOLD,
     "halt": MissionType.HOLD,
     "stop": MissionType.HOLD,
+    "advance": MissionType.ADVANCE,
+    "proceed": MissionType.ADVANCE,
 }
 
 #: Keywords that select the COVER flank guard (checked before the generic
@@ -83,6 +102,27 @@ _COVER_WORDS = frozenset({"flank", "couvrir"})
 
 #: Unit-targeted SUPPORT: "support TL1", "appuyer TL1", "cover [for] TL1".
 _SUPPORT_RE = re.compile(r"\b(?:support|appuyer|cover(?:\s+for)?)\s+([a-z]{2,3}\d+)\b")
+
+#: Control-measure reference: "wp gold", "pl amber", or a bare name.
+_CONTROL_RE = re.compile(
+    r"(?:\b(?:wp|waypoint|pl|phase\s*line)\s+)?\b("
+    + "|".join(n.lower() for n in CONTROL_NAMES)
+    + r")\b"
+)
+
+#: Timing qualifiers (A5-2): "at t plus 5" / "at t+5" / "at my command".
+_T_PLUS_RE = re.compile(r"\bat\s+t\s*(?:plus\s+|\+\s*)(\d+)\b")
+_AT_MY_COMMAND_RE = re.compile(r"\bat\s+my\s+command\b")
+
+#: Element stance (A5-3): "formation column|line|wedge" (French names too).
+_FORMATION_RE = re.compile(r"\bformation\s+(column|colonne|line|ligne|wedge)\b")
+_FORMATION_SYNONYMS: dict[str, Formation] = {
+    "column": Formation.COLUMN,
+    "colonne": Formation.COLUMN,
+    "line": Formation.LINE,
+    "ligne": Formation.LINE,
+    "wedge": Formation.WEDGE,
+}
 
 
 def grid_ref(pos: tuple[int, int]) -> str:
@@ -95,9 +135,14 @@ class ParsedOrder:
     """Result of parsing a human order line."""
 
     recipient_callsign: str
-    mission: MissionType
+    mission: MissionType | None         # None for stance-only orders (FORMATION)
     objective_name: str | None
     target_callsign: str | None = None  # supported unit (SUPPORT only)
+    control_name: str | None = None     # control measure (ADVANCE only)
+    formation: Formation | None = None  # element stance (A5-3, FORMATION orders)
+    # timing qualifiers (A5-2): at most one of the two is set
+    delay: int | None = None            # "... AT T PLUS <n>": effective n ticks from now
+    at_my_command: bool = False         # "... AT MY COMMAND": pending until EXECUTE
 
 
 class OrderParseError(ValueError):
@@ -107,14 +152,18 @@ class OrderParseError(ValueError):
 def mission_phrase(mission: MissionType, target: str | None) -> str:
     """Canonical spoken form of a tasking.
 
-    ``target`` is the objective name for objective-targeted missions, or the
-    supported unit's callsign for SUPPORT: 'SEIZE OBJ ALPHA', 'SUPPORT TL1',
-    'COVER FLANK OBJ BRAVO', 'RALLY ON ME', 'HOLD POSITION'.
+    ``target`` is the objective name for objective-targeted missions, the
+    supported unit's callsign for SUPPORT, or the control-measure name for
+    ADVANCE: 'SEIZE OBJ ALPHA', 'SUPPORT TL1', 'COVER FLANK OBJ BRAVO',
+    'ADVANCE TO WP GOLD', 'ADVANCE TO PL AMBER', 'RALLY ON ME',
+    'HOLD POSITION'.
     """
     if mission is MissionType.SUPPORT:
         return f"SUPPORT {target}"
     if mission is MissionType.COVER:
         return f"COVER FLANK OBJ {target}"
+    if mission in NEEDS_CONTROL:
+        return f"ADVANCE TO {control_phrase(target)}"
     if mission in NEEDS_OBJECTIVE:
         return f"{mission.name} OBJ {target}"
     if mission is MissionType.RALLY:
@@ -122,9 +171,53 @@ def mission_phrase(mission: MissionType, target: str | None) -> str:
     return f"{mission.name} POSITION"  # HOLD
 
 
-def format_order(issuer_cs: str, recipient_cs: str, mission: MissionType, target: str | None) -> str:
-    """Radio form of an order: 'TL1, THIS IS SL1: SEIZE OBJ ALPHA. OUT.'"""
-    return f"{recipient_cs}, THIS IS {issuer_cs}: {mission_phrase(mission, target)}. OUT."
+def timing_phrase(delay: int | None = None, at_my_command: bool = False) -> str:
+    """Timing-qualifier suffix (A5-2): '' | ' AT T PLUS n' | ' AT MY COMMAND'."""
+    if at_my_command:
+        return " AT MY COMMAND"
+    if delay is not None:
+        return f" AT T PLUS {int(delay)}"
+    return ""
+
+
+def format_order(
+    issuer_cs: str,
+    recipient_cs: str,
+    mission: MissionType,
+    target: str | None,
+    *,
+    delay: int | None = None,
+    at_my_command: bool = False,
+) -> str:
+    """Radio form of an order: 'TL1, THIS IS SL1: SEIZE OBJ ALPHA. OUT.'
+
+    With a timing qualifier: '... SEIZE OBJ ALPHA AT T PLUS 5. OUT.' or
+    '... ADVANCE TO PL AMBER AT MY COMMAND. OUT.'
+    """
+    phrase = mission_phrase(mission, target) + timing_phrase(delay, at_my_command)
+    return f"{recipient_cs}, THIS IS {issuer_cs}: {phrase}. OUT."
+
+
+def format_execute(issuer_cs: str) -> str:
+    """The issuer releases all its pending AT-MY-COMMAND orders (A5-2)."""
+    return f"ALL STATIONS, THIS IS {issuer_cs}: EXECUTE. OUT."
+
+
+def format_formation_order(issuer_cs: str, recipient_cs: str, formation: Formation) -> str:
+    """Element stance order (A5-3): 'TL1, THIS IS SL1: FORMATION COLUMN. OUT.'"""
+    return f"{recipient_cs}, THIS IS {issuer_cs}: FORMATION {formation.name}. OUT."
+
+
+def format_sync_propose(proposer_cs: str, peer_css: list[str]) -> str:
+    """Trinôme bound proposal, by VOICE (A5-4, manual pp. 14-15):
+    'RFN2 RFN3, THIS IS RFN1: PREPARE TO BOUND ON MY SIGNAL. OUT.'"""
+    peers = " ".join(peer_css) if peer_css else "ALL NEARBY"
+    return f"{peers}, THIS IS {proposer_cs}: PREPARE TO BOUND ON MY SIGNAL. OUT."
+
+
+def format_sync_go(proposer_cs: str) -> str:
+    """The bound signal, by voice: 'RFN1: GO! OUT.' (the manual's EN AVANT !)"""
+    return f"{proposer_cs}: GO! OUT."
 
 
 def format_opord(recipient_cs: str, mission: MissionType, target: str | None) -> str:
@@ -224,6 +317,27 @@ def parse_order(text: str) -> ParsedOrder:
     recipient = m.group("recipient").upper()
     body = m.group("body").strip().lower().rstrip(".")
 
+    # timing qualifiers (A5-2), stripped from the body before the mission scan
+    delay: int | None = None
+    at_my_command = False
+    t_match = _T_PLUS_RE.search(body)
+    if t_match:
+        delay = int(t_match.group(1))
+        body = body[: t_match.start()] + body[t_match.end() :]
+    elif _AT_MY_COMMAND_RE.search(body):
+        at_my_command = True
+        body = _AT_MY_COMMAND_RE.sub("", body)
+
+    # Element stance (A5-3): 'formation column' — no mission payload at all.
+    fm = _FORMATION_RE.search(body)
+    if fm:
+        return ParsedOrder(
+            recipient_callsign=recipient,
+            mission=None,
+            objective_name=None,
+            formation=_FORMATION_SYNONYMS[fm.group(1)],
+        )
+
     # Unit-targeted SUPPORT: the order names a friendly callsign, not an
     # objective ('support tl1', 'appuyer tl1', 'cover for tl1').
     sup = _SUPPORT_RE.search(body)
@@ -233,6 +347,8 @@ def parse_order(text: str) -> ParsedOrder:
             mission=MissionType.SUPPORT,
             objective_name=None,
             target_callsign=sup.group(1).upper(),
+            delay=delay,
+            at_my_command=at_my_command,
         )
 
     words = re.findall(r"[a-z]+", body)
@@ -255,10 +371,31 @@ def parse_order(text: str) -> ParsedOrder:
     if mission is MissionType.HOLD and objective is not None:
         mission = MissionType.DEFEND
 
+    # ADVANCE targets a control measure: 'advance to wp gold' / 'advance pl amber'
+    control = None
+    cm_match = _CONTROL_RE.search(body)
+    if cm_match:
+        control = cm_match.group(1).upper()
+    if mission in NEEDS_CONTROL and control is None:
+        msg = (
+            f"Mission {mission.name} needs a control measure, e.g. "
+            f"'{recipient}, ADVANCE TO WP GOLD' or '{recipient}, ADVANCE TO PL AMBER'."
+        )
+        raise OrderParseError(msg)
+    if mission not in NEEDS_CONTROL:
+        control = None
+
     if mission in NEEDS_OBJECTIVE and objective is None:
         msg = f"Mission {mission.name} needs an objective, e.g. '{recipient}, {mission.name} OBJ ALPHA'."
         raise OrderParseError(msg)
     if mission not in NEEDS_OBJECTIVE:
         objective = None
 
-    return ParsedOrder(recipient_callsign=recipient, mission=mission, objective_name=objective)
+    return ParsedOrder(
+        recipient_callsign=recipient,
+        mission=mission,
+        objective_name=objective,
+        control_name=control,
+        delay=delay,
+        at_my_command=at_my_command,
+    )

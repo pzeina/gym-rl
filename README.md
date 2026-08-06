@@ -317,10 +317,13 @@ so the network learns *rank-conditional* behavior. Masks are applied at the dist
 level, so admissibility holds during exploration, not just at convergence. Agent death
 mid-episode, succession, and truncation bootstrapping are handled in the GAE buffer.
 
-All published results below are from the **v1.4 environment** (full MICAT mission set,
-SUPPORT mechanics, human commanders, rank-weighted casualties, ×1.5 maps) — the space
-break made every pre-v1.4 checkpoint incompatible, so every scenario was retrained from
-scratch (fresh nets; pre-v1.4 runs stay on disk and in git history for provenance).
+The current published results are from the **A5 environment** (v1.4's MICAT
+set + SUPPORT + humans + rank-weighted casualties + ×1.5 maps, plus the A5
+maneuver vocabulary: control measures/ADVANCE, order timing, formations,
+trinôme sync — see the v1.9 table below). The A5 space break (Discrete
+157 → 228, Box 137 → 166) made every earlier checkpoint incompatible, so
+every scenario was retrained from scratch (fresh nets; earlier runs stay on
+disk and in git history for provenance).
 Numbers are sampled-policy evaluation success over N=100 episodes with a 95% CI;
 `ckpt_best` is the rolling-best checkpoint of each run. The fireteam and squad
 results were re-published under the **A4 comms discipline** (net-busy arbitration +
@@ -336,6 +339,36 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 (squad twice, recon once, defend oscillating; the collapse onset coincides with bursts
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
+
+### Results (v1.9 — the A5 maneuver-vocabulary cycle, current)
+
+The **A5 breaking cycle** (control measures + ADVANCE, order timing +
+EXECUTE, COLUMN/LINE/WEDGE formations, trinôme voice sync — manual
+pp. 14-15; Discrete 157 → 228, Box 137 → 166) retrained **every scenario
+from scratch** on the new spaces. These are the current published
+checkpoints; the sections below narrate the pre-A5 (B5-era) runs, kept on
+disk and in history for provenance.
+
+| scenario | run | success (N=100) | prev | bound (prev −5) | vocabulary in the eval traffic |
+|---|---|---|---|---|---|
+| fireteam | `fireteam_v6` | **84% ± 7** | 78 | 73 ✓ | 4.3 ADVANCE/ep, 2.6 timed/ep, 5.8 sync GO/ep |
+| squad | `squad_v5` | **93% ± 5** | 82 | 77 ✓ | 15 ADVANCE, 11 timed, 24 FORMATION/ep, stance 76% of steps |
+| fireteam_defend | `fireteam_defend_v6` | **51% ± 10** | 73 | 68 **✗ (−17)** | 7.6 ADVANCE, 33.5 sync GO/ep |
+| squad_recon | `squad_recon_v5b` | **94% ± 5** | 85 | 80 ✓ | 14 ADVANCE, 15 FORMATION/ep, stance 73% |
+| squad_screen | `squad_screen_v3` | **98% ± 3** | 92 | 87 ✓ | 13 FORMATION/ep, stance 76%, 29 sync GO/ep |
+| patrol_brique | `patrol_brique_v3` | **95% ± 4** | 99 | 94 ✓ | 12 ADVANCE, 15 FORMATION/ep, stance 54% |
+| defend_brique | `defend_brique_v2` | **85% ± 7** | 87 | 82 ✓ | 7.8 ADVANCE, 17.9 sync GO/ep |
+| platoon | `platoon_v3` | **98% ± 3** | 91 | 86 ✓ | 39 ADVANCE, 17 timed, 49 FORMATION/ep, 101 sync GO/ep |
+
+Seven of eight scenarios met the campaign bound and six beat their previous
+published numbers outright — the richer command language is not a tax on
+performance. The honest miss: the assault defense (`fireteam_defend_v6`,
+51% vs bound 68) never stabilized above 0.54 rolling in either its retrain
+or its diagnosed adjustment (`_v6b`, ent 0.02, peak 0.19 — both budgets
+spent); the defenders die on the objective but lose the four-attacker
+attrition fight. The transparency probe re-ran on all eight checkpoints
+under the extended measuring stick — verdict, tables, and the honest
+still-missed majority-baseline target: `docs/transparency.md` §A5.
 
 ### Results (fireteam)
 

@@ -61,9 +61,9 @@ def _put_enemy_in_view(env, callsign, enemy_idx=0):
 
 
 def test_spaces_are_frozen_at_v14():
-    """A4 must not break v1.4 checkpoints: Discrete(157) / Box(137)."""
-    assert N_ACTIONS == 157
-    assert OBS_DIM == 137
+    """Spaces at the A5 layout (breaking cycle): Discrete(228) / Box(166)."""
+    assert N_ACTIONS == 228
+    assert OBS_DIM == 166
 
 
 # ---------------------------------------------------------------------- #

@@ -16,6 +16,7 @@ per-mission doctrine with manual page references):
     CLEAR                  eliminate all hostiles at an objective
     RALLY                  assemble on the direct leader
     HOLD                   hold current position
+    ADVANCE                move to / cross a control measure (WP / PL), then hold
 
 A *mission* is the payload of an order: what the recipient must do. Doctrine
 constrains how a leader may decompose its own mission into subordinate
@@ -54,11 +55,70 @@ class MissionType(Enum):
     CLEAR = "clear"      # eliminate all hostiles at an objective
     RALLY = "rally"      # assemble on the direct leader
     HOLD = "hold"        # hold current position
+    ADVANCE = "advance"  # move to / cross a control measure (waypoint / phase line)
 
     @classmethod
     def from_str(cls, value: str) -> MissionType:
         """Parse from case-insensitive string."""
         return cls(value.lower())
+
+
+class Formation(Enum):
+    """Element-level movement stances (A5-3) — manual pp. 14-15.
+
+    The PROTERRE group moves in three formations: EN COLONNE (speed, night,
+    following a route), EN LIGNE (crossing a crest/road, assaulting a wood
+    line), and EN COLONNE DOUBLE (teams abreast). COLUMN and LINE carry the
+    manual's first two; WEDGE stands in for the two-directions-at-once role
+    of the colonne double (owner scope). A stance is ordered to a LEADER
+    ('TL1, FORMATION COLUMN'), persists until changed, and shapes — never
+    forces — the element's geometry via a reward term.
+    """
+
+    COLUMN = "column"  # trail behind the leader within 1-cell lateral
+    LINE = "line"      # abreast of the leader within 1-cell depth
+    WEDGE = "wedge"    # V: diagonal offsets behind the leader
+
+
+#: How far behind/beside its leader a formation slot may trail (cells).
+FORMATION_DEPTH = 6.0
+
+
+def in_formation(
+    formation: Formation,
+    leader_pos: tuple[float, float],
+    heading: tuple[int, int],
+    member_pos: tuple[float, float],
+) -> bool:
+    """Is a member at its formation station relative to the leader?
+
+    Geometry in the leader's frame: ``along`` = signed distance along the
+    leader's heading (negative = behind), ``lateral`` = signed distance
+    across it. A leader that has never moved has no heading — no station
+    exists, nothing is in formation.
+
+    * COLUMN: behind (``-DEPTH <= along < 0``), within 1 cell of the axis;
+    * LINE: abreast (``|along| <= 1``), 1..DEPTH cells to either side;
+    * WEDGE: behind on the diagonals — ``|along|`` and ``|lateral|`` within
+      1 cell of each other, at least 1 cell off-axis.
+    """
+    hx, hy = heading
+    if hx == 0 and hy == 0:
+        return False
+    rx = member_pos[0] - leader_pos[0]
+    ry = member_pos[1] - leader_pos[1]
+    along = rx * hx + ry * hy
+    lateral = -rx * hy + ry * hx
+    if formation is Formation.COLUMN:
+        return -FORMATION_DEPTH <= along < 0 and abs(lateral) <= 1
+    if formation is Formation.LINE:
+        return abs(along) <= 1 and 1 <= abs(lateral) <= FORMATION_DEPTH
+    # WEDGE
+    return (
+        -FORMATION_DEPTH <= along < 0
+        and abs(lateral) >= 1
+        and abs(abs(along) - abs(lateral)) <= 1
+    )
 
 
 #: Missions that target a named objective. SUPPORT targets a friendly unit,
@@ -80,6 +140,10 @@ NEEDS_OBJECTIVE: frozenset[MissionType] = frozenset(
 #: Missions whose order names a friendly element instead of an objective.
 UNIT_TARGETED: frozenset[MissionType] = frozenset({MissionType.SUPPORT})
 
+#: Missions that target a named control measure (waypoint or phase line) —
+#: the A5 vocabulary that puts route geometry on the net.
+NEEDS_CONTROL: frozenset[MissionType] = frozenset({MissionType.ADVANCE})
+
 #: Missions with a definite end state that can be reported COMPLETE.
 #: OBSERVE / SUPPORT / COVER / DEFEND / DENY / HOLD are continuous postures —
 #: they end when a new order arrives (SUPPORT also ends when the supported
@@ -91,6 +155,7 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
         MissionType.SEIZE,
         MissionType.CLEAR,
         MissionType.RALLY,
+        MissionType.ADVANCE,  # completes on reaching/crossing the control measure
     }
 )
 
@@ -103,6 +168,7 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
 DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.RECON: (
         MissionType.RECON, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.SCREEN,
+        MissionType.ADVANCE,
     ),
     MissionType.SCREEN: (MissionType.SCREEN, MissionType.OBSERVE, MissionType.HOLD),
     MissionType.OBSERVE: (MissionType.OBSERVE, MissionType.COVER, MissionType.HOLD),
@@ -110,16 +176,24 @@ DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.COVER: (MissionType.COVER, MissionType.OBSERVE, MissionType.HOLD),
     MissionType.DEFEND: (
         MissionType.DEFEND, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.HOLD,
+        MissionType.ADVANCE,
     ),
     MissionType.DENY: (
         MissionType.DEFEND, MissionType.COVER, MissionType.SUPPORT, MissionType.OBSERVE,
+        MissionType.ADVANCE,
     ),
     MissionType.SEIZE: (
         MissionType.SEIZE, MissionType.CLEAR, MissionType.SUPPORT, MissionType.OBSERVE,
+        MissionType.ADVANCE,
     ),
     MissionType.CLEAR: (MissionType.CLEAR, MissionType.SUPPORT),
     MissionType.RALLY: (MissionType.RALLY, MissionType.HOLD),
     MissionType.HOLD: (MissionType.HOLD, MissionType.OBSERVE),
+    # ADVANCE is a maneuver leg (actes élémentaires, manual pp. 14-15): it
+    # decomposes into further legs, supported bounds, and watch postures.
+    MissionType.ADVANCE: (
+        MissionType.ADVANCE, MissionType.SUPPORT, MissionType.OBSERVE,
+    ),
 }
 
 #: Per-echelon admissibility: minimum *effective* authority required to HOLD
@@ -147,6 +221,7 @@ IN_POSITION_RADIUS: dict[MissionType, float] = {
     MissionType.CLEAR: 3.5,
     MissionType.RALLY: 2.5,
     MissionType.HOLD: 1.5,
+    MissionType.ADVANCE: 2.5,  # of the waypoint / the phase line's nearest point
 }
 
 #: Missions whose "in position" additionally requires line of sight to the
@@ -230,7 +305,22 @@ class Mission:
     step_assigned: int
     observe_steps: int = 0         # RECON / SCREEN progress (team-mirrored on OPORDs)
     team_observation: bool = False  # root OPORD RECON/SCREEN: team-adjudicated
+    # --- timing qualifiers (A5-2): a pending order stages, then executes ---
+    effective_at: int | None = None  # "AT T PLUS n": tick the order becomes effective
+    awaiting_signal: bool = False    # "AT MY COMMAND": pending until the issuer's EXECUTE
     extra: dict = field(default_factory=dict)
+
+
+def is_pending(mission: Mission, step: int) -> bool:
+    """A pending order (A5-2) has been received but is not yet in effect.
+
+    Until it is, the recipient's compliance is judged as HOLD near the
+    position where the order landed (staging, ``extra["staging"]``), the
+    mission cannot complete, and the pending state is observable.
+    """
+    return mission.awaiting_signal or (
+        mission.effective_at is not None and step < mission.effective_at
+    )
 
 
 @dataclass(frozen=True)
@@ -274,7 +364,13 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         if ctx.in_position:
             return 0.5 if ctx.stationary else 0.1
         return _progress(ctx)
-    if mission in (MissionType.SEIZE, MissionType.DEFEND, MissionType.DENY, MissionType.RALLY):
+    if mission in (
+        MissionType.SEIZE,
+        MissionType.DEFEND,
+        MissionType.DENY,
+        MissionType.RALLY,
+        MissionType.ADVANCE,  # reach the control measure, then hold on it
+    ):
         return 0.5 if ctx.in_position else _progress(ctx)
     if mission is MissionType.CLEAR:
         if ctx.fired:
@@ -297,5 +393,9 @@ def is_complete(mission: Mission, ctx: ComplianceContext) -> bool:
         return ctx.in_position and ctx.enemies_at_objective == 0
     if mission.type is MissionType.CLEAR:
         return ctx.enemies_at_objective == 0
+    if mission.type is MissionType.ADVANCE:
+        # reached the control measure, or crossed the phase line (the env
+        # flips extra["crossed"] when the agent's side of the line changes)
+        return ctx.in_position or bool(mission.extra.get("crossed"))
     # RALLY
     return ctx.dist_to_leader <= IN_POSITION_RADIUS[MissionType.RALLY]

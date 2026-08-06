@@ -29,12 +29,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cohort.core.language import OBJECTIVE_NAMES
+from cohort.core.language import CONTROL_NAMES, OBJECTIVE_NAMES, control_phrase
 from cohort.core.missions import (
     COMPLETABLE,
+    NEEDS_CONTROL,
     NEEDS_OBJECTIVE,
+    Formation,
     MissionType,
     allowed_derivations,
+    is_pending,
     min_hold_authority,
 )
 
@@ -66,6 +69,9 @@ class ActionSpec:
     order_mission: MissionType | None = None
     order_objective: str | None = None      # objective name, or None
     order_support_slot: int | None = None   # supported unit's slot (SUPPORT only)
+    order_control: str | None = None        # control-measure name (ADVANCE only)
+    order_amc: bool = False                 # "AT MY COMMAND" variant (A5-2, ADVANCE only)
+    order_formation: Formation | None = None  # element stance (A5-3, no mission payload)
 
 
 def _build_catalog() -> list[ActionSpec]:
@@ -81,6 +87,13 @@ def _build_catalog() -> list[ActionSpec]:
     add("contact", "REPORT_CONTACT")
     add("sitrep", "REPORT_SITREP")
     add("done", "REPORT_MISSION_COMPLETE")
+    # A5-2: broadcast EXECUTE, releasing ALL of this issuer's pending
+    # AT-MY-COMMAND orders at once (the COMMANDEMENT DU BOND's "EN AVANT !")
+    add("execute", "EXECUTE_SIGNAL")
+    # A5-4: trinôme peer synchronization by VOICE (any rank; the manual's
+    # bond par binôme, commanded "à la voix ou aux gestes", pp. 14-15)
+    add("sync_propose", "SYNC_PROPOSE")
+    add("sync_go", "SYNC_GO")
     for slot in range(MAX_SUB_SLOTS):
         for mission in MissionType:
             if mission is MissionType.SUPPORT:
@@ -94,6 +107,29 @@ def _build_catalog() -> list[ActionSpec]:
                         order_slot=slot,
                         order_mission=mission,
                         order_support_slot=other,
+                    )
+            elif mission in NEEDS_CONTROL:
+                # ADVANCE targets a control measure: WP GOLD ... PL CRIMSON.
+                # Each target also has an AT-MY-COMMAND variant (A5-2): the
+                # order stages the recipient until the issuer's EXECUTE —
+                # the learnable half of the timing vocabulary ("AT T PLUS n"
+                # is unbounded and stays human/inject-only).
+                for cm in CONTROL_NAMES:
+                    stem = f"ORDER_S{slot}_{mission.name}_{control_phrase(cm).replace(' ', '_')}"
+                    add(
+                        "order",
+                        stem,
+                        order_slot=slot,
+                        order_mission=mission,
+                        order_control=cm,
+                    )
+                    add(
+                        "order",
+                        f"{stem}_AMC",
+                        order_slot=slot,
+                        order_mission=mission,
+                        order_control=cm,
+                        order_amc=True,
                     )
             elif mission in NEEDS_OBJECTIVE:
                 for obj in OBJECTIVE_NAMES:
@@ -112,6 +148,16 @@ def _build_catalog() -> list[ActionSpec]:
                     order_mission=mission,
                     order_objective=None,
                 )
+        # A5-3: element stance orders to the subordinate LEADER in this slot
+        # ('TL1, FORMATION COLUMN') — a stance, not a mission: the recipient
+        # keeps its task; its element's geometry is reward-shaped, never forced.
+        for formation in Formation:
+            add(
+                "order",
+                f"ORDER_S{slot}_FORMATION_{formation.name}",
+                order_slot=slot,
+                order_formation=formation,
+            )
     return specs
 
 
@@ -139,6 +185,8 @@ def compute_mask(
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
+    has_voice_peer: bool = False,
+    has_pending_sync: bool = False,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -177,7 +225,30 @@ def compute_mask(
         elif spec.kind == "sitrep":
             mask[spec.index] = 1
         elif spec.kind == "done":
-            if soldier.mission is not None and soldier.mission.type in COMPLETABLE:
+            # a pending order (A5-2) is not yet executing: nothing to report
+            if (
+                soldier.mission is not None
+                and soldier.mission.type in COMPLETABLE
+                and not is_pending(soldier.mission, step)
+            ):
+                mask[spec.index] = 1
+        elif spec.kind == "execute":
+            # legal only while >= 1 living subordinate holds an AT-MY-COMMAND
+            # order of THIS issuer still awaiting the signal
+            if soldier.effective_authority > 0 and any(
+                sub.mission is not None
+                and sub.mission.awaiting_signal
+                and sub.mission.issuer_id == soldier.id
+                for sub in soldier.living_subordinates(roster)
+            ):
+                mask[spec.index] = 1
+        elif spec.kind == "sync_propose":
+            # A5-4: any agent with >= 1 trinôme peer within voice range
+            if has_voice_peer:
+                mask[spec.index] = 1
+        elif spec.kind == "sync_go":
+            # A5-4: only the proposer of a still-live (unexpired) proposal
+            if has_pending_sync:
                 mask[spec.index] = 1
 
     # Order vocabulary: command ranks only, doctrine-constrained ("full").
@@ -191,12 +262,24 @@ def compute_mask(
         )
         subs = soldier.living_subordinates(roster)
         objective_names = {o.name for o in world.objectives}
+        control_names = world.control_names
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
+                continue
+            # A5-3 stance orders: any mission-holding leader may set a
+            # subordinate LEADER's formation; the recipient must actually
+            # lead an element. No doctrine derivation, no cooldown — a
+            # stance is how the element moves, not what it does.
+            if spec.order_formation is not None:
+                if subs[spec.order_slot].living_subordinates(roster):
+                    mask[spec.index] = 1
                 continue
             if allowed is not None and spec.order_mission not in allowed:
                 continue
             if spec.order_objective is not None and spec.order_objective not in objective_names:
+                continue
+            # ADVANCE needs its control measure on THIS map
+            if spec.order_control is not None and spec.order_control not in control_names:
                 continue
             # unit-targeted SUPPORT needs a living unit in the supported slot
             if spec.order_mission is MissionType.SUPPORT and (

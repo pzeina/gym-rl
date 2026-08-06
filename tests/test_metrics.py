@@ -402,3 +402,52 @@ def test_evaluate_writes_behavior_json(tmp_path, capsys):
     }
     assert len(payload["per_episode"]) == 1
     assert "behavior over 1 episodes" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------- #
+# A5 vocabulary usage
+# ---------------------------------------------------------------------- #
+
+
+def test_vocabulary_usage_counts():
+    """ADVANCE / timed / FORMATION orders, sync traffic, and stance share."""
+    def msg(kind, text="", frm="SL1", to="TL1"):
+        return {"kind": kind, "from": frm, "to": to, "mission": None, "text": text}
+
+    s0 = {
+        "t": 0,
+        "soldiers": [sold("SL1", auth=2, subs=["TL1"]), sold("TL1", auth=1)],
+        "enemies": [],
+        "messages": [msg("opord", "SL1, THIS IS HQ: OPORD — SEIZE OBJ ALPHA. OUT.", "HQ", "SL1")],
+    }
+    s1 = {
+        "t": 1,
+        "soldiers": [
+            {**sold("SL1", auth=2, subs=["TL1"]), "formation": None},
+            {**sold("TL1", auth=1), "formation": "COLUMN", "leader": "SL1"},
+            {**sold("RFN1"), "leader": "TL1"},
+        ],
+        "enemies": [],
+        "messages": [
+            msg("order", "TL1, THIS IS SL1: ADVANCE TO WP GOLD AT MY COMMAND. OUT."),
+            msg("order", "TL1, THIS IS SL1: FORMATION COLUMN. OUT."),
+            msg("execute", "ALL STATIONS, THIS IS SL1: EXECUTE. OUT."),
+            msg("sync_propose", "RFN1, THIS IS TL1: PREPARE TO BOUND ON MY SIGNAL. OUT.", "TL1", "ALL"),
+            msg("sync_go", "TL1: GO! OUT.", "TL1", "ALL"),
+        ],
+    }
+    ep = episode_behavior(trace([s0, s1]))
+    assert ep["advance_orders"] == 1
+    assert ep["timed_orders"] == 1
+    assert ep["formation_orders"] == 1
+    assert ep["execute_signals"] == 1
+    assert ep["sync_proposals"] == 1
+    assert ep["sync_bounds"] == 1
+    # stance share: step 1 has TL1 (own stance) + RFN1 (leader's stance)
+    # governed out of 5 living agent-steps across both steps
+    assert ep["stance_steps"] == 2
+    assert ep["stance_agent_steps"] == 5
+    agg = aggregate_behavior([ep])
+    assert agg["advance_orders_per_episode"] == 1
+    assert agg["stance_share"] == 2 / 5
+    assert agg["sync_bounds_per_episode"] == 1

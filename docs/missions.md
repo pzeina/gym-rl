@@ -25,6 +25,7 @@ it defines the observation one-hot layout and the action-catalog layout.
 | CLEAR | — | objective | yes | Eliminate all hostiles at the objective (unchanged). |
 | RALLY | — | leader | yes | Assemble on the direct leader; the anchor tracks the leader (unchanged). |
 | HOLD | — | in place | no | Hold the position where the order was received (unchanged). |
+| ADVANCE | SE DÉPLACER (p. 14) | **control measure** | yes | A5: move to / cross a named control measure — `ADVANCE TO WP GOLD` / `ADVANCE TO PL AMBER`. Waypoint: in position within radius 2.5. Phase line: the anchor is the segment's nearest point (dynamic); completes on reaching it **or crossing the line** (side flip since receipt), then hold. Appended after the MICAT set so earlier one-hot indices stay stable. |
 
 OVERWATCH (v1.1) is **removed** — its roles are absorbed by OBSERVE (static
 watch on an objective) and SUPPORT (fire support for a unit). For
@@ -38,17 +39,18 @@ mission (preference-ordered; enforced by action masking):
 
 | Own mission | May order subordinates to… |
 |---|---|
-| RECON | RECON, SUPPORT, OBSERVE, SCREEN |
+| RECON | RECON, SUPPORT, OBSERVE, SCREEN, ADVANCE |
 | SCREEN | SCREEN, OBSERVE, HOLD |
 | OBSERVE | OBSERVE, COVER, HOLD |
 | SUPPORT | SUPPORT, OBSERVE, HOLD |
 | COVER | COVER, OBSERVE, HOLD |
-| DEFEND | DEFEND, SUPPORT, OBSERVE, HOLD |
-| DENY | DEFEND, COVER, SUPPORT, OBSERVE |
-| SEIZE | SEIZE, CLEAR, SUPPORT, OBSERVE |
+| DEFEND | DEFEND, SUPPORT, OBSERVE, HOLD, ADVANCE |
+| DENY | DEFEND, COVER, SUPPORT, OBSERVE, ADVANCE |
+| SEIZE | SEIZE, CLEAR, SUPPORT, OBSERVE, ADVANCE |
 | CLEAR | CLEAR, SUPPORT |
 | RALLY | RALLY, HOLD |
 | HOLD | HOLD, OBSERVE |
+| ADVANCE | ADVANCE, SUPPORT, OBSERVE |
 
 Two doctrinal notes:
 
@@ -61,6 +63,40 @@ Two doctrinal notes:
   sans appui" is the PROTERRE maneuver principle: recon, defense, and
   assault all decompose into a supported element and a supporting element
   (cf. RECONNAÎTRE step 4 "APPUYER", p. 30).
+* **ADVANCE is a maneuver leg, not an end state** (A5) — SE DÉPLACER is one
+  of the group's three actes élémentaires (p. 14), so ADVANCE derives from
+  the missions whose execution decomposes into movement legs (RECON, SEIZE,
+  DEFEND-family) and itself derives further legs plus the postures that
+  cover them (ADVANCE, SUPPORT, OBSERVE).
+
+## Control measures, timing, formations, and the bound (A5)
+
+The A5 cycle added the vocabulary that puts *maneuver* on the net; the full
+grammar lives in [command_language.md](command_language.md):
+
+* **Control measures** — every scenario carries named WAYPOINTS (points,
+  metal names: GOLD/SILVER/COPPER/IRON) and PHASE LINES (segments:
+  AMBER/COBALT/CRIMSON) in `ScenarioSpec.waypoints` / `.phase_lines`;
+  ADVANCE anchors on them. They deliberately name the terrain the B4/B5
+  probes showed trained routes dogleg through.
+* **Timing** — any order may carry `AT T PLUS <n>` or `AT MY COMMAND`
+  (manual pp. 14-15, COMMANDEMENT DU BOND: "POUR UN BOND … PREPAREZ-VOUS …
+  EN AVANT !"). A pending order stages its recipient — compliance is judged
+  as HOLD at the spot where the order landed — until the tick comes due or
+  the issuer's `EXECUTE` broadcast releases every order awaiting its signal
+  at once. Binding (tenure) starts at release.
+* **Formations** — `FORMATION COLUMN | LINE | WEDGE` is an element-level
+  *stance* ordered to a leader (pp. 14-15: en colonne / en ligne / en
+  colonne double — WEDGE stands in for the colonne double, owner scope). It
+  is not a mission: the recipient keeps its task; members standing at their
+  formation station while the leader closes new ground earn
+  `RewardConfig.formation_bonus` (watermark-gated: geometry is shaped,
+  never forced or masked).
+* **Trinôme sync** — `SYNC_PROPOSE` / `SYNC_GO`, by *voice* (voice_range ≈
+  6 cells, never net-arbitrated, no airtime): the manual's bond par binôme.
+  Inside the 8-step window a GO opens, a mover closing new ground toward
+  its own anchor under a COVERING group-mate earns
+  `RewardConfig.bound_bonus` and the P2 covered-movement accuracy debuff.
 
 ## SUPPORT mechanics ("pas un pas sans appui")
 
@@ -126,10 +162,13 @@ still adjudicates the operation, team-wide, as before (issue #3).
 | RECON / SCREEN | 0.6 | progress | SCREEN: −0.6 if fired |
 | OBSERVE / SUPPORT | 0.6 static / 0.1 moving | progress | |
 | COVER | 0.5 static / 0.1 moving | progress | |
-| DEFEND / DENY / SEIZE / RALLY | 0.5 | progress | |
+| DEFEND / DENY / SEIZE / RALLY / ADVANCE | 0.5 | progress | ADVANCE: reach the control measure, then hold on it |
 | CLEAR | 0.8 if firing | progress | 0.0 while enemies visible and not firing |
 | HOLD | 0.5 static / 0.1 moving | progress | |
+| *any pending order* (A5-2) | as HOLD at the staging spot | — | until released (T due / EXECUTE) |
 
 Fire-discipline factors (`RewardConfig.fire_discipline`): SCREEN → 0
 (weapons tight); OBSERVE / SUPPORT / COVER / DEFEND / DENY / HOLD → 1 from
-position, else 0; RECON / SEIZE / CLEAR / RALLY / untasked → 1.
+position, else 0; RECON / SEIZE / CLEAR / RALLY / ADVANCE / untasked → 1.
+A pending order (A5-2) is treated as HOLD: fire pays only from the staging
+spot.

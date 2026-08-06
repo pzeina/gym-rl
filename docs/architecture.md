@@ -30,6 +30,9 @@ composes them and adds simulation (combat, OpFor, terrain) and the RL contract.
 
 Each `env.step(actions)`:
 
+0. **Timed-order release** (A5-2) — "AT T PLUS n" orders whose tick has come due
+   become effective before anything else, so the tick's anchors and compliance are
+   judged against the now-executing order (tenure restamps at release).
 1. **Snapshot** previous positions and mission-anchor distances (for progress shaping).
 2. **Net arbitration** — the radio is a single frequency: of this tick's *learned*
    transmission attempts (CONTACT / SITREP / MISSION COMPLETE / orders), at most **one**
@@ -52,16 +55,21 @@ Each `env.step(actions)`:
 6. **Knowledge decay** — the team enemy picture (fed *only* by CONTACT reports) expires
    stale entries and drops dead enemies.
 7. **Compliance & rewards** — each agent's standing mission is scored against what it
-   actually did (see `core/missions.py::compliance`), leaders are scored on subordinate
-   coverage, and the ledger assembles per-component rewards.
+   actually did (see `core/missions.py::compliance`; a pending A5-2 order scores as
+   HOLD at its staging spot), leaders are scored on subordinate coverage, and the
+   A5 maneuver terms pay: the formation bonus (members at their COLUMN/LINE/WEDGE
+   station while their stanced leader closes NEW ground) and the trinôme bound bonus
+   (a synchronized mover under a covering group-mate closing NEW ground) — both
+   watermark-gated so they telescope with the advance and cannot be farmed. The
+   ledger assembles per-component rewards.
 8. **Terminal checks** — scenario success (root-mission-specific), defeat (cohort wiped),
    or timeout. PettingZoo semantics: dead agents return `terminated=True` once, then
    leave `env.agents`.
 
 ## Rank admissibility as masking
 
-`env/actions.py` builds one flat catalog (157 actions) shared by all agents. Per step,
-`compute_mask` produces the legality vector:
+`env/actions.py` builds one flat catalog (228 actions at the A5 layout) shared by all
+agents. Per step, `compute_mask` produces the legality vector:
 
 * order actions require `effective_authority > 0`, a living subordinate in that slot,
   **and** the ordered mission to be doctrine-derivable from the issuer's own mission;
@@ -73,10 +81,18 @@ Each `env.step(actions)`:
   the leader's own mission changed since, or a CONTACT report hit the net since
   (the tactical picture changed). Untasked subordinates are always orderable;
   `order_cooldown=0` disables the cooldown;
+* ADVANCE orders (`ORDER_S{i}_ADVANCE_WP_GOLD` … + `_AMC` at-my-command variants)
+  additionally require the named control measure to exist on THIS map; FORMATION
+  stance orders require the recipient slot to lead an element and skip both the
+  doctrine-derivation check and the cooldown (a stance is how the element moves,
+  not what it does);
+* EXECUTE_SIGNAL is legal only while ≥1 living subordinate holds an AT-MY-COMMAND
+  order of this issuer still awaiting the signal; SYNC_PROPOSE needs ≥1 trinôme
+  peer within `voice_range`; SYNC_GO needs the agent's own unexpired proposal;
 * FIRE requires ammo and a visible enemy in weapon range;
 * CONTACT requires a currently visible enemy;
 * MISSION COMPLETE requires holding a mission with an end state
-  (RECON/SCREEN/SEIZE/CLEAR/RALLY).
+  (RECON/SCREEN/SEIZE/CLEAR/RALLY/ADVANCE) that is not pending (A5-2).
 
 The policy applies the mask at the distribution level (logits of illegal actions →
 −1e9), so illegal behavior is impossible even during exploration. The environment also

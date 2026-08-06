@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cohort.core.missions import MissionType
+from cohort.core.missions import Formation, MissionType
 from cohort.core.ranks import Rank
 
 if TYPE_CHECKING:
@@ -29,15 +29,25 @@ if TYPE_CHECKING:
 
 RANK_ORDER: tuple[Rank, ...] = (Rank.RFN, Rank.TL, Rank.SL, Rank.PSG, Rank.PL, Rank.XO, Rank.CO)
 MISSION_ORDER: tuple[MissionType, ...] = tuple(MissionType)
+FORMATION_ORDER: tuple[Formation, ...] = tuple(Formation)
 
 N_SUB_SLOTS = 4
 N_ENEMY_SLOTS = 4
 N_OBJECTIVE_SLOTS = 4
+#: control-measure slots (A5): one per catalog name — 4 waypoints (GOLD /
+#: SILVER / COPPER / IRON) + 3 phase lines (AMBER / COBALT / CRIMSON); a
+#: scenario using fewer leaves the remaining slots zeroed (like objectives)
+N_WAYPOINT_SLOTS = 4
+N_PHASE_LINE_SLOTS = 3
 PATCH_RADIUS = 2
 
-#: mission block: one-hot over the 11 MICAT tasks + has-mission flag + 4
-#: anchor fields (dx, dy, has-objective, age)
-_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4
+#: mission block: one-hot over the 12 tasks (11 MICAT + ADVANCE) + has-mission
+#: flag + 4 anchor fields (dx, dy, has-objective, age) + 2 pending fields
+#: (A5-2: pending flag; time-to-effective — 1.0 while AT MY COMMAND, else
+#: remaining/20 capped at 1) + 3 stance one-hot (A5-3: the governing element
+#: formation — the agent's own stance if it leads one, else its direct
+#: leader's; all zero when no stance applies)
+_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4 + 2 + len(FORMATION_ORDER)
 
 #: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
 _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
@@ -45,12 +55,20 @@ _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 #: leader block: present, dx, dy, mission index, leader-is-human
 _LEADER_BLOCK = 5
 
-#: 13 self + 16 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
+#: sync block (A5-4): pending-bound flag + synchronized-window remaining
+_SYNC_BLOCK = 2
+
+#: 13 self + 22 mission/stance + 2 sync + 5 leader + 5*N_SUB + 4*N_ENEMY
+#: + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a
+#: phase line dx/dy point at its nearest segment point) + 5 comms + patch (50)
+#: = 13 + 22 + 2 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 166
 OBS_DIM = (
-    _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
+    _SELF_BLOCK + _MISSION_BLOCK + _SYNC_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
     + 4 * N_ENEMY_SLOTS
     + 3 * N_OBJECTIVE_SLOTS
+    + 3 * N_WAYPOINT_SLOTS
+    + 3 * N_PHASE_LINE_SLOTS
     + 5
     + (2 * PATCH_RADIUS + 1) ** 2 * 2
 )
@@ -68,6 +86,11 @@ class AgentView:
     #: set, it replaces the comms-summary "known enemy present" flag — a slot
     #: fully redundant with the known-count field — so OBS_DIM is unchanged.
     sitrep_due: float | None = None
+    #: trinôme sync (A5-4): the agent is party to a live PREPARE-TO-BOUND
+    #: proposal (as proposer or registered peer) awaiting its GO
+    sync_pending: bool = False
+    #: fraction of the synchronized window remaining after a GO, in [0, 1]
+    sync_active: float = 0.0
 
 
 def _mission_idx(mission_type: MissionType | None) -> float:
@@ -99,7 +122,7 @@ def build_observation(
     out[i] = 1.0 if soldier.human else 0.0
     i += 1
 
-    # --- mission (16) ---
+    # --- mission (19) ---
     m = soldier.mission
     if m is not None:
         out[i + MISSION_ORDER.index(m.type)] = 1.0
@@ -116,14 +139,45 @@ def build_observation(
             supported = roster.by_id.get(m.extra.get("supported_id"))
             if supported is not None and supported.alive:
                 anchor = supported.pos
+        elif m.type is MissionType.ADVANCE and m.extra.get("control") is not None:
+            cm = world.control_by_name(m.extra["control"])
+            if cm is not None:
+                anchor = cm.nearest_point(soldier.pos) if hasattr(cm, "nearest_point") else cm.pos
         out[i] = (anchor[0] - x) / w
         out[i + 1] = (anchor[1] - y) / h
         out[i + 2] = 1.0 if m.objective_id is not None else 0.0
         out[i + 3] = min(1.0, (view.step - m.step_assigned) / 50.0)
     i += 4
+    # pending state (A5-2): staged until "AT T PLUS n" comes due or the
+    # issuer's EXECUTE releases an "AT MY COMMAND" order
+    if m is not None:
+        pending = m.awaiting_signal or (
+            m.effective_at is not None and view.step < m.effective_at
+        )
+        if pending:
+            out[i] = 1.0
+            out[i + 1] = (
+                1.0
+                if m.awaiting_signal
+                else min(1.0, (m.effective_at - view.step) / 20.0)
+            )
+    i += 2
+
+    # --- governing element stance (A5-3, 3) ---
+    leader = roster.leader_of(soldier)
+    stance = soldier.formation
+    if stance is None and leader is not None:
+        stance = leader.formation  # the member is shaped under its leader's stance
+    if stance is not None:
+        out[i + FORMATION_ORDER.index(stance)] = 1.0
+    i += len(FORMATION_ORDER)
+
+    # --- trinôme sync (A5-4, 2) ---
+    out[i] = 1.0 if view.sync_pending else 0.0
+    out[i + 1] = view.sync_active
+    i += 2
 
     # --- leader (5) ---
-    leader = roster.leader_of(soldier)
     if leader is not None:
         out[i] = 1.0
         out[i + 1] = (leader.pos[0] - x) / w
@@ -162,6 +216,23 @@ def build_observation(
             out[i] = 1.0
             out[i + 1] = (obj.pos[0] - x) / w
             out[i + 2] = (obj.pos[1] - y) / h
+        i += 3
+
+    # --- control measures (A5): waypoints then phase lines (3 each) ---
+    for k in range(N_WAYPOINT_SLOTS):
+        if k < len(world.waypoints):
+            wp = world.waypoints[k]
+            out[i] = 1.0
+            out[i + 1] = (wp.pos[0] - x) / w
+            out[i + 2] = (wp.pos[1] - y) / h
+        i += 3
+    for k in range(N_PHASE_LINE_SLOTS):
+        if k < len(world.phase_lines):
+            pl = world.phase_lines[k]
+            near = pl.nearest_point(soldier.pos)
+            out[i] = 1.0
+            out[i + 1] = (near[0] - x) / w
+            out[i + 2] = (near[1] - y) / h
         i += 3
 
     # --- comms summary (5) ---

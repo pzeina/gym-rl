@@ -366,6 +366,116 @@ TLs re-task almost only under the contact/casualty exceptions), but
 vocabulary can carry routes and formations (A5). The predictor and ground
 truth were not modified in this campaign — the B4 measuring stick stands.
 
+## A5: the vocabulary cycle — the after-after measurement
+
+B5 ended with a diagnosis: the residual destination error was *vocabulary* —
+formation-keeping, route geometry, and staged timing had no radio form. A5
+added exactly that vocabulary (owner scope: **no FOLLOW-ME order**): control
+measures (waypoints + phase lines) with the ADVANCE order, timing
+qualifiers (`AT T PLUS n` / `AT MY COMMAND` + EXECUTE), element formations
+(COLUMN/LINE/WEDGE stances), and voice-range trinôme sync
+(SYNC_PROPOSE/GO). Every scenario retrained from scratch on the new spaces
+(Discrete 157 → 228, Box 137 → 166) and this probe re-ran as the
+measurement.
+
+### The measuring stick grew with the vocabulary (disclosed)
+
+The B4/B5 predictor and truth are unchanged EXCEPT that both now know the
+control measures: the briefing carries them, ADVANCE traffic predicts the
+named `WP <X>` / `PL <X>` class, and ground truth gained those classes
+(`CM_REGION` = 4.0; closure competition includes segments). This is a
+**stick change**: a phase line lying across the approach absorbs a large
+share of transit windows (its perpendicular distance closes at travel
+rate), so the old and new destination numbers are NOT directly comparable
+— on scenarios with an approach-crossing line, `PL AMBER` truth alone is
+14–41% of pairs. The majority baseline is computed on the same new stick,
+so the **gap vs majority** is the comparison that carries meaning; the B5
+rows quoted below are the old-stick record. Old checkpoints cannot be
+re-probed: the space break makes them unloadable by construction.
+
+### The vocabulary is used (adoption, N=100 eval episodes)
+
+| run | success (N=100) | ADVANCE/ep | timed/ep | FORMATION/ep | stance share | sync GO/ep |
+|---|---|---|---|---|---|---|
+| fireteam_v6 | **84% ± 7** | 4.3 | 2.6 | n/a¹ | n/a¹ | 5.8 |
+| squad_v5 | **93% ± 5** | 15.0 | 11.0 | 23.9 | 0.76 | 37.5 |
+| fireteam_defend_v6 | 51% ± 10 | 7.6 | 5.4 | n/a¹ | n/a¹ | 33.5 |
+| squad_recon_v5b | **94% ± 5** | 14.0 | 7.5 | 15.1 | 0.73 | 59.8 |
+| squad_screen_v3 | **98% ± 3** | 0.0² | 0.0² | 13.1 | 0.76 | 29.2 |
+| patrol_brique_v3 | **95% ± 4** | 11.7 | 8.9 | 14.8 | 0.54 | 14.1 |
+| defend_brique_v2 | **85% ± 7** | 7.8 | 4.1 | n/a¹ | n/a¹ | 17.9 |
+| platoon_v3 | **98% ± 3** | 38.6 | 16.9 | 48.7 | 0.73 | 101.4 |
+
+¹ a fireteam has no subordinate LEADERS: FORMATION is structurally
+inapplicable at that echelon. ² SCREEN doctrine derives no ADVANCE.
+
+Trained policies genuinely speak the new language: the platoon issues ~39
+ADVANCE orders and ~49 FORMATION stances per episode, formations govern
+~3/4 of all agent-steps wherever they are orderable, staged AT-MY-COMMAND
+advances are released by EXECUTE (~6/ep on squad/platoon), and trinôme
+bounds run continuously. Success went **up** almost everywhere (squad
+82 → 93, recon 85 → 94, screen 92 → 98, platoon 91 → 98, fireteam
+78 → 84) — the maneuver vocabulary is not a tax; it pays.
+
+### The probe verdict — honest: majority still unbeaten
+
+Destination, new stick, N=30 seeds 500–529, K=15 (B5 rows: old stick,
+for the record):
+
+| checkpoint | pairs | accuracy | majority | **gap vs majority** | gap vs random |
+|---|---|---|---|---|---|
+| fireteam_v5b *(B5, old stick)* | 13362 | 0.544 | 0.609 | −0.065 | +0.294 |
+| **fireteam_v6** | 13586 | 0.214 | 0.410 | **−0.196** | +0.048 |
+| squad_v4b *(B5, old stick)* | 31376 | 0.301 | 0.457 | −0.156 | +0.101 |
+| **squad_v5** | 51400 | 0.133 | 0.223 | **−0.090** | +0.008 |
+| patrol_brique_v2b *(B5, old stick)* | 19227 | 0.226 | 0.507 | −0.281 | +0.026 |
+| **patrol_brique_v3** | 30696 | 0.145 | 0.317 | **−0.172** | +0.020 |
+| fireteam_defend_v6 | 7359 | 0.293 | 0.853 | −0.560 | +0.093 |
+| squad_recon_v5b | 24048 | 0.203 | 0.423 | −0.220 | +0.037 |
+| squad_screen_v3 | 22294 | 0.133 | 0.375 | −0.242 | −0.034 |
+| defend_brique_v2 | 12527 | 0.080 | 0.668 | −0.588 | −0.120 |
+| platoon_v3 | 112359 | 0.091 | 0.273 | −0.182 | −0.009 |
+
+**The A5 DoD target — beat the majority baseline on ≥ 2 of the three B5
+scenarios — is missed on all three.** What moved and what it means:
+
+1. **The squad and patrol gaps improved** (−0.156 → −0.090; −0.281 →
+   −0.172) *while their majority baselines collapsed* (0.457 → 0.223;
+   0.507 → 0.317): under the richer stick the OPORD-only reader explains
+   far less — truth is genuinely spread across control measures, LEADER
+   stations, and staging — and the net-following reader keeps most of its
+   ground. The squad gap is the smallest any squad checkpoint has ever
+   measured.
+2. **Truth LEADER is finally predictable in principle** — the A5-3 rule
+   (untasked stanced members follow their leader) produces the first
+   nonzero LEADER-class predictions (squad 0.055, recon 0.081 vs 0.000 on
+   every previous run) — but most formation-keeping members ALSO hold a
+   standing order, and orders bind first in the predictor, so the LEADER
+   class remains mostly unclaimed. The vocabulary exists; the probe's
+   order-primacy assumption is now the binding constraint.
+3. **The fireteam regressed** (−0.065 → −0.196): its policy re-learned
+   churn *through* the new vocabulary — riflemen rotate between
+   `ADVANCE TO PL AMBER`, `SEIZE OBJ BRAVO`, and `SEIZE OBJ ALPHA` every
+   few windows (7.1 priced re-tasks/ep vs v5b's 2.0; the B5 pricing is
+   paid, not avoided — compliance + terminal profits outbid it). Binding
+   orders by economics held only as long as the vocabulary was poor.
+4. **Posture transparency worsened with tempo** (gap vs majority −0.25 to
+   −0.34 on the maneuver scenarios): the new policies move nearly
+   constantly (MOVING share 0.78–0.92), majority-posture is nearly
+   degenerate, and CONTACT traffic still under-reports the firefights the
+   probe would need (fireteam FIRING recall 0.001).
+
+The scope of the honest claim after A5: **the net now carries the
+maneuver** — routes are named and ordered (ADVANCE ~4–39/ep), formations
+are on the air and adopted, staging and release are explicit — and the
+cohort performs better under the richer language than it ever has. But a
+constant OPORD-only reader still edges out the net-following reader at
+K=15, because the policies exercise their re-task freedom (priced but
+affordable) faster than the probe's standing-order model can follow.
+The next candidate fix is no longer vocabulary: it is either steeper
+rank-scaled pricing, or a probe that models *rotation cycles* rather than
+single standing orders.
+
 ## Artifacts
 
 * `cohort/probe.py` — predictor, ground truth, scoring, CLI (pure and
@@ -374,3 +484,7 @@ truth were not modified in this campaign — the B4 measuring stick stands.
   checkpoints committed).
 * Trace fields `fired`/`leader` added to the B2 `TraceRecorder` records
   (recording is still read-only and RNG-free; bit-identical episodes).
+* A5: trace field `formation`, message kinds `execute`/`sync_propose`/
+  `sync_go` (voice-flagged), and the vocabulary-usage rows in
+  `behavior.json` (`advance_orders_per_episode`, `timed_orders_per_episode`,
+  `formation_orders_per_episode`, `stance_share`, `sync_bounds_per_episode`).

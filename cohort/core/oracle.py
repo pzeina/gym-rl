@@ -143,6 +143,9 @@ def observe(env) -> dict:
                 "cover": bool(world.cover_at(s.pos)),
                 "fired": s.fired_this_step,
                 "mission": s.mission.type.name if s.mission else None,
+                "formation": s.formation.name if s.formation is not None else None,
+                # A5-4: inside an active trinôme sync window (post-GO)
+                "synced": env._synchronized(s) is not None,
                 # comms discipline (A4): True when this agent attempted a
                 # learned transmission last step and lost net arbitration
                 "net_busy": s.callsign in env._net_blocked,

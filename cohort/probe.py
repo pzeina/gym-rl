@@ -54,7 +54,8 @@ from cohort.core.missions import IN_POSITION_RADIUS, WEAPONS_TIGHT, MissionType
 #: Prediction horizon: behavior is scored over the next K steps.
 K = 15
 
-#: Destination classes (besides one ``OBJ <NAME>`` class per objective).
+#: Destination classes (besides one ``OBJ <NAME>`` class per objective and
+#: one ``WP <NAME>`` / ``PL <NAME>`` class per control measure — A5).
 LEADER = "LEADER"
 HOLD = "HOLD"
 
@@ -69,6 +70,10 @@ POSTURES: tuple[str, ...] = (STATIC, MOVING, FIRING)
 #: this radius occupies that objective's region. Covers every objective-
 #: anchored in-position radius (OBSERVE's ring, 9.0, is the widest).
 OBJ_REGION = 9.0
+#: Region radius of a control measure (A5): ADVANCE's in-position radius plus
+#: a small margin — control measures are points/lines, not areas, so their
+#: region is deliberately tighter than an objective's.
+CM_REGION = 4.0
 #: Mean window distance to the direct leader for the LEADER class.
 LEADER_REGION = 6.0
 #: An agent that never leaves this radius of its position at prediction time
@@ -93,12 +98,41 @@ def obj_class(name: str) -> str:
     return f"OBJ {name}"
 
 
+def cm_class(name: str) -> str:
+    """Destination class label of a named control measure ('WP GOLD')."""
+    return lang.control_phrase(name)
+
+
 def _euclid(a, b) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
 def _manhattan(a, b) -> float:
     return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+
+def _seg_nearest(a, b, pos) -> tuple[float, float]:
+    """Closest point of segment ``a``-``b`` to ``pos`` (projection, clamped)."""
+    ax, ay = a
+    bx, by = b
+    dx, dy = bx - ax, by - ay
+    length_sq = dx * dx + dy * dy
+    if length_sq <= 1e-12:
+        return (float(ax), float(ay))
+    t = ((pos[0] - ax) * dx + (pos[1] - ay) * dy) / length_sq
+    t = max(0.0, min(1.0, t))
+    return (ax + t * dx, ay + t * dy)
+
+
+#: A truth/prediction anchor: a point, or a segment (phase line).
+Anchor = tuple  # ("point", (x, y)) | ("segment", (x1, y1), (x2, y2))
+
+
+def _anchor_dist(pos, anchor: Anchor) -> float:
+    """Distance from ``pos`` to an anchor (point or segment)."""
+    if anchor[0] == "segment":
+        return _euclid(pos, _seg_nearest(anchor[1], anchor[2], pos))
+    return _euclid(pos, anchor[1])
 
 
 # ---------------------------------------------------------------------- #
@@ -108,18 +142,54 @@ def _manhattan(a, b) -> float:
 
 @dataclass
 class Briefing:
-    """Public pre-mission knowledge: map, objectives, org chart. No positions,
-    no oracle — exactly what an outside reader holds before step 0."""
+    """Public pre-mission knowledge: map, objectives, control measures, org
+    chart. No positions, no oracle — exactly what an outside reader holds
+    before step 0."""
 
     scenario: str
     objectives: dict[str, tuple[int, int]]  # name -> map position
     spawn: tuple[int, int]                  # friendly spawn anchor
     org: dict[str, str | None]              # callsign -> direct leader (None -> HQ)
+    #: control measures (A5): waypoint name -> point, phase-line name -> segment
+    waypoints: dict[str, tuple[int, int]] = None  # type: ignore[assignment]
+    phase_lines: dict[str, tuple[tuple[int, int], tuple[int, int]]] = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.waypoints is None:
+            self.waypoints = {}
+        if self.phase_lines is None:
+            self.phase_lines = {}
 
     @property
     def dest_classes(self) -> list[str]:
         """All destination classes of this scenario, in stable order."""
-        return [obj_class(n) for n in self.objectives] + [LEADER, HOLD]
+        return (
+            [obj_class(n) for n in self.objectives]
+            + [cm_class(n) for n in self.waypoints]
+            + [cm_class(n) for n in self.phase_lines]
+            + [LEADER, HOLD]
+        )
+
+    def control_anchor(self, name: str) -> Anchor | None:
+        """Anchor of a named control measure (point or segment), or None."""
+        if name in self.waypoints:
+            return ("point", self.waypoints[name])
+        if name in self.phase_lines:
+            a, b = self.phase_lines[name]
+            return ("segment", a, b)
+        return None
+
+    @property
+    def truth_anchors(self) -> dict[str, Anchor]:
+        """Ground-truth anchors by class label: objectives + control measures."""
+        anchors: dict[str, Anchor] = {
+            obj_class(n): ("point", pos) for n, pos in self.objectives.items()
+        }
+        for n, pos in self.waypoints.items():
+            anchors[cm_class(n)] = ("point", pos)
+        for n, (a, b) in self.phase_lines.items():
+            anchors[cm_class(n)] = ("segment", a, b)
+        return anchors
 
 
 def make_briefing(scenario: str) -> Briefing:
@@ -140,6 +210,8 @@ def make_briefing(scenario: str) -> Briefing:
         objectives={name: pos for name, pos in spec.objectives},
         spawn=spec.spawn,
         org=org,
+        waypoints={name: pos for name, pos in spec.waypoints},
+        phase_lines={name: (a, b) for name, a, b in spec.phase_lines},
     )
 
 
@@ -158,6 +230,17 @@ class _Task:
     step: int                        # when it landed (or was inherited)
     origin: tuple[float, float]      # recipient's estimated position at that moment
     team: bool = False               # root OPORD RECON/SCREEN: team-adjudicated (#9)
+    control: str | None = None       # control-measure name (ADVANCE — A5)
+    # timing qualifiers (A5-2): a pending order predicts staging, then the target
+    delay: int | None = None         # "AT T PLUS n": effective at step + n
+    awaiting: bool = False           # "AT MY COMMAND": until the issuer's EXECUTE
+    issuer: str | None = None        # who issued it (matches EXECUTE broadcasts)
+
+    @property
+    def effective_step(self) -> int:
+        """When the order starts (or started) executing; progress counts
+        from here, not from receipt — the recipient stages in between."""
+        return self.step + (self.delay or 0)
 
 
 _GRID_RE = re.compile(r"GRID (\d{2})(\d{2})")
@@ -165,6 +248,7 @@ _DOWN_RE = re.compile(r"ALL STATIONS: ([A-Za-z]{2,3}\d+) IS DOWN")
 _TAKING_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+): ([A-Za-z]{2,3}\d+) IS DOWN\. I AM ASSUMING COMMAND")
 _FILLING_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+): ASSUMING ([A-Za-z]{2,3}\d+)'S POSITION")
 _TRAP_RE = re.compile(r"ALL STATIONS: ([A-Za-z]{2,3}\d+) HIT A DEVICE AT GRID (\d{2})(\d{2})")
+_EXECUTE_RE = re.compile(r"THIS IS ([A-Za-z]{2,3}\d+|HQ): EXECUTE")
 
 
 class NetPredictor:
@@ -185,6 +269,9 @@ class NetPredictor:
             cs: [c for c, ldr in brief.org.items() if ldr == cs] for cs in brief.org
         }
         self.task: dict[str, _Task | None] = {cs: None for cs in brief.org}
+        #: element stances (A5-3): leader callsign -> formation name, from
+        #: 'FORMATION X' orders; a stance dies with its leader
+        self.stance: dict[str, str] = {}
         self.sitrep: dict[str, tuple[int, tuple[int, int]]] = {}  # cs -> (step, grid)
         self.contacts: list[tuple[int, tuple[int, int]]] = []     # (step, grid) sightings
         #: org slots vacated by a promotion this succession, for the recursive
@@ -210,6 +297,11 @@ class NetPredictor:
             cs = parsed.recipient_callsign
             if not self.alive.get(cs):
                 return
+            if parsed.formation is not None:
+                # stance order (A5-3): no mission payload — the element's
+                # movement geometry changed, its tasks did not
+                self.stance[cs] = parsed.formation.name
+                return
             team = (
                 kind == "opord"
                 and parsed.mission in (MissionType.RECON, MissionType.SCREEN)
@@ -222,6 +314,10 @@ class NetPredictor:
                 step=self.t,
                 origin=self._est_pos(cs),
                 team=team,
+                control=parsed.control_name,
+                delay=parsed.delay,
+                awaiting=parsed.at_my_command,
+                issuer=m.get("from"),
             )
         elif kind == "sitrep":
             grid = _GRID_RE.search(text)
@@ -238,6 +334,17 @@ class NetPredictor:
             self.task[m["to"]] = None
         elif kind == "support_end":
             self.task[m["from"]] = None  # supported unit fell: standing by
+        elif kind == "execute":
+            # "ALL STATIONS, THIS IS X: EXECUTE." releases every AT-MY-COMMAND
+            # order X issued (A5-2): those tasks start executing NOW
+            exe = _EXECUTE_RE.search(text)
+            if exe:
+                sender = exe.group(1)
+                for cs, task in self.task.items():
+                    if task is not None and task.awaiting and task.issuer == sender:
+                        self.task[cs] = replace(
+                            task, awaiting=False, step=self.t, origin=self._est_pos(cs)
+                        )
         elif kind == "casualty":
             down = _DOWN_RE.search(text)
             if down:
@@ -292,23 +399,35 @@ class NetPredictor:
 
     # -- net-derived position estimates ---------------------------------- #
 
+    def _pending(self, task: _Task) -> bool:
+        """Is the order still staged (A5-2)? AT MY COMMAND until the EXECUTE
+        broadcast (consumed in :meth:`_consume`), AT T PLUS n until it is due."""
+        return task.awaiting or self.t < task.effective_step
+
     def _est_pos(self, cs: str, seen: frozenset = frozenset()) -> tuple[float, float]:
         """Best position estimate from the net: assumed progress toward the
         mission anchor from the latest evidence point (order receipt, or a
-        later reported grid) at one cell per step, else the last reported
-        grid, else the spawn area."""
+        later reported grid) at one cell per step — counted from the order's
+        EFFECTIVE step for timed orders (staging in between) — else the last
+        reported grid, else the spawn area."""
         task = self.task.get(cs)
         sit = self.sitrep.get(cs)
         if task is not None and cs not in seen:
+            if self._pending(task):
+                # staging: holding near where the order landed
+                if sit is not None and sit[0] >= task.step:
+                    return sit[1]
+                return task.origin
             anchor = self._anchor_est(cs, task, seen | {cs})
             if anchor is not None:
-                step, pos = task.step, task.origin
-                if sit is not None and sit[0] >= step:
-                    step, pos = sit
+                start, pos = task.effective_step, task.origin
+                if sit is not None and sit[0] >= task.step:
+                    pos = sit[1]
+                    start = max(sit[0], start)
                 total = _manhattan(pos, anchor)
                 if total <= 1e-9:
                     return anchor
-                frac = max(0.0, min(1.0, (self.t - step) / total))
+                frac = max(0.0, min(1.0, (self.t - start) / total))
                 return (
                     pos[0] + frac * (anchor[0] - pos[0]),
                     pos[1] + frac * (anchor[1] - pos[1]),
@@ -319,6 +438,19 @@ class NetPredictor:
 
     def _anchor_est(self, cs: str, task: _Task, seen: frozenset) -> tuple[float, float] | None:
         """Estimated anchor point of a standing order (None if unknowable)."""
+        if task.control is not None:
+            anchor = self.brief.control_anchor(task.control)
+            if anchor is None:
+                return None
+            if anchor[0] == "segment":
+                # phase line: the nearest point of the segment to the latest
+                # position evidence (order origin, or a later reported grid)
+                pos = task.origin
+                sit = self.sitrep.get(cs)
+                if sit is not None and sit[0] >= task.step:
+                    pos = sit[1]
+                return _seg_nearest(anchor[1], anchor[2], pos)
+            return anchor[1]
         if task.objective is not None:
             return self.brief.objectives.get(task.objective)
         if task.mission is MissionType.RALLY:
@@ -338,14 +470,16 @@ class NetPredictor:
 
         From the latest evidence point (order receipt, or a later SITREP /
         TRAP grid), assume 1 cell per step of 4-neighbour movement toward
-        the anchor until inside the mission's in-position radius.
+        the anchor until inside the mission's in-position radius. Timed
+        orders (A5-2) start traveling at their EFFECTIVE step, not receipt.
         """
-        step, pos = task.step, task.origin
+        start, pos = task.effective_step, task.origin
         sit = self.sitrep.get(cs)
-        if sit is not None and sit[0] >= step:
-            step, pos = sit
+        if sit is not None and sit[0] >= task.step:
+            pos = sit[1]
+            start = max(sit[0], start)
         travel = max(0, math.ceil(_manhattan(pos, anchor) - IN_POSITION_RADIUS[task.mission]))
-        return max(0, travel - (self.t - step))
+        return max(0, travel - (self.t - start))
 
     def _arrived(self, cs: str, task: _Task, anchor: tuple[float, float]) -> bool:
         """Transit estimate: has the agent had time to reach its station?"""
@@ -357,10 +491,32 @@ class NetPredictor:
         """(destination class, posture class) for the next K steps."""
         return self._dest(cs, frozenset({cs})), self._posture(cs, frozenset({cs}))
 
+    def _stanced_leader(self, cs: str) -> str | None:
+        """The agent's living direct leader IF that leader holds a formation
+        stance (A5-3) — the element moves as one, so the member's movement is
+        derivable from the leader's."""
+        ldr = self.leader.get(cs)
+        if ldr is not None and self.alive.get(ldr) and ldr in self.stance:
+            return ldr
+        return None
+
     def _dest(self, cs: str, seen: frozenset) -> str:
         task = self.task.get(cs)
         if task is None:
+            # A5-3: an untasked member of a stanced element is not idle — it
+            # keeps formation on its leader: the leader's destination while
+            # the leader is in transit, LEADER once the leader has arrived.
+            ldr = self._stanced_leader(cs)
+            if ldr is not None and ldr not in seen:
+                ltask = self.task.get(ldr)
+                if ltask is not None and not self._pending(ltask):
+                    anchor = self._anchor_est(ldr, ltask, seen | {cs, ldr})
+                    if anchor is not None and self._travel_remaining(ldr, ltask, anchor) > 0:
+                        return self._dest(ldr, seen | {cs, ldr})
+                return LEADER
             return HOLD  # untasked / completed: standing by where it is
+        if self._pending(task):
+            return HOLD  # staged (A5-2): holding until the order is effective
         if task.team:
             # root OPORD RECON/SCREEN is team-adjudicated (#9): doctrine says
             # the commander observes through the squad and commands from cover
@@ -375,6 +531,8 @@ class NetPredictor:
         if task.mission is MissionType.RALLY:
             ldr = self.leader.get(cs)
             return LEADER if ldr is not None and self.alive.get(ldr) else HOLD
+        if task.control is not None:
+            return cm_class(task.control)  # ADVANCE: the named control measure
         if task.objective is not None:
             return obj_class(task.objective)
         return HOLD  # HOLD orders anchor where they were received
@@ -382,7 +540,13 @@ class NetPredictor:
     def _posture(self, cs: str, seen: frozenset) -> str:
         task = self.task.get(cs)
         if task is None:
+            # A5-3: an untasked stanced member moves with its leader
+            ldr = self._stanced_leader(cs)
+            if ldr is not None and ldr not in seen:
+                return self._posture(ldr, seen | {cs, ldr})
             return STATIC  # standing by
+        if self._pending(task):
+            return STATIC  # staged (A5-2)
         if task.team:
             return STATIC  # commands from cover (#9)
         if task.mission is MissionType.SUPPORT:
@@ -437,7 +601,12 @@ def _truth_window(index: list[dict], i: int, cs: str, k: int) -> list[dict]:
 
 
 def destination_truth(
-    index: list[dict], i: int, cs: str, k: int, objectives: dict[str, tuple[int, int]]
+    index: list[dict],
+    i: int,
+    cs: str,
+    k: int,
+    objectives: dict[str, tuple[int, int]],
+    control: dict[str, Anchor] | None = None,
 ) -> str | None:
     """Ground-truth destination class of agent ``cs`` at step index ``i``.
 
@@ -445,22 +614,26 @@ def destination_truth(
 
     * **Stationary** (never leaves ``HOLD_REGION`` of its position at
       prediction time): the region it occupies — the nearest objective by
-      mean window distance if within ``OBJ_REGION``, else LEADER if it sits
+      mean window distance if within ``OBJ_REGION``, else the nearest
+      control measure within ``CM_REGION`` (A5), else LEADER if it sits
       within ``LEADER_REGION`` of its leader, else HOLD.
     * **Moving**: the anchor it *closes on* most over the window (start
-      minus end distance; anchors: every objective, the leader's concurrent
-      position), if that closure reaches ``CLOSURE_MIN``. An agent moving
-      *with* its leader toward an objective closes on the objective, not
-      the leader — formation-keeping is not a destination.
+      minus end distance; anchors: every objective, every control measure,
+      the leader's concurrent position), if that closure reaches
+      ``CLOSURE_MIN``. An agent moving *with* its leader toward an
+      objective closes on the objective, not the leader — formation-keeping
+      is not a destination.
     * **Moving but approaching nothing** (dither, retreat, wander): the
       region its endpoint occupies, HOLD if it ended near where it started,
       else the nearest anchor at the endpoint.
 
-    None -> no window (dead next step or episode over): the pair is skipped.
+    ``control`` maps control-measure class labels ("WP GOLD") to anchors
+    (points or segments). None -> no window (pair skipped).
     """
     window = _truth_window(index, i, cs, k)
     if not window:
         return None
+    control = control or {}
     me = index[i].get(cs)
     p0 = me["pos"]
     leader_cs = me.get("leader")
@@ -488,6 +661,13 @@ def destination_truth(
         best = min(d_obj, key=lambda name: (d_obj[name], name)) if d_obj else None
         if best is not None and d_obj[best] <= OBJ_REGION:
             return obj_class(best)
+        d_cm = {
+            label: sum(_anchor_dist(p, anchor) for p in positions) / n
+            for label, anchor in control.items()
+        }
+        best_cm = min(d_cm, key=lambda lb: (d_cm[lb], lb)) if d_cm else None
+        if best_cm is not None and d_cm[best_cm] <= CM_REGION:
+            return best_cm
         if leader_path is not None:
             d_led = sum(
                 _euclid(p, q) for p, q in zip(positions, leader_path, strict=True)
@@ -500,6 +680,10 @@ def destination_truth(
     closures: list[tuple[float, str]] = [
         (_euclid(p0, pos) - _euclid(p_end, pos), obj_class(name))
         for name, pos in objectives.items()
+    ]
+    closures += [
+        (_anchor_dist(p0, anchor) - _anchor_dist(p_end, anchor), label)
+        for label, anchor in control.items()
     ]
     if leader_path is not None:
         l0 = index[i][leader_cs]["pos"]
@@ -514,11 +698,16 @@ def destination_truth(
     best = min(d_end, key=lambda name: (d_end[name], name)) if d_end else None
     if best is not None and d_end[best] <= OBJ_REGION:
         return obj_class(best)
+    d_cm_end = {label: _anchor_dist(p_end, anchor) for label, anchor in control.items()}
+    best_cm = min(d_cm_end, key=lambda lb: (d_cm_end[lb], lb)) if d_cm_end else None
+    if best_cm is not None and d_cm_end[best_cm] <= CM_REGION:
+        return best_cm
     if leader_path is not None and _euclid(p_end, leader_path[-1]) <= LEADER_REGION:
         return LEADER
     if _euclid(p_end, p0) <= HOLD_REGION:
         return HOLD
     candidates: list[tuple[float, str]] = [(d, obj_class(nm)) for nm, d in d_end.items()]
+    candidates += [(d, lb) for lb, d in d_cm_end.items()]
     if leader_path is not None:
         candidates.append((_euclid(p_end, leader_path[-1]), LEADER))
     if not candidates:
@@ -562,12 +751,19 @@ def probe_episode(trace: dict, brief: Briefing, k: int = K) -> dict[str, Any]:
     post_conf: dict[str, dict[str, int]] = {}
     per_cs: dict[str, list[int]] = {}  # cs -> [dest_correct, post_correct, pairs]
     pairs = 0
+    truth_control = {
+        label: anchor
+        for label, anchor in brief.truth_anchors.items()
+        if label not in {obj_class(n) for n in brief.objectives}
+    }
     for i, s in enumerate(steps):
         predictor.observe(s["t"], s["messages"])
         for rec in s["soldiers"]:
             if not rec["alive"]:
                 continue
-            dest_t = destination_truth(index, i, rec["cs"], k, brief.objectives)
+            dest_t = destination_truth(
+                index, i, rec["cs"], k, brief.objectives, control=truth_control
+            )
             if dest_t is None:
                 continue  # no future window: nothing to predict
             post_t = posture_truth(index, i, rec["cs"], k)

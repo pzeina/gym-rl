@@ -511,6 +511,22 @@ function drawMap() {
     g.fillStyle = "#a8adb6"; g.font = `${Math.max(9, cell * 0.55)}px sans-serif`; g.textAlign = "center";
     g.fillText("OBJ " + o.name, cx(g0, o.x), cy(g0, o.y) - o.r * cell - 4);
   });
+  // control measures (A5): waypoints = small dashed diamonds, phase lines = thin dashed lines
+  (EP.waypoints || []).forEach((w) => {
+    const X = cx(g0, w.x), Y = cy(g0, w.y), r = cell * 0.45;
+    g.strokeStyle = "#9d8fc9"; g.lineWidth = 1.1; g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.5)}px sans-serif`; g.textAlign = "center";
+    g.fillText("WP " + w.name, X, Y + r + Math.max(9, cell * 0.55));
+  });
+  (EP.phase_lines || []).forEach((p) => {
+    g.strokeStyle = "#9d8fc9"; g.lineWidth = 1.1; g.setLineDash([6, 4]);
+    g.beginPath(); g.moveTo(cx(g0, p.x1), cy(g0, p.y1)); g.lineTo(cx(g0, p.x2), cy(g0, p.y2)); g.stroke();
+    g.setLineDash([]);
+    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.5)}px sans-serif`; g.textAlign = "center";
+    g.fillText("PL " + p.name, (cx(g0, p.x1) + cx(g0, p.x2)) / 2 + 4, (cy(g0, p.y1) + cy(g0, p.y2)) / 2 - 4);
+  });
   // movement trails (last 12 steps)
   if (toggles.trails) {
     for (let dt = Math.max(0, t - 12); dt < t; dt++) {

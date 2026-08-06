@@ -41,10 +41,13 @@ def test_radio_messages_are_text_only():
 
     from cohort.core.orders import Message
 
+    # "voice" (A5-4) is a transport flag — spoken vs. transmitted — not a
+    # payload: the text stays the single source of what was said.
     assert {f.name for f in dataclasses.fields(Message)} == {
         "step",
         "kind",
         "sender_id",
+        "voice",
         "recipient_id",
         "text",
     }

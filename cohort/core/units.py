@@ -29,7 +29,7 @@ from cohort.core.world import dist
 if TYPE_CHECKING:
     import numpy as np
 
-    from cohort.core.missions import Mission
+    from cohort.core.missions import Formation, Mission
     from cohort.core.world import Coord, World
 
 
@@ -75,6 +75,11 @@ class Soldier:
     deputy_id: int | None = None          # designated successor among subordinates
     acting_rank: Rank | None = None       # assumed position after succession
     mission: Mission | None = None
+    #: element movement stance (A5-3): set on a LEADER by a FORMATION order;
+    #: persists until changed; dies with the leader (succession does not
+    #: transfer it — the new leader re-forms its element)
+    formation: Formation | None = None
+    heading: tuple[int, int] = (0, 0)     # last movement direction (unit 4-dir)
     # bookkeeping used by observations / rewards
     prev_pos: Coord = (0, 0)
     fired_this_step: bool = False
@@ -124,6 +129,42 @@ class Enemy:
     # never read by observations, rewards, masks, or the OpFor AI itself
     prev_pos: Coord = (0, 0)
     fired_this_step: bool = False
+
+
+def voice_peers(soldier: Soldier, roster: Roster, voice_range: float) -> list[Soldier]:
+    """Peers within shouting distance for trinôme synchronization (A5-4).
+
+    The manual's bond par binôme (pp. 14-15) is commanded "à la voix ou aux
+    gestes" — no radio involved. A peer is a living soldier within
+    ``voice_range`` cells that belongs to the soldier's own element (its
+    direct leader, a sibling under the same leader, or a direct subordinate)
+    or to an ADJACENT trinôme (a cousin: both direct leaders are siblings
+    under the same superior). Deterministic; sorted by id.
+    """
+    peers: list[Soldier] = []
+    my_leader = roster.by_id.get(soldier.leader_id) if soldier.leader_id is not None else None
+    for other in roster.living:
+        if other.id == soldier.id:
+            continue
+        if dist(soldier.pos, other.pos) > voice_range:
+            continue
+        same_element = (
+            (soldier.leader_id is not None and other.leader_id == soldier.leader_id)
+            or other.id == soldier.leader_id
+            or other.leader_id == soldier.id
+        )
+        other_leader = roster.by_id.get(other.leader_id) if other.leader_id is not None else None
+        adjacent = (
+            my_leader is not None
+            and other_leader is not None
+            and my_leader.id != other_leader.id
+            and my_leader.leader_id is not None
+            and my_leader.leader_id == other_leader.leader_id
+        )
+        if same_element or adjacent:
+            peers.append(other)
+    peers.sort(key=lambda s: s.id)
+    return peers
 
 
 def validate_human_ranks(soldiers: list[Soldier]) -> None:
