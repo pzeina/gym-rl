@@ -95,10 +95,12 @@ class ScenarioSpec:
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
     root_human: bool = True       # the root commander is a human embodied in the sim
-    #                               (observable to teammates; its death costs
-    #                               RewardConfig.human_death for everyone, the episode
-    #                               continues and succession exercises). The org must
-    #                               satisfy the humans-outrank-all-non-humans
+    #                               (observable to teammates; its death costs the
+    #                               rank-weighted teammate penalty, plus
+    #                               RewardConfig.human_death for everyone when that knob
+    #                               is enabled — it is 0.0 by default since v1.10; the
+    #                               episode continues and succession exercises). The org
+    #                               must satisfy the humans-outrank-all-non-humans
     #                               invariant, validated at roster build.
     # --- net protocol knobs (defaults preserve the shipped behavior) ---
     auto_ack: bool = True         # False → orders are not auto-acknowledged (no WILCO)

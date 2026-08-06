@@ -827,3 +827,20 @@ terrain (still deferred).
   rejected as premature wherever DONE is admissible); the pre-#9
   assault fireteam loses its human in 11/30 episodes vs 2/30 for the
   #9 retrains — the exposure gap the suite exists to make visible.
+- **2026-08-06** — **human-death shock removed** (`RewardConfig.human_death`
+  −25.0 → **0.0**, owner's call; mechanism and knob retained, tested). The term
+  paid every present agent −25 in the single step a human died — a correlated
+  −100 hit on a fireteam — and every D4 collapse onset measured to date
+  coincides with a human-death burst (`fireteam_defend_v7`: value_loss 15–95
+  throughout, death bursts 0–0.86). It is the standing suspect for the value
+  function destabilisation, and the rank-weighted `teammate_death` already
+  expresses a preservation preference in kind. **The trade, stated honestly**:
+  a fireteam human TL (authority 1) now costs surviving teammates
+  `teammate_death × 1.25` = −0.25 each instead of −25 — a 100× reduction (60×
+  for a platoon PL) — so the commander is priced roughly like any casualty and
+  `human_death_rate` may rise. Preservation is now **measured, not priced**:
+  the #9 exposure block and `human_death_rate` stay instrumented in
+  `behavior.json`, the training columns, and the dashboard, so any regression
+  is visible in the next campaign's digest. Published checkpoints are
+  unaffected (rewards are not part of the observation or action spaces); the
+  next retrain measures the effect. 340 → 341 tests.
