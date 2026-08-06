@@ -181,6 +181,28 @@ def test_contact_predicts_firing_and_ages_out_screen_stays_tight():
     assert p.predict("TL1")[1] == STATIC
 
 
+def test_transit_through_hot_zone_predicts_firing():
+    p = NetPredictor(make_briefing("squad"))
+    p.observe(0, [order("SL1", "TL1", MissionType.SEIZE, "ALPHA")])
+    # early transit: the reported contact is far from the assumed route point
+    p.observe(3, [m("contact", "RFN1", "SL1", lang.format_contact("SL1", "RFN1", 1, (18, 18)))])
+    assert p.predict("TL1")[1] == MOVING
+    # mid-transit: assumed progress puts TL1 right at the hot grid
+    p.observe(25, [m("contact", "RFN1", "SL1", lang.format_contact("SL1", "RFN1", 1, (18, 18)))])
+    assert p.predict("TL1")[1] == FIRING
+
+
+def test_hot_destination_within_reach_predicts_firing():
+    p = NetPredictor(make_briefing("squad"))
+    p.observe(0, [order("SL1", "TL1", MissionType.SEIZE, "ALPHA")])
+    contact = lang.format_contact("SL1", "RFN1", 2, (33, 32))  # at the objective
+    p.observe(1, [m("contact", "RFN1", "SL1", contact)])
+    assert p.predict("TL1")[1] == MOVING  # station hot but ~50 steps out
+    p.observe(2, [m("sitrep", "TL1", "SL1", lang.format_sitrep("SL1", "TL1", 100, 30, (26, 26)))])
+    p.observe(3, [m("contact", "RFN1", "SL1", contact)])
+    assert p.predict("TL1")[1] == FIRING  # reaches the hot station inside the window
+
+
 def test_team_opord_root_commands_from_cover():
     # #9: a root OPORD RECON/SCREEN is team-adjudicated — doctrine says the
     # commander observes through the squad, not from the ring.
@@ -211,21 +233,49 @@ def test_destination_truth_hold_when_far_from_everything():
     assert destination_truth(idx, 0, "A", 5, OBJS) == HOLD
 
 
-def test_destination_truth_leader_class():
-    # trailing 2 cells behind a moving leader, far from both objectives
+def test_destination_truth_static_formation_is_leader():
+    # parked 2 cells off a static leader, far from both objectives
     steps = [
-        gt_step(t, [rec("L", (12 + t, 15)), rec("A", (10 + t, 15), leader="L")])
+        gt_step(t, [rec("L", (20, 15)), rec("A", (18, 15), leader="L")]) for t in range(6)
+    ]
+    idx = step_index(steps)
+    assert destination_truth(idx, 0, "A", 5, OBJS) == LEADER
+
+
+def test_destination_truth_rally_to_static_leader():
+    # closing on a static leader faster than on any objective
+    steps = [
+        gt_step(t, [rec("L", (20, 15)), rec("A", (10 + t, 15), leader="L")])
         for t in range(6)
     ]
     idx = step_index(steps)
     assert destination_truth(idx, 0, "A", 5, OBJS) == LEADER
 
 
-def test_destination_truth_transit_classes_by_nearest_anchor():
-    # marching from (5,5) toward BRAVO: far from every region, nearest wins
+def test_destination_truth_following_the_leader_is_the_objective():
+    # moving WITH the leader toward ALPHA: distance to the leader never
+    # closes — formation-keeping is not a destination, the objective is
+    steps = [
+        gt_step(t, [rec("L", (12 + t, 17 + t)), rec("A", (10 + t, 15 + t), leader="L")])
+        for t in range(6)
+    ]
+    idx = step_index(steps)
+    assert destination_truth(idx, 0, "A", 5, OBJS) == obj_class("ALPHA")
+
+
+def test_destination_truth_transit_classes_by_closure():
+    # marching from (5,5) toward BRAVO: the anchor it closes on most
     steps = [gt_step(t, [rec("A", (5 + t, 5))]) for t in range(16)]
     idx = step_index(steps)
     assert destination_truth(idx, 0, "A", 15, OBJS) == obj_class("BRAVO")
+
+
+def test_destination_truth_dither_is_hold_but_moving():
+    # oscillating on the spot far from everything: destination HOLD, posture MOVING
+    steps = [gt_step(t, [rec("A", (5 + t % 2, 5))]) for t in range(6)]
+    idx = step_index(steps)
+    assert destination_truth(idx, 0, "A", 5, OBJS) == HOLD
+    assert posture_truth(idx, 0, "A", 5) == MOVING
 
 
 def test_destination_truth_window_ends():
@@ -289,6 +339,9 @@ def test_probe_episode_synthetic_known_score():
     assert dest["gap_vs_majority"] == 0.5
     assert post["accuracy"] == 20 / 22
     assert post["confusion"][MOVING][STATIC] == 2  # the two late-transit misses
+    assert ep["per_callsign"] == {"TL1": [11, 9, 11], "RFN1": [11, 11, 11]}
+    assert agg["per_callsign"]["TL1"]["destination_accuracy"] == 1.0
+    assert agg["per_callsign"]["TL1"]["posture_accuracy"] == 9 / 11
     table = format_probe_table(agg)
     assert "destination" in table and "posture" in table and "gap" in table
 

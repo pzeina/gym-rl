@@ -10,9 +10,12 @@ objective coordinates, the spawn area, and the org chart, i.e. what any
 observer holds before the operation starts — a deterministic rule engine
 (:class:`NetPredictor`) predicts, for every living agent at every step:
 
-* **destination** — which anchor region the agent will be nearest over the
-  next ``K`` steps: one class per named objective, ``LEADER`` (moving
-  with / rallying on its direct leader), or ``HOLD`` (staying where it is);
+* **destination** — which anchor the agent is heading for or holding over
+  the next ``K`` steps: one class per named objective, ``LEADER`` (holding
+  formation on / rallying to its direct leader), or ``HOLD`` (staying where
+  it is). Ground truth: a stationary agent belongs to the region it
+  occupies; a moving one to the anchor it closes on most (see
+  :func:`destination_truth`);
 * **posture** — ``STATIC`` / ``MOVING`` / ``FIRING`` over the same window.
 
 The predictor holds **no private state**: its whole world model is the
@@ -62,15 +65,18 @@ FIRING = "FIRING"
 POSTURES: tuple[str, ...] = (STATIC, MOVING, FIRING)
 
 # --- ground-truth region radii (grid cells) -------------------------------
-#: An agent whose mean window distance to an objective is within this radius
-#: belongs to that objective's region. Covers every objective-anchored
-#: in-position radius (OBSERVE's ring, 9.0, is the widest).
+#: A stationary agent whose mean window distance to an objective is within
+#: this radius occupies that objective's region. Covers every objective-
+#: anchored in-position radius (OBSERVE's ring, 9.0, is the widest).
 OBJ_REGION = 9.0
 #: Mean window distance to the direct leader for the LEADER class.
 LEADER_REGION = 6.0
-#: Mean window distance to the agent's own position at prediction time for
-#: the HOLD class ("it stayed put").
+#: An agent that never leaves this radius of its position at prediction time
+#: is stationary ("it stayed put").
 HOLD_REGION = 3.0
+#: Minimum net closure (cells) on an anchor over the window for a moving
+#: agent to count as heading there; less is drift/dither noise.
+CLOSURE_MIN = 2.0
 #: Window fraction of moved steps at or above which the posture is MOVING.
 MOVE_FRAC = 1 / 3
 
@@ -169,8 +175,9 @@ class NetPredictor:
     briefing plus message text; nothing else ever enters.
     """
 
-    def __init__(self, brief: Briefing) -> None:
+    def __init__(self, brief: Briefing, k: int = K) -> None:
         self.brief = brief
+        self.k = k
         self.t = 0
         self.alive: dict[str, bool] = {cs: True for cs in brief.org}
         self.leader: dict[str, str | None] = dict(brief.org)
@@ -286,14 +293,26 @@ class NetPredictor:
     # -- net-derived position estimates ---------------------------------- #
 
     def _est_pos(self, cs: str, seen: frozenset = frozenset()) -> tuple[float, float]:
-        """Best position estimate from the net: assumed arrival at the
-        mission anchor, else the last reported grid, else the spawn area."""
+        """Best position estimate from the net: assumed progress toward the
+        mission anchor from the latest evidence point (order receipt, or a
+        later reported grid) at one cell per step, else the last reported
+        grid, else the spawn area."""
         task = self.task.get(cs)
+        sit = self.sitrep.get(cs)
         if task is not None and cs not in seen:
             anchor = self._anchor_est(cs, task, seen | {cs})
-            if anchor is not None and self._arrived(cs, task, anchor):
-                return anchor
-        sit = self.sitrep.get(cs)
+            if anchor is not None:
+                step, pos = task.step, task.origin
+                if sit is not None and sit[0] >= step:
+                    step, pos = sit
+                total = _manhattan(pos, anchor)
+                if total <= 1e-9:
+                    return anchor
+                frac = max(0.0, min(1.0, (self.t - step) / total))
+                return (
+                    pos[0] + frac * (anchor[0] - pos[0]),
+                    pos[1] + frac * (anchor[1] - pos[1]),
+                )
         if sit is not None:
             return sit[1]
         return self.brief.spawn
@@ -314,8 +333,8 @@ class NetPredictor:
             return self._est_pos(sup, seen | {sup})
         return task.origin  # HOLD: where the order was received
 
-    def _arrived(self, cs: str, task: _Task, anchor: tuple[float, float]) -> bool:
-        """Transit estimate: has the agent had time to reach its station?
+    def _travel_remaining(self, cs: str, task: _Task, anchor: tuple[float, float]) -> int:
+        """Estimated steps still needed to reach the mission station.
 
         From the latest evidence point (order receipt, or a later SITREP /
         TRAP grid), assume 1 cell per step of 4-neighbour movement toward
@@ -326,7 +345,11 @@ class NetPredictor:
         if sit is not None and sit[0] >= step:
             step, pos = sit
         travel = max(0, math.ceil(_manhattan(pos, anchor) - IN_POSITION_RADIUS[task.mission]))
-        return self.t - step >= travel
+        return max(0, travel - (self.t - step))
+
+    def _arrived(self, cs: str, task: _Task, anchor: tuple[float, float]) -> bool:
+        """Transit estimate: has the agent had time to reach its station?"""
+        return self._travel_remaining(cs, task, anchor) == 0
 
     # -- prediction ------------------------------------------------------ #
 
@@ -370,13 +393,19 @@ class NetPredictor:
                 return self._posture(sup, seen | {sup})
             return STATIC
         anchor = self._anchor_est(cs, task, frozenset({cs}))
-        if anchor is not None and not self._arrived(cs, task, anchor):
-            return MOVING  # in transit to its station
+        remaining = self._travel_remaining(cs, task, anchor) if anchor is not None else 0
         if task.mission in WEAPONS_TIGHT:
-            return STATIC  # SCREEN: weapons tight, never predicted firing
+            # SCREEN: weapons tight, never predicted firing
+            return MOVING if remaining > 0 else STATIC
+        if remaining == 0:
+            return FIRING if self._contact_near(self._est_pos(cs)) else STATIC
+        # in transit: an engagement is predicted when the route passes a hot
+        # zone now, or the station itself is hot and reached inside the window
         if self._contact_near(self._est_pos(cs)):
             return FIRING
-        return STATIC
+        if remaining <= self.k and anchor is not None and self._contact_near(anchor):
+            return FIRING
+        return MOVING
 
     def _contact_near(self, pos: tuple[float, float]) -> bool:
         """A fresh CONTACT grid within engagement radius of the estimate?"""
@@ -412,51 +441,89 @@ def destination_truth(
 ) -> str | None:
     """Ground-truth destination class of agent ``cs`` at step index ``i``.
 
-    Mean distance over the window to each anchor — every objective, the
-    direct leader's concurrent position, and the agent's own position at
-    prediction time — resolved by region precedence: an objective region
-    (``OBJ_REGION``) claims the agent first, then the leader
-    (``LEADER_REGION``), then hold-in-place (``HOLD_REGION``); an agent in
-    transit far from every region is classed by the nearest non-hold anchor.
+    Destination means *where the agent is going / what it holds*:
+
+    * **Stationary** (never leaves ``HOLD_REGION`` of its position at
+      prediction time): the region it occupies — the nearest objective by
+      mean window distance if within ``OBJ_REGION``, else LEADER if it sits
+      within ``LEADER_REGION`` of its leader, else HOLD.
+    * **Moving**: the anchor it *closes on* most over the window (start
+      minus end distance; anchors: every objective, the leader's concurrent
+      position), if that closure reaches ``CLOSURE_MIN``. An agent moving
+      *with* its leader toward an objective closes on the objective, not
+      the leader — formation-keeping is not a destination.
+    * **Moving but approaching nothing** (dither, retreat, wander): the
+      region its endpoint occupies, HOLD if it ended near where it started,
+      else the nearest anchor at the endpoint.
+
     None -> no window (dead next step or episode over): the pair is skipped.
     """
     window = _truth_window(index, i, cs, k)
     if not window:
         return None
     me = index[i].get(cs)
-    own = me["pos"]
+    p0 = me["pos"]
     leader_cs = me.get("leader")
+    positions = [rec["pos"] for rec in window]
     n = len(window)
+    p_end = positions[-1]
 
-    d_obj = {
-        name: sum(_euclid(rec["pos"], pos) for rec in window) / n
-        for name, pos in objectives.items()
-    }
-    d_hold = sum(_euclid(rec["pos"], own) for rec in window) / n
-    d_leader = None
-    if leader_cs is not None:
-        total = 0.0
-        for j, rec in enumerate(window):
+    # the leader's concurrent path over the window (None if it drops out)
+    leader_path: list | None = None
+    if leader_cs is not None and index[i].get(leader_cs) is not None:
+        path = []
+        for j in range(n):
             lrec = index[i + 1 + j].get(leader_cs)
             if lrec is None:
+                path = None
                 break
-            total += _euclid(rec["pos"], lrec["pos"])
-        else:
-            d_leader = total / n
+            path.append(lrec["pos"])
+        leader_path = path
 
-    best_obj = min(d_obj, key=lambda name: (d_obj[name], name)) if d_obj else None
-    if best_obj is not None and d_obj[best_obj] <= OBJ_REGION:
-        return obj_class(best_obj)
-    if d_leader is not None and d_leader <= LEADER_REGION:
-        return LEADER
-    if d_hold <= HOLD_REGION:
+    if max(_euclid(p, p0) for p in positions) <= HOLD_REGION:  # stationary
+        d_obj = {
+            name: sum(_euclid(p, pos) for p in positions) / n
+            for name, pos in objectives.items()
+        }
+        best = min(d_obj, key=lambda name: (d_obj[name], name)) if d_obj else None
+        if best is not None and d_obj[best] <= OBJ_REGION:
+            return obj_class(best)
+        if leader_path is not None:
+            d_led = sum(
+                _euclid(p, q) for p, q in zip(positions, leader_path, strict=True)
+            ) / n
+            if d_led <= LEADER_REGION:
+                return LEADER
         return HOLD
-    candidates: list[tuple[float, str]] = [(d, obj_class(n_)) for n_, d in d_obj.items()]
-    if d_leader is not None:
-        candidates.append((d_leader, LEADER))
+
+    # moving: the anchor it closes on most
+    closures: list[tuple[float, str]] = [
+        (_euclid(p0, pos) - _euclid(p_end, pos), obj_class(name))
+        for name, pos in objectives.items()
+    ]
+    if leader_path is not None:
+        l0 = index[i][leader_cs]["pos"]
+        closures.append((_euclid(p0, l0) - _euclid(p_end, leader_path[-1]), LEADER))
+    if closures:
+        neg, label = min((-c, lbl) for c, lbl in closures)
+        if -neg >= CLOSURE_MIN:
+            return label
+
+    # moved but approached nothing: where did it end up?
+    d_end = {name: _euclid(p_end, pos) for name, pos in objectives.items()}
+    best = min(d_end, key=lambda name: (d_end[name], name)) if d_end else None
+    if best is not None and d_end[best] <= OBJ_REGION:
+        return obj_class(best)
+    if leader_path is not None and _euclid(p_end, leader_path[-1]) <= LEADER_REGION:
+        return LEADER
+    if _euclid(p_end, p0) <= HOLD_REGION:
+        return HOLD
+    candidates: list[tuple[float, str]] = [(d, obj_class(nm)) for nm, d in d_end.items()]
+    if leader_path is not None:
+        candidates.append((_euclid(p_end, leader_path[-1]), LEADER))
     if not candidates:
         return HOLD
-    return min(candidates, key=lambda c: (c[0], c[1]))[1]
+    return min(candidates)[1]
 
 
 def posture_truth(index: list[dict], i: int, cs: str, k: int) -> str | None:
@@ -490,9 +557,10 @@ def probe_episode(trace: dict, brief: Briefing, k: int = K) -> dict[str, Any]:
     """
     steps = trace["steps"]
     index = step_index(steps)
-    predictor = NetPredictor(brief)
+    predictor = NetPredictor(brief, k=k)
     dest_conf: dict[str, dict[str, int]] = {}
     post_conf: dict[str, dict[str, int]] = {}
+    per_cs: dict[str, list[int]] = {}  # cs -> [dest_correct, post_correct, pairs]
     pairs = 0
     for i, s in enumerate(steps):
         predictor.observe(s["t"], s["messages"])
@@ -509,7 +577,16 @@ def probe_episode(trace: dict, brief: Briefing, k: int = K) -> dict[str, Any]:
             dest_row[dest_p] = dest_row.get(dest_p, 0) + 1
             post_row = post_conf.setdefault(post_t, {})
             post_row[post_p] = post_row.get(post_p, 0) + 1
-    return {"pairs": pairs, "destination": dest_conf, "posture": post_conf}
+            tally = per_cs.setdefault(rec["cs"], [0, 0, 0])
+            tally[0] += dest_t == dest_p
+            tally[1] += post_t == post_p
+            tally[2] += 1
+    return {
+        "pairs": pairs,
+        "destination": dest_conf,
+        "posture": post_conf,
+        "per_callsign": per_cs,
+    }
 
 
 def _merge(confusions: list[dict]) -> dict[str, dict[str, int]]:
@@ -548,11 +625,27 @@ def _summarize(conf: dict[str, dict[str, int]], classes: list[str]) -> dict[str,
 
 def aggregate_probe(episodes: list[dict], dest_classes: list[str]) -> dict[str, Any]:
     """Pool per-episode confusions into the run-level probe summary."""
+    per_cs: dict[str, list[int]] = {}
+    for ep in episodes:
+        for cs, (dest_ok, post_ok, n) in ep.get("per_callsign", {}).items():
+            tally = per_cs.setdefault(cs, [0, 0, 0])
+            tally[0] += dest_ok
+            tally[1] += post_ok
+            tally[2] += n
     return {
         "episodes": len(episodes),
         "pairs": sum(ep["pairs"] for ep in episodes),
         "destination": _summarize(_merge([ep["destination"] for ep in episodes]), dest_classes),
         "posture": _summarize(_merge([ep["posture"] for ep in episodes]), list(POSTURES)),
+        "per_callsign": {
+            cs: {
+                "destination_accuracy": dest_ok / n,
+                "posture_accuracy": post_ok / n,
+                "pairs": n,
+            }
+            for cs, (dest_ok, post_ok, n) in per_cs.items()
+            if n
+        },
     }
 
 
@@ -578,6 +671,14 @@ def format_probe_table(agg: dict[str, Any]) -> str:
             share = s["support"][cls] / s["pairs"]
             acc_txt = f"{acc:.3f}" if acc is not None else "—"
             lines.append(f"    {cls:<12} acc {acc_txt}   (share {share:.2f}, n={s['support'][cls]})")
+    per_cs = agg.get("per_callsign", {})
+    if per_cs:
+        lines.append("  per callsign (dest / posture):")
+        for cs, row in per_cs.items():
+            lines.append(
+                f"    {cs:<6} {row['destination_accuracy']:.3f} / "
+                f"{row['posture_accuracy']:.3f}   (n={row['pairs']})"
+            )
     return "\n".join(lines)
 
 
