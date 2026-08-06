@@ -412,3 +412,58 @@ def get_scenario(name: str) -> ScenarioSpec:
         msg = f"Unknown scenario {name!r}. Available: {known}"
         raise KeyError(msg)
     return SCENARIOS[name]
+
+
+def briefing(scenario: str | ScenarioSpec) -> dict:
+    """The operations overlay: static, pre-mission, JSON-ready (refs issue #10).
+
+    Everything an observer legitimately holds *before* H-hour, by reading the
+    overlay rather than the ground: where the objectives and control measures
+    are, how big the map is, where the friendlies come from, what the OPORD
+    will task, and the ranges the weapons and eyes work at. It is a pure
+    function of the :class:`ScenarioSpec`, so it is identical across every
+    episode of a scenario and available before ``reset()`` — which is what
+    makes it header material for an episode stream.
+
+    It exists because the alternative is worse: the external assurance layer
+    was pinning objective coordinates in a hand-maintained table, which is
+    silently era-sensitive — `fireteam_defend` moved OBJ ALPHA from (12,12)
+    to (18,18), so re-tapping a `_v4`-era checkpoint against today's table
+    produces wrong numbers with no error. Reading them from the scenario the
+    checkpoint actually names cannot go stale.
+
+    **No terrain layer, deliberately.** The grid is regenerated at every
+    ``reset()`` from the episode seed (``World.generate``), so there is no
+    static cover map to publish; ``terrain_static`` says so in the payload
+    rather than leaving a consumer to infer it from an absent key. What *is*
+    static is ``objective_cover`` — defensive scenarios guarantee the forest
+    ring at chebyshev distance 2 around the root objective. Per-step cover is
+    ground truth and belongs in ``env.oracle()``; the radio-legitimate view
+    of it is the soldier's own SITREP posture (``language.format_sitrep``).
+    """
+    spec = get_scenario(scenario) if isinstance(scenario, str) else scenario
+    return {
+        "scenario": spec.name,
+        "map_size": list(spec.map_size),
+        "objectives": {name: list(pos) for name, pos in spec.objectives},
+        "waypoints": {name: list(pos) for name, pos in spec.waypoints},
+        "phase_lines": {name: [list(a), list(b)] for name, a, b in spec.phase_lines},
+        # anchor tolerances: an objective/waypoint is "reached" inside this
+        # radius (World builds both with the Objective/Waypoint default)
+        "anchor_radius": 2.5,
+        "spawn": list(spec.spawn),
+        "org": spec.org,
+        "root_mission": spec.root_mission.name,
+        "root_objective": spec.root_objective,
+        "max_steps": spec.max_steps,
+        # doctrinal terrain guarantees — static facts about the map family,
+        # unlike the grid itself
+        "objective_cover": spec.objective_cover,
+        "observation_concealment": spec.observation_concealment,
+        "terrain_static": False,
+        # the engagement envelope, so an outside monitor can define "under
+        # threat" the way the eval standard does (see metrics.py, issue #11)
+        "weapon_range": spec.combat.weapon_range,
+        "vision_range": spec.combat.vision_range,
+        "forest_vision_range": spec.combat.forest_vision_range,
+    }

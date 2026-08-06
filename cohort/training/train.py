@@ -22,6 +22,8 @@ import numpy as np
 import torch
 
 from cohort.config import get_scenario
+from cohort.core.missions import MissionType
+from cohort.core.world import dist
 from cohort.env.actions import N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import OBS_DIM
@@ -46,6 +48,12 @@ METRIC_FIELDS = [
     # blind to exposure re-learning), and rejected DONE / total DONE claims
     "human_death_rate",
     "false_complete_rate",
+    # positional regression gate for DEFEND roots (issue #11): where the unit
+    # fights when the enemy is on it. Blank on every other root mission — the
+    # per-step scan is the only measurement in this loop that is not already
+    # in memory, so it is not paid for by runs the gate does not govern.
+    "cover_under_threat",
+    "objective_dist_under_threat",
     *[f"comp_{c}" for c in COMPONENTS],
 ]
 
@@ -103,6 +111,12 @@ class Trainer:
             print(f"initialized weights from {init_from} (scenario {ckpt.get('scenario')}, {ckpt.get('env_steps')} steps)")
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=cfg.lr, eps=1e-5)
 
+        # issue #11: the positional gate governs DEFEND roots, so only those
+        # runs pay for the per-step disposition scan.
+        spec = self.envs[0].spec_cfg
+        self._track_disposition = spec.root_mission is MissionType.DEFEND
+        self._threat_radius = float(spec.combat.weapon_range)
+
         self.env_steps = 0
         self.iteration = 0
         self.recent_outcomes: deque[str] = deque(maxlen=100)
@@ -140,6 +154,30 @@ class Trainer:
         _, value = self.net.dist_value(obs, mask)
         return value.cpu().numpy()
 
+    def _disposition(self, env: CohortEnv) -> tuple[int, int, float]:
+        """(threatened agent-steps, of which in cover, summed distance to OBJ).
+
+        The training-time half of the positional gate (issue #11): the same
+        population ``cohort.metrics._fight_disposition`` scores at eval time —
+        living soldiers with a living enemy inside weapon range — read
+        straight off the live environment. Read-only; consumes no randomness.
+        """
+        enemies = [e.pos for e in env.enemies if e.alive]
+        if not enemies:
+            return 0, 0, 0.0
+        obj = env.world.objective_by_name(env.spec_cfg.root_objective or "")
+        pairs = 0
+        cover = 0
+        obj_dist = 0.0
+        for s in env.roster.soldiers:
+            if not s.alive or min(dist(s.pos, p) for p in enemies) > self._threat_radius:
+                continue
+            pairs += 1
+            cover += env.world.cover_at(s.pos)
+            if obj is not None:
+                obj_dist += dist(s.pos, obj.pos)
+        return pairs, cover, obj_dist
+
     def collect(self, buffer: RolloutBuffer) -> dict[str, float]:
         """Fill the buffer with cfg.horizon steps from every env."""
         cfg = self.cfg
@@ -152,6 +190,9 @@ class Trainer:
         human_deaths = 0
         done_claims = 0
         done_rejected = 0
+        threat_pairs = 0
+        threat_cover = 0
+        threat_obj_dist = 0.0
 
         for t in range(cfg.horizon):
             rows = [(e, a) for e, env in enumerate(self.envs) for a in env.agents]
@@ -186,6 +227,11 @@ class Trainer:
                 agent_steps += len(present)
                 tx_total += env.transmissions_last_step
                 self._ep_len[e] += 1
+                if self._track_disposition:
+                    pairs, cover, obj_dist = self._disposition(env)
+                    threat_pairs += pairs
+                    threat_cover += cover
+                    threat_obj_dist += obj_dist
 
                 # truncation: bootstrap the final state's value into the reward
                 if trunc_rows:
@@ -237,6 +283,15 @@ class Trainer:
         stats["tx_per_agent_step"] = tx_total / max(1, agent_steps)
         stats["human_death_rate"] = human_deaths / n_eps if outcomes else 0.0
         stats["false_complete_rate"] = done_rejected / max(1, done_claims)
+        if self._track_disposition:
+            # NaN, not 0, when nothing was threatened this iteration: "no
+            # firefight" must not read as "fought in the open on the objective"
+            stats["cover_under_threat"] = (
+                threat_cover / threat_pairs if threat_pairs else float("nan")
+            )
+            stats["objective_dist_under_threat"] = (
+                threat_obj_dist / threat_pairs if threat_pairs else float("nan")
+            )
         for comp in COMPONENTS:
             stats[f"comp_{comp}"] = comp_sums[comp] / max(1, agent_steps)
         return stats

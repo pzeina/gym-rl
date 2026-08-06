@@ -80,6 +80,8 @@ def report(run: str, show_components: bool) -> dict:
         ("ep_length", "ep length"),
         ("entropy", "entropy"),
         ("human_death_rate", "human death rate"),
+        ("cover_under_threat", "cover under threat"),
+        ("objective_dist_under_threat", "dist from OBJ (threat)"),
         ("false_complete_rate", "false DONE rate"),
         ("tx_per_agent_step", "tx / agent-step"),
         ("approx_kl", "approx KL"),
@@ -111,11 +113,16 @@ def report(run: str, show_components: bool) -> dict:
             ("orders_per_episode", "orders / episode", "{:.2f}"),
             ("retasks_per_episode", "retasks / episode", "{:.2f}"),
             ("false_complete_rate", "false DONE", "{:.3f}"),
+            ("cover_occupancy_under_threat", "cover under threat", "{:.3f}"),
+            ("mean_distance_from_objective_under_threat", "dist from OBJ", "{:.2f}"),
         ]:
             if (v := m.get(key)) is not None:
                 print(f"    {label:<20} {fmt.format(v)}")
                 summary[f"beh_{key}"] = v
         summary["beh_success"] = m.get("success_rate")
+        for g in b.get("gates", []):
+            mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
+            print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
     else:
         print("  behavior: none — run `evaluate --behavior` for the B2 suite")
     return summary

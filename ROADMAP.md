@@ -2,9 +2,10 @@
 
 ## ⟳ Session handoff — resume here (2026-08-06)
 
-**State**: `multi-agent-dev` at `7f1fb42`, **ahead of `main`/origin by 6 commits —
-not yet pushed**; latest tag v1.9.0; **367 tests green, ruff clean**; nothing
-training. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
+**State**: `multi-agent-dev` at `d3174b3`, **14 commits ahead of `main`**; latest
+tag v1.9.0; **395 tests green, ruff clean**; nothing training. **The repo has NO
+git remote configured** (`git remote -v` is empty) — the older "= origin" note was
+wrong; a remote must be added before anything can be pushed. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
 **Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
 The fleet has NOT been retrained — the v1.9 numbers below are the standing
 baseline, not v1.10 results.
@@ -960,3 +961,95 @@ terrain (still deferred).
   muteness hazard explicitly: the honest claim must stay reachable, the first
   claim must never be rate-limited, and the break-even is asserted directly.
   360 → 367 tests.
+- **2026-08-06** — **positional regression gate for DEFEND roots** (refs #11,
+  external measurement). The assurance layer re-measured the defend family
+  from the outside and demolished the handoff's lead clue: `_v7` **halved**
+  the root-death rate the ROADMAP had blamed (26/30 → 14/30) and fired on
+  essentially every threatened step (p(fire | threatened) 0.005 → 1.000), yet
+  success went **14/30 → 12/30**. Human mortality is not the binding
+  constraint — `defend_brique_v2` carries the same 14/30 root-death rate and
+  still wins 25/30. What separates the record is *where the unit fights*:
+  every defend policy that ever cleared its bound fought ≤ 2.9 cells from OBJ
+  with cover ≥ 0.79 (`_v5` 24/30 at 0.793/2.90, `brique_v1` 27/30 at
+  0.956/1.99); the two that missed sat at 0.496/3.46 and **0.060/9.09**.
+  Shipped as a gate rather than a reward change (rewards are the owner's
+  call, and the v1.10 prep period is already an untested bet on exactly this
+  mechanism):
+  * `cohort.metrics` now scores **fight disposition** over the *(living
+    soldier, step)* pairs **under threat** — a living enemy within the
+    scenario's weapon range. Conditioning on threat is the point: averaged
+    over an episode an approach march and a prepared defense look alike.
+  * `regression_gates(agg)` fails a DEFEND retrain below **cover 0.40** or
+    above **5.0 cells** from the objective. Bounds sit in the empty band
+    between the two groups above, so the gate separates every checkpoint on
+    record. DEFEND only — an assault is *supposed* to leave its start point.
+    An unmeasured gate reports `passed: null`; unmeasured is not a pass.
+  * DEFEND runs log `cover_under_threat` / `objective_dist_under_threat` per
+    iteration in `metrics.csv` (blank, never `0`, when nothing was
+    threatened), so the collapse is visible while the run is still cheap to
+    kill. `_v7` spent a 3M-step budget before anyone saw it. No other root
+    mission pays for the scan.
+  Sanity check on the shipped instrument: the masked-random baseline on
+  `fireteam_defend` scores 0.216 / 6.20 and fails both gates. **Not done**:
+  no retrain — the fleet is unloadable under the open v1.10 space break, and
+  the gate is meant to judge the next defend run, not to be tuned against the
+  old ones. 367 → 375 tests.
+- **2026-08-06** — **static briefing + SITREP posture** (refs #10, external
+  request). The assurance layer's fight-disposition instrument (the companion
+  to #11) needed two things this repo was not publishing, and was
+  compensating with a hand-maintained coordinate table — silently
+  era-sensitive, since `fireteam_defend` moved OBJ ALPHA from (12,12) to
+  (18,18), so re-tapping a `_v4`-era checkpoint against today's table gives
+  wrong numbers with no error to show for it.
+  * **`cohort.config.briefing(scenario)` / `env.briefing()`** — the static
+    operations overlay as a JSON-ready dict: objective coordinates by name,
+    waypoint/phase-line geometry, map size, spawn, root tasking, the
+    doctrinal terrain guarantees (`objective_cover`,
+    `observation_concealment`) and the engagement envelope (weapon/vision
+    ranges, so an outside monitor can define "under threat" the way
+    `metrics.py` does). Pure function of the `ScenarioSpec` — identical
+    across episodes, valid *before* `reset()`, which is what makes it header
+    material rather than a leak. Read from the scenario a checkpoint names,
+    it cannot go stale.
+  * **No terrain layer, deliberately.** The grid is regenerated at every
+    `reset()` from the episode seed, so no static cover map exists to
+    publish; `terrain_static: false` states that in the payload rather than
+    leaving a consumer to infer it from an absent key.
+  * **SITREP posture clause** — `..., AMMO 24, IN COVER. OVER.` /
+    `IN THE OPEN`. Self-reported, exactly like grid/health/ammo: what the
+    soldier *says* about its ground, not a readout of the ground. Per-step
+    cover stays ground truth in `env.oracle()` and enters the observable
+    stream by no other route, while the strongest known correlate of defend
+    performance becomes measurable from the transcript alone.
+    `language.parse_sitrep` ships with it (inverse of the formatter over the
+    fields it formats), so no monitor hand-rolls a regex — the #10 failure
+    mode in miniature. A regression test asserts the self-report is
+    *truthful*: what a station claims must equal `world.cover_at`.
+  Note on the request's wording: it asked for the change in `cohort/tap.py`,
+  which lives only on the assurance layer's own `assurance-integration`
+  branch and is theirs to edit. This side supplies the data; the header
+  writer stays with them. 375 → 391 tests.
+- **2026-08-06** — **dashboard: usable again, and organised by doctrine.** Three
+  fixes, one of them a regression this session caused:
+  * **blank episodes fixed.** Every checkpoint is Box(166); v1.10 made the env
+    Box(220), so loading one died inside a forward pass with a torch
+    `RuntimeError` the handler did not catch — the request died and the UI
+    showed nothing. `checkpoint_meta()` now refuses incompatible checkpoints up
+    front with a readable reason, the handler catches everything, and failures
+    render in the sidebar.
+  * **picker: task → echelon → version** (was one ~100-entry list), all derived
+    from `ScenarioSpec` via `scenario_facets()`, with a test asserting
+    (task, echelon) stays unique. The threat qualifies the task — `Defend` vs
+    `Defend · irregular` — since both are DEFEND at fireteam level.
+  * **legacy checkpoints replay without retraining** (`scripts/legacy_trace.py`).
+    A shim was never an option: BOTH the observation layout and the action
+    indices moved between eras, so a padded observation would silently mean the
+    wrong thing. Instead the run is replayed at its OWN release tag in a
+    throwaway worktree and written out as plain JSON — a trace is data, not a
+    model, so it survives every future space break. `ERA_REF`: 137 → v1.8.0,
+    166 → v1.9.0, 220 → in-process. Traces are gitignored (deterministic from
+    tag+scenario+seed, ~0.5 MB each).
+  * **chain-of-command panel** under the episode: the org chart as it stands at
+    the current step (succession re-parents it live), each station's standing
+    order and the step it was issued, health, and click-through to the
+    inspector. 393 → 395 tests.

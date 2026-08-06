@@ -62,6 +62,36 @@ def test_trainer_end_to_end(tmp_path):
     assert 0 <= int(action) < N_ACTIONS
 
 
+def test_defend_run_logs_the_positional_gate_columns(tmp_path):
+    """issue #11: a DEFEND retrain must show its fight disposition live.
+
+    ``fireteam_defend_v7`` burned a 3M-step budget before anyone saw that the
+    unit had walked off the position; these two columns make the collapse
+    visible in metrics.csv while the run is still cheap to kill. They are
+    written for DEFEND roots only — every other root pays nothing.
+    """
+    cfg = PPOConfig(n_envs=2, horizon=32)
+    defend = Trainer("fireteam_defend", cfg, tmp_path / "d", seed=3, tensorboard=False)
+    assert defend._track_disposition
+    defend.train(total_steps=256)
+    with (tmp_path / "d" / "metrics.csv").open() as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert {"cover_under_threat", "objective_dist_under_threat"} <= set(reader.fieldnames)
+    # blank/NaN while the preparation period keeps the OpFor off the position:
+    # "no firefight" must never be logged as "fought in the open on the OBJ"
+    measured = [r for r in rows if r["cover_under_threat"] not in ("", "nan")]
+    for row in measured:
+        assert 0.0 <= float(row["cover_under_threat"]) <= 1.0
+        assert float(row["objective_dist_under_threat"]) >= 0.0
+
+    seize = Trainer("fireteam", cfg, tmp_path / "s", seed=3, tensorboard=False)
+    assert not seize._track_disposition
+    seize.train(total_steps=128)
+    with (tmp_path / "s" / "metrics.csv").open() as f:
+        assert all(r["cover_under_threat"] == "" for r in csv.DictReader(f))
+
+
 def test_rolling_best_gate_requires_full_window_turnover():
     """D4: ckpt_best may only be written once the rolling window contains ONLY
     post-start episodes (the deque fully turned over). Simulates the Trainer's

@@ -16,6 +16,8 @@ from cohort.metrics import (
     aggregate_behavior,
     episode_behavior,
     format_behavior_table,
+    format_gate_report,
+    regression_gates,
 )
 from cohort.training.evaluate import evaluate, run_episode
 
@@ -24,7 +26,10 @@ from cohort.training.evaluate import evaluate, run_episode
 # ---------------------------------------------------------------------- #
 
 
-def sold(cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(), comp=None, sees=()):
+def sold(
+    cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(), comp=None, sees=(),
+    cover=False,
+):
     return {
         "cs": cs,
         "alive": alive,
@@ -35,6 +40,7 @@ def sold(cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(
         "subs": list(subs),
         "comp": comp,
         "sees": list(sees),
+        "cover": cover,
     }
 
 
@@ -50,14 +56,18 @@ def step(t, soldiers, enemies=(), messages=()):
     return {"t": t, "soldiers": soldiers, "enemies": list(enemies), "messages": list(messages)}
 
 
-def trace(steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20, ttl=40):
+def trace(
+    steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20,
+    ttl=40, root_mission="SEIZE", threat_radius=8.0,
+):
     return {
         "scenario": "test",
         "outcome": outcome,
         "length": steps[-1]["t"],
-        "root_mission": "SEIZE",
+        "root_mission": root_mission,
         "root_objective": list(root_objective) if root_objective else None,
         "ring_radius": 7.0,
+        "threat_radius": threat_radius,
         "contact_refresh_age": refresh_age,
         "knowledge_ttl": ttl,
         "human": human,
@@ -321,6 +331,107 @@ def test_human_death_and_no_human_edges():
     assert ep2["human_died"] is None and ep2["human_ring_entries"] is None
     agg = aggregate_behavior([ep2])
     assert agg["human_death_rate"] is None
+
+
+# ---------------------------------------------------------------------- #
+# fight disposition + positional regression gate (issue #11)
+# ---------------------------------------------------------------------- #
+
+
+def test_fight_disposition_scores_only_threatened_pairs():
+    # Threat radius 8. RFN1 sits in cover on the objective the whole time;
+    # RFN2 stands in the open 10 cells out. An enemy is only within reach on
+    # steps 1 and 2, and only of RFN1 — so RFN2's open ground never enters
+    # the numbers, and neither does the unthreatened step 0.
+    obj = (10, 10)
+    far, near = enemy(0, pos=(30, 30)), enemy(0, pos=(14, 10))
+    steps = [
+        step(0, [sold("RFN1", pos=(10, 10), cover=True), sold("RFN2", pos=(25, 10))], [far]),
+        step(1, [sold("RFN1", pos=(10, 10), cover=True), sold("RFN2", pos=(25, 10))], [near]),
+        step(2, [sold("RFN1", pos=(12, 10), cover=False), sold("RFN2", pos=(25, 10))], [near]),
+    ]
+    ep = episode_behavior(trace(steps, root_objective=obj))
+    assert ep["threat_pairs"] == 2                       # RFN1 at t=1 and t=2
+    assert ep["threat_cover_pairs"] == 1                 # only t=1 was on cover
+    assert ep["threat_objective_dist_pairs"] == 2
+    assert ep["threat_objective_dist_sum"] == 2.0        # 0 + 2 cells
+    agg = aggregate_behavior([ep])
+    assert agg["cover_occupancy_under_threat"] == 0.5
+    assert agg["mean_distance_from_objective_under_threat"] == 1.0
+
+
+def test_fight_disposition_is_none_without_threat():
+    # Enemies exist but never close; nothing is measured rather than 0.0 —
+    # "no firefight" must not read as "fought in the open".
+    steps = [step(t, [sold("RFN1", pos=(0, 0))], [enemy(0, pos=(30, 30))]) for t in range(3)]
+    agg = aggregate_behavior([episode_behavior(trace(steps, root_objective=(10, 10)))])
+    assert agg["cover_occupancy_under_threat"] is None
+    assert agg["mean_distance_from_objective_under_threat"] is None
+    assert agg["threat_pairs"] == 0
+
+
+def _defend_agg(*, cover, dist_from_obj):
+    """Aggregate with a DEFEND root at a chosen disposition (via one pair)."""
+    obj = (10, 10)
+    here = sold("RFN1", pos=(10 + dist_from_obj, 10), cover=cover)
+    assault = [enemy(0, pos=(10 + dist_from_obj, 10))]  # on top of the soldier: always in reach
+    steps = [step(0, [here], assault), step(1, [here], assault)]
+    ep = episode_behavior(trace(steps, root_objective=obj, root_mission="DEFEND"))
+    return aggregate_behavior([ep])
+
+
+def test_positional_gate_fails_the_v7_disposition():
+    # fireteam_defend_v7: cover 0.060 at 9.09 cells — both bounds broken.
+    gates = regression_gates(_defend_agg(cover=False, dist_from_obj=9))
+    assert [g["name"] for g in gates] == [
+        "cover_occupancy_under_threat",
+        "mean_distance_from_objective_under_threat",
+    ]
+    assert [g["passed"] for g in gates] == [False, False]
+    report = format_gate_report(gates)
+    assert "FAIL" in report and "PASS" not in report
+
+
+def test_positional_gate_passes_a_prepared_defense():
+    # fireteam_defend_v5 / defend_brique_v1 shape: on cover, on the position.
+    gates = regression_gates(_defend_agg(cover=True, dist_from_obj=2))
+    assert all(g["passed"] for g in gates)
+    assert "PASS" in format_gate_report(gates)
+
+
+def test_positional_gate_applies_to_defend_roots_only():
+    # The same disposition under a SEIZE root gates on nothing: an assault is
+    # supposed to leave its start point and cross open ground.
+    seize = _defend_agg(cover=False, dist_from_obj=9)
+    seize["root_mission"] = "SEIZE"
+    assert regression_gates(seize) == []
+    assert format_gate_report([]) == ""
+
+
+def test_unmeasured_gate_is_not_a_pass():
+    steps = [step(t, [sold("RFN1", pos=(0, 0))], [enemy(0, pos=(30, 30))]) for t in range(3)]
+    agg = aggregate_behavior(
+        [episode_behavior(trace(steps, root_objective=(10, 10), root_mission="DEFEND"))]
+    )
+    gates = regression_gates(agg)
+    assert gates and all(g["passed"] is None for g in gates)
+    assert "FAIL" not in format_gate_report(gates)
+
+
+def test_recorder_records_cover_and_threat_radius():
+    env = make_env("fireteam_defend")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=7, rng=np.random.default_rng(7), recorder=rec)
+    assert rec.trace["threat_radius"] == env.combat.weapon_range
+    assert rec.trace["root_mission"] == "DEFEND"
+    assert all("cover" in s for st in rec.trace["steps"] for s in st["soldiers"])
+    ep = episode_behavior(rec.trace)
+    agg = aggregate_behavior([ep])
+    # a defend episode fought on a real map produces a measurable disposition
+    # and a well-formed gate verdict
+    for g in regression_gates(agg):
+        assert g["passed"] in (True, False, None)
+        assert g["bound"] > 0
 
 
 # ---------------------------------------------------------------------- #

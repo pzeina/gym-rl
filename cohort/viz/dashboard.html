@@ -67,6 +67,24 @@
   .badge { display: inline-block; padding: 1px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; }
   .hidden { display: none !important; }
   .empty { color: var(--dim); text-align: center; padding: 30px 10px; }
+  .compat { color: var(--warn); background: #2a2411; border: 1px solid #4a3f1a; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-bottom: 7px; }
+  /* chain of command: one row per station, indented by depth in the org chart */
+  #coc { display: flex; flex-direction: column; gap: 2px; }
+  .coc-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(120px, 1.6fr) 74px; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
+  .coc-row:hover { background: var(--panel2); border-color: var(--line); }
+  .coc-row.sel { border-color: var(--accent); background: var(--panel2); }
+  .coc-row.dead { opacity: .45; }
+  .coc-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .coc-cs { font-weight: 650; color: #a8e4ff; }
+  .coc-rank { color: var(--dim); font-size: 11px; }
+  .coc-order { font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .coc-order .standby { color: var(--dim); }
+  .coc-order .since { color: var(--dim); }
+  .coc-hp { display: flex; align-items: center; gap: 6px; }
+  .coc-hp .bar { flex: 1; margin: 0; height: 6px; }
+  .coc-hp .pct { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
+  .coc-tick { color: var(--line); font-family: ui-monospace, Menlo, monospace; }
+  .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
 </style>
 </head>
 <body>
@@ -95,8 +113,10 @@
   <!-- ============ EPISODE ============ -->
   <div class="sidebar hidden" id="side-episode">
     <div class="card"><h3>Generate episode</h3>
-      <div class="field"><span>scenario</span><select id="ep-scenario"></select></div>
-      <div class="field"><span>policy</span><select id="ep-policy"></select></div>
+      <div class="field"><span>task</span><select id="ep-task"></select></div>
+      <div class="field"><span>echelon</span><select id="ep-echelon"></select></div>
+      <div class="field"><span>version</span><select id="ep-version"></select></div>
+      <div id="ep-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="ep-seed" value="1">
         <button class="small" id="ep-dice" title="random seed">🎲</button></div></div>
@@ -116,8 +136,10 @@
   <!-- ============ COMMAND (live) ============ -->
   <div class="sidebar hidden" id="side-command">
     <div class="card"><h3>Live session</h3>
-      <div class="field"><span>scenario</span><select id="lv-scenario"></select></div>
-      <div class="field"><span>policy</span><select id="lv-policy"></select></div>
+      <div class="field"><span>task</span><select id="lv-task"></select></div>
+      <div class="field"><span>echelon</span><select id="lv-echelon"></select></div>
+      <div class="field"><span>version</span><select id="lv-version"></select></div>
+      <div id="lv-compat" class="compat hidden"></div>
       <div class="field"><span>seed</span>
         <div style="display:flex;gap:6px"><input type="number" id="lv-seed" value="1">
         <button class="small" id="lv-dice" title="random seed">🎲</button></div></div>
@@ -161,6 +183,10 @@
       </select>
     </div>
     <canvas id="timeline" title="team reward per step + events — click to seek"></canvas>
+    <div class="card" id="cocpanel">
+      <h3>Chain of command <span id="coc-note"></span></h3>
+      <div id="coc"><div class="empty">generate an episode</div></div>
+    </div>
   </div>
   <div class="rightbar hidden" id="right-episode">
     <div id="inspector"><div class="empty">nothing selected</div></div>
@@ -362,22 +388,108 @@ $("msgfilters").querySelectorAll(".chip").forEach((el) => el.onclick = () => {
   el.classList.toggle("on"); renderMsgs();
 });
 
+/* ---------- picking a policy: task -> echelon -> version ----------
+   A flat list of every run x every checkpoint ran to ~100 entries. The three
+   menus mirror how the work is actually organised: what the unit is ordered to
+   do, at what echelon, and which trained version of it. (task, echelon)
+   identifies a scenario uniquely -- the server derives both from the
+   ScenarioSpec, so this list never drifts from the scenarios that exist. */
+
+const ECHELON_ORDER = ["fireteam", "squad", "platoon"];
+
+function tasks() {
+  const t = [...new Set(Object.values(STATE.scenarios).map((s) => s.task))];
+  // real tasks first, ablation arms last: they are research arms, not doctrine
+  return t.sort((a, b) => (a.startsWith("Ablation") - b.startsWith("Ablation")) || a.localeCompare(b));
+}
+
+function echelonsFor(task) {
+  const e = [...new Set(Object.entries(STATE.scenarios)
+    .filter(([, s]) => s.task === task).map(([, s]) => s.echelon))];
+  return e.sort((a, b) => ECHELON_ORDER.indexOf(a) - ECHELON_ORDER.indexOf(b));
+}
+
+function scenarioOf(prefix) {
+  const task = $(prefix + "-task").value, ech = $(prefix + "-echelon").value;
+  const hit = Object.entries(STATE.scenarios).find(([, s]) => s.task === task && s.echelon === ech);
+  return hit ? hit[0] : null;
+}
+
+/* "squad_v4b" under scenario "squad" -> "v4b"; anything else keeps its name. */
+function versionLabel(runName, scenario) {
+  return runName.startsWith(scenario + "_") ? runName.slice(scenario.length + 1) : runName;
+}
+function versionRank(label) {
+  const m = label.match(/^v(\d+)([a-z]*)$/);
+  return m ? [parseInt(m[1], 10), m[2] || ""] : [-1, label];
+}
+
+function fillTask(prefix) {
+  const sel = $(prefix + "-task"), cur = sel.value;
+  sel.innerHTML = tasks().map((t) => `<option>${t}</option>`).join("");
+  if (cur && tasks().includes(cur)) sel.value = cur;
+  fillEchelon(prefix);
+}
+
+function fillEchelon(prefix) {
+  const sel = $(prefix + "-echelon"), cur = sel.value;
+  const opts = echelonsFor($(prefix + "-task").value);
+  sel.innerHTML = opts.map((e) => `<option>${e}</option>`).join("");
+  if (cur && opts.includes(cur)) sel.value = cur;
+  fillVersion(prefix);
+}
+
+/* Versions of the resolved scenario, newest first, checkpoint folded in.
+   Default is the newest version -- the run you almost always want. */
+function fillVersion(prefix) {
+  const sel = $(prefix + "-version"), cur = sel.value;
+  const scenario = scenarioOf(prefix);
+  const runs = STATE.runs.filter((r) => r.scenario === scenario && r.checkpoints.length);
+  runs.sort((a, b) => {
+    const [an, as] = versionRank(versionLabel(a.name, scenario));
+    const [bn, bs] = versionRank(versionLabel(b.name, scenario));
+    return bn - an || bs.localeCompare(as);
+  });
+  let opts = "";
+  runs.forEach((r) => {
+    r.checkpoints.forEach((c) => {
+      // a checkpoint this build cannot load is still viewable IF a trace was
+      // recorded at its own revision -- mark which, rather than hiding either
+      const replay = !c.loadable && r.traces.some((t) => t.startsWith(`${scenario}_${c.kind}_`));
+      const mark = c.loadable ? "" : (replay ? "▣ " : "⚠ ");
+      const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M` : "";
+      opts += `<option value="run:${r.name}:${c.kind}">${mark}${versionLabel(r.name, scenario)} · ${c.kind}${steps}</option>`;
+    });
+  });
+  opts += '<option value="random">random (masked) baseline</option>';
+  sel.innerHTML = opts;
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+  showVersionNote(prefix);
+}
+
+function selectedCheckpoint(prefix) {
+  const parts = ($(prefix + "-version").value || "").split(":");
+  if (parts.length !== 3) return null;
+  const run = STATE.runs.find((r) => r.name === parts[1]);
+  return run ? { run, ckpt: run.checkpoints.find((c) => c.kind === parts[2]) } : null;
+}
+
+function showVersionNote(prefix) {
+  const el = $(prefix + "-compat");
+  const sel = selectedCheckpoint(prefix);
+  if (!sel || !sel.ckpt || sel.ckpt.loadable) { el.classList.add("hidden"); el.textContent = ""; return; }
+  const scenario = scenarioOf(prefix);
+  const replay = sel.run.traces.some((t) => t.startsWith(`${scenario}_${sel.ckpt.kind}_`));
+  el.textContent = replay
+    ? "▣ Recorded replay — this checkpoint predates the current spaces, so it plays back from a trace captured at its own code revision."
+    : "⚠ " + sel.ckpt.reason;
+  el.classList.remove("hidden");
+}
+
+function policyValue(prefix) { return $(prefix + "-version").value || "random"; }
+
 function fillEpisodeSelectors() {
-  const sc = $("ep-scenario");
-  const cur = sc.value;
-  sc.innerHTML = Object.keys(STATE.scenarios).map((s) => `<option>${s}</option>`).join("");
-  if (cur) sc.value = cur;
-  const pol = $("ep-policy"), curp = pol.value;
-  let opts = '<option value="random">random (masked) baseline</option>';
-  STATE.runs.forEach((r) => r.checkpoints.forEach((k) => {
-    opts += `<option value="run:${r.name}:${k}">${r.name} · ckpt_${k}</option>`;
-  }));
-  pol.innerHTML = opts;
-  if (curp) pol.value = curp;
-  if (!curp) { // default to the first best checkpoint if any
-    const first = STATE.runs.find((r) => r.checkpoints.includes("best"));
-    if (first) pol.value = `run:${first.name}:best`;
-  }
+  fillTask("ep");
   loadBehavior();
 }
 
@@ -398,8 +510,8 @@ const BEHAVIOR_ROWS = [
 ];
 async function loadBehavior() {
   const card = $("behavior-card");
-  const m = ($("ep-policy").value || "").match(/^run:(.+):(?:best|latest)$/);
-  const run = m && STATE.runs.find((r) => r.name === m[1]);
+  const sel = selectedCheckpoint("ep");
+  const run = sel && sel.run;
   if (!run || !run.behavior) { card.classList.add("hidden"); return; }
   try {
     const b = await api(`/api/behavior?run=${encodeURIComponent(run.name)}`);
@@ -413,7 +525,9 @@ async function loadBehavior() {
     card.classList.remove("hidden");
   } catch (e) { card.classList.add("hidden"); }
 }
-$("ep-policy").onchange = loadBehavior;
+$("ep-task").onchange = () => { fillEchelon("ep"); loadBehavior(); };
+$("ep-echelon").onchange = () => { fillVersion("ep"); loadBehavior(); };
+$("ep-version").onchange = () => { showVersionNote("ep"); loadBehavior(); };
 
 $("ep-dice").onclick = () => { $("ep-seed").value = Math.floor(Math.random() * 100000); };
 $("ep-generate").onclick = generateEpisode;
@@ -424,8 +538,8 @@ async function generateEpisode() {
   $("ep-generate").disabled = true; $("ep-generate").textContent = "⏳ simulating…";
   $("status").textContent = "simulating episode…";
   try {
-    const trace = await api(`/api/episode?scenario=${$("ep-scenario").value}` +
-      `&policy=${encodeURIComponent($("ep-policy").value)}` +
+    const trace = await api(`/api/episode?scenario=${scenarioOf("ep")}` +
+      `&policy=${encodeURIComponent(policyValue("ep"))}` +
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
     stopAuto(); MODE = "replay";
@@ -440,7 +554,12 @@ async function generateEpisode() {
     $("ep-info").innerHTML = `<b>${EP.outcome.toUpperCase()}</b> in ${EP.length} steps · ${EP.opord}<br>policy: ${EP.policy.split("/").pop()}`;
     drawTimeline(); seek(0);
     $("status").textContent = "";
-  } catch (e) { $("status").textContent = "error: " + e.message; }
+  } catch (e) {
+    // a failed generate used to leave the map blank with only a faint status
+    // line — say what went wrong where the controls are
+    $("status").textContent = "episode failed";
+    $("ep-info").innerHTML = `<div class="errbox">could not simulate: ${e.message}</div>`;
+  }
   $("ep-generate").disabled = false; $("ep-generate").textContent = "▶ Generate";
 }
 
@@ -450,7 +569,7 @@ function seek(nt) {
   t = Math.max(0, Math.min(EP.steps.length - 1, nt));
   $("pb-slider").value = t;
   $("pb-t").textContent = `t=${EP.steps[t].t}/${EP.length}`;
-  drawMap(); renderInspector(); renderMsgs(); drawTimeline();
+  drawMap(); renderInspector(); renderCoC(); renderMsgs(); drawTimeline();
 }
 function togglePlay(force) {
   playing = force !== undefined ? force : !playing;
@@ -654,13 +773,13 @@ map.addEventListener("click", (e) => {
   const st = EP.steps[t];
   const near = (x, y, rad) => Math.hypot(cx(g0, x) - mx, cy(g0, y) - my) < rad;
   const soldier = st.soldiers.find((s) => near(s.x, s.y, g0.cell * 0.8));
-  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); return; }
+  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); renderCoC(); return; }
   const enemy = st.enemies.find((en) => near(en.x, en.y, g0.cell * 0.8));
-  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); return; }
+  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); renderCoC(); return; }
   const obj = EP.objectives.find((o) => near(o.x, o.y, o.r * g0.cell));
-  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); return; }
+  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); renderCoC(); return; }
   const gx = Math.floor((mx - g0.ox) / g0.cell), gy = Math.floor((my - g0.oy) / g0.cell);
-  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); }
+  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); renderCoC(); }
 });
 
 /* ---------- timeline ---------- */
@@ -696,6 +815,72 @@ $("timeline").addEventListener("click", (e) => {
 });
 
 /* ---------- inspector ---------- */
+/* ---------- chain of command ----------
+   The org chart as it stands AT THIS STEP, not as it was issued: succession
+   promotes people mid-episode, so the tree is rebuilt from each station's
+   current `leader` link. Shows what every station was actually ordered to do
+   and how much of it is left standing. Clicking a row selects that station,
+   exactly like clicking it on the map. */
+
+function orderText(s) {
+  if (!s.mission) return '<span class="standby">STANDBY — no orders</span>';
+  const m = s.mission;
+  let txt = m.type;
+  if (m.obj) txt += " OBJ " + m.obj;
+  else if (m.control) txt += " TO " + m.control;
+  else if (m.target) txt += " " + m.target;
+  return `${txt} <span class="since">· since t=${m.since}</span>`;
+}
+
+function renderCoC() {
+  const el = $("coc");
+  if (!EP) { el.innerHTML = '<div class="empty">generate an episode</div>'; return; }
+  const st = EP.steps[t];
+  const byCs = Object.fromEntries(st.soldiers.map((s) => [s.cs, s]));
+  const children = {};
+  const roots = [];
+  st.soldiers.forEach((s) => {
+    if (s.leader && byCs[s.leader]) (children[s.leader] = children[s.leader] || []).push(s.cs);
+    else roots.push(s.cs);
+  });
+
+  const rows = [];
+  const walk = (cs, depth, isLast, prefix) => {
+    const s = byCs[cs];
+    const branch = depth === 0 ? "" : prefix + (isLast ? "└─ " : "├─ ");
+    const hp = Math.max(0, s.hp);
+    const hpColor = hp > 60 ? "var(--good)" : hp > 30 ? "var(--warn)" : "var(--bad)";
+    const acting = s.eff !== s.rank
+      ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff}</span>` : "";
+    const human = s.human
+      ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
+    const picked = sel && sel.type === "soldier" && sel.key === s.cs;
+    rows.push(
+      `<div class="coc-row ${s.alive ? "" : "dead"} ${picked ? "sel" : ""}" data-cs="${s.cs}"
+            title="click for full status">
+         <div class="coc-name"><span class="coc-tick">${branch}</span>
+           <span class="coc-cs">${s.alive ? "" : "✝ "}${s.cs}</span>
+           <span class="coc-rank">${GRADES[s.eff] || s.eff}</span>${acting}${human}</div>
+         <div class="coc-order">${s.alive ? orderText(s) : '<span class="standby">killed in action</span>'}</div>
+         <div class="coc-hp"><div class="bar"><div style="width:${hp}%;background:${hpColor}"></div></div>
+           <span class="pct">${hp}%</span></div>
+       </div>`);
+    const kids = (children[cs] || []).sort();
+    kids.forEach((k, i) =>
+      walk(k, depth + 1, i === kids.length - 1, depth === 0 ? "" : prefix + (isLast ? "   " : "│  ")));
+  };
+  roots.sort().forEach((r) => walk(r, 0, true, ""));
+
+  el.innerHTML = rows.join("");
+  const alive = st.soldiers.filter((s) => s.alive).length;
+  $("coc-note").innerHTML =
+    `<span style="color:var(--dim);font-weight:400;text-transform:none;letter-spacing:0">
+       — ${alive}/${st.soldiers.length} effective at t=${st.t}</span>`;
+  el.querySelectorAll(".coc-row").forEach((row) => {
+    row.onclick = () => { sel = { type: "soldier", key: row.dataset.cs }; drawMap(); renderInspector(); renderCoC(); };
+  });
+}
+
 function renderInspector() {
   const el = $("inspector");
   if (!EP || !sel) { el.innerHTML = '<div class="empty">click something on the map</div>'; return; }
@@ -778,17 +963,27 @@ let MODE = "replay";      // replay (Episode tab) | live (Command tab)
 let liveAuto = null;      // interval id while auto-advancing
 
 function fillLiveSelectors() {
-  $("lv-scenario").innerHTML = $("ep-scenario").innerHTML;
-  $("lv-policy").innerHTML = $("ep-policy").innerHTML;
-  if ($("ep-policy").value) $("lv-policy").value = $("ep-policy").value;
+  fillTask("lv");
+  // mirror the Episode tab's choice on fill, so the two tabs agree
+  ["task", "echelon"].forEach((k) => {
+    const v = $("ep-" + k).value;
+    if (v && [...$("lv-" + k).options].some((o) => o.value === v)) $("lv-" + k).value = v;
+  });
+  fillVersion("lv");
+  const epv = $("ep-version").value;
+  if (epv && [...$("lv-version").options].some((o) => o.value === epv)) $("lv-version").value = epv;
+  showVersionNote("lv");
 }
+$("lv-task").onchange = () => fillEchelon("lv");
+$("lv-echelon").onchange = () => fillVersion("lv");
+$("lv-version").onchange = () => showVersionNote("lv");
 
 async function liveStart() {
   stopAuto();
   $("lv-start").disabled = true; $("lv-start").textContent = "⏳ starting…";
   try {
-    const snap = await api(`/api/live/start?scenario=${$("lv-scenario").value}` +
-      `&policy=${encodeURIComponent($("lv-policy").value)}&seed=${+$("lv-seed").value}`);
+    const snap = await api(`/api/live/start?scenario=${scenarioOf("lv")}` +
+      `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
     EP = snap; MODE = "live";
     epRequest++;                       // invalidate any in-flight replay fetch
     $("pb-slider").max = EP.steps.length - 1;
@@ -797,7 +992,10 @@ async function liveStart() {
     $("lv-info").innerHTML = `${snap.opord}<br>policy: ${String(snap.policy).split("/").pop()}`;
     sel = null; seek(EP.steps.length - 1);
     $("lv-orderstatus").textContent = "";
-  } catch (e) { $("lv-info").textContent = "error: " + e.message; }
+  } catch (e) {
+    $("status").textContent = "live session failed";
+    $("lv-info").innerHTML = `<div class="errbox">could not start: ${e.message}</div>`;
+  }
   $("lv-start").disabled = false; $("lv-start").textContent = "⚑ Start session";
 }
 

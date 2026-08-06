@@ -26,6 +26,7 @@ import argparse
 import csv
 import json
 import threading
+import traceback
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -36,8 +37,9 @@ import numpy as np
 from cohort.config import SCENARIOS
 from cohort.core.language import OrderParseError
 from cohort.core.missions import MissionType
-from cohort.env.actions import CATALOG
+from cohort.env.actions import CATALOG, N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
+from cohort.env.observations import OBS_DIM
 
 MISSION_NAMES = [m.name for m in MissionType]
 
@@ -324,6 +326,85 @@ def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) ->
 # ---------------------------------------------------------------------- #
 
 
+#: Task labels for the scenario picker, derived from the spec rather than
+#: hand-maintained: the mission the OPORD assigns, qualified by the threat it
+#: assigns it against (a DEFEND against a mechanised assault and a DEFEND
+#: against an irregular band are different problems). (task, echelon) uniquely
+#: identifies a scenario, which is what lets the UI pick one with two menus.
+_TASK_LABELS = {
+    ("SEIZE", "garrison"): "Attack",
+    ("SEIZE", "assault"): "Attack",
+    ("SEIZE", "brique"): "Patrol · irregular",
+    ("DEFEND", "assault"): "Defend",
+    ("DEFEND", "garrison"): "Defend",
+    ("DEFEND", "brique"): "Defend · irregular",
+    ("RECON", "garrison"): "Recon",
+    ("SCREEN", "garrison"): "Screen",
+}
+
+
+def scenario_facets(spec) -> dict:
+    """The (task, echelon) a scenario belongs to, for the two-menu picker."""
+    if spec.ablation != "full":
+        task = f"Ablation · {spec.ablation}"
+    else:
+        task = _TASK_LABELS.get(
+            (spec.root_mission.name, spec.opfor_mode), spec.root_mission.name.title()
+        )
+    return {"task": task, "echelon": spec.org, "description": spec.description}
+
+
+#: cache of checkpoint metadata keyed by (path, mtime, size) — /api/state is
+#: polled, and torch.load over every run's checkpoints on each poll is waste
+_CKPT_META_CACHE: dict[tuple, dict] = {}
+
+
+def checkpoint_meta(path: Path) -> dict:
+    """Spaces a checkpoint was trained on, and whether this build can load it.
+
+    A checkpoint stores the ``obs_dim``/``n_actions`` it was built for. When a
+    breaking cycle moves either (v1.9 → Box(166), v1.10 → Box(220)), older
+    checkpoints cannot be loaded at all: the shape mismatch surfaces deep in a
+    forward pass as an opaque ``mat1 and mat2 shapes cannot be multiplied``.
+    Checking up front turns that into a sentence a human can act on.
+    """
+    try:
+        stat = path.stat()
+    except OSError:
+        return {"loadable": False, "reason": "checkpoint file missing"}
+    key = (str(path), stat.st_mtime, stat.st_size)
+    if key in _CKPT_META_CACHE:
+        return _CKPT_META_CACHE[key]
+
+    import torch
+
+    meta: dict
+    try:
+        ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        obs_dim, n_actions = int(ckpt["obs_dim"]), int(ckpt["n_actions"])
+        loadable = obs_dim == OBS_DIM and n_actions == N_ACTIONS
+        reason = ""
+        if not loadable:
+            reason = (
+                f"trained on Discrete({n_actions})/Box({obs_dim}); this build is "
+                f"Discrete({N_ACTIONS})/Box({OBS_DIM}) — incompatible, needs a retrain"
+            )
+        meta = {
+            "obs_dim": obs_dim,
+            "n_actions": n_actions,
+            "loadable": loadable,
+            "reason": reason,
+            "env_steps": ckpt.get("env_steps"),
+        }
+    except Exception as exc:
+        # This probes whatever files happen to sit in runs/, so it must never
+        # raise: a truncated, half-written or non-torch file is a checkpoint we
+        # cannot offer, not a reason to take the whole dashboard down.
+        meta = {"loadable": False, "reason": f"unreadable checkpoint: {exc}"}
+    _CKPT_META_CACHE[key] = meta
+    return meta
+
+
 def scan_runs(runs_dir: Path) -> list[dict]:
     """Discover training runs with their config and latest metrics row."""
     runs = []
@@ -354,9 +435,17 @@ def scan_runs(runs_dir: Path) -> list[dict]:
                 "config": config,
                 "last": last,
                 "checkpoints": [
-                    kind for kind in ("best", "latest") if (run / f"ckpt_{kind}.pt").is_file()
+                    {"kind": kind, **checkpoint_meta(run / f"ckpt_{kind}.pt")}
+                    for kind in ("best", "latest")
+                    if (run / f"ckpt_{kind}.pt").is_file()
                 ],
                 "behavior": (run / "behavior.json").is_file(),
+                # replayable traces recorded at this run's own code revision
+                # (scripts/legacy_trace.py) — how a pre-break checkpoint is
+                # still viewable without retraining it
+                "traces": sorted(p.name for p in (run / "traces").glob("*.json"))
+                if (run / "traces").is_dir()
+                else [],
             }
         )
     return runs
@@ -411,6 +500,40 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _json(self, payload: object, status: int = 200) -> None:
         self._send(status, json.dumps(payload).encode(), "application/json")
 
+    def _recorded_trace(self, policy: str, scenario: str, seed: int) -> dict | None:
+        """A pre-recorded trace for a checkpoint this build cannot load.
+
+        Legacy checkpoints are not lost, just unloadable: both the observation
+        layout AND the action indices moved between eras, so no shim could
+        interpret one honestly. `scripts/legacy_trace.py` instead replays the
+        run at its OWN git revision and writes the episode as plain JSON, which
+        stays readable through any number of future space breaks. Loadable
+        checkpoints are always simulated live — a trace is the fallback, never
+        a silent substitute.
+        """
+        parts = policy.split(":")
+        if len(parts) != 3 or parts[0] != "run":
+            return None
+        run, kind = parts[1], parts[2]
+        ckpt = self.runs_dir / run / f"ckpt_{kind}.pt"
+        if not ckpt.is_file() or checkpoint_meta(ckpt)["loadable"]:
+            return None  # live simulation is available and always preferred
+        path = self.runs_dir / run / "traces" / f"{scenario}_{kind}_seed{seed}.json"
+        if not path.is_file():
+            available = sorted(p.name for p in (self.runs_dir / run / "traces").glob("*.json")) \
+                if (self.runs_dir / run / "traces").is_dir() else []
+            hint = f" recorded traces: {', '.join(available)}." if available else ""
+            msg = (
+                f"{run} · ckpt_{kind} predates this build's spaces, so it cannot be "
+                f"simulated live, and no trace is recorded for {scenario} seed {seed}."
+                f"{hint} Record one (seconds, no retrain): "
+                f"scripts/legacy_trace.py {run} --seed {seed}"
+            )
+            raise ValueError(msg)
+        trace = json.loads(path.read_text())
+        trace["replayed_from_trace"] = True
+        return trace
+
     def _resolve_policy(self, policy: str) -> str | None:
         """'random' → None; 'run:<name>:<best|latest>' → validated ckpt path."""
         if policy in ("", "random"):
@@ -427,6 +550,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if not path.is_file():
             msg = f"no ckpt_{parts[2]}.pt in run {parts[1]!r}"
             raise ValueError(msg)
+        # refuse up front rather than failing inside a forward pass with an
+        # opaque shape error the UI cannot explain
+        meta = checkpoint_meta(path)
+        if not meta["loadable"]:
+            msg = f"{parts[1]} · ckpt_{parts[2]}: {meta['reason']}"
+            raise ValueError(msg)
         return str(path)
 
     def do_GET(self) -> None:
@@ -441,7 +570,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     {
                         "runs": scan_runs(self.runs_dir),
                         "scenarios": {
-                            name: spec.description for name, spec in SCENARIOS.items()
+                            name: scenario_facets(spec) for name, spec in SCENARIOS.items()
                         },
                     }
                 )
@@ -450,10 +579,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
             elif url.path == "/api/behavior":
                 self._json(load_behavior(self.runs_dir, self._safe_run(query["run"])))
             elif url.path == "/api/episode":
+                scenario = self._safe_scenario(query.get("scenario", "fireteam"))
+                seed = int(query.get("seed", 0))
+                recorded = self._recorded_trace(query.get("policy", "random"), scenario, seed)
+                if recorded is not None:
+                    self._json(recorded)
+                    return
                 trace = record_episode(
-                    self._safe_scenario(query.get("scenario", "fireteam")),
+                    scenario,
                     self._resolve_policy(query.get("policy", "random")),
-                    int(query.get("seed", 0)),
+                    seed,
                     greedy=query.get("greedy", "0") == "1",
                 )
                 self._json(trace)
@@ -488,6 +623,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 self._json({"error": "not found"}, 404)
         except (KeyError, ValueError, OSError) as exc:
             self._json({"error": str(exc)}, 400)
+        except Exception as exc:
+            # Anything else (notably torch RuntimeErrors from a checkpoint whose
+            # spaces do not match this build) used to escape the handler, kill
+            # the connection, and leave the UI showing nothing at all. Report it.
+            traceback.print_exc()
+            self._json({"error": f"{type(exc).__name__}: {exc}"}, 500)
 
     def _safe_run(self, name: str) -> str:
         if name not in {r["name"] for r in scan_runs(self.runs_dir)}:

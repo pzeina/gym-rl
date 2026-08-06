@@ -16,6 +16,13 @@ behaves* while doing so, per evaluation run:
   (refs issue #9: rolling success is blind to a policy re-learning to walk
   the commander into the ring, so checkpoint selection for preservation
   claims needs these numbers)
+* fight disposition       — *where* the cohort fights once the enemy is on
+  it: cover occupancy and distance from the root objective, measured only
+  over the (soldier, step) pairs under threat, plus the pass/fail gate built
+  on them (refs issue #11: an outside measurement showed the defend miss is
+  positional, not mortal — halving the root-death rate bought no success,
+  while every defend policy that ever cleared its bound fought <= 2.9 cells
+  out with cover >= 0.79 and the one that missed fought 9.09 out at 0.06)
 
 The pipeline has two halves, split so the math is unit-testable:
 
@@ -41,6 +48,7 @@ from typing import TYPE_CHECKING, Any
 
 from cohort.core import language as lang
 from cohort.core.missions import IN_POSITION_RADIUS, MissionType, allowed_derivations, compliance
+from cohort.core.units import CombatParams
 
 if TYPE_CHECKING:
     from cohort.env.cohort_env import CohortEnv
@@ -48,6 +56,22 @@ if TYPE_CHECKING:
 #: Radius of the objective observation ring used for human ring entries —
 #: RECON/SCREEN share it; it is where issue #9 measured the root's exposure.
 RING_RADIUS: float = IN_POSITION_RADIUS[MissionType.RECON]
+
+#: Fallback threat radius for traces recorded before the scenario's own
+#: weapon range was written into them. A (soldier, step) pair counts as
+#: "under threat" when a living enemy stands within this distance — i.e. when
+#: the OpFor can actually shoot that soldier, which is what makes the pair
+#: informative about *where the unit chose to fight*.
+THREAT_RADIUS: float = CombatParams().weapon_range
+
+#: Positional regression gate for DEFEND roots (refs issue #11). Bounds are
+#: set from the measured record, not from taste: `_v5` (24/30) and
+#: `defend_brique_v1` (27/30) held cover 0.79/0.96 at 2.90/1.99 cells, while
+#: `_v6` (14/30) and `_v7` (12/30) sat at 0.496/0.060 and 3.46/9.09. The
+#: floor and ceiling are placed in the empty band between the two groups, so
+#: the gate separates every checkpoint on record without hair-splitting.
+DEFEND_COVER_FLOOR: float = 0.40
+DEFEND_OBJECTIVE_DIST_CEILING: float = 5.0
 
 
 def _dist(a: list | tuple, b: list | tuple) -> float:
@@ -88,6 +112,10 @@ class TraceRecorder:
             "root_mission": cfg.root_mission.name,
             "root_objective": list(obj.pos) if obj is not None else None,
             "ring_radius": RING_RADIUS,
+            # issue #11: the scenario's own weapon range defines "under
+            # threat", so the fight-disposition metrics travel with the
+            # combat model instead of a hard-coded constant.
+            "threat_radius": float(env.combat.weapon_range),
             "contact_refresh_age": env.rewards_cfg.contact_refresh_age,
             "knowledge_ttl": _knowledge_ttl(),
             "human": human,
@@ -132,6 +160,9 @@ class TraceRecorder:
                     "subs": [x.callsign for x in s.living_subordinates(env.roster)],
                     "leader": leader.callsign if leader is not None else None,
                     "comp": comp,
+                    # issue #11: terrain posture, the strongest correlate of
+                    # defend success found so far. Read-only grid lookup.
+                    "cover": bool(env.world.cover_at(s.pos)),
                     "fired": bool(s.fired_this_step) if s.alive else False,
                     "sees": [e.id for e in env._visible_enemies(s)] if s.alive else [],
                     # A5-3: the element stance set ON this soldier (leaders only)
@@ -549,6 +580,50 @@ def _human_exposure(trace: dict) -> dict[str, Any]:
     }
 
 
+def _fight_disposition(trace: dict) -> dict[str, Any]:
+    """Where the cohort fights when the enemy is on it (refs issue #11).
+
+    Scores the (living soldier, step) pairs that are **under threat** — a
+    living enemy within ``threat_radius`` (the scenario's weapon range), i.e.
+    pairs where the soldier's ground actually costs or saves it something.
+    Two numbers come out of that population:
+
+    * cover occupancy — share of those pairs spent on cover terrain;
+    * distance from the root objective — mean over those pairs.
+
+    Conditioning on threat is what makes the pair informative: averaged over
+    a whole episode, an approach march and a prepared defense look alike.
+    Both are None when the episode never came under threat; the distance is
+    also None when the scenario has no root objective.
+    """
+    obj = trace.get("root_objective")
+    radius = trace.get("threat_radius", THREAT_RADIUS)
+    pairs = 0
+    in_cover = 0
+    dist_sum = 0.0
+    dist_n = 0
+    for step in trace["steps"]:
+        living = [e["pos"] for e in step["enemies"] if e["alive"]]
+        if not living:
+            continue
+        for rec in step["soldiers"]:
+            if not rec["alive"]:
+                continue
+            if min(_dist(rec["pos"], p) for p in living) > radius:
+                continue
+            pairs += 1
+            in_cover += bool(rec.get("cover"))
+            if obj is not None:
+                dist_sum += _dist(rec["pos"], obj)
+                dist_n += 1
+    return {
+        "threat_pairs": pairs,
+        "threat_cover_pairs": in_cover,
+        "threat_objective_dist_sum": dist_sum,
+        "threat_objective_dist_pairs": dist_n,
+    }
+
+
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
     latencies, censored = _obedience(trace)
@@ -559,6 +634,8 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
     return {
         "outcome": trace.get("outcome"),
         "length": trace.get("length"),
+        # carried through so the aggregate knows which regression gates apply
+        "root_mission": trace.get("root_mission"),
         "obedience_latencies": latencies,
         "obedience_censored": censored,
         "orders_issued": issued,
@@ -574,6 +651,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "coverage_covered": covered,
         **_vocabulary(trace),
         **_human_exposure(trace),
+        **_fight_disposition(trace),
     }
 
 
@@ -614,8 +692,12 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     latencies = [v for ep in episodes for v in ep["obedience_latencies"]]
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
+    roots = {ep.get("root_mission") for ep in episodes} - {None}
     return {
         "episodes": n_eps,
+        # the run's root mission when the pooled episodes agree on one; the
+        # regression gates key off it (a mixed pool gates on nothing)
+        "root_mission": roots.pop() if len(roots) == 1 else None,
         "success_rate": _ratio(
             sum(ep["outcome"] == "success" for ep in episodes), n_eps
         ),
@@ -654,7 +736,74 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "human_mean_enemy_dist": _mean([ep["human_mean_enemy_dist"] for ep in humans]),
         "human_mean_objective_dist": _mean([ep["human_mean_objective_dist"] for ep in humans]),
         "human_ring_entries_mean": _mean([ep["human_ring_entries"] for ep in humans]),
+        # fight disposition (issue #11): pooled over threatened (soldier,
+        # step) pairs, so a long firefight weighs more than a brief brush —
+        # which is the intent, the question being where the fighting happens
+        "cover_occupancy_under_threat": _ratio(total("threat_cover_pairs"), total("threat_pairs")),
+        "mean_distance_from_objective_under_threat": _ratio(
+            total("threat_objective_dist_sum"), total("threat_objective_dist_pairs")
+        ),
+        "threat_pairs": total("threat_pairs"),
     }
+
+
+# ---------------------------------------------------------------------- #
+# regression gates
+# ---------------------------------------------------------------------- #
+
+
+def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Pass/fail bounds a retrain must clear, given an aggregated summary.
+
+    The positional gate (issue #11) applies to DEFEND roots only: holding
+    ground is the one root mission for which "fought here rather than there"
+    is a correctness property rather than a style. It exists because success
+    rate alone did not catch it — ``fireteam_defend_v7`` halved the
+    root-death rate the ROADMAP had blamed, was measured firing on every
+    threatened step (p(fire | threatened) 0.005 -> 1.000), and still missed,
+    because it had walked off the position it was ordered to hold. Three
+    million steps bought that lesson; these two numbers are ~free.
+
+    Gates whose metric is None (never measured this run) are reported with
+    ``passed=None`` — unmeasured is not the same as passed.
+    """
+    if agg.get("root_mission") != MissionType.DEFEND.name:
+        return []
+    return [
+        _gate(
+            "cover_occupancy_under_threat",
+            agg.get("cover_occupancy_under_threat"),
+            DEFEND_COVER_FLOOR,
+            "min",
+        ),
+        _gate(
+            "mean_distance_from_objective_under_threat",
+            agg.get("mean_distance_from_objective_under_threat"),
+            DEFEND_OBJECTIVE_DIST_CEILING,
+            "max",
+        ),
+    ]
+
+
+def _gate(name: str, value: float | None, bound: float, direction: str) -> dict[str, Any]:
+    if value is None:
+        passed = None
+    else:
+        passed = value >= bound if direction == "min" else value <= bound
+    return {"name": name, "value": value, "bound": bound, "direction": direction, "passed": passed}
+
+
+def format_gate_report(gates: list[dict[str, Any]]) -> str:
+    """Human-readable gate verdicts; empty string when nothing gates."""
+    if not gates:
+        return ""
+    lines = ["regression gates:"]
+    for g in gates:
+        mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
+        value = "—" if g["value"] is None else f"{g['value']:.3f}"
+        rel = ">=" if g["direction"] == "min" else "<="
+        lines.append(f"  [{mark:^4}] {g['name']:<42} {value:>7}  ({rel} {g['bound']})")
+    return "\n".join(lines)
 
 
 #: (key, label, format) rows of the printed behavior table, in display order.
@@ -677,6 +826,8 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("human_mean_enemy_dist", "human: mean dist to enemy", "{:.1f}"),
     ("human_ring_entries_mean", "human: ring entries / ep", "{:.2f}"),
     ("human_death_rate", "human: death rate", "{:.2f}"),
+    ("cover_occupancy_under_threat", "fight: cover occupancy", "{:.3f}"),
+    ("mean_distance_from_objective_under_threat", "fight: dist from OBJ", "{:.2f}"),
 )
 
 
@@ -699,6 +850,7 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         "succession_recovery_mean": (
             f"n={agg['succession_events']}, unrecovered {agg['succession_unrecovered']}"
         ),
+        "cover_occupancy_under_threat": f"n={agg.get('threat_pairs', 0)} threatened agent-steps",
     }
     lines = [f"behavior over {agg['episodes']} episodes:"]
     for key, label, fmt in _TABLE_ROWS:

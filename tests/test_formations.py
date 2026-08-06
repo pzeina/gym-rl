@@ -271,7 +271,7 @@ def test_probe_stanced_members_follow_leader():
     assert p.predict("RFN1") == (obj_class("ALPHA"), MOVING)
     # once the leader has arrived, members hold formation ON the leader
     p.observe(3, [{"kind": "sitrep", "from": "TL1", "to": "SL1",
-                   "text": lang.format_sitrep("SL1", "TL1", 100, 30, (33, 33))}])
+                   "text": lang.format_sitrep("SL1", "TL1", 100, 30, (33, 33), in_cover=False)}])
     p.observe(4, [])
     dest, _post = p.predict("RFN1")
     assert dest == LEADER

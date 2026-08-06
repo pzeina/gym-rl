@@ -176,11 +176,49 @@ These exist because #9 showed rolling success is blind to a policy
 re-learning to walk the commander into the ring: checkpoint selection for
 human-preservation claims must read these numbers, not the success curve.
 
+### Fight disposition and the positional gate (issue #11)
+
+*Where* the cohort fights, once the enemy is actually on it. The population
+is the *(living soldier, step)* pairs **under threat** — a living enemy
+within `threat_radius` (the scenario's own `CombatParams.weapon_range`,
+recorded per trace). Conditioning on threat is the whole point: averaged
+over an episode, an approach march and a prepared defense look alike.
+
+* **`cover_occupancy_under_threat`** — share of threatened pairs spent on
+  cover terrain (forest).
+* **`mean_distance_from_objective_under_threat`** — mean distance from the
+  root objective over those pairs (`null` without a root objective).
+* **`threat_pairs`** — the denominator, so a `null` is always explainable.
+
+`regression_gates(agg)` turns these into pass/fail verdicts **for DEFEND
+roots only** — holding ground is the one root mission for which "fought here
+rather than there" is correctness rather than style; an assault is *supposed*
+to leave its start point. The bounds are `cover ≥ 0.40` and
+`dist ≤ 5.0` cells, placed in the empty band between the two groups on the
+record: `_v5` 24/30 at 0.793 / 2.90 and `defend_brique_v1` 27/30 at
+0.956 / 1.99 on one side, `_v6` 14/30 at 0.496 / 3.46 and `_v7` 12/30 at
+0.060 / 9.09 on the other. A gate whose metric was never measured reports
+`passed: null` — unmeasured is not a pass.
+
+This exists because success rate did not catch it, and neither did the
+suspected cause: `fireteam_defend_v7` halved the root-death rate the ROADMAP
+had blamed (26/30 → 14/30) and fired on essentially every threatened step
+(p(fire | threatened) 0.005 → 1.000), yet success went 14/30 → 12/30, because
+it had walked 9 cells off the position it was ordered to hold. Three million
+steps bought that lesson. DEFEND runs therefore also log
+`cover_under_threat` / `objective_dist_under_threat` per iteration in
+`metrics.csv`, so the collapse is visible while the run is still cheap to
+kill; both are blank on iterations with no firefight (never `0`, which would
+read as "fought in the open on the objective") and on every non-DEFEND root,
+which pays nothing for the scan.
+
 ### Aggregation
 
 Event-level metrics pool events across the run's episodes (one latency mean
 over all orders, rates over total counts); the human-exposure means average
-per-episode values so long and short episodes weigh equally.
+per-episode values so long and short episodes weigh equally. Fight
+disposition pools *pairs*, so a long firefight weighs more than a brief
+brush — which is the intent, the question being where the fighting happened.
 
 ## Baseline (published checkpoints, N=30, seeds 500–529)
 
