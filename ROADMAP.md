@@ -41,6 +41,19 @@ yet trained on)** — see the progress log for the full reasoning:
   attempt at both, and the fire-gradient fix (`9519326`) is already in.
 - D4 collapse remains unsolved and is the reason item 1 was spent.
 
+**New this session (design only, nothing trained)**: **`docs/vision.md`** —
+directional vision designed end to end and **decided**. Sequencing call:
+**v1.10 ships fully first (all 8 retrained + published), then vision as v1.11**
+— the fleet retrain is paid twice on purpose, buying an uncontaminated v1.10
+verdict. Arc semantics decided: `vision_arc 180°` / `fire_arc 90°` / 4-dir
+facing / all-round awareness at 2 cells. Milestone v1.11 (V0–V5) is in this
+file below. The binding constraint on the whole feature is that `PolicyNet` is
+a **memoryless MLP**, so an explicit remembered-contact block is mandatory, and
+its stale-track invariant is a first-class exploit hazard. Scenario
+**`squad_short_vision`** is registered and ready: it is the V0 probe of whether
+the transparency gap is caused by too little information asymmetry, and it is
+the one piece of vision work that runs *before* the v1.10 publish.
+
 **Next recommended, in order**:
 1. **Retrain `fireteam_defend` under v1.10** — the whole point of the cycle.
    Suggested parent: `fireteam_defend_v6` (the only policy that ever held the
@@ -264,6 +277,71 @@ terrain (still deferred).
   **missed on all three** (documented honestly in
   `docs/transparency.md` §A5); squad/patrol gaps still improved to the
   best ever measured. See the progress log.
+
+## Milestone v1.11 — Directional vision (breaking cycle)
+
+Full design, reasoning, and decisions of record: **`docs/vision.md`**. Owner's
+sequencing call (2026-08-06): **v1.10 ships fully first** — all 8 scenarios
+retrained and published — and only then does this cycle open. The fleet retrain
+is therefore paid twice on purpose, buying an uncontaminated v1.10 verdict on
+`human_death` → 0.0, the prep period, and the false-COMPLETE fix.
+
+The case for the feature is **not** realism. It is that 360°/10-cell vision in
+open terrain makes every agent's picture nearly common knowledge, which is a
+candidate cause of the standing transparency-probe failure: a CONTACT report is
+informationally close to a no-op when the recipient already sees the contact.
+Arcs manufacture information asymmetry structurally — two soldiers *on the same
+cell facing different ways* see different worlds.
+
+Binding constraint: `PolicyNet` (`training/ppo.py:55`) is a memoryless MLP, so
+every phase below must keep the observation near-Markov. Recurrence is
+deliberately deferred (`docs/vision.md` §2c).
+
+- `[~]` **V0. Information-asymmetry probe** — gate for the whole cycle, runs
+  *before* the v1.10 publish since it is independent of it. Scenario
+  `squad_short_vision` (registered): the squad with vision halved (10 → 5,
+  forest 6 → 3, ratio preserved) and nothing else touched. **DoD**: trained
+  under v1.10 spaces, `cohort.probe` gap reported against the OPORD-only
+  baseline *of the v1.10 `squad` control run* (not the v1.9 published number),
+  written up in `docs/transparency.md`. Informative, not blocking — isotropic
+  reduction is a lower bound on the arc effect (§6).
+- `[ ]` **V1. Foliage attenuates LOS** — optical depth accumulated along the
+  existing Bresenham walk; `foliage_density = 0.5` reproduces today's
+  single-cell forest penalty to within 0.07 cells (`exp(-0.5) = 0.6065` vs the
+  current 6/10), so only rays *through* woods change. No new state, **no space
+  break** — old checkpoints still load. **DoD**: monotonicity test (effective
+  range decreases in forest cells traversed), walls still hard-block, endpoints
+  still never block; `forest_vision_range` kept in `briefing()` as a derived
+  value. **Owner call outstanding**: `prep_in_position` pays for cover
+  occupancy, but under attenuation "in cover" and "has fields of fire" become
+  competing — a reward that pays only for occupancy trains a policy that goes
+  blind in deep woods.
+- `[ ]` **V2. Facing and vision arc** — BREAKING: Box 220 → 244 (facing one-hot
+  4, `in_fire_arc` per enemy slot 4, remembered contacts 4×4), Discrete 228 →
+  232 (`FACE_*`). Decided semantics: `vision_arc 180°`, `fire_arc 90°`,
+  `all_round_awareness_range 2.0`, 4-dir facing. Movement sets facing; `FACE_*`
+  consumes the step — so an individual **cannot advance while covering a
+  flank**, which is what makes distributed sectors necessary. Ships with **V4
+  (OpFor symmetry)** in the same cycle, never after. **DoD**: the five
+  regression-hazard tests of `docs/vision.md` §4 green — above all the
+  **stale-track invariant** (a remembered contact stores the last-seen position
+  and never updates while unobserved; anything else is omniscience wearing a
+  memory costume); fleet retrained and republished; `sector_coverage`,
+  `flank_exposure_rate`, `detect_latency`, `facing_changes_per_step` in the
+  behavior suite. Use `facing`/`sector` vocabulary, **never** `rotation` — that
+  already means patrol-anchor rotation here (the v1.8 economics result).
+- `[ ]` **V3. Sector-of-fire orders** — `ORDER_S{i}_COVER_SECTOR_{N|S|E|W}`,
+  +16 actions. The C2 payoff: all-round defense becomes a *commanded* act on the
+  transcript rather than an emergent accident, and the most direct test of the
+  hypothesis above. Follows V2 so that "arcs work" and "commanding arcs helps"
+  stay separable findings. Vocabulary expansion — owner's call before build.
+- `[ ]` **V5. Assurance contract amendment** — `briefing()` publishes scalar
+  `vision_range` / `forest_vision_range` (`config.py:496-497`) so the external
+  layer can define "under threat". Directional vision silently turns that into
+  an *overestimate* and the threat envelope quietly loosens with no error to
+  show for it — the exact failure `briefing()` was built to prevent, recurring
+  one level up. **DoD**: arc parameters published alongside the ranges;
+  amendment recorded in `ASSURANCE-SYNC.md`. Blocks the V2 publish.
 
 ## Backlog (unscheduled)
 

@@ -347,6 +347,11 @@ def scenario_facets(spec) -> dict:
     """The (task, echelon) a scenario belongs to, for the two-menu picker."""
     if spec.ablation != "full":
         task = f"Ablation · {spec.ablation}"
+    elif spec.experiment_arm is not None:
+        # an arm that differs from its control by a tuned parameter rather than
+        # by a masking regime — same task and echelon as the control, so it
+        # needs its own label or the picker cannot address both
+        task = f"Probe · {spec.experiment_arm}"
     else:
         task = _TASK_LABELS.get(
             (spec.root_mission.name, spec.opfor_mode), spec.root_mission.name.title()
