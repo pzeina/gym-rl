@@ -1650,3 +1650,70 @@ deliberately deferred (`docs/vision.md` §2c).
   any behavior number from a staging checkpoint is now different, and more
   honest. The within-task ADVANCE rise remains unexplained — the correction
   *widens* the v8/v10 gap rather than closing it.
+
+- **2026-08-06** — **The SUPPORT/OBSERVE inversion is real, but "OBSERVE is
+  ordered where SUPPORT belongs" is not: no policy on record prefers OBSERVE
+  (refs #16).** Issue #16 confirmed the inversion across 38 of 43 corpora and
+  raised the confound: part of it is *availability*, not incentive — SUPPORT is
+  unit-targeted and needs a second living subordinate slot, OBSERVE is
+  objective-targeted and almost always admissible, and masked-random corpora
+  already show the inversion with no reward pressure at all. It asked that the
+  *excess over the masked-random floor* be what the d780a3e fix is judged on.
+  Diagnosed on the real env before writing anything, per the standing rule.
+  **The confound is real, larger than stated, and it does not point one way.**
+  Masked-random on this repo's own scenarios (seeds 500+), share of the
+  admissible order menu:
+
+  | scenario | OBSERVE | SUPPORT | what an uncorrected reading would report |
+  |---|---|---|---|
+  | `squad` | 0.23 | 0.08 | OBSERVE 2.9× — **entirely** the mask |
+  | `squad_screen` | 0.42 | **0.00** | ∞ — SCREEN cannot derive SUPPORT at all |
+  | `fireteam_defend` | 0.11 | **0.22** | SUPPORT 1.9× — **against** the trained direction |
+
+  So the correction *shrinks* the effect in the squad family and **doubles** it
+  in the defend family. Measured on the checkpoints, read-only, nothing written
+  under `runs/` (share / availability / lift, lift 1.00 = the floor):
+
+  | corpus | OBSERVE | SUPPORT | verdict |
+  |---|---|---|---|
+  | `fireteam_defend_v8` (30 ep) | 0.102 / 0.112 / **x0.92** | 0.010 / 0.219 / **x0.04** | SUPPORT declined 21× harder; OBSERVE **at the floor** |
+  | `platoon_v4` (20 ep) | 0.058 / 0.250 / **x0.23** | 0.017 / 0.069 / **x0.24** | lifts **identical** — the whole 3.4× raw gap is the mask |
+  | `fireteam_defend_v10` (30 ep) | 0.000 / 0.111 / x0.00 | 0.000 / 0.221 / x0.00 | neither ordered once; ADVANCE **x2.25** |
+
+  **The shares reproduce the pinned numbers exactly** (v8 0.102/0.010 against
+  the tap's 0.102/0.010; platoon_v4 0.058/0.017 against 0.057/0.016), so this
+  is the same measurement with a denominator, not a different one.
+  **Correcting the cycle-9 entry above and `d780a3e`'s message**: both read
+  `OBSERVE 0.098 vs 0.010` and `0.057 vs 0.016` as OBSERVE being *ordered where
+  SUPPORT belongs*. Half of that is unsupported. OBSERVE's lift is ≤ 0.92 in
+  every corpus measured — at or below what picking uniformly among its own
+  legal orders would produce. On `platoon_v4` the two are declined at literally
+  the same rate. The one real, task-specific effect is **SUPPORT avoidance in
+  the defend family** (v8 at x0.04: it declined 96% of the SUPPORT it held),
+  which is exactly what d780a3e's reward diagnosis predicts — the 6× premium
+  for *not* supporting. **The fix direction stands; its stated mechanism was
+  half wrong.** What both corpora actually show underneath is ADVANCE
+  monopolization (x1.62 / x1.66 / x2.25), with everything else declined.
+  **Issue #16's own inference does not survive either**: it read the four
+  defend-family "exceptions" that ordered SUPPORT above OBSERVE
+  (`defend_brique_v1` 0.164/0.397, `fireteam_defend_v5` 0.176/0.360) as
+  evidence that SUPPORT-heaviness bought the best defence on record. Those
+  ratios are 0.41 and 0.49 against a defend menu whose own OBSERVE:SUPPORT
+  ratio is **0.5** — they are sitting on the floor, showing no preference in
+  either direction. (The menu ratio is 2:1 SUPPORT structurally — 6 unit-slot
+  pairs against 1 objective per slot — and is unchanged by ADVANCE's post-A5
+  arrival, which rescales both, so it applies to those pre-A5 corpora too.)
+  Shipped as a measurement, not a knob — the fourth in a row (#13/#14/#15/#16)
+  where the metric was at fault: `order_options()` reads the admissible order
+  menu off the mask itself, `TraceRecorder` records it per agent-step
+  (`order_opts`), and `_doctrine` accumulates the **matched control** — for
+  every order actually issued, the share of that issuer's own legal order
+  vocabulary belonging to each task. `order_availability` / `orders_matched` /
+  `order_selection_lift()` land in `behavior.json`, the behavior table and
+  `run_report.py`. Pinned by a masked-random calibration test: no reward
+  pressure must measure at lift 1.00 while its raw mix stays inverted. No
+  reward, space or scenario changed; `OBS_DIM` 220 / `N_ACTIONS` 228 untouched.
+  451 → 453 → 463 tests; each half fails without its half of the fix.
+  **Retrain judgement, going forward**: the number to move is
+  `order_selection_lift["SUPPORT"]` from 0.04 toward 1.0, *not* the raw share —
+  and any SUPPORT/OBSERVE claim quoted without its availability is not a claim.

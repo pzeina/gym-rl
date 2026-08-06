@@ -159,6 +159,59 @@ issuer with no mission to derive from, which the mask forbids in play):
 Quote the preference rate against the mix, never on its own — the two
 pre-ADVANCE corpora are not comparable to the post-A5 ones on this number.
 
+#### The mix needs its own denominator: order availability (issue #16)
+
+`orders_by_task` shares are **availability-confounded**. The order mask does
+not offer the tasks in equal numbers, so a share answers "how often was this
+ordered", which is two findings in one face: *the policy declined this task*
+and *this task was barely on the menu*.
+
+The inequality is structural, not incidental. SUPPORT is unit-targeted
+(`ORDER_S{i}_SUPPORT_U{j}`), so it needs a **second** living subordinate slot
+and contributes one entry per supported slot; OBSERVE is objective-targeted
+and contributes one entry per objective on the map. SCREEN cannot derive
+SUPPORT at all, so a SCREEN-rooted scenario offers it zero entries — for any
+policy, forever.
+
+`order_availability` is the matched control. For every order the policy
+actually issued, it records the share of the **issuer's own admissible order
+vocabulary** that belonged to each task at that exact state — read off the
+mask recorded in the previous step (`order_opts`, i.e. the observation the
+issuer acted on), never re-derived. Pooled over the run and divided by
+`orders_matched`, it is precisely the expected task mix of a masked-random
+policy making the same set of order decisions.
+
+* **`order_selection_lift(agg)`** = `share / availability` per task. **1.00 is
+  the masked-random floor**: no preference. `> 1` is a task chosen above what
+  was on the menu, `< 1` a task whose opportunities were declined. `None` for
+  a task never offered — no opportunity, so no selection to measure.
+* The digest prints `TASK share/availability (xLIFT)`, ranked by
+  *availability* rather than by orders issued, because the reading that
+  matters is the task the mask offered and the policy did not take.
+* **`orders_matched`** below `orders_issued` means orders were seen that the
+  issuer's own mask never offered — injected or replayed, not selected, and
+  so excluded from the control.
+
+Entries are counted, not tasks: a uniform-over-legal policy picks an entry,
+which is what makes the floor exact. A5-3 stance orders (`FORMATION X`) carry
+no mission and are excluded from both sides.
+
+**Why this is load-bearing.** The confound does not point one way, so the
+uncorrected reading is wrong in *opposite directions* by scenario family.
+Measured on masked-random (12–20 episodes, seeds 500+):
+
+| scenario | OBSERVE avail | SUPPORT avail | raw ratio a uncorrected reading would report |
+|---|---|---|---|
+| `squad` | 0.23 | 0.08 | OBSERVE 2.9x — **entirely** the mask |
+| `squad_screen` | 0.42 | 0.00 | infinite — there is no policy in it |
+| `fireteam_defend` | 0.11 | 0.21 | SUPPORT 1.9x — **against** the trained direction |
+
+So `fireteam_defend_v8`'s widely-quoted `OBSERVE 0.10 / SUPPORT 0.01` is not
+the OBSERVE preference it looks like: corrected, it is **OBSERVE x0.92**
+(the floor — no preference at all) against **SUPPORT x0.04** (96% of the
+SUPPORT opportunities it held, declined). The finding is SUPPORT avoidance,
+and the raw ratio understated it by more than 2x while misnaming its cause.
+
 ### Order volume and re-task economics (B5)
 
 `orders_per_episode` is `orders_issued / episodes` (agent-issued ORDER
