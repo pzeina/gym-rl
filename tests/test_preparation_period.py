@@ -120,3 +120,74 @@ def test_no_preparation_period_consumes_no_randomness():
     b.reset(seed=5)
     assert [e.pos for e in a.enemies] == [e.pos for e in b.enemies]
     assert [s.pos for s in a.roster.soldiers] == [s.pos for s in b.roster.soldiers]
+
+
+# ---------------------------------------------------------------------- #
+# preparation-period occupancy pay (v1.10)
+# ---------------------------------------------------------------------- #
+
+
+def _place(env, callsign, pos):
+    env.roster.by_callsign[callsign].pos = pos
+
+
+def test_occupancy_pays_only_in_cover_at_the_objective():
+    """Cover is required, not proximity: bare ground at the objective is not a
+    prepared position (the v1.2 terrain lesson)."""
+    from cohort.core.missions import IN_POSITION_RADIUS, MissionType
+    from cohort.core.world import FOREST, OPEN
+
+    env, _ = _defend()
+    obj = env.world.objective_by_name("ALPHA")
+    radius = IN_POSITION_RADIUS[MissionType.DEFEND]
+    covered, bare = (obj.pos[0] + 1, obj.pos[1]), (obj.pos[0] - 1, obj.pos[1])
+    env.world.grid[covered[1], covered[0]] = FOREST
+    env.world.grid[bare[1], bare[0]] = OPEN
+    far = (obj.pos[0], obj.pos[1] + int(radius) + 4)
+    env.world.grid[far[1], far[0]] = FOREST  # in cover, but off the position
+    _place(env, "RFN1", covered)
+    _place(env, "RFN2", bare)
+    _place(env, "RFN3", far)
+    *_, infos = env.step({a: 0 for a in env.agents})
+    cfg = env.rewards_cfg
+    assert infos["RFN1"]["components"]["compliance"] >= cfg.prep_in_position
+    base = infos["RFN2"]["components"]["compliance"]
+    assert infos["RFN1"]["components"]["compliance"] > base, "cover at the position pays"
+    assert infos["RFN3"]["components"]["compliance"] < base + cfg.prep_in_position, (
+        "cover off the position does not"
+    )
+
+
+def test_occupancy_stops_paying_at_h():
+    """Bounded by H — it cannot be farmed for the length of the episode."""
+    from cohort.core.world import FOREST
+
+    env, _ = _defend()
+    obj = env.world.objective_by_name("ALPHA")
+    covered = (obj.pos[0] + 1, obj.pos[1])
+    env.world.grid[covered[1], covered[0]] = FOREST
+    cfg = env.rewards_cfg
+    for _ in range(env._h_hour - 1):
+        _place(env, "RFN1", covered)
+        *_, infos = env.step({a: 0 for a in env.agents})
+        during = infos["RFN1"]["components"]["compliance"]
+    assert during >= cfg.prep_in_position, "paid throughout the preparation period"
+    for _ in range(3):  # past H: the assault has begun
+        _place(env, "RFN1", covered)
+        *_, infos = env.step({a: 0 for a in env.agents})
+    assert infos["RFN1"]["components"]["compliance"] < during, "no pay after H"
+
+
+def test_occupancy_is_absent_without_a_preparation_period():
+    from cohort.core.world import FOREST
+
+    env = make_env("fireteam")
+    env.reset(seed=4)
+    obj = env.world.objective_by_name("ALPHA")
+    covered = (obj.pos[0] + 1, obj.pos[1])
+    env.world.grid[covered[1], covered[0]] = FOREST
+    _place(env, "RFN1", covered)
+    env.step({a: 0 for a in env.agents})
+    assert not env._in_preparation()
+    # whatever compliance it earns, none of it is prep occupancy
+    assert env.spec_cfg.assault_h_hour is None

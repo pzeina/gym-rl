@@ -159,6 +159,9 @@ def test_terminal_dominates_stalling():
     episode, so it cannot tip the balance toward stalling) and the B5
     standing-order tenure multiplier at its ceiling (max_step_farm accounts
     for it; success_team was raised 45 → 60 to keep this margin).
+
+    v1.10 adds the preparation-period occupancy payout, bounded the same way:
+    it stops at H, so its ceiling is prep_in_position x max(assault_h_hour).
     """
     from cohort.config import SCENARIOS
     from cohort.core.missions import RECON_OBSERVE_STEPS
@@ -167,7 +170,11 @@ def test_terminal_dominates_stalling():
     cfg = RewardConfig()
     observe_cap = cfg.observe_progress * 2 * RECON_OBSERVE_STEPS  # bounded, one-shot
     for spec in SCENARIOS.values():
-        best_farm = cfg.max_step_farm() * spec.max_steps + observe_cap
+        # bounded by H: the term stops paying the moment the assault starts
+        prep_cap = (
+            cfg.prep_in_position * spec.assault_h_hour[1] if spec.assault_h_hour else 0.0
+        )
+        best_farm = cfg.max_step_farm() * spec.max_steps + observe_cap + prep_cap
         assert cfg.success_team > best_farm, (
             f"{spec.name}: stalling for {spec.max_steps} steps yields {best_farm:.1f} "
             f">= success reward {cfg.success_team} — reward hacking is profitable"

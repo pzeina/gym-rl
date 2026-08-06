@@ -893,3 +893,22 @@ terrain (still deferred).
   orders during prep): one variable at a time, so a miss stays diagnosable.
   The draw is guarded, so scenarios without a preparation period consume no
   randomness and reproduce their old seeds exactly. 348 → 357 tests.
+- **2026-08-06** — **preparation-period occupancy pay** (`RewardConfig.
+  prep_in_position` = 0.05/step, owner's design call — option B2). While the
+  assault is still forming up, an agent standing **in cover** within
+  `IN_POSITION_RADIUS` of the root objective earns it. The prep phase grants
+  the *time* to occupy a prepared position; this grants the *motive*. Without
+  it the contact-free phase is a null period a policy can idle through and
+  still meet the assault in the open — the v7 failure exactly.
+  **Cover is required, not proximity**: bare ground at the objective is not a
+  prepared position (the v1.2 terrain lesson). **Not farmable**: it stops
+  paying at H, so its lifetime ceiling is 0.05 × 75 = **3.75 per agent**
+  against `success_team` 60 — the terminal-dominance regression test now
+  carries `prep_cap` explicitly alongside `observe_cap`.
+  *Risk on the record*: this is the second variable in the defend cycle
+  (prep period + occupancy pay). The B5 precedent says compound changes make
+  misses undiagnosable — accepted deliberately here because a timer with no
+  motive was judged likelier to teach nothing than to teach the wrong thing.
+  If the retrain misses, the oracle should separate them: cover occupancy
+  under threat is the prep-period metric, off-objective fight distance the
+  occupancy-pay metric. 357 → 360 tests.

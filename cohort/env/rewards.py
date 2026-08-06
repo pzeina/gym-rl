@@ -133,6 +133,21 @@ class RewardConfig:
     # pp. 14-15).
     bound_bonus: float = 0.05
 
+    # Preparation period (v1.10): while the assault is still forming up
+    # (ScenarioSpec.assault_h_hour), an agent standing IN COVER within
+    # IN_POSITION_RADIUS of the root objective earns this per step. The prep
+    # phase grants the TIME to occupy a prepared position; this grants the
+    # MOTIVE. Without it the contact-free phase is a null period a policy can
+    # idle through and still meet the assault in the open — exactly the v7
+    # failure (cover occupancy 0.05, the fight 9.7 cells off the objective).
+    #
+    # It cannot be farmed: it is paid only before H, so its lifetime ceiling is
+    # prep_in_position x max(assault_h_hour) = 0.05 x 75 = 3.75 per agent,
+    # bounded like observe_progress and accounted for in the terminal-dominance
+    # test. Cover is required, not merely proximity — sitting on bare ground at
+    # the objective is not a prepared position (the v1.2 terrain lesson).
+    prep_in_position: float = 0.05
+
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.1        # some living subordinate left untasked, per step.
     #                                   Raised -0.02 → -0.1 in the B5 campaign (the one

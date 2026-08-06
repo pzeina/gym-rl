@@ -747,6 +747,19 @@ class CohortEnv(ParallelEnv):
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
 
+        # preparation-period occupancy (v1.10): before H, an agent in cover
+        # within the objective's in-position radius is preparing the defense.
+        # Bounded by H itself — it stops paying the moment the assault starts.
+        if (
+            cfg.prep_in_position != 0.0
+            and root_obj is not None
+            and self._in_preparation()
+        ):
+            radius = IN_POSITION_RADIUS[self.spec_cfg.root_mission]
+            for s in self.roster.living:
+                if dist(s.pos, root_obj.pos) <= radius and self.world.cover_at(s.pos):
+                    ledger.add(s.callsign, "compliance", cfg.prep_in_position)
+
         # formation shaping (A5-3): members at their formation station while
         # their leader closes NEW ground toward its mission anchor earn the
         # formation bonus — watermark-gated, so it telescopes with the
