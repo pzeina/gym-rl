@@ -39,7 +39,7 @@ import numpy as np
 import torch
 
 from cohort.config import briefing, get_scenario
-from cohort.core.language import parse_opord, parse_sitrep
+from cohort.core.language import parse_opord, parse_order, parse_sitrep
 from cohort.core.oracle import observe as oracle_observe
 from cohort.core.orders import HQ_ID, Message
 from cohort.env.cohort_env import CohortEnv, make_env
@@ -51,7 +51,7 @@ from cohort.training.evaluate import _pick_actions
 #: All three are additive -- consumers of 1.0.0 corpora see missing keys, not
 #: changed ones -- but the schema is bumped so a corpus states what it can be
 #: asked for rather than leaving the layer to probe.
-TAP_SCHEMA = "1.1.0"
+TAP_SCHEMA = "1.2.0"
 
 
 def _open(path: str) -> IO[str]:
@@ -149,6 +149,22 @@ def _payload(m: Message) -> dict:
             step = spoken.get("announced_assault_step") if spoken else None
             if step is not None:
                 parsed = {**parsed, "announced_assault_step": step}
+        # A5-2 timing qualifiers. An AT MY COMMAND order is STAGED: the
+        # mission is assigned at emission but pending until the issuer's
+        # EXECUTE, so the interval in between is not disobedience. Without
+        # these fields a monitor sees the EXECUTE traffic but cannot tell
+        # which orders were staged, which is exactly what upstream's
+        # obedience-latency hypothesis turns on (EPISTREAM PLAN.md 12.53).
+        if kind in ("opord", "order"):
+            try:
+                spoken_order = parse_order(m.text)
+            except Exception:
+                spoken_order = None
+            if spoken_order is not None:
+                if spoken_order.delay is not None:
+                    parsed = {**parsed, "delay": spoken_order.delay}
+                if spoken_order.at_my_command:
+                    parsed = {**parsed, "at_my_command": True}
     elif kind == "contact":
         c = _CONTACT_RE.search(m.text)
         parsed = {"grid": c.group("grid"), "count": int(c.group("n"))} if c else {}
