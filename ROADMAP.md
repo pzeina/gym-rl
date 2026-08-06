@@ -1758,3 +1758,41 @@ deliberately deferred (`docs/vision.md` §2c).
   external observer's job. No reward, space or scenario changed; `OBS_DIM` 220 /
   `N_ACTIONS` 228 untouched. 466 → 468 tests; each half of the fix fails
   independently without it.
+- **2026-08-07** — **`done_false` is EXONERATED: the revert changed nothing, and
+  the failure is not the DONE channel.** The v1.10 fleet retrain produced two
+  total collapses — `squad_recon_v6` and `squad_screen_v4` both ended at **0%**
+  with terminal reward exactly **0.0000**, episodes pinned at `max_steps` (375)
+  and `tx/agent-step` at 0.058/0.029 — while their predecessors `squad_recon_v5b`
+  and `squad_screen_v3` converged (best-final gaps 12 and 5). The diagnosis
+  offered was `done_false` −0.5 → −2.0: final-decile false-DONE fell to ~0 in
+  four scenarios, RECON/SCREEN completion is team-adjudicated through
+  `_team_observe_steps`, and that counter is in no observation slot, so p > 0.67
+  asks for a confidence the agent cannot form. Committed as `ac1fb19` and tested
+  properly, one variable, `squad_screen_v5` vs `squad_screen_v4`.
+  **It is wrong.** At `done_false` −0.5 the run collapsed identically: 0% final,
+  terminal **0.0000**, ep_length **375.0**, `tx/agent-step` **0.026** (v4: 0.029),
+  false-DONE **0.005** (v4: 0.005), entropy 1.809 → **1.025**. The price was
+  never what silenced the claim — the claim rate is unchanged at 4× the price.
+  What the test *did* buy is a much better-posed question, because it proves the
+  failure is **not DONE-specific**. `tx/agent-step` falls 0.123 → 0.026 (4.7×)
+  against `squad_screen_v3`, and that counts *every* channel: `comp_report` goes
+  −0.0016 (v3, actively paying transmission costs to report) → +0.0002 (v4/v5,
+  no traffic to pay for), and orders/episode at `ckpt_best` is **3.75** (v5)
+  against 67.70 (v4). The whole radio goes quiet, and the cohort parks: final
+  decile draws compliance 0.0641 + command 0.0042 − time 0.0100 ≈ 0.058
+  /agent-step × 375 ≈ 22, against an observed `ep_return` of **21.80**. A
+  stall-farm at 22 beats nothing, and terminal — worth ~59 in `v3` — has become
+  unreachable rather than unattractive.
+  **Also falsified**: the correlation "the runs that kept claiming DONE are the
+  runs that succeeded" (`fireteam_defend_v10` 0.553 → 89%, `platoon_v4` 0.382 →
+  93%) reads the causation backwards. They claim because they finish.
+  **Suspects remaining**, in order: (1) `contact_redundant` −0.02 → **−0.25**,
+  the only other transmission tax in the cycle, whose isolated effect is known
+  only at squad scale (`squad_v6`→`v7`: terminal −33%, sub-lethal); (2) the
+  v1.10 **space change itself** — `OBS_DIM` 166 → 220, `N_ACTIONS` 228 — with
+  `ent_coef` left at 0.01. Note (2) is *not* answered by raising the entropy
+  bonus alone: `squad_recon_v6` ran at `ent_coef` 0.02 and collapsed anyway.
+  `done_false` is left at −0.5 pending the owner's call — its v1.10 raise is now
+  known to buy nothing (false-DONE ~0.005 at either price), but the revert's
+  stated reasoning in `ac1fb19` did not survive contact with the test, and that
+  commit message should be read with this entry.
