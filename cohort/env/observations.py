@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cohort.core.missions import MissionType
+from cohort.core.missions import Formation, MissionType
 from cohort.core.ranks import Rank
 
 if TYPE_CHECKING:
@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 RANK_ORDER: tuple[Rank, ...] = (Rank.RFN, Rank.TL, Rank.SL, Rank.PSG, Rank.PL, Rank.XO, Rank.CO)
 MISSION_ORDER: tuple[MissionType, ...] = tuple(MissionType)
+FORMATION_ORDER: tuple[Formation, ...] = tuple(Formation)
 
 N_SUB_SLOTS = 4
 N_ENEMY_SLOTS = 4
@@ -43,8 +44,10 @@ PATCH_RADIUS = 2
 #: mission block: one-hot over the 12 tasks (11 MICAT + ADVANCE) + has-mission
 #: flag + 4 anchor fields (dx, dy, has-objective, age) + 2 pending fields
 #: (A5-2: pending flag; time-to-effective — 1.0 while AT MY COMMAND, else
-#: remaining/20 capped at 1)
-_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4 + 2
+#: remaining/20 capped at 1) + 3 stance one-hot (A5-3: the governing element
+#: formation — the agent's own stance if it leads one, else its direct
+#: leader's; all zero when no stance applies)
+_MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4 + 2 + len(FORMATION_ORDER)
 
 #: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
 _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
@@ -52,10 +55,10 @@ _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 #: leader block: present, dx, dy, mission index, leader-is-human
 _LEADER_BLOCK = 5
 
-#: 13 self + 19 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
+#: 13 self + 22 mission/stance + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
 #: + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a phase line
 #: dx/dy point at its nearest segment point) + 5 comms + patch (50)
-#: = 13 + 19 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 161
+#: = 13 + 22 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 164
 OBS_DIM = (
     _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
@@ -152,8 +155,16 @@ def build_observation(
             )
     i += 2
 
-    # --- leader (5) ---
+    # --- governing element stance (A5-3, 3) ---
     leader = roster.leader_of(soldier)
+    stance = soldier.formation
+    if stance is None and leader is not None:
+        stance = leader.formation  # the member is shaped under its leader's stance
+    if stance is not None:
+        out[i + FORMATION_ORDER.index(stance)] = 1.0
+    i += len(FORMATION_ORDER)
+
+    # --- leader (5) ---
     if leader is not None:
         out[i] = 1.0
         out[i + 1] = (leader.pos[0] - x) / w

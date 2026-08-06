@@ -29,7 +29,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, MissionType
+from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, Formation, MissionType
 
 #: Objective slot names, addressed as "OBJ ALPHA" etc. (NATO phonetic).
 OBJECTIVE_NAMES: tuple[str, ...] = ("ALPHA", "BRAVO", "CHARLIE", "DELTA")
@@ -114,6 +114,16 @@ _CONTROL_RE = re.compile(
 _T_PLUS_RE = re.compile(r"\bat\s+t\s*(?:plus\s+|\+\s*)(\d+)\b")
 _AT_MY_COMMAND_RE = re.compile(r"\bat\s+my\s+command\b")
 
+#: Element stance (A5-3): "formation column|line|wedge" (French names too).
+_FORMATION_RE = re.compile(r"\bformation\s+(column|colonne|line|ligne|wedge)\b")
+_FORMATION_SYNONYMS: dict[str, Formation] = {
+    "column": Formation.COLUMN,
+    "colonne": Formation.COLUMN,
+    "line": Formation.LINE,
+    "ligne": Formation.LINE,
+    "wedge": Formation.WEDGE,
+}
+
 
 def grid_ref(pos: tuple[int, int]) -> str:
     """Four-digit NATO-style grid reference, e.g. (14, 7) → 'GRID 1407'."""
@@ -125,10 +135,11 @@ class ParsedOrder:
     """Result of parsing a human order line."""
 
     recipient_callsign: str
-    mission: MissionType
+    mission: MissionType | None         # None for stance-only orders (FORMATION)
     objective_name: str | None
     target_callsign: str | None = None  # supported unit (SUPPORT only)
     control_name: str | None = None     # control measure (ADVANCE only)
+    formation: Formation | None = None  # element stance (A5-3, FORMATION orders)
     # timing qualifiers (A5-2): at most one of the two is set
     delay: int | None = None            # "... AT T PLUS <n>": effective n ticks from now
     at_my_command: bool = False         # "... AT MY COMMAND": pending until EXECUTE
@@ -190,6 +201,11 @@ def format_order(
 def format_execute(issuer_cs: str) -> str:
     """The issuer releases all its pending AT-MY-COMMAND orders (A5-2)."""
     return f"ALL STATIONS, THIS IS {issuer_cs}: EXECUTE. OUT."
+
+
+def format_formation_order(issuer_cs: str, recipient_cs: str, formation: Formation) -> str:
+    """Element stance order (A5-3): 'TL1, THIS IS SL1: FORMATION COLUMN. OUT.'"""
+    return f"{recipient_cs}, THIS IS {issuer_cs}: FORMATION {formation.name}. OUT."
 
 
 def format_opord(recipient_cs: str, mission: MissionType, target: str | None) -> str:
@@ -299,6 +315,16 @@ def parse_order(text: str) -> ParsedOrder:
     elif _AT_MY_COMMAND_RE.search(body):
         at_my_command = True
         body = _AT_MY_COMMAND_RE.sub("", body)
+
+    # Element stance (A5-3): 'formation column' — no mission payload at all.
+    fm = _FORMATION_RE.search(body)
+    if fm:
+        return ParsedOrder(
+            recipient_callsign=recipient,
+            mission=None,
+            objective_name=None,
+            formation=_FORMATION_SYNONYMS[fm.group(1)],
+        )
 
     # Unit-targeted SUPPORT: the order names a friendly callsign, not an
     # objective ('support tl1', 'appuyer tl1', 'cover for tl1').

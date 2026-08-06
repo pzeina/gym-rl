@@ -134,6 +134,8 @@ class TraceRecorder:
                     "comp": comp,
                     "fired": bool(s.fired_this_step) if s.alive else False,
                     "sees": [e.id for e in env._visible_enemies(s)] if s.alive else [],
+                    # A5-3: the element stance set ON this soldier (leaders only)
+                    "formation": s.formation.name if s.formation is not None else None,
                 }
             )
         messages = env.transcript.messages if initial else env.last_messages
@@ -169,7 +171,9 @@ def _message_record(env: CohortEnv, m) -> dict:
     mission = None
     if m.kind.value in ("order", "opord"):
         try:
-            mission = lang.parse_order(m.text).mission.name
+            parsed_mission = lang.parse_order(m.text).mission
+            # stance orders (A5-3, FORMATION X) carry no mission payload
+            mission = parsed_mission.name if parsed_mission is not None else None
         except lang.OrderParseError:  # pragma: no cover - formats round-trip by invariant
             mission = None
     return {

@@ -34,6 +34,7 @@ from cohort.core.missions import (
     COMPLETABLE,
     NEEDS_CONTROL,
     NEEDS_OBJECTIVE,
+    Formation,
     MissionType,
     allowed_derivations,
     is_pending,
@@ -70,6 +71,7 @@ class ActionSpec:
     order_support_slot: int | None = None   # supported unit's slot (SUPPORT only)
     order_control: str | None = None        # control-measure name (ADVANCE only)
     order_amc: bool = False                 # "AT MY COMMAND" variant (A5-2, ADVANCE only)
+    order_formation: Formation | None = None  # element stance (A5-3, no mission payload)
 
 
 def _build_catalog() -> list[ActionSpec]:
@@ -142,6 +144,16 @@ def _build_catalog() -> list[ActionSpec]:
                     order_mission=mission,
                     order_objective=None,
                 )
+        # A5-3: element stance orders to the subordinate LEADER in this slot
+        # ('TL1, FORMATION COLUMN') — a stance, not a mission: the recipient
+        # keeps its task; its element's geometry is reward-shaped, never forced.
+        for formation in Formation:
+            add(
+                "order",
+                f"ORDER_S{slot}_FORMATION_{formation.name}",
+                order_slot=slot,
+                order_formation=formation,
+            )
     return specs
 
 
@@ -239,6 +251,14 @@ def compute_mask(
         control_names = world.control_names
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
+                continue
+            # A5-3 stance orders: any mission-holding leader may set a
+            # subordinate LEADER's formation; the recipient must actually
+            # lead an element. No doctrine derivation, no cooldown — a
+            # stance is how the element moves, not what it does.
+            if spec.order_formation is not None:
+                if subs[spec.order_slot].living_subordinates(roster):
+                    mask[spec.index] = 1
                 continue
             if allowed is not None and spec.order_mission not in allowed:
                 continue

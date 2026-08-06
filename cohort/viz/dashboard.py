@@ -89,6 +89,7 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
         "leader": env.roster.by_id[s.leader_id].callsign if s.leader_id is not None else None,
         "subs": [env.roster.by_id[i].callsign for i in s.subordinate_ids if env.roster.by_id[i].alive],
         "mission": mission,
+        "formation": s.formation.name if s.formation is not None else None,
         "act": action_name,
         "r": None if reward is None else round(float(reward), 4),
         "rc": {k: round(v, 4) for k, v in components.items() if v} if components else {},

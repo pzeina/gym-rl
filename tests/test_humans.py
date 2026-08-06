@@ -8,7 +8,7 @@ from cohort.core.units import Soldier, validate_human_ranks
 
 #: observation offsets (see env/observations.py layout)
 SELF_HUMAN_FIELD = 12          # self block: 4 + 7 rank one-hot + cover, then is-human
-LEADER_HUMAN_FIELD = 13 + 19 + 4  # leader block: present, dx, dy, mission, is-human
+LEADER_HUMAN_FIELD = 13 + 22 + 4  # leader block: present, dx, dy, mission, is-human
 
 
 def test_root_is_human_in_every_preset():

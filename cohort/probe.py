@@ -269,6 +269,9 @@ class NetPredictor:
             cs: [c for c, ldr in brief.org.items() if ldr == cs] for cs in brief.org
         }
         self.task: dict[str, _Task | None] = {cs: None for cs in brief.org}
+        #: element stances (A5-3): leader callsign -> formation name, from
+        #: 'FORMATION X' orders; a stance dies with its leader
+        self.stance: dict[str, str] = {}
         self.sitrep: dict[str, tuple[int, tuple[int, int]]] = {}  # cs -> (step, grid)
         self.contacts: list[tuple[int, tuple[int, int]]] = []     # (step, grid) sightings
         #: org slots vacated by a promotion this succession, for the recursive
@@ -293,6 +296,11 @@ class NetPredictor:
                 return
             cs = parsed.recipient_callsign
             if not self.alive.get(cs):
+                return
+            if parsed.formation is not None:
+                # stance order (A5-3): no mission payload — the element's
+                # movement geometry changed, its tasks did not
+                self.stance[cs] = parsed.formation.name
                 return
             team = (
                 kind == "opord"
@@ -483,9 +491,29 @@ class NetPredictor:
         """(destination class, posture class) for the next K steps."""
         return self._dest(cs, frozenset({cs})), self._posture(cs, frozenset({cs}))
 
+    def _stanced_leader(self, cs: str) -> str | None:
+        """The agent's living direct leader IF that leader holds a formation
+        stance (A5-3) — the element moves as one, so the member's movement is
+        derivable from the leader's."""
+        ldr = self.leader.get(cs)
+        if ldr is not None and self.alive.get(ldr) and ldr in self.stance:
+            return ldr
+        return None
+
     def _dest(self, cs: str, seen: frozenset) -> str:
         task = self.task.get(cs)
         if task is None:
+            # A5-3: an untasked member of a stanced element is not idle — it
+            # keeps formation on its leader: the leader's destination while
+            # the leader is in transit, LEADER once the leader has arrived.
+            ldr = self._stanced_leader(cs)
+            if ldr is not None and ldr not in seen:
+                ltask = self.task.get(ldr)
+                if ltask is not None and not self._pending(ltask):
+                    anchor = self._anchor_est(ldr, ltask, seen | {cs, ldr})
+                    if anchor is not None and self._travel_remaining(ldr, ltask, anchor) > 0:
+                        return self._dest(ldr, seen | {cs, ldr})
+                return LEADER
             return HOLD  # untasked / completed: standing by where it is
         if self._pending(task):
             return HOLD  # staged (A5-2): holding until the order is effective
@@ -512,6 +540,10 @@ class NetPredictor:
     def _posture(self, cs: str, seen: frozenset) -> str:
         task = self.task.get(cs)
         if task is None:
+            # A5-3: an untasked stanced member moves with its leader
+            ldr = self._stanced_leader(cs)
+            if ldr is not None and ldr not in seen:
+                return self._posture(ldr, seen | {cs, ldr})
             return STATIC  # standing by
         if self._pending(task):
             return STATIC  # staged (A5-2)

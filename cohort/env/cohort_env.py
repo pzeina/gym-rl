@@ -35,6 +35,7 @@ from cohort.core.missions import (
     MissionType,
     compliance,
     derivation_quality,
+    in_formation,
     is_complete,
     is_pending,
     min_hold_authority,
@@ -130,6 +131,10 @@ class CohortEnv(ParallelEnv):
         #: re-task events of the last step (B5): issuer/recipient, priced or
         #: excepted (and why), same-anchor or rotation — metrics bookkeeping
         self._retask_log: list[dict] = []
+        #: formation shaping (A5-3): per-leader watermark of the best anchor
+        #: distance reached under the current (mission, stance) — the bonus
+        #: pays only on NEW closure, so it telescopes and cannot be farmed
+        self._formation_watermark: dict[int, tuple] = {}
 
     @property
     def outcome(self) -> str | None:
@@ -232,6 +237,7 @@ class CohortEnv(ParallelEnv):
         self._tx_count = 0
         self._element_casualty_step = {}
         self._retask_log = []
+        self._formation_watermark = {}
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -712,6 +718,12 @@ class CohortEnv(ParallelEnv):
                     all_tasked = all(sub.mission is not None for sub in subs)
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
 
+        # formation shaping (A5-3): members at their formation station while
+        # their leader closes NEW ground toward its mission anchor earn the
+        # formation bonus — watermark-gated, so it telescopes with the
+        # advance and cannot be farmed by circling or pacing
+        self._formation_shaping(ledger)
+
         # objective-lost pressure for DEFEND / DENY campaigns: while a living
         # enemy stands on the root objective, every living agent bleeds —
         # a defense that ceded its ground is failing, hiding included
@@ -873,6 +885,7 @@ class CohortEnv(ParallelEnv):
 
         if spec.kind == "move":
             soldier.pos = (soldier.pos[0] + spec.move[0], soldier.pos[1] + spec.move[1])
+            soldier.heading = spec.move  # formation geometry frame (A5-3)
             self._check_trap(soldier, ledger, player_deaths)
         elif spec.kind == "fire":
             self._resolve_player_fire(soldier, ledger, enemy_kills)
@@ -1063,7 +1076,51 @@ class CohortEnv(ParallelEnv):
                 m.awaiting_signal = False
                 m.step_assigned = self._step_count
 
+    def _issue_formation(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
+        """Element stance order (A5-3): set the recipient LEADER's formation.
+
+        A stance, not a mission — the recipient keeps its task, nothing is
+        re-tasked or priced; reissuing the standing stance is churn. The
+        stance persists until changed and dies with the leader.
+        """
+        cfg = self.rewards_cfg
+        subs = soldier.living_subordinates(self.roster)
+        if spec.order_slot >= len(subs):
+            return
+        recipient = subs[spec.order_slot]
+        if not recipient.living_subordinates(self.roster):
+            return  # not an element leader (mask guards; defensive)
+        self._charge_transmission(soldier, ledger, "command")
+        if not self._audible_to(recipient, soldier.id):
+            self._say(
+                MessageKind.ORDER,
+                soldier.id,
+                recipient.id,
+                lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+            )
+            return
+        if recipient.formation is spec.order_formation:
+            ledger.add(soldier.callsign, "command", cfg.order_churn)
+            return
+        recipient.formation = spec.order_formation
+        self._say(
+            MessageKind.ORDER,
+            soldier.id,
+            recipient.id,
+            lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+        )
+        if self.spec_cfg.auto_ack:
+            self._say(
+                MessageKind.ACK,
+                recipient.id,
+                soldier.id,
+                lang.format_ack(soldier.callsign, recipient.callsign),
+            )
+
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
+        if spec.order_formation is not None:
+            self._issue_formation(soldier, spec, ledger)
+            return
         cfg = self.rewards_cfg
         subs = soldier.living_subordinates(self.roster)
         if spec.order_slot >= len(subs):
@@ -1564,6 +1621,40 @@ class CohortEnv(ParallelEnv):
             return 0.0
         return dist(soldier.pos, anchor)
 
+    def _formation_shaping(self, ledger: RewardLedger) -> None:
+        """Pay the A5-3 formation bonus for this tick.
+
+        For every living leader with a stance and an effective mission that
+        MOVED this tick: if the leader's anchor distance sets a new minimum
+        under the current (mission, stance) — genuine progress on the march —
+        every element member standing at its formation station (geometry in
+        the leader's heading frame, ``core.missions.in_formation``) earns
+        ``RewardConfig.formation_bonus``. The watermark makes the total
+        payout per (order, stance) bounded by the initial distance: no
+        perpetual farm, so ``max_step_farm`` is unaffected.
+        """
+        bonus = self.rewards_cfg.formation_bonus
+        if bonus == 0.0:
+            return
+        step = self._step_count
+        for leader in self.roster.living:
+            if leader.formation is None or leader.mission is None:
+                continue
+            if is_pending(leader.mission, step):
+                continue
+            key = (leader.mission.step_assigned, leader.formation)
+            d = self._anchor_distance(leader)
+            stored = self._formation_watermark.get(leader.id)
+            if stored is None or stored[0] != key:
+                self._formation_watermark[leader.id] = (key, d)
+                continue
+            if leader.pos == leader.prev_pos or d >= stored[1] - 1e-9:
+                continue  # not marching, or no new closure
+            self._formation_watermark[leader.id] = (key, d)
+            for member in leader.living_subordinates(self.roster):
+                if in_formation(leader.formation, leader.pos, leader.heading, member.pos):
+                    ledger.add(member.callsign, "compliance", bonus)
+
     def _update_crossing(self, soldier: Soldier) -> None:
         """ADVANCE to a phase line: mark the mission crossed when the agent's
         side of the line flips relative to where the order was received."""
@@ -1832,6 +1923,29 @@ class CohortEnv(ParallelEnv):
                 msg = f"{issuing.callsign} does not outrank {recipient.callsign}."
                 raise PermissionError(msg)
             issuer_id, issuer_cs = issuing.id, issuing.callsign
+        # element stance order (A5-3): no mission payload — set and return
+        if parsed.formation is not None:
+            if not recipient.living_subordinates(self.roster):
+                msg = (
+                    f"{recipient.callsign} leads no element: FORMATION is an "
+                    "element-level stance, ordered to a leader."
+                )
+                raise PermissionError(msg)
+            recipient.formation = parsed.formation
+            self._say(
+                MessageKind.ORDER,
+                issuer_id,
+                recipient.id,
+                lang.format_formation_order(issuer_cs, recipient.callsign, parsed.formation),
+            )
+            if self.spec_cfg.auto_ack:
+                self._say(
+                    MessageKind.ACK,
+                    recipient.id,
+                    issuer_id,
+                    lang.format_ack(issuer_cs, recipient.callsign),
+                )
+            return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
         # per-echelon admissibility (manual p. 8): e.g. DENY is a section
         # mission — a fire team or rifleman can never hold it
         if recipient.effective_authority < min_hold_authority(parsed.mission):

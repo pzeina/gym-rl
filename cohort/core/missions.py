@@ -63,6 +63,64 @@ class MissionType(Enum):
         return cls(value.lower())
 
 
+class Formation(Enum):
+    """Element-level movement stances (A5-3) — manual pp. 14-15.
+
+    The PROTERRE group moves in three formations: EN COLONNE (speed, night,
+    following a route), EN LIGNE (crossing a crest/road, assaulting a wood
+    line), and EN COLONNE DOUBLE (teams abreast). COLUMN and LINE carry the
+    manual's first two; WEDGE stands in for the two-directions-at-once role
+    of the colonne double (owner scope). A stance is ordered to a LEADER
+    ('TL1, FORMATION COLUMN'), persists until changed, and shapes — never
+    forces — the element's geometry via a reward term.
+    """
+
+    COLUMN = "column"  # trail behind the leader within 1-cell lateral
+    LINE = "line"      # abreast of the leader within 1-cell depth
+    WEDGE = "wedge"    # V: diagonal offsets behind the leader
+
+
+#: How far behind/beside its leader a formation slot may trail (cells).
+FORMATION_DEPTH = 6.0
+
+
+def in_formation(
+    formation: Formation,
+    leader_pos: tuple[float, float],
+    heading: tuple[int, int],
+    member_pos: tuple[float, float],
+) -> bool:
+    """Is a member at its formation station relative to the leader?
+
+    Geometry in the leader's frame: ``along`` = signed distance along the
+    leader's heading (negative = behind), ``lateral`` = signed distance
+    across it. A leader that has never moved has no heading — no station
+    exists, nothing is in formation.
+
+    * COLUMN: behind (``-DEPTH <= along < 0``), within 1 cell of the axis;
+    * LINE: abreast (``|along| <= 1``), 1..DEPTH cells to either side;
+    * WEDGE: behind on the diagonals — ``|along|`` and ``|lateral|`` within
+      1 cell of each other, at least 1 cell off-axis.
+    """
+    hx, hy = heading
+    if hx == 0 and hy == 0:
+        return False
+    rx = member_pos[0] - leader_pos[0]
+    ry = member_pos[1] - leader_pos[1]
+    along = rx * hx + ry * hy
+    lateral = -rx * hy + ry * hx
+    if formation is Formation.COLUMN:
+        return -FORMATION_DEPTH <= along < 0 and abs(lateral) <= 1
+    if formation is Formation.LINE:
+        return abs(along) <= 1 and 1 <= abs(lateral) <= FORMATION_DEPTH
+    # WEDGE
+    return (
+        -FORMATION_DEPTH <= along < 0
+        and abs(lateral) >= 1
+        and abs(abs(along) - abs(lateral)) <= 1
+    )
+
+
 #: Missions that target a named objective. SUPPORT targets a friendly unit,
 #: RALLY targets the leader, HOLD targets the position where the order was
 #: received.

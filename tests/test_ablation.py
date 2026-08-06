@@ -55,8 +55,8 @@ def test_spaces_frozen_across_arms():
     for name in ("squad", "squad_nomask", "squad_flat"):
         env = make_env(name)
         obs, _ = env.reset(seed=5)
-        assert env.action_space("SL1").n == N_ACTIONS == 214
-        assert env.observation_space("SL1")["observation"].shape == (OBS_DIM,) == (161,)
+        assert env.action_space("SL1").n == N_ACTIONS == 226
+        assert env.observation_space("SL1")["observation"].shape == (OBS_DIM,) == (164,)
         for a in env.agents:
             assert obs[a]["observation"].shape == (OBS_DIM,)
             assert obs[a]["action_mask"].shape == (N_ACTIONS,)
@@ -144,8 +144,14 @@ def test_nomask_orders_apply_and_cooldown_still_masks():
     # the order applied (mission set, WILCO on the net)
     assert env.roster.by_callsign["TL1"].mission.type is MissionType.HOLD
     assert any(m.kind is MessageKind.ACK for m in env.transcript.messages)
-    # within the cooldown TL1 (slot 0) cannot be re-tasked, TL2 (slot 1) can
-    slot0 = [s.index for s in CATALOG if s.kind == "order" and s.order_slot == 0]
+    # within the cooldown TL1 (slot 0) cannot be re-tasked, TL2 (slot 1) can.
+    # Stance orders (A5-3 FORMATION) are cooldown-exempt by design: they
+    # change how the element moves, not what it does.
+    slot0 = [
+        s.index
+        for s in CATALOG
+        if s.kind == "order" and s.order_slot == 0 and s.order_formation is None
+    ]
     slot1 = [s.index for s in CATALOG if s.kind == "order" and s.order_slot == 1]
     assert obs["SL1"]["action_mask"][slot0].sum() == 0
     assert obs["SL1"]["action_mask"][slot1].sum() > 0

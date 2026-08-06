@@ -29,7 +29,7 @@ from cohort.core.world import dist
 if TYPE_CHECKING:
     import numpy as np
 
-    from cohort.core.missions import Mission
+    from cohort.core.missions import Formation, Mission
     from cohort.core.world import Coord, World
 
 
@@ -75,6 +75,11 @@ class Soldier:
     deputy_id: int | None = None          # designated successor among subordinates
     acting_rank: Rank | None = None       # assumed position after succession
     mission: Mission | None = None
+    #: element movement stance (A5-3): set on a LEADER by a FORMATION order;
+    #: persists until changed; dies with the leader (succession does not
+    #: transfer it — the new leader re-forms its element)
+    formation: Formation | None = None
+    heading: tuple[int, int] = (0, 0)     # last movement direction (unit 4-dir)
     # bookkeeping used by observations / rewards
     prev_pos: Coord = (0, 0)
     fired_this_step: bool = False

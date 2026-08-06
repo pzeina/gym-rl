@@ -112,6 +112,16 @@ class RewardConfig:
     order_retask_cost_base: float = -0.5
     order_retask_rank_scale: float = 0.5
 
+    # Formation shaping (A5-3): a member standing at its formation station
+    # (COLUMN/LINE/WEDGE geometry in the leader's heading frame) while its
+    # stanced leader closes NEW ground toward its mission anchor earns this
+    # per step. Watermark-gated on the leader's best-yet anchor distance, so
+    # the total payout per (order, stance) is bounded by the initial distance
+    # — it telescopes with the advance and is NOT a per-step farm, which is
+    # why it does not enter max_step_farm(). Never masked/forced: geometry
+    # is shaped, the manual's formations are doctrine, not physics (pp. 14-15).
+    formation_bonus: float = 0.03
+
     coverage_bonus: float = 0.01      # all living subordinates tasked
     coverage_gap: float = -0.1        # some living subordinate left untasked, per step.
     #                                   Raised -0.02 → -0.1 in the B5 campaign (the one

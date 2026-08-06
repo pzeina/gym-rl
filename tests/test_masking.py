@@ -69,7 +69,9 @@ def test_deny_never_reaches_group_level():
     legal = {
         spec.order_mission
         for spec in CATALOG
-        if spec.kind == "order" and obs["SL1"]["action_mask"][spec.index]
+        if spec.kind == "order"
+        and spec.order_mission is not None  # A5-3 stance orders carry no mission
+        and obs["SL1"]["action_mask"][spec.index]
     }
     assert MissionType.DENY not in legal, "doctrine derives DENY to nobody"
     assert legal <= set(DOCTRINE[MissionType.DENY])
@@ -83,7 +85,9 @@ def test_deny_never_reaches_group_level():
         legal = {
             spec.order_mission
             for spec in CATALOG
-            if spec.kind == "order" and obs["SL1"]["action_mask"][spec.index]
+            if spec.kind == "order"
+            and spec.order_mission is not None
+            and obs["SL1"]["action_mask"][spec.index]
         }
         assert MissionType.DENY not in legal, "TL recipients are below min hold authority"
     finally:
