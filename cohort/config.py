@@ -81,6 +81,16 @@ class ScenarioSpec:
     root_mission: MissionType
     root_objective: str | None                 # objective name for the OPORD
     max_steps: int
+    # --- control measures (A5): named terrain the vocabulary can reference ---
+    waypoints: tuple[tuple[str, tuple[int, int]], ...] = ()
+    #                               named points ("GOLD"/"SILVER"/"COPPER"/"IRON",
+    #                               radius 2.5) an ADVANCE order can anchor on —
+    #                               they name the terrain routes actually pass
+    #                               through (the B4/B5 dogleg finding)
+    phase_lines: tuple[tuple[str, tuple[int, int], tuple[int, int]], ...] = ()
+    #                               named straight segments ("AMBER"/"COBALT"/
+    #                               "CRIMSON"); ADVANCE TO PL X completes on
+    #                               reaching/crossing the line
     forest_density: float = 1.0
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
@@ -157,6 +167,16 @@ class ScenarioSpec:
         if self.ablation not in ("full", "nomask", "flat"):
             msg = f"Unknown ablation arm {self.ablation!r} (expected full | nomask | flat)"
             raise ValueError(msg)
+        from cohort.core.language import PHASE_LINE_NAMES, WAYPOINT_NAMES
+
+        for name, _pos in self.waypoints:
+            if name not in WAYPOINT_NAMES:
+                msg = f"Unknown waypoint name {name!r} (expected one of {WAYPOINT_NAMES})"
+                raise ValueError(msg)
+        for name, _a, _b in self.phase_lines:
+            if name not in PHASE_LINE_NAMES:
+                msg = f"Unknown phase-line name {name!r} (expected one of {PHASE_LINE_NAMES})"
+                raise ValueError(msg)
 
 
 # v1.4 (P5): all maps, objective/spawn coordinates, and step budgets grew x1.5
@@ -170,6 +190,10 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(36, 36),
         objectives=(("ALPHA", (27, 27)), ("BRAVO", (29, 6))),
         spawn=(5, 5),
+        # A5 control measures: GOLD names the mid-route ground the assault
+        # actually moves through; AMBER is the final-approach line to ALPHA.
+        waypoints=(("GOLD", (16, 16)),),
+        phase_lines=(("AMBER", (18, 28), (28, 18)),),
         n_enemies=3,
         opfor_mode="garrison",
         root_mission=MissionType.SEIZE,
@@ -183,6 +207,10 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(36, 36),
         objectives=(("ALPHA", (18, 18)),),
         spawn=(17, 17),
+        # control measures for the defense: GOLD is a southern outpost point,
+        # AMBER the northern-approach trigger line
+        waypoints=(("GOLD", (18, 26)),),
+        phase_lines=(("AMBER", (8, 10), (28, 10)),),
         n_enemies=4,
         opfor_mode="assault",
         root_mission=MissionType.DEFEND,
@@ -201,6 +229,12 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(42, 42),
         objectives=(("ALPHA", (33, 33)), ("BRAVO", (35, 9)), ("CHARLIE", (9, 35))),
         spawn=(5, 5),
+        # A5 control measures naming the B4/B5 dogleg: trained squads walk a
+        # west-then-south axis (closing on CHARLIE mid-transit) before turning
+        # east to ALPHA — GOLD names the dogleg corridor, SILVER the eastern
+        # leg, AMBER the final-approach line to ALPHA.
+        waypoints=(("GOLD", (10, 28)), ("SILVER", (22, 33))),
+        phase_lines=(("AMBER", (26, 26), (26, 42)),),
         n_enemies=5,
         opfor_mode="garrison",
         root_mission=MissionType.SEIZE,
@@ -214,6 +248,9 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(42, 42),
         objectives=(("ALPHA", (33, 33)), ("BRAVO", (35, 9))),
         spawn=(5, 21),
+        # GOLD: mid-route bound; AMBER: the line before BRAVO's observation ring
+        waypoints=(("GOLD", (20, 15)),),
+        phase_lines=(("AMBER", (27, 2), (27, 20)),),
         n_enemies=4,
         opfor_mode="garrison",
         root_mission=MissionType.RECON,
@@ -231,6 +268,8 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(42, 42),
         objectives=(("ALPHA", (33, 33)), ("BRAVO", (35, 9))),
         spawn=(5, 21),
+        waypoints=(("GOLD", (20, 15)),),
+        phase_lines=(("AMBER", (27, 2), (27, 20)),),
         n_enemies=3,
         opfor_mode="garrison",
         root_mission=MissionType.SCREEN,
@@ -250,6 +289,8 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(42, 42),
         objectives=(("ALPHA", (33, 33)), ("BRAVO", (35, 9)), ("CHARLIE", (9, 35))),
         spawn=(5, 5),
+        waypoints=(("GOLD", (10, 28)), ("SILVER", (22, 33))),
+        phase_lines=(("AMBER", (26, 26), (26, 42)),),
         n_enemies=6,
         opfor_mode="brique",
         root_mission=MissionType.SEIZE,
@@ -271,6 +312,8 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(36, 36),
         objectives=(("ALPHA", (18, 18)),),
         spawn=(17, 17),
+        waypoints=(("GOLD", (18, 26)),),
+        phase_lines=(("AMBER", (8, 10), (28, 10)),),
         n_enemies=5,
         opfor_mode="brique",
         root_mission=MissionType.DEFEND,
@@ -290,6 +333,10 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         map_size=(54, 54),
         objectives=(("ALPHA", (44, 44)), ("BRAVO", (45, 11)), ("CHARLIE", (11, 45)), ("DELTA", (27, 27))),
         spawn=(6, 6),
+        # GOLD/SILVER: successive bounds on the diagonal axis; COBALT: the
+        # line of departure before DELTA; AMBER: the final line before ALPHA.
+        waypoints=(("GOLD", (16, 16)), ("SILVER", (36, 36))),
+        phase_lines=(("COBALT", (12, 32), (32, 12)), ("AMBER", (28, 48), (48, 28))),
         n_enemies=8,
         opfor_mode="garrison",
         root_mission=MissionType.SEIZE,

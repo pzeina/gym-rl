@@ -29,9 +29,10 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from cohort.core.language import OBJECTIVE_NAMES
+from cohort.core.language import CONTROL_NAMES, OBJECTIVE_NAMES, control_phrase
 from cohort.core.missions import (
     COMPLETABLE,
+    NEEDS_CONTROL,
     NEEDS_OBJECTIVE,
     MissionType,
     allowed_derivations,
@@ -66,6 +67,7 @@ class ActionSpec:
     order_mission: MissionType | None = None
     order_objective: str | None = None      # objective name, or None
     order_support_slot: int | None = None   # supported unit's slot (SUPPORT only)
+    order_control: str | None = None        # control-measure name (ADVANCE only)
 
 
 def _build_catalog() -> list[ActionSpec]:
@@ -94,6 +96,16 @@ def _build_catalog() -> list[ActionSpec]:
                         order_slot=slot,
                         order_mission=mission,
                         order_support_slot=other,
+                    )
+            elif mission in NEEDS_CONTROL:
+                # ADVANCE targets a control measure: WP GOLD ... PL CRIMSON
+                for cm in CONTROL_NAMES:
+                    add(
+                        "order",
+                        f"ORDER_S{slot}_{mission.name}_{control_phrase(cm).replace(' ', '_')}",
+                        order_slot=slot,
+                        order_mission=mission,
+                        order_control=cm,
                     )
             elif mission in NEEDS_OBJECTIVE:
                 for obj in OBJECTIVE_NAMES:
@@ -191,12 +203,16 @@ def compute_mask(
         )
         subs = soldier.living_subordinates(roster)
         objective_names = {o.name for o in world.objectives}
+        control_names = world.control_names
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
                 continue
             if allowed is not None and spec.order_mission not in allowed:
                 continue
             if spec.order_objective is not None and spec.order_objective not in objective_names:
+                continue
+            # ADVANCE needs its control measure on THIS map
+            if spec.order_control is not None and spec.order_control not in control_names:
                 continue
             # unit-targeted SUPPORT needs a living unit in the supported slot
             if spec.order_mission is MissionType.SUPPORT and (

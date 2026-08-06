@@ -8,7 +8,7 @@ from cohort.core.language import (
     mission_phrase,
     parse_order,
 )
-from cohort.core.missions import NEEDS_OBJECTIVE, MissionType
+from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, MissionType
 
 
 def test_round_trip_all_missions():
@@ -16,12 +16,39 @@ def test_round_trip_all_missions():
     for mission in MissionType:
         if mission is MissionType.SUPPORT:
             continue  # unit-targeted: covered by its own round-trip test
+        if mission in NEEDS_CONTROL:
+            continue  # control-targeted ADVANCE: covered by its own test
         obj = "BRAVO" if mission in NEEDS_OBJECTIVE else None
         text = format_order("SL1", "TL1", mission, obj)
         parsed = parse_order(text)
         assert parsed.recipient_callsign == "TL1"
         assert parsed.mission is mission, f"{mission}: {text!r} parsed as {parsed.mission}"
         assert parsed.objective_name == obj
+
+
+def test_round_trip_advance_control_measures():
+    """ADVANCE round-trips for every control-measure name, WP and PL alike."""
+    from cohort.core.language import CONTROL_NAMES, control_phrase
+
+    for name in CONTROL_NAMES:
+        text = format_order("SL1", "TL1", MissionType.ADVANCE, name)
+        assert f"ADVANCE TO {control_phrase(name)}" in text
+        parsed = parse_order(text)
+        assert parsed.recipient_callsign == "TL1"
+        assert parsed.mission is MissionType.ADVANCE
+        assert parsed.control_name == name
+        assert parsed.objective_name is None
+
+
+def test_advance_parse_variants():
+    parsed = parse_order("TL1, advance to wp gold")
+    assert parsed.mission is MissionType.ADVANCE
+    assert parsed.control_name == "GOLD"
+    parsed = parse_order("tl2: advance pl amber. out.")
+    assert parsed.mission is MissionType.ADVANCE
+    assert parsed.control_name == "AMBER"
+    with pytest.raises(OrderParseError, match="needs a control measure"):
+        parse_order("TL1, advance")
 
 
 def test_round_trip_support_unit_target():

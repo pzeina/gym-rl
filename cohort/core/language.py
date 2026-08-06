@@ -29,10 +29,27 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from cohort.core.missions import NEEDS_OBJECTIVE, MissionType
+from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, MissionType
 
 #: Objective slot names, addressed as "OBJ ALPHA" etc. (NATO phonetic).
 OBJECTIVE_NAMES: tuple[str, ...] = ("ALPHA", "BRAVO", "CHARLIE", "DELTA")
+
+#: Control-measure names (A5). Waypoints take metal names ("WP GOLD"); phase
+#: lines take mineral/color names ("PL AMBER"). Disjoint from objective names
+#: and from each other, so a bare name resolves its kind unambiguously.
+WAYPOINT_NAMES: tuple[str, ...] = ("GOLD", "SILVER", "COPPER", "IRON")
+PHASE_LINE_NAMES: tuple[str, ...] = ("AMBER", "COBALT", "CRIMSON")
+CONTROL_NAMES: tuple[str, ...] = WAYPOINT_NAMES + PHASE_LINE_NAMES
+
+
+def control_phrase(name: str) -> str:
+    """Spoken form of a control measure: 'WP GOLD' / 'PL AMBER'."""
+    if name in WAYPOINT_NAMES:
+        return f"WP {name}"
+    if name in PHASE_LINE_NAMES:
+        return f"PL {name}"
+    msg = f"Unknown control measure {name!r} (known: {', '.join(CONTROL_NAMES)})"
+    raise ValueError(msg)
 
 _SYNONYMS: dict[str, MissionType] = {
     "recon": MissionType.RECON,
@@ -74,6 +91,8 @@ _SYNONYMS: dict[str, MissionType] = {
     "hold": MissionType.HOLD,
     "halt": MissionType.HOLD,
     "stop": MissionType.HOLD,
+    "advance": MissionType.ADVANCE,
+    "proceed": MissionType.ADVANCE,
 }
 
 #: Keywords that select the COVER flank guard (checked before the generic
@@ -83,6 +102,13 @@ _COVER_WORDS = frozenset({"flank", "couvrir"})
 
 #: Unit-targeted SUPPORT: "support TL1", "appuyer TL1", "cover [for] TL1".
 _SUPPORT_RE = re.compile(r"\b(?:support|appuyer|cover(?:\s+for)?)\s+([a-z]{2,3}\d+)\b")
+
+#: Control-measure reference: "wp gold", "pl amber", or a bare name.
+_CONTROL_RE = re.compile(
+    r"(?:\b(?:wp|waypoint|pl|phase\s*line)\s+)?\b("
+    + "|".join(n.lower() for n in CONTROL_NAMES)
+    + r")\b"
+)
 
 
 def grid_ref(pos: tuple[int, int]) -> str:
@@ -98,6 +124,7 @@ class ParsedOrder:
     mission: MissionType
     objective_name: str | None
     target_callsign: str | None = None  # supported unit (SUPPORT only)
+    control_name: str | None = None     # control measure (ADVANCE only)
 
 
 class OrderParseError(ValueError):
@@ -107,14 +134,18 @@ class OrderParseError(ValueError):
 def mission_phrase(mission: MissionType, target: str | None) -> str:
     """Canonical spoken form of a tasking.
 
-    ``target`` is the objective name for objective-targeted missions, or the
-    supported unit's callsign for SUPPORT: 'SEIZE OBJ ALPHA', 'SUPPORT TL1',
-    'COVER FLANK OBJ BRAVO', 'RALLY ON ME', 'HOLD POSITION'.
+    ``target`` is the objective name for objective-targeted missions, the
+    supported unit's callsign for SUPPORT, or the control-measure name for
+    ADVANCE: 'SEIZE OBJ ALPHA', 'SUPPORT TL1', 'COVER FLANK OBJ BRAVO',
+    'ADVANCE TO WP GOLD', 'ADVANCE TO PL AMBER', 'RALLY ON ME',
+    'HOLD POSITION'.
     """
     if mission is MissionType.SUPPORT:
         return f"SUPPORT {target}"
     if mission is MissionType.COVER:
         return f"COVER FLANK OBJ {target}"
+    if mission in NEEDS_CONTROL:
+        return f"ADVANCE TO {control_phrase(target)}"
     if mission in NEEDS_OBJECTIVE:
         return f"{mission.name} OBJ {target}"
     if mission is MissionType.RALLY:
@@ -255,10 +286,29 @@ def parse_order(text: str) -> ParsedOrder:
     if mission is MissionType.HOLD and objective is not None:
         mission = MissionType.DEFEND
 
+    # ADVANCE targets a control measure: 'advance to wp gold' / 'advance pl amber'
+    control = None
+    cm_match = _CONTROL_RE.search(body)
+    if cm_match:
+        control = cm_match.group(1).upper()
+    if mission in NEEDS_CONTROL and control is None:
+        msg = (
+            f"Mission {mission.name} needs a control measure, e.g. "
+            f"'{recipient}, ADVANCE TO WP GOLD' or '{recipient}, ADVANCE TO PL AMBER'."
+        )
+        raise OrderParseError(msg)
+    if mission not in NEEDS_CONTROL:
+        control = None
+
     if mission in NEEDS_OBJECTIVE and objective is None:
         msg = f"Mission {mission.name} needs an objective, e.g. '{recipient}, {mission.name} OBJ ALPHA'."
         raise OrderParseError(msg)
     if mission not in NEEDS_OBJECTIVE:
         objective = None
 
-    return ParsedOrder(recipient_callsign=recipient, mission=mission, objective_name=objective)
+    return ParsedOrder(
+        recipient_callsign=recipient,
+        mission=mission,
+        objective_name=objective,
+        control_name=control,
+    )

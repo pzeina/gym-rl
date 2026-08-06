@@ -63,10 +63,15 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
                 target = supported.callsign
                 if supported.alive:
                     anchor = supported.pos
+        if s.mission.type is MissionType.ADVANCE and s.mission.extra.get("control"):
+            cm = env.world.control_by_name(s.mission.extra["control"])
+            if cm is not None and hasattr(cm, "nearest_point"):
+                anchor = cm.nearest_point(s.pos)
         mission = {
             "type": s.mission.type.name,
             "obj": obj.name if obj else None,
             "target": target,
+            "control": s.mission.extra.get("control"),
             "anchor": [float(anchor[0]), float(anchor[1])],
             "since": s.mission.step_assigned,
         }
@@ -131,6 +136,14 @@ def record_episode(
         "objectives": [
             {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius} for o in env.world.objectives
         ],
+        "waypoints": [
+            {"name": w.name, "x": w.pos[0], "y": w.pos[1], "r": w.radius}
+            for w in env.world.waypoints
+        ],
+        "phase_lines": [
+            {"name": p.name, "x1": p.a[0], "y1": p.a[1], "x2": p.b[0], "y2": p.b[1]}
+            for p in env.world.phase_lines
+        ],
         "max_steps": env.spec_cfg.max_steps,
         "opord": env.transcript.messages[0].text if env.transcript.messages else "",
         "roster": [
@@ -187,6 +200,14 @@ class LiveSession:
             "objectives": [
                 {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius}
                 for o in self.env.world.objectives
+            ],
+            "waypoints": [
+                {"name": w.name, "x": w.pos[0], "y": w.pos[1], "r": w.radius}
+                for w in self.env.world.waypoints
+            ],
+            "phase_lines": [
+                {"name": p.name, "x1": p.a[0], "y1": p.a[1], "x2": p.b[0], "y2": p.b[1]}
+                for p in self.env.world.phase_lines
             ],
             "max_steps": self.env.spec_cfg.max_steps,
             "opord": self.env.transcript.messages[0].text if self.env.transcript.messages else "",

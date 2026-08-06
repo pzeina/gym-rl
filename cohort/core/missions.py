@@ -16,6 +16,7 @@ per-mission doctrine with manual page references):
     CLEAR                  eliminate all hostiles at an objective
     RALLY                  assemble on the direct leader
     HOLD                   hold current position
+    ADVANCE                move to / cross a control measure (WP / PL), then hold
 
 A *mission* is the payload of an order: what the recipient must do. Doctrine
 constrains how a leader may decompose its own mission into subordinate
@@ -54,6 +55,7 @@ class MissionType(Enum):
     CLEAR = "clear"      # eliminate all hostiles at an objective
     RALLY = "rally"      # assemble on the direct leader
     HOLD = "hold"        # hold current position
+    ADVANCE = "advance"  # move to / cross a control measure (waypoint / phase line)
 
     @classmethod
     def from_str(cls, value: str) -> MissionType:
@@ -80,6 +82,10 @@ NEEDS_OBJECTIVE: frozenset[MissionType] = frozenset(
 #: Missions whose order names a friendly element instead of an objective.
 UNIT_TARGETED: frozenset[MissionType] = frozenset({MissionType.SUPPORT})
 
+#: Missions that target a named control measure (waypoint or phase line) —
+#: the A5 vocabulary that puts route geometry on the net.
+NEEDS_CONTROL: frozenset[MissionType] = frozenset({MissionType.ADVANCE})
+
 #: Missions with a definite end state that can be reported COMPLETE.
 #: OBSERVE / SUPPORT / COVER / DEFEND / DENY / HOLD are continuous postures —
 #: they end when a new order arrives (SUPPORT also ends when the supported
@@ -91,6 +97,7 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
         MissionType.SEIZE,
         MissionType.CLEAR,
         MissionType.RALLY,
+        MissionType.ADVANCE,  # completes on reaching/crossing the control measure
     }
 )
 
@@ -103,6 +110,7 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
 DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.RECON: (
         MissionType.RECON, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.SCREEN,
+        MissionType.ADVANCE,
     ),
     MissionType.SCREEN: (MissionType.SCREEN, MissionType.OBSERVE, MissionType.HOLD),
     MissionType.OBSERVE: (MissionType.OBSERVE, MissionType.COVER, MissionType.HOLD),
@@ -110,16 +118,24 @@ DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.COVER: (MissionType.COVER, MissionType.OBSERVE, MissionType.HOLD),
     MissionType.DEFEND: (
         MissionType.DEFEND, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.HOLD,
+        MissionType.ADVANCE,
     ),
     MissionType.DENY: (
         MissionType.DEFEND, MissionType.COVER, MissionType.SUPPORT, MissionType.OBSERVE,
+        MissionType.ADVANCE,
     ),
     MissionType.SEIZE: (
         MissionType.SEIZE, MissionType.CLEAR, MissionType.SUPPORT, MissionType.OBSERVE,
+        MissionType.ADVANCE,
     ),
     MissionType.CLEAR: (MissionType.CLEAR, MissionType.SUPPORT),
     MissionType.RALLY: (MissionType.RALLY, MissionType.HOLD),
     MissionType.HOLD: (MissionType.HOLD, MissionType.OBSERVE),
+    # ADVANCE is a maneuver leg (actes élémentaires, manual pp. 14-15): it
+    # decomposes into further legs, supported bounds, and watch postures.
+    MissionType.ADVANCE: (
+        MissionType.ADVANCE, MissionType.SUPPORT, MissionType.OBSERVE,
+    ),
 }
 
 #: Per-echelon admissibility: minimum *effective* authority required to HOLD
@@ -147,6 +163,7 @@ IN_POSITION_RADIUS: dict[MissionType, float] = {
     MissionType.CLEAR: 3.5,
     MissionType.RALLY: 2.5,
     MissionType.HOLD: 1.5,
+    MissionType.ADVANCE: 2.5,  # of the waypoint / the phase line's nearest point
 }
 
 #: Missions whose "in position" additionally requires line of sight to the
@@ -274,7 +291,13 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         if ctx.in_position:
             return 0.5 if ctx.stationary else 0.1
         return _progress(ctx)
-    if mission in (MissionType.SEIZE, MissionType.DEFEND, MissionType.DENY, MissionType.RALLY):
+    if mission in (
+        MissionType.SEIZE,
+        MissionType.DEFEND,
+        MissionType.DENY,
+        MissionType.RALLY,
+        MissionType.ADVANCE,  # reach the control measure, then hold on it
+    ):
         return 0.5 if ctx.in_position else _progress(ctx)
     if mission is MissionType.CLEAR:
         if ctx.fired:
@@ -297,5 +320,9 @@ def is_complete(mission: Mission, ctx: ComplianceContext) -> bool:
         return ctx.in_position and ctx.enemies_at_objective == 0
     if mission.type is MissionType.CLEAR:
         return ctx.enemies_at_objective == 0
+    if mission.type is MissionType.ADVANCE:
+        # reached the control measure, or crossed the phase line (the env
+        # flips extra["crossed"] when the agent's side of the line changes)
+        return ctx.in_position or bool(mission.extra.get("crossed"))
     # RALLY
     return ctx.dist_to_leader <= IN_POSITION_RADIUS[MissionType.RALLY]

@@ -33,10 +33,15 @@ MISSION_ORDER: tuple[MissionType, ...] = tuple(MissionType)
 N_SUB_SLOTS = 4
 N_ENEMY_SLOTS = 4
 N_OBJECTIVE_SLOTS = 4
+#: control-measure slots (A5): one per catalog name — 4 waypoints (GOLD /
+#: SILVER / COPPER / IRON) + 3 phase lines (AMBER / COBALT / CRIMSON); a
+#: scenario using fewer leaves the remaining slots zeroed (like objectives)
+N_WAYPOINT_SLOTS = 4
+N_PHASE_LINE_SLOTS = 3
 PATCH_RADIUS = 2
 
-#: mission block: one-hot over the 11 MICAT tasks + has-mission flag + 4
-#: anchor fields (dx, dy, has-objective, age)
+#: mission block: one-hot over the 12 tasks (11 MICAT + ADVANCE) + has-mission
+#: flag + 4 anchor fields (dx, dy, has-objective, age)
 _MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4
 
 #: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
@@ -45,12 +50,17 @@ _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 #: leader block: present, dx, dy, mission index, leader-is-human
 _LEADER_BLOCK = 5
 
-#: 13 self + 16 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 5 comms + patch
+#: 13 self + 17 mission + 5 leader + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ
+#: + 3*N_WP + 3*N_PL (control measures: present, dx, dy — for a phase line
+#: dx/dy point at its nearest segment point) + 5 comms + patch (50)
+#: = 13 + 17 + 5 + 20 + 16 + 12 + 12 + 9 + 5 + 50 = 159
 OBS_DIM = (
     _SELF_BLOCK + _MISSION_BLOCK + _LEADER_BLOCK
     + 5 * N_SUB_SLOTS
     + 4 * N_ENEMY_SLOTS
     + 3 * N_OBJECTIVE_SLOTS
+    + 3 * N_WAYPOINT_SLOTS
+    + 3 * N_PHASE_LINE_SLOTS
     + 5
     + (2 * PATCH_RADIUS + 1) ** 2 * 2
 )
@@ -99,7 +109,7 @@ def build_observation(
     out[i] = 1.0 if soldier.human else 0.0
     i += 1
 
-    # --- mission (16) ---
+    # --- mission (17) ---
     m = soldier.mission
     if m is not None:
         out[i + MISSION_ORDER.index(m.type)] = 1.0
@@ -116,6 +126,10 @@ def build_observation(
             supported = roster.by_id.get(m.extra.get("supported_id"))
             if supported is not None and supported.alive:
                 anchor = supported.pos
+        elif m.type is MissionType.ADVANCE and m.extra.get("control") is not None:
+            cm = world.control_by_name(m.extra["control"])
+            if cm is not None:
+                anchor = cm.nearest_point(soldier.pos) if hasattr(cm, "nearest_point") else cm.pos
         out[i] = (anchor[0] - x) / w
         out[i + 1] = (anchor[1] - y) / h
         out[i + 2] = 1.0 if m.objective_id is not None else 0.0
@@ -162,6 +176,23 @@ def build_observation(
             out[i] = 1.0
             out[i + 1] = (obj.pos[0] - x) / w
             out[i + 2] = (obj.pos[1] - y) / h
+        i += 3
+
+    # --- control measures (A5): waypoints then phase lines (3 each) ---
+    for k in range(N_WAYPOINT_SLOTS):
+        if k < len(world.waypoints):
+            wp = world.waypoints[k]
+            out[i] = 1.0
+            out[i + 1] = (wp.pos[0] - x) / w
+            out[i + 2] = (wp.pos[1] - y) / h
+        i += 3
+    for k in range(N_PHASE_LINE_SLOTS):
+        if k < len(world.phase_lines):
+            pl = world.phase_lines[k]
+            near = pl.nearest_point(soldier.pos)
+            out[i] = 1.0
+            out[i + 1] = (near[0] - x) / w
+            out[i + 2] = (near[1] - y) / h
         i += 3
 
     # --- comms summary (5) ---

@@ -33,13 +33,82 @@ def dist(a: tuple[float, float], b: tuple[float, float]) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
 
 
-class World:
-    """Static terrain plus objectives; all queries the sim needs."""
+@dataclass(frozen=True)
+class Waypoint:
+    """A named control-measure point, addressed on the radio as 'WP <name>'.
 
-    def __init__(self, grid: np.ndarray, objectives: list[Objective]) -> None:
+    Control measures (A5) name the terrain an operation maneuvers through —
+    they are not objectives: nothing is seized or held AT a waypoint, but an
+    ADVANCE order can anchor on one, which puts route geometry on the net.
+    """
+
+    id: int
+    name: str
+    pos: Coord
+    radius: float = 2.5
+
+
+@dataclass(frozen=True)
+class PhaseLine:
+    """A named control-measure line ('PL <name>'): a straight segment.
+
+    An ADVANCE to a phase line completes on reaching/crossing it; the anchor
+    of such a mission is the nearest point of the segment (dynamic — it
+    follows the agent's own position along the line).
+    """
+
+    id: int
+    name: str
+    a: Coord
+    b: Coord
+
+    def nearest_point(self, pos: tuple[float, float]) -> tuple[float, float]:
+        """Closest point of the segment to ``pos`` (projection, clamped)."""
+        ax, ay = self.a
+        bx, by = self.b
+        dx, dy = bx - ax, by - ay
+        length_sq = dx * dx + dy * dy
+        if length_sq <= 1e-12:
+            return (float(ax), float(ay))
+        t = ((pos[0] - ax) * dx + (pos[1] - ay) * dy) / length_sq
+        t = max(0.0, min(1.0, t))
+        return (ax + t * dx, ay + t * dy)
+
+    def distance_to(self, pos: tuple[float, float]) -> float:
+        """Euclidean distance from ``pos`` to the segment."""
+        return dist(pos, self.nearest_point(pos))
+
+    def side(self, pos: tuple[float, float]) -> int:
+        """Which side of the (infinite) line ``pos`` lies on: -1 / 0 / +1.
+
+        Used to detect a crossing: the sign flips when an agent passes the
+        line. Degenerate (zero-length) lines report 0 for every point.
+        """
+        ax, ay = self.a
+        bx, by = self.b
+        cross = (bx - ax) * (pos[1] - ay) - (by - ay) * (pos[0] - ax)
+        if cross > 1e-9:
+            return 1
+        if cross < -1e-9:
+            return -1
+        return 0
+
+
+class World:
+    """Static terrain plus objectives and control measures; all sim queries."""
+
+    def __init__(
+        self,
+        grid: np.ndarray,
+        objectives: list[Objective],
+        waypoints: list[Waypoint] | None = None,
+        phase_lines: list[PhaseLine] | None = None,
+    ) -> None:
         self.grid = grid
         self.height, self.width = grid.shape
         self.objectives = objectives
+        self.waypoints = waypoints or []
+        self.phase_lines = phase_lines or []
 
     # ---------------- terrain queries ---------------- #
 
@@ -103,6 +172,21 @@ class World:
                 return obj
         return None
 
+    def control_by_name(self, name: str) -> Waypoint | PhaseLine | None:
+        """Look up a control measure (waypoint or phase line) by radio name."""
+        for wp in self.waypoints:
+            if wp.name.upper() == name.upper():
+                return wp
+        for pl in self.phase_lines:
+            if pl.name.upper() == name.upper():
+                return pl
+        return None
+
+    @property
+    def control_names(self) -> set[str]:
+        """Radio names of every control measure on this map."""
+        return {w.name for w in self.waypoints} | {p.name for p in self.phase_lines}
+
     # ---------------- generation ---------------- #
 
     @staticmethod
@@ -143,15 +227,30 @@ class World:
         forest_density: float = 1.0,
         wall_density: float = 1.0,
         must_connect: list[Coord] | None = None,
+        waypoint_specs: list[tuple[str, Coord]] | None = None,
+        phase_line_specs: list[tuple[str, Coord, Coord]] | None = None,
     ) -> World:
-        """Procedurally generate a map guaranteed to connect key points."""
-        key_points = [pos for _, pos in objective_specs] + list(must_connect or [])
+        """Procedurally generate a map guaranteed to connect key points.
+
+        Waypoints are kept standable and connected like objectives (an
+        ADVANCE order must be executable); phase lines are pure geometry and
+        constrain nothing.
+        """
+        waypoint_specs = waypoint_specs or []
+        phase_line_specs = phase_line_specs or []
+        key_points = (
+            [pos for _, pos in objective_specs]
+            + [pos for _, pos in waypoint_specs]
+            + list(must_connect or [])
+        )
         for _attempt in range(20):
             grid = np.zeros((height, width), dtype=np.int8)
             area = width * height
             cls._blob(grid, rng, FOREST, n_seeds=max(2, int(area * 0.006 * forest_density)), growth=24)
             cls._blob(grid, rng, WALL, n_seeds=max(1, int(area * 0.003 * wall_density)), growth=10)
             for _, pos in objective_specs:  # keep objectives standable
+                grid[pos[1], pos[0]] = OPEN
+            for _, pos in waypoint_specs:  # waypoints must be reachable too
                 grid[pos[1], pos[0]] = OPEN
             if cls._connected(grid, key_points):
                 break
@@ -160,4 +259,11 @@ class World:
         objectives = [
             Objective(id=i, name=name, pos=pos) for i, (name, pos) in enumerate(objective_specs)
         ]
-        return cls(grid, objectives)
+        waypoints = [
+            Waypoint(id=i, name=name, pos=pos) for i, (name, pos) in enumerate(waypoint_specs)
+        ]
+        phase_lines = [
+            PhaseLine(id=i, name=name, a=a, b=b)
+            for i, (name, a, b) in enumerate(phase_line_specs)
+        ]
+        return cls(grid, objectives, waypoints, phase_lines)

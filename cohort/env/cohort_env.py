@@ -193,6 +193,8 @@ class CohortEnv(ParallelEnv):
             forest_density=cfg.forest_density,
             wall_density=cfg.wall_density,
             must_connect=[cfg.spawn],
+            waypoint_specs=[(name, pos) for name, pos in cfg.waypoints],
+            phase_line_specs=[(name, a, b) for name, a, b in cfg.phase_lines],
         )
         if cfg.objective_cover and cfg.root_objective:
             self._prepare_defensive_ground(cfg.root_objective)
@@ -649,6 +651,7 @@ class CohortEnv(ParallelEnv):
                 continue
             ctx = self._compliance_ctx(soldier, prev_dist.get(callsign), views[callsign])
             if soldier.mission is not None:
+                self._update_crossing(soldier)
                 if (
                     soldier.mission.type in (MissionType.RECON, MissionType.SCREEN)
                     and not soldier.mission.team_observation
@@ -985,7 +988,9 @@ class CohortEnv(ParallelEnv):
             else is_complete(mission, ctx)
         )
         obj_name = (
-            self.world.objectives[mission.objective_id].name if mission.objective_id is not None else None
+            self.world.objectives[mission.objective_id].name
+            if mission.objective_id is not None
+            else mission.extra.get("control")  # ADVANCE: the control-measure name
         )
         self._say(
             MessageKind.DONE,
@@ -1032,6 +1037,7 @@ class CohortEnv(ParallelEnv):
             self.world.objective_by_name(spec.order_objective) if spec.order_objective else None
         )
         obj_id = objective.id if objective else None
+        control_name = spec.order_control  # ADVANCE: control-measure name
         # unit-targeted SUPPORT: the supported unit is the sibling in slot j
         supported_id: int | None = None
         if spec.order_mission is MissionType.SUPPORT:
@@ -1052,6 +1058,7 @@ class CohortEnv(ParallelEnv):
                 mission_type=spec.order_mission,
                 objective_id=obj_id,
                 supported_id=supported_id,
+                control_name=control_name,
             )
             return
 
@@ -1062,6 +1069,7 @@ class CohortEnv(ParallelEnv):
             and recipient.mission.type is spec.order_mission
             and recipient.mission.objective_id == obj_id
             and recipient.mission.extra.get("supported_id") == supported_id
+            and recipient.mission.extra.get("control") == control_name
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             return
@@ -1088,7 +1096,7 @@ class CohortEnv(ParallelEnv):
         if standing is not None:
             excepted, reason = self._retask_exception(soldier, recipient, intent_changed)
             same_anchor = self._standing_anchor_key(standing) == self._order_anchor_key(
-                spec.order_mission, obj_id, supported_id, recipient
+                spec.order_mission, obj_id, supported_id, recipient, control_name
             )
             cost = 0.0
             if not excepted and cfg.order_retask_cost_base != 0.0:
@@ -1134,6 +1142,7 @@ class CohortEnv(ParallelEnv):
             mission_type=spec.order_mission,
             objective_id=obj_id,
             supported_id=supported_id,
+            control_name=control_name,
         )
         soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
 
@@ -1175,13 +1184,16 @@ class CohortEnv(ParallelEnv):
     def _standing_anchor_key(mission: Mission) -> tuple:
         """Identity of a standing mission's anchor, for rotation detection.
 
-        Two orders share an anchor when they name the same objective, support
-        the same soldier, rally (on the leader), or hold the same ground —
-        a mission-TYPE change on the same anchor is half-price re-tasking;
-        an anchor change is a full-price rotation.
+        Two orders share an anchor when they name the same objective, the
+        same control measure, support the same soldier, rally (on the
+        leader), or hold the same ground — a mission-TYPE change on the same
+        anchor is half-price re-tasking; an anchor change is a full-price
+        rotation.
         """
         if mission.type is MissionType.SUPPORT:
             return ("support", mission.extra.get("supported_id"))
+        if mission.extra.get("control") is not None:
+            return ("cm", mission.extra["control"])
         if mission.objective_id is not None:
             return ("obj", mission.objective_id)
         if mission.type is MissionType.RALLY:
@@ -1194,10 +1206,13 @@ class CohortEnv(ParallelEnv):
         objective_id: int | None,
         supported_id: int | None,
         recipient: Soldier,
+        control_name: str | None = None,
     ) -> tuple:
         """Anchor identity a new order WOULD have (mirrors ``_assign_mission``)."""
         if mission_type is MissionType.SUPPORT:
             return ("support", supported_id)
+        if control_name is not None:
+            return ("cm", control_name)
         if objective_id is not None:
             return ("obj", objective_id)
         if mission_type is MissionType.RALLY:
@@ -1212,6 +1227,7 @@ class CohortEnv(ParallelEnv):
         mission_type: MissionType,
         objective_id: int | None,
         supported_id: int | None = None,
+        control_name: str | None = None,
     ) -> bool:
         """Transmit an order; if the recipient hears it, apply it (+ WILCO).
 
@@ -1227,6 +1243,20 @@ class CohortEnv(ParallelEnv):
             anchor = supported.pos  # dynamic thereafter: tracks the supported soldier
             target = supported.callsign
             extra["supported_id"] = supported_id
+        elif control_name is not None:
+            # ADVANCE to a control measure: waypoint → its point; phase line →
+            # the nearest point of the segment (dynamic — recomputed as the
+            # agent moves); the side at receipt detects a later crossing
+            cm = self.world.control_by_name(control_name)
+            if cm is None:
+                return False  # masked/validated upstream; defensive
+            if hasattr(cm, "nearest_point"):
+                anchor = cm.nearest_point(recipient.pos)
+                extra["side"] = cm.side(recipient.pos)
+            else:
+                anchor = cm.pos
+            target = control_name
+            extra["control"] = control_name
         elif objective_id is not None:
             anchor = self.world.objectives[objective_id].pos
             target = self.world.objectives[objective_id].name
@@ -1448,7 +1478,8 @@ class CohortEnv(ParallelEnv):
 
     def _mission_anchor(self, soldier: Soldier) -> tuple[float, float] | None:
         """Current anchor point of the soldier's mission (dynamic for
-        RALLY — the leader — and SUPPORT — the supported soldier)."""
+        RALLY — the leader —, SUPPORT — the supported soldier — and
+        ADVANCE to a phase line — the segment's nearest point)."""
         mission = soldier.mission
         if mission is None:
             return None
@@ -1461,6 +1492,10 @@ class CohortEnv(ParallelEnv):
             supported = self.roster.by_id.get(mission.extra.get("supported_id"))
             if supported is not None and supported.alive:
                 anchor = supported.pos
+        elif mission.type is MissionType.ADVANCE and mission.extra.get("control") is not None:
+            cm = self.world.control_by_name(mission.extra["control"])
+            if cm is not None and hasattr(cm, "nearest_point"):
+                anchor = cm.nearest_point(soldier.pos)
         return anchor
 
     def _anchor_distance(self, soldier: Soldier) -> float:
@@ -1468,6 +1503,27 @@ class CohortEnv(ParallelEnv):
         if anchor is None:
             return 0.0
         return dist(soldier.pos, anchor)
+
+    def _update_crossing(self, soldier: Soldier) -> None:
+        """ADVANCE to a phase line: mark the mission crossed when the agent's
+        side of the line flips relative to where the order was received."""
+        mission = soldier.mission
+        if (
+            mission is None
+            or mission.type is not MissionType.ADVANCE
+            or mission.extra.get("control") is None
+            or mission.extra.get("crossed")
+        ):
+            return
+        cm = self.world.control_by_name(mission.extra["control"])
+        if cm is None or not hasattr(cm, "side"):
+            return  # waypoint: reach, not cross
+        side_now = cm.side(soldier.pos)
+        side_then = mission.extra.get("side", 0)
+        if side_then == 0 and side_now != 0:
+            mission.extra["side"] = side_now  # order received ON the line
+        elif side_now != 0 and side_now != side_then:
+            mission.extra["crossed"] = True
 
     def _team_observer(self, objective: Any) -> Soldier | None:
         """The first living soldier observing ``objective``: on the RECON
@@ -1732,6 +1788,9 @@ class CohortEnv(ParallelEnv):
         if parsed.objective_name and objective is None:
             msg = f"No objective named {parsed.objective_name!r} on this map."
             raise lang.OrderParseError(msg)
+        if parsed.control_name and self.world.control_by_name(parsed.control_name) is None:
+            msg = f"No control measure named {parsed.control_name!r} on this map."
+            raise lang.OrderParseError(msg)
         self._assign_mission(
             issuer_id=issuer_id,
             issuer_cs=issuer_cs,
@@ -1739,6 +1798,7 @@ class CohortEnv(ParallelEnv):
             mission_type=parsed.mission,
             objective_id=objective.id if objective else None,
             supported_id=supported_id,
+            control_name=parsed.control_name,
         )
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 

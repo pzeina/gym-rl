@@ -72,15 +72,15 @@ def _post_band(env, pos):
 
 
 def test_spaces_frozen_under_brique():
-    """BRIQUE is environment-side only: Discrete(157) / Box(137) unchanged."""
-    assert N_ACTIONS == 157
-    assert OBS_DIM == 137
+    """Spaces at the A5 layout: Discrete(185) / Box(159) (breaking cycle)."""
+    assert N_ACTIONS == 185
+    assert OBS_DIM == 159
     env = make_env(_spec(n_traps=3))
     obs, _ = env.reset(seed=0)
-    assert env.action_space(env.possible_agents[0]).n == 157
+    assert env.action_space(env.possible_agents[0]).n == 185
     for a in env.agents:
-        assert obs[a]["observation"].shape == (137,)
-        assert obs[a]["action_mask"].shape == (157,)
+        assert obs[a]["observation"].shape == (159,)
+        assert obs[a]["action_mask"].shape == (185,)
 
 
 def test_brique_scenario_presets():

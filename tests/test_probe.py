@@ -74,7 +74,11 @@ def test_briefing_matches_env_org():
         assert brief.org[s.callsign] == (ldr.callsign if ldr is not None else None)
     assert brief.objectives == dict(env.spec_cfg.objectives)
     assert brief.spawn == env.spec_cfg.spawn
-    assert brief.dest_classes == ["OBJ ALPHA", "OBJ BRAVO", "OBJ CHARLIE", LEADER, HOLD]
+    assert brief.dest_classes == [
+        "OBJ ALPHA", "OBJ BRAVO", "OBJ CHARLIE",
+        "WP GOLD", "WP SILVER", "PL AMBER",  # control measures (A5)
+        LEADER, HOLD,
+    ]
 
 
 # ---------------------------------------------------------------------- #

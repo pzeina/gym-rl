@@ -30,10 +30,14 @@ def _ctx(**kw):
 
 
 def test_mission_set_is_the_micat_catalog():
-    """The enum order defines obs one-hot + catalog layout — pinned."""
+    """The enum order defines obs one-hot + catalog layout — pinned.
+
+    ADVANCE (A5) is appended AFTER the MICAT set so the earlier one-hot
+    indices are stable.
+    """
     assert [m.name for m in MissionType] == [
         "RECON", "SCREEN", "OBSERVE", "SUPPORT", "COVER",
-        "DEFEND", "DENY", "SEIZE", "CLEAR", "RALLY", "HOLD",
+        "DEFEND", "DENY", "SEIZE", "CLEAR", "RALLY", "HOLD", "ADVANCE",
     ]
 
 
