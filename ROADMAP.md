@@ -1435,3 +1435,56 @@ terrain (still deferred).
   **Method note, for the next session**: two of this session's three wrong calls
   came from A/B-ing against the single most recent run instead of the series.
   A "collapse" needs at least three prior points before it is a trend.
+
+- **2026-08-06** — **Unattended cycle 8: the obedience "regression" is mostly a
+  task-mix artefact — third correction, and the measurement was built to test my
+  own claim.** Cycle 7 named obedience latency "the next target… genuinely
+  attributable to opening the root's MISSION COMPLETE". Split by ordered task
+  (new `obedience_by_task`, N=40 probe on both checkpoints):
+
+  | | v8 | v10 |
+  |---|---|---|
+  | ADVANCE | 1.01 (n=255) | **16.21** (n=286) |
+  | DEFEND | 0.68 (n=83) | **1.00** (n=40) |
+  | pooled | 1.26 | 13.06 |
+
+  **DEFEND — the mission the cohort exists to hold — is flat.** The pooled rise
+  is ADVANCE's, amplified by ADVANCE's share of orders going 0.69 → 0.99. So
+  "the cohort stopped obeying" is wrong. What *is* real and unexplained: ADVANCE
+  latency rose **16× within the task**, which a mix shift alone cannot produce.
+  **Leading hypothesis, untested**: `is_pending` — an AT-MY-COMMAND order is
+  staged until the issuer's EXECUTE, and latency is measured from
+  `step_assigned`, so AMC staging time is currently counted as disobedience.
+  *Testable without a retrain* by splitting latency at the EXECUTE release
+  rather than at assignment. That is the next measurement, not a reward change.
+  `format_obedience_by_task` prints it in every digest; the pooled mean is
+  unchanged to the digit so pinned corpora stay comparable. 435 → 440 tests.
+
+- **2026-08-06** — **Retraction: "v1.10 destabilised training" (cycle 6) is NOT
+  supported.** The claim rested on squad_v6 (gap 33) and fireteam_v7 (gap 68).
+  Three post-v1.10 runs have since converged — `fireteam_defend_v8` (10),
+  `fireteam_defend_v10` (10), `platoon_v4` (**7**) — against three that did not
+  (`v9` 17, `squad_v6` 33, `fireteam_v7` 68). Both groups sit entirely after the
+  break, so v1.10 is not the discriminator. lr is not obviously it either
+  (platoon ran 1e-4, but pre-v1.10 squad_v5 converged at 3e-4). **No mechanism
+  identified** — recorded as such rather than replaced with a second guess. The
+  `stability` line stays valuable regardless of cause: it is what caught the
+  peak-vs-result confusion, which was the real defect.
+
+- **2026-08-06** — **`platoon_v4` — 0.93 ± 0.05 (N=100), converged (gap 7).**
+  Against a published platoon of 98 ± 3 this is a slight regression with
+  overlapping intervals. Eval recovered by hand after the predicted
+  `is_done_admissible` ImportError; curves and checkpoints were never at risk.
+  Notably the healthiest command behaviour in the fleet: obedience latency 2.13,
+  doctrine preference **0.550**, containment 1.000. It carries the same 0.82
+  ADVANCE share as the defend line but scores 0.61 preference *within* ADVANCE
+  rather than 0.00 — because preference depends on the issuer's own mission, not
+  on the task ordered. That is issue #14's point demonstrated across scenarios.
+  Also the first run trained end-to-end under `contact_redundant −0.25`.
+  **Process hazard found the hard way**: `evaluate` writes `behavior.json` into
+  the run directory by default, so a low-N diagnostic silently destroys a
+  canonical N=100 record — it overwrote v8's and v10's with N=40 here, and both
+  were re-run and restored. Use `--behavior-out` for probes. Worth a guard.
+  `squad_v7` launched: squad + the contact reprice (the root-claim fix is inert
+  on squad, whose SEIZE root was always completable), testing whether the
+  defend line's precision win reproduces where squad_v6 measured 0.16.
