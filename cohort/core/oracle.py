@@ -101,12 +101,47 @@ def unit_observables(
     return tags
 
 
+def _sighting_set(world, combat, pos: Coord, living_enemies) -> list[int]:
+    """Living enemy ids visible from ``pos``, nearest first.
+
+    Exactly the environment's own visibility rule
+    (``CohortEnv._visible_enemies``): alive, inside the applicable range
+    (shorter into forest), and with line of sight. Kept here as one function
+    so the truth stream and the simulation cannot drift apart.
+    """
+    visible = [
+        e
+        for e in living_enemies
+        if world.can_spot(pos, e.pos, combat.vision_range, combat.forest_vision_range)
+    ]
+    visible.sort(key=lambda e: (dist(pos, e.pos), e.id))
+    return [e.id for e in visible]
+
+
 def observe(env) -> dict:
     """Full ground-truth snapshot of the environment for external observers.
 
     Call after ``reset()`` or after each ``step()``. The ``enemies`` side —
     including the OpFor AI's internal state — is the "non-observable" ground
     truth an assurance layer may try to infer from the friendly side alone.
+
+    **Sighting sets (issue #17).** Each soldier record carries ``sees`` — the
+    living enemies that agent can see this step — so a consumer can score
+    sighting-knowledge verdicts ("does this station know there is an enemy at
+    grid X, and since when") against truth the same way command-state
+    verdicts are scored against it. It is *truth*, not belief: what the agent
+    can see, never what it has been told. The reported team picture stays off
+    this stream deliberately — deriving it from CONTACT traffic is the
+    external observer's job, and handing it over would score belief against
+    itself.
+
+    A dead unit sees nothing and is seen by nothing: ``sees`` and ``seen_by``
+    are empty for it. Before this was enforced, ``seen_by`` was computed from
+    a corpse's last position, so most sighting entries in the stream named
+    dead units (measured on the shipped checkpoints: 8,901 of 9,647 enemy
+    entries in ``squad``), and transposing ``seen_by`` into per-agent sighting
+    sets disagreed with the environment's own visibility on 36-47% of
+    agent-steps.
     """
     world = env.world
     combat = env.combat
@@ -125,11 +160,16 @@ def observe(env) -> dict:
 
     soldiers = []
     for s in env.roster.soldiers:
-        seen_by = [
-            e.id
-            for e in living_enemies
-            if world.can_spot(e.pos, s.pos, combat.vision_range, combat.forest_vision_range)
-        ]
+        seen_by = (
+            [
+                e.id
+                for e in living_enemies
+                if world.can_spot(e.pos, s.pos, combat.vision_range, combat.forest_vision_range)
+            ]
+            if s.alive
+            else []
+        )
+        sees = _sighting_set(world, combat, s.pos, living_enemies) if s.alive else []
         soldiers.append(
             {
                 "cs": s.callsign,
@@ -150,6 +190,10 @@ def observe(env) -> dict:
                 # learned transmission last step and lost net arbitration
                 "net_busy": s.callsign in env._net_blocked,
                 "seen_by": seen_by,
+                # this agent's own sighting set (issue #17): the living
+                # enemies it can see RIGHT NOW, nearest first — ground truth,
+                # never belief. Identical to ``env._visible_enemies(s)``.
+                "sees": sees,
                 "tags": [
                     t.value
                     for t in unit_observables(
@@ -172,11 +216,15 @@ def observe(env) -> dict:
 
     enemies = []
     for e in env.enemies:
-        seen_by = [
-            s.callsign
-            for s in living_soldiers
-            if world.can_spot(s.pos, e.pos, combat.vision_range, combat.forest_vision_range)
-        ]
+        seen_by = (
+            [
+                s.callsign
+                for s in living_soldiers
+                if world.can_spot(s.pos, e.pos, combat.vision_range, combat.forest_vision_range)
+            ]
+            if e.alive
+            else []
+        )
         enemies.append(
             {
                 "id": e.id,

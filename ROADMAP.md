@@ -1717,3 +1717,44 @@ deliberately deferred (`docs/vision.md` §2c).
   **Retrain judgement, going forward**: the number to move is
   `order_selection_lift["SUPPORT"]` from 0.04 toward 1.0, *not* the raw share —
   and any SUPPORT/OBSERVE claim quoted without its availability is not a claim.
+- **2026-08-06** — **#17: the sighting-knowledge lattice is already non-constant;
+  the truth stream was reporting corpses.** #17 is not a defect report — it
+  pre-registers, before v1.11 lands, that vision arcs will make the sighting
+  lattice non-constant "where today there is none", on the stated grounds that
+  the system is near-common-knowledge on both channels: comms because the net is
+  global, sightings because "vision is isotropic and long". **The comms half is
+  right and the sightings half is inverted.** Measured from `env.oracle()` on
+  the shipped checkpoints (seeds 500+, sampled actions, 30k+ (step, living
+  enemy) checks): conditioned on a sighting existing at all, it is a *minority*
+  sighting on **44.8%** of checks (`fireteam_defend_v10`), **93.6%** (`squad_v6`)
+  and **100.0%** (`platoon_v4` — no enemy is ever seen by all 13 stations). The
+  team picture is *absent* for 93–97% of living enemies, so "does HQ know there
+  is an enemy at grid X" is answered **no** almost always: where the lattice is
+  constant it is constant at ¬K, not at K. Vision is 10 cells on maps of 36–54,
+  and 11.7–26.4% of in-range pairs are already denied by LOS.
+  This also corrects `docs/vision.md` §1, which made the same claim first: "two
+  soldiers three cells apart see very nearly the same world" is true (Jaccard
+  0.56–0.86) but the cohort rarely stands that way — only 6.0% of platoon
+  station pairs are ≤3 cells apart, and a CONTACT report is **novel** to 65.5%
+  of listeners at squad scale and 83.5% at platoon scale, against 13.3% at
+  `fireteam_defend`. Arcs therefore add most where the picture is already shared
+  and least where it is already private; the §6 probe (run on `squad`) samples
+  the middle of that range. Baseline tabulated in **§6.1** so V1 cannot be
+  fitted afterwards. The §0 design decisions are untouched — this narrows where
+  the payoff is expected, and that call remains the owner's.
+  **Fixed** the one implementable ask (per-agent sighting sets in the truth
+  stream), and found the surface it would have been built on was broken: the
+  oracle computed `seen_by` for the dead from their last position, so **8,901 of
+  9,647** enemy sighting entries over eight `squad` episodes named corpses, and
+  transposing `seen_by` into per-agent sighting sets — the only way a consumer
+  could get one — disagreed with the environment's own `_visible_enemies` on
+  **36–47%** of agent-steps. The fifth assurance issue in a row (#13/#14/#15/#16)
+  where the instrument, not the policy, was at fault. `oracle()` now publishes
+  `soldiers[].sees` (living enemies visible this step, nearest first, computed by
+  one shared function so truth stream and simulation cannot drift), and the dead
+  neither see nor are seen. Verified 0/43,745 agent-steps of disagreement and 0
+  corpse entries across three families. Truth only: the reported team picture
+  stays off the stream deliberately — deriving it from CONTACT traffic is the
+  external observer's job. No reward, space or scenario changed; `OBS_DIM` 220 /
+  `N_ACTIONS` 228 untouched. 466 → 468 tests; each half of the fix fails
+  independently without it.
