@@ -256,6 +256,13 @@ terrain (still deferred).
   death-shock hypothesis, and BRIQUE bands *deliberately target the human
   commander*, making these fine-tunes a worst case); the D4 rerun DoD
   still stands.
+  **fireteam_defend diagnosis update (2026-08-06)**: with the defend fire
+  economics repaired (defense-of-the-position carve-out, commit 9519326)
+  and the TL fire pathology verifiably eliminated in fireteam_defend_v7
+  (TL p(fire | threatened) 0.005 → 1.000), the scenario STILL oscillates
+  0.31–0.55 rolling for 3M steps with value_loss 15–95 and human-death
+  bursts 0–0.86 — the shock instability is now the leading suspect for
+  the defend miss, no longer confounded by the reward hole.
 - `[x]` **A7. Stealth-recon economics** — negative result from A2: under strict
   weapons-tight (no combat pay on RECON), the squad_recon policy *abandons the
   task* — subordinates park on OVERWATCH at 8–9 cells farming posture compliance
@@ -717,6 +724,54 @@ terrain (still deferred).
   missed; B2 behavior recorded via each run's `behavior.json` at the
   N=100 eval (seed 123) rather than a separate N=30/seed-500 sweep —
   the probe runs carry the seeds-500–529 protocol.
+- **2026-08-06** — **fireteam_defend regression diagnosed; fix landed; retrain
+  missed — documented, v6 stays published.** Oracle campaign (30 seeded
+  episodes, seeds 500–529) over fireteam_defend_v6 (published 51%), _v6b, and
+  defend_brique_v2 — the winning defense on the same spaces and economics:
+  * **Mechanism demonstrated**: the v6 human TL, under threat with FIRE
+    legal, fired on **0.5%** of its opportunities (1/207) vs 0.97 for its own
+    RFNs, 0.90 for succeeded leaders, and 0.995 for the brique TL. It
+    wandered ~13 cells off ALPHA, died in 26/30 episodes at ~step 28
+    (eval human_death_rate 0.77; v5-era: 0.10), absorbed 88 hp/ep of enemy
+    fire while contributing nothing — then the −25 × 4 human-death shock
+    landed and the remaining three fought the four-attacker assault 3-vs-4
+    and lost the attrition: 312 dmg dealt vs the 400 needed, 30% outright
+    wipes, comp_combat −72/ep.
+  * **Candidates refuted by measurement**: (a) tenure-static posture — the
+    WINNING brique defense is MORE static under threat (0.96 vs 0.85), LESS
+    in cover (0.22 vs 0.52), and repositions less (0.03 vs 0.30
+    cover-to-cover moves/ep); (d) re-task pricing — the winner pays the same
+    (−2.3 vs −2.7/ep at 5.9 vs 5.8 re-tasks/ep); (b) terminal economics — no
+    ordering flip (win ≫ stall ≫ defeat under success_team 45 and 60 alike),
+    and the winner trained under identical B5 economics; (c) catalog
+    dilution — real but concentrated on the TL (its order vocabulary grew
+    ~130 entries vs 2 for an RFN); v6b (ent 0.02) shows the diffuse-fire
+    extreme (0.449 team-wide under threat).
+  * **Fix** (commit 9519326): defense-of-the-position carve-out in fire
+    discipline — position-anchored fire (OBSERVE/SUPPORT/COVER/DEFEND/DENY/
+    HOLD) also pays in full when the TARGET stands inside the anchor's
+    engagement envelope (IN_POSITION_RADIUS + weapon_range): fire against an
+    enemy assaulting the position is the mission wherever the melee pushed
+    the defender. Off-envelope kill-chasing still pays zero — the v1.2 sally
+    exploit stays closed (its regression test untouched; 338 → 340 tests).
+  * **Retrain missed** — fireteam_defend_v7 (3M fine-tune from
+    defend_brique_v2 @ lr 1e-4, seed 12) oscillated 0.31–0.55 rolling for
+    the whole run: ckpt_best **35% ± 9**, ckpt_latest 31% ± 9 at N=100
+    (target ≥ 68). **fireteam_defend_v6 (51% ± 10) stays published**; v7
+    kept on disk for the record.
+  * **Oracle post-mortem — the mechanism is verifiably gone, the residual is
+    different**: the v7 TL fires at **1.000** under threat, TL deaths
+    26/30 → 14/30, team fire 0.997, combat shock halved (−31/ep) — but the
+    brique parent's dispersed open-ground disposition transferred with the
+    curriculum: cover occupancy under threat collapsed 0.52 → **0.05**, the
+    fight happens 9.7 cells off the objective (v6: 4.3) with ADVANCE
+    missions holding 48% of threatened agent-steps, and damage output stayed
+    309/400. The assault defense needs fire AND the prepared position
+    (v1.2's terrain-doctrine lesson); no policy has held both since the A5
+    space break. Budgets spent per protocol — the scenario remains the
+    honest open miss, with the fire-gradient hole now closed for the next
+    campaign and the D4 shock instability the remaining suspect (value_loss
+    15–95 throughout v7, human-death bursts 0–0.86).
 - **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
   `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
   only, consumes no RNG — recorded episodes bit-identical, tested) and

@@ -366,7 +366,20 @@ performance. The honest miss: the assault defense (`fireteam_defend_v6`,
 51% vs bound 68) never stabilized above 0.54 rolling in either its retrain
 or its diagnosed adjustment (`_v6b`, ent 0.02, peak 0.19 — both budgets
 spent); the defenders die on the objective but lose the four-attacker
-attrition fight. The transparency probe re-ran on all eight checkpoints
+attrition fight. A follow-up oracle diagnosis found the mechanism: the
+**human TL fought at p(fire) = 0.005 under threat** (its riflemen: 0.97;
+the winning BRIQUE-defense TL: 0.995), wandered ~13 cells off the
+objective, and died in 26/30 episodes by ~step 28 — the team then absorbed
+the −25 × 4 human-death shock and fought 4 attackers 3-vs-4. The reward
+hole behind it is fixed (fire-discipline now pays position-anchored fire
+against any enemy inside the position's engagement envelope; the v1.2
+anti-sally rule stays closed), and the retrained TL verifiably fights
+(p(fire) 1.000, deaths 14/30) — but the one-budget retrain
+(`fireteam_defend_v7`, fine-tuned from the BRIQUE defense) inherited its
+parent's open-ground dispersal (cover occupancy under threat 0.05 vs the
+v6 policy's 0.52) and measured 35% ± 9: documented and stopped, `_v6`
+stays published; the scenario remains the project's open problem (see
+ROADMAP D4). The transparency probe re-ran on all eight checkpoints
 under the extended measuring stick — verdict, tables, and the honest
 still-missed majority-baseline target: `docs/transparency.md` §A5.
 
