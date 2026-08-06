@@ -41,6 +41,11 @@ METRIC_FIELDS = [
     "approx_kl",
     "sps",
     "tx_per_agent_step",
+    # lightweight behavioral tracking (B2), over the episodes completed this
+    # iteration: fraction whose human root died (issue #9: rolling success is
+    # blind to exposure re-learning), and rejected DONE / total DONE claims
+    "human_death_rate",
+    "false_complete_rate",
     *[f"comp_{c}" for c in COMPONENTS],
 ]
 
@@ -144,6 +149,9 @@ class Trainer:
         comp_sums = dict.fromkeys(COMPONENTS, 0.0)
         agent_steps = 0
         tx_total = 0
+        human_deaths = 0
+        done_claims = 0
+        done_rejected = 0
 
         for t in range(cfg.horizon):
             rows = [(e, a) for e, env in enumerate(self.envs) for a in env.agents]
@@ -193,6 +201,11 @@ class Trainer:
                     outcomes.append(env.outcome or "timeout")
                     self.recent_outcomes.append(outcomes[-1])
                     self.episodes_seen += 1
+                    # B2 behavioral tracking, from state already in memory
+                    human_deaths += any(s.human and not s.alive for s in env.roster.soldiers)
+                    for m in env.transcript.messages:
+                        done_claims += m.kind.value == "done"
+                        done_rejected += m.kind.value == "done_reject"
                     self._ep_return[e] = 0.0
                     self._ep_len[e] = 0
                     obs0, _ = env.reset()
@@ -222,6 +235,8 @@ class Trainer:
             ),
         }
         stats["tx_per_agent_step"] = tx_total / max(1, agent_steps)
+        stats["human_death_rate"] = human_deaths / n_eps if outcomes else 0.0
+        stats["false_complete_rate"] = done_rejected / max(1, done_claims)
         for comp in COMPONENTS:
             stats[f"comp_{comp}"] = comp_sums[comp] / max(1, agent_steps)
         return stats

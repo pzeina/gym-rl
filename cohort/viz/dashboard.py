@@ -334,9 +334,19 @@ def scan_runs(runs_dir: Path) -> list[dict]:
                 "checkpoints": [
                     kind for kind in ("best", "latest") if (run / f"ckpt_{kind}.pt").is_file()
                 ],
+                "behavior": (run / "behavior.json").is_file(),
             }
         )
     return runs
+
+
+def load_behavior(runs_dir: Path, run_name: str) -> dict:
+    """behavior.json of a run (the B2 behavioral metrics suite), parsed."""
+    path = runs_dir / run_name / "behavior.json"
+    if not path.is_file():
+        msg = f"no behavior.json in run {run_name!r} — run an evaluation first"
+        raise ValueError(msg)
+    return json.loads(path.read_text())
 
 
 def load_metrics(runs_dir: Path, run_name: str) -> dict:
@@ -415,6 +425,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 )
             elif url.path == "/api/metrics":
                 self._json(load_metrics(self.runs_dir, self._safe_run(query["run"])))
+            elif url.path == "/api/behavior":
+                self._json(load_behavior(self.runs_dir, self._safe_run(query["run"])))
             elif url.path == "/api/episode":
                 trace = record_episode(
                     self._safe_scenario(query.get("scenario", "fireteam")),

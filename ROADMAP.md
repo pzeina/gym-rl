@@ -127,11 +127,16 @@ terrain (still deferred).
   the scripted enemy; alternating or league-style training.
   **DoD**: red-vs-blue episodes render in the dashboard with both transcripts; blue
   policy trained vs. self-play beats the scripted-garrison-trained policy head-to-head.
-- `[ ]` **B2. Behavioral metrics suite** — measure what "behaves like its rank" means:
+- `[x]` **B2. Behavioral metrics suite** — measure what "behaves like its rank" means:
   obedience latency (order → first compliant action), report precision/recall
   (contacts reported vs. enemies actually seen), doctrine-preference rate,
   false-COMPLETE rate, succession recovery time, subordinate coverage time.
   **DoD**: emitted per eval run (JSON + dashboard panel); tracked in training metrics.
+  *(done 2026-08-06: `cohort/metrics.py` + evaluate `--behavior` (default on,
+  `behavior.json` + printed table) + dashboard Behavior card + training
+  columns `human_death_rate`/`false_complete_rate`; human-exposure block
+  added per the #9 finding. Definitions + the published-checkpoint baseline
+  (N=30, seeds 500–529): `docs/metrics.md`. See the progress log.)*
 - `[ ]` **B3. Hierarchy ablation** — same parameter count, three arms: (i) full
   hierarchy + masked doctrine, (ii) hierarchy without doctrine masks, (iii) flat team
   with free comms and no ranks.
@@ -491,3 +496,21 @@ terrain (still deferred).
      combat pay still *attracts* the root forward; rolling success is
      blind to this, so P3-style metrics must drive checkpoint selection
      for human-preservation claims (B2 candidate metric).
+- **2026-08-06** — **B2 done: behavioral metrics suite** (208 → 228 tests).
+  `cohort/metrics.py`: a TraceRecorder rides along eval episodes (reads
+  only, consumes no RNG — recorded episodes bit-identical, tested) and
+  pure metric functions verified on hand-constructed mini-episodes.
+  Emitted per eval run (`evaluate --behavior`, default on: printed table +
+  `runs/<run>/behavior.json`), shown in the dashboard Episode sidebar
+  (Behavior card, `/api/behavior`), and tracked per training iteration
+  (`human_death_rate`, `false_complete_rate` columns). Human-exposure
+  metrics (mean dist to nearest enemy, objective-ring entries, death
+  rate) added per the #9 finding so checkpoint selection can include
+  preservation. Baseline over all 8 published checkpoints (N=30, seeds
+  500–529) committed in `docs/metrics.md` + per-run `behavior.json` —
+  cross-validates #9 exactly (recon/screen human deaths 2/30 both).
+  First honest read: obedience is fast everywhere (0–3.5 steps);
+  **false-COMPLETE is the weakest behavior** (53–84% of DONE claims
+  rejected as premature wherever DONE is admissible); the pre-#9
+  assault fireteam loses its human in 11/30 episodes vs 2/30 for the
+  #9 retrains — the exposure gap the suite exists to make visible.
