@@ -17,6 +17,7 @@ from cohort.metrics import (
     episode_behavior,
     format_behavior_table,
     format_gate_report,
+    format_order_task_mix,
     regression_gates,
 )
 from cohort.training.evaluate import evaluate, run_episode
@@ -198,6 +199,68 @@ def test_doctrine_preference_within_step_ordering():
     assert ep["orders_issued"] == 3
     assert ep["orders_preferred"] == 2
     assert aggregate_behavior([ep])["doctrine_preference_rate"] == 2 / 3
+
+
+def _defend_leader_orders(task):
+    """One agent-issued order of ``task`` from a DEFEND-holding TL1."""
+    return trace([
+        step(0, [sold("TL1", mission="DEFEND", since=0, auth=1, subs=["RFN1"]), sold("RFN1")]),
+        step(1, [sold("TL1", mission="DEFEND", since=0, auth=1, subs=["RFN1"]),
+                 sold("RFN1", mission=task, since=1)],
+             messages=[msg("order", "TL1", "RFN1", task)]),
+    ], root_mission="DEFEND")
+
+
+def test_doctrine_tiers_separate_catalog_adoption_from_violation():
+    """refs #14: preference is `allowed[0]`, so ADVANCE under DEFEND — a legal
+    maneuver leg A5 put in `DOCTRINE[DEFEND]` — scores exactly like RALLY,
+    which is not derivable from DEFEND at all. Both read 0.0 preference; only
+    the tier split says one is contained doctrine and the other is a breach.
+    (The order mask makes the RALLY case unreachable in play, but the B3
+    `nomask` arm and injected orders both produce it.)
+    """
+    adopted = aggregate_behavior([episode_behavior(_defend_leader_orders("ADVANCE"))])
+    breached = aggregate_behavior([episode_behavior(_defend_leader_orders("RALLY"))])
+
+    # the rate the record has always reported cannot tell them apart
+    assert adopted["doctrine_preference_rate"] == 0.0
+    assert breached["doctrine_preference_rate"] == 0.0
+
+    assert adopted["doctrine_allowed_rate"] == 1.0
+    assert adopted["orders_allowed"] == 1 and adopted["orders_violating"] == 0
+    assert adopted["orders_by_task"]["ADVANCE"]["allowed"] == 1
+
+    assert breached["doctrine_allowed_rate"] == 0.0
+    assert breached["orders_allowed"] == 0 and breached["orders_violating"] == 1
+    assert breached["orders_by_task"]["RALLY"]["violating"] == 1
+
+
+def test_order_task_mix_attributes_a_low_preference_rate():
+    """The share/preference pair per ordered task: three ADVANCE orders (all
+    merely allowed) and one DEFEND (preferred) is 0.25 preference overall, but
+    the mix shows it as ADVANCE adoption rather than degraded command."""
+    eps = [episode_behavior(_defend_leader_orders(t)) for t in ("ADVANCE",) * 3 + ("DEFEND",)]
+    agg = aggregate_behavior(eps)
+    assert agg["doctrine_preference_rate"] == 0.25
+    assert agg["doctrine_allowed_rate"] == 1.0
+    assert format_order_task_mix(agg) == "ADVANCE 0.75/0.00, DEFEND 0.25/1.00"
+    assert "ADVANCE 0.75/0.00" in format_behavior_table(agg)
+
+
+def test_doctrine_underivable_issuer_is_not_counted_as_violating():
+    """An issuer with no mission has nothing to derive from: it stays in the
+    preference denominator (unchanged semantics) but must not be booked as a
+    doctrine breach, which would make containment unreadable."""
+    steps = [
+        step(0, [sold("TL1", auth=1, subs=["RFN1"]), sold("RFN1")]),
+        step(1, [sold("TL1", auth=1, subs=["RFN1"]), sold("RFN1", mission="HOLD", since=1)],
+             messages=[msg("order", "TL1", "RFN1", "HOLD")]),
+    ]
+    agg = aggregate_behavior([episode_behavior(trace(steps))])
+    assert agg["orders_issued"] == 1
+    assert agg["doctrine_preference_rate"] == 0.0
+    assert agg["orders_violating"] == 0 and agg["orders_underivable"] == 1
+    assert agg["doctrine_allowed_rate"] is None
 
 
 def test_doctrine_no_orders_is_none():

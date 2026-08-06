@@ -1228,9 +1228,16 @@ terrain (still deferred).
   that would mean the displacement is not about relative comms value.
   Corroborating: `done_probe` shows subordinate golden steps 0 → 825, so the subs
   now actually complete their ADVANCE missions — the TL shifted to ADVANCE-heavy
-  ordering (4.88 → 6.6/ep), which is *not* doctrine-valid under a DEFEND root and
-  explains the doctrine collapse. **The open ADVANCE-under-DEFEND item is no
-  longer cosmetic — it is now the policy's preferred strategy.**
+  ordering (4.88 → 6.6/ep), which explains the doctrine-preference number.
+  ~~which is *not* doctrine-valid under a DEFEND root~~ — **corrected (issue
+  #14, 2026-08-06): ADVANCE under DEFEND is doctrine-*allowed*.** `DOCTRINE
+  [DEFEND]` contains `ADVANCE` (A5 added it as a maneuver leg), so
+  `derivation_quality` returns 0.5, not −0.5, and zero doctrine violations are
+  committed. What collapsed is the *preference tier* only: `preferred` is
+  `allowed[0]` = DEFEND, so ADVANCE adoption reads as 0.001 by construction.
+  "Not doctrine-valid" and "not doctrine-preferred" imply very different
+  defects and the mask is not leaking. **The ADVANCE-under-DEFEND item is a
+  question about which leg the policy prefers, not about containment.**
   **Cycle 1 validated in production**: v9 is the first run to finish under the
   artifact guard and produced every artifact — curves, eval, transcript, gif,
   behavior.json.
@@ -1348,8 +1355,10 @@ terrain (still deferred).
   **What the reprice did NOT fix, now cleanly attributable**: obedience latency
   (1.26 → 11.24 → 13.06) and doctrine preference (0.172 → 0.0015 → 0.0016) both
   arrived with the root-claim change in v9 and are untouched by contact pricing.
-  They are the next target, and the ADVANCE-under-DEFEND doctrine gap is the
-  leading suspect for the doctrine half.
+  They are the next target — but see issue #14 below: the doctrine half of that
+  sentence does not survive the longer record. The preference number tracks
+  ADVANCE adoption, which v10 pushed to 6.31 of 6.35 orders/ep (99%), so 0.0016
+  is arithmetic, not a second regression. Obedience latency remains real.
   **Success has not moved across v8/v9/v10** — three changes, all overlapping
   intervals. Everything gained this cycle is behavioural quality, not outcome.
 
@@ -1367,3 +1376,40 @@ terrain (still deferred).
   and still produced the curves. `platoon_v4` (launched 19:42, also pre-`dac323a`)
   **will hit the same ImportError** — its eval is recoverable by hand afterwards,
   and its curves and checkpoints are safe. 431 → 432 tests.
+
+- **2026-08-06** — **Issue #14 (assurance): the doctrine-preference collapse was
+  the metric, not the policy.** Handled by the dedicated fix agent; commit
+  `refs #14`, issue left open for the assurance layer to verify and close.
+  #14's claim reproduces against this repo's own `behavior.json` corpus without
+  re-running anything. `preferred` is `allowed[0]`, and A5 put `ADVANCE` into
+  `DOCTRINE[DEFEND]` — so preference tracks ADVANCE *adoption*, not command
+  quality. ADVANCE share vs. preference, from `runs/*/behavior.json`:
+  `v5` (pre-ADVANCE) — / **0.306**; `defend_brique_v1` (pre-ADVANCE) — /
+  **0.213**; `v6` 0.81 / 0.011; `v7` 0.75 / 0.003; `v8` 0.69 / 0.172;
+  `v9` 0.96 / 0.0015; `v10` **0.99** / 0.0016. Every corpus that adopted
+  ADVANCE sits at 0.00–0.17; both that predate it sit at 0.21–0.31, and no
+  post-A5 defend corpus has ever come near them. (The relation is a ceiling,
+  not an identity: under a DEFEND-holding issuer an ADVANCE order can never be
+  preferred, so preference is capped at `1 − ADVANCE share` and the rest of the
+  gap is which non-ADVANCE leg gets ordered — v8's 0.172 at share 0.69 against
+  v7's 0.003 at 0.75 is that residual.)
+  So v9's 0.001 is the A5 norm — `v6`, `v7` and
+  `defend_brique_v2` were already there two epochs *before* the root-claim fix
+  existed. The quantity that was actually odd is **v8's 0.172**.
+  **Two corrections to the v9 verdict, made in place above.** ADVANCE under
+  DEFEND is doctrine-**allowed**, not "not doctrine-valid": `derivation_quality`
+  returns 0.5, and zero doctrine violations are committed in any defend corpus.
+  And the v10 entry's "doctrine preference is the next target" does not survive
+  the longer record.
+  **The fix is a metric, not a price** — same shape as #13, and deliberately so:
+  #14 offered two remedies (regrade `derivation_quality`, or condition the
+  report on the ordered task). Regrading is a reward change — `order_preferred`
+  / `order_allowed` are paid from `derivation_quality` — and one A/B cannot
+  price it, so it is left for the owner. What shipped is the decomposition:
+  every agent-issued order is now booked into a tier (`preferred` / `allowed` /
+  `violating` / `underivable`), giving **`doctrine_allowed_rate`** ("doctrine
+  containment", the number that answers *is the mask leaking* — 1.000 under
+  `full`, and the arm that moves under B3 `nomask`) and **`orders_by_task`**,
+  printed as `TASK share/preference` (`ADVANCE 0.96/0.00`). `doctrine_
+  preference_rate` is unchanged to the digit, so the pinned corpora stay
+  comparable. 432 → 435 tests.

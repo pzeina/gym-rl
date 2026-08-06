@@ -7,7 +7,12 @@ behaves* while doing so, per evaluation run:
 * report precision/recall — CONTACT reports vs. enemies actually seen
   (the oracle-side ground truth: per-step visibility)
 * doctrine-preference rate — share of issued orders that were the preferred
-  derivation of the issuer's own mission
+  derivation of the issuer's own mission, reported next to the doctrine
+  *containment* rate and the ordered-task mix (refs issue #14: preference is
+  ``allowed[0]``, so since A5 put ADVANCE in the DEFEND / SEIZE / RECON
+  tables, a policy that adopts ADVANCE wholesale scores ~0 preference with
+  zero doctrine violations — without the split, catalog adoption is
+  indistinguishable from disregarding doctrine)
 * false-COMPLETE rate    — MISSION COMPLETE claims rejected by the umpire
 * COMPLETE claim rate    — claims transmitted over the agent-steps at which
   claiming was admissible (refs issue #13: zero DONE reports is either a shut
@@ -339,8 +344,14 @@ def _reports(trace: dict) -> dict[str, int]:
     }
 
 
-def _doctrine(trace: dict) -> tuple[int, int]:
-    """(orders issued by agents, of which doctrine-preferred).
+#: Doctrine tiers an agent-issued order can fall into, in order of quality.
+#: ``underivable`` is the issuer-had-no-mission case, which the order mask
+#: makes unreachable in play but which a replayed / injected trace can show.
+DOCTRINE_TIERS: tuple[str, ...] = ("preferred", "allowed", "violating", "underivable")
+
+
+def _doctrine(trace: dict) -> dict[str, Any]:
+    """Agent-issued orders split by doctrine tier, overall and by ordered task.
 
     An issued order's quality is judged against the issuer's mission at the
     moment of transmission: missions are read from the previous step's
@@ -348,10 +359,20 @@ def _doctrine(trace: dict) -> tuple[int, int]:
     (an order counts as applied when the recipient's end-of-step mission
     matches it with ``step_assigned == t``). HQ traffic (OPORD, injected
     orders) is not an agent decision and is excluded from the rate.
+
+    The tier split exists because the preference rate alone cannot tell
+    *adopting a legal alternative* from *disregarding doctrine* — both merely
+    fail to be ``allowed[0]`` (refs issue #14). Since A5 added ADVANCE to the
+    DEFEND / SEIZE / RECON derivation tables, a policy that orders ADVANCE
+    almost exclusively scores ~0 preference while committing zero doctrine
+    violations, so the rate reads as a collapse when it is catalog adoption.
+    ``orders_by_task`` makes that adoption visible: preference conditioned on
+    the ordered task, against the task's share of all orders.
     """
     steps = trace["steps"]
     issued = 0
-    preferred = 0
+    tiers = dict.fromkeys(DOCTRINE_TIERS, 0)
+    by_task: dict[str, dict[str, int]] = {}
     for i in range(1, len(steps)):
         step = steps[i]
         t = step["t"]
@@ -365,8 +386,18 @@ def _doctrine(trace: dict) -> tuple[int, int]:
                 issued += 1
                 own = cur.get(msg["from"])
                 allowed = allowed_derivations(MissionType[own]) if own is not None else ()
-                if allowed and MissionType[msg["mission"]] is allowed[0]:
-                    preferred += 1
+                task = MissionType[msg["mission"]]
+                if not allowed:
+                    tier = "underivable"
+                elif task is allowed[0]:
+                    tier = "preferred"
+                elif task in allowed:
+                    tier = "allowed"
+                else:
+                    tier = "violating"
+                tiers[tier] += 1
+                bucket = by_task.setdefault(task.name, dict.fromkeys(DOCTRINE_TIERS, 0))
+                bucket[tier] += 1
             recipient = _soldier_at(step, msg["to"])
             applied = (
                 recipient is not None
@@ -375,7 +406,14 @@ def _doctrine(trace: dict) -> tuple[int, int]:
             )
             if applied:
                 cur[msg["to"]] = msg["mission"]
-    return issued, preferred
+    return {
+        "orders_issued": issued,
+        "orders_preferred": tiers["preferred"],
+        "orders_allowed": tiers["allowed"],
+        "orders_violating": tiers["violating"],
+        "orders_underivable": tiers["underivable"],
+        "orders_by_task": by_task,
+    }
 
 
 def _retasks(trace: dict) -> dict[str, Any]:
@@ -673,7 +711,6 @@ def _fight_disposition(trace: dict) -> dict[str, Any]:
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
     latencies, censored = _obedience(trace)
-    issued, preferred = _doctrine(trace)
     dones, rejected = _false_complete(trace)
     events, recovery, unrecovered = _succession(trace)
     pairs, covered = _coverage(trace)
@@ -684,8 +721,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "root_mission": trace.get("root_mission"),
         "obedience_latencies": latencies,
         "obedience_censored": censored,
-        "orders_issued": issued,
-        "orders_preferred": preferred,
+        **_doctrine(trace),
         **_retasks(trace),
         **_reports(trace),
         "done_reports": dones,
@@ -736,6 +772,15 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             dst["priced"] += bucket.get("priced", 0)
             dst["excepted"] += bucket.get("excepted", 0)
 
+    orders_by_task: dict[str, dict[str, int]] = {}
+    for ep in episodes:
+        for task, bucket in ep.get("orders_by_task", {}).items():
+            dst = orders_by_task.setdefault(task, dict.fromkeys(DOCTRINE_TIERS, 0))
+            for tier in DOCTRINE_TIERS:
+                dst[tier] += bucket.get(tier, 0)
+    # judgeable orders: the issuer held a mission to derive from
+    derivable = total("orders_preferred") + total("orders_allowed") + total("orders_violating")
+
     latencies = [v for ep in episodes for v in ep["obedience_latencies"]]
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
@@ -755,6 +800,18 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "report_recall": _ratio(total("enemies_reported"), total("enemies_seen")),
         "contact_reports": total("contacts"),
         "doctrine_preference_rate": _ratio(total("orders_preferred"), total("orders_issued")),
+        # refs #14: preference is `allowed[0]`, so a policy that adopts a
+        # legal alternative leg (ADVANCE, added to the DEFEND/SEIZE/RECON
+        # tables in A5) scores identically to one that disregards doctrine.
+        # The containment rate separates them; orders_by_task shows whether a
+        # low preference rate is catalog adoption or command quality.
+        "doctrine_allowed_rate": _ratio(
+            total("orders_preferred") + total("orders_allowed"), derivable
+        ),
+        "orders_allowed": total("orders_allowed"),
+        "orders_violating": total("orders_violating"),
+        "orders_underivable": total("orders_underivable"),
+        "orders_by_task": orders_by_task,
         "orders_issued": total("orders_issued"),
         "orders_per_episode": _ratio(total("orders_issued"), n_eps),
         "retasks": total("retasks"),
@@ -867,6 +924,7 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("report_precision", "report precision", "{:.2f}"),
     ("report_recall", "report recall", "{:.2f}"),
     ("doctrine_preference_rate", "doctrine preference", "{:.2f}"),
+    ("doctrine_allowed_rate", "doctrine containment", "{:.2f}"),
     ("false_complete_rate", "false-COMPLETE rate", "{:.2f}"),
     ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
@@ -884,12 +942,32 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def format_order_task_mix(agg: dict[str, Any], top: int = 3) -> str:
+    """``TASK share/preference`` for the most-ordered tasks (refs #14).
+
+    Reads the preference rate conditioned on the ordered task against that
+    task's share of all agent-issued orders, so a low overall preference can
+    be attributed: ``ADVANCE .96/.00`` is a policy that adopted one legal
+    alternative leg wholesale, not one issuing bad orders.
+    """
+    by_task = agg.get("orders_by_task") or {}
+    issued = sum(sum(b.values()) for b in by_task.values())
+    if not issued:
+        return ""
+    ranked = sorted(by_task.items(), key=lambda kv: -sum(kv[1].values()))[:top]
+    return ", ".join(
+        f"{task} {sum(b.values()) / issued:.2f}/{b.get('preferred', 0) / sum(b.values()):.2f}"
+        for task, b in ranked
+    )
+
+
 def format_behavior_table(agg: dict[str, Any]) -> str:
     """Human-readable table of an aggregated behavior summary."""
     by_rank = ", ".join(
         f"{rank} {b['priced']}p/{b['excepted']}e"
         for rank, b in sorted(agg.get("retasks_by_rank", {}).items())
     )
+    task_mix = format_order_task_mix(agg)
     notes = {
         "obedience_latency_mean": f"n={agg['obedience_orders']}, censored {agg['obedience_censored']}",
         "retasks_per_episode": (
@@ -898,7 +976,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             + (f"; by rank: {by_rank}" if by_rank else "")
         ),
         "report_precision": f"n={agg['contact_reports']}",
-        "doctrine_preference_rate": f"n={agg['orders_issued']}",
+        "doctrine_preference_rate": f"n={agg['orders_issued']}" + (f"; {task_mix}" if task_mix else ""),
+        "doctrine_allowed_rate": (
+            f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"
+        ),
         "false_complete_rate": f"n={agg['done_reports']}",
         "done_claim_rate": (
             f"{agg.get('done_admissible', 0)} admissible agent-steps "
