@@ -44,6 +44,17 @@ behaves* while doing so, per evaluation run:
   positional, not mortal — halving the root-death rate bought no success,
   while every defend policy that ever cleared its bound fought <= 2.9 cells
   out with cover >= 0.79 and the one that missed fought 9.09 out at 0.06)
+* clock expiry + traffic composition — the share of episodes that ran the
+  step ceiling out, and what the net carried while they did: total messages
+  per episode split into command traffic (orders, EXECUTE) and voice traffic
+  (SYNC PROPOSE / GO, which is free and never net-arbitrated). Refs issue
+  #18: three collapsed checkpoints (`squad_recon_v6`, `squad_screen_v4`,
+  `squad_screen_v5` at `ckpt_latest`) sat at the ceiling in 30/30 episodes
+  while transmitting 2.5x *more* than their own successful `ckpt_best` —
+  and the run digest's only volume number, `tx_per_agent_step`, counts
+  charged transmissions only, so it read 0.029 ("the radio went quiet")
+  through a message flood. Every channel had a counter; the net had no
+  denominator
 
 The pipeline has two halves, split so the math is unit-testable:
 
@@ -101,6 +112,28 @@ THREAT_RADIUS: float = CombatParams().weapon_range
 DEFEND_COVER_FLOOR: float = 0.40
 DEFEND_OBJECTIVE_DIST_CEILING: float = 5.0
 
+#: Clock-expiry gate (refs issue #18), applied to every root mission: the
+#: share of evaluated episodes that ended by running the step ceiling out.
+#: Bound set from the measured record at 10 episodes/checkpoint, seeds
+#: 500-509, over every checkpoint that loads under the v1.10 spaces — the
+#: healthy band tops out at 0.2 (`fireteam_defend_v9/best`, `_v8/latest`,
+#: both 2/10) and the three stalled checkpoints all sit at exactly 1.0
+#: (`squad_recon_v6`, `squad_screen_v4`, `squad_screen_v5`, all at
+#: `ckpt_latest`). 0.5 is the middle of an empty band, and it is also the
+#: point past which a policy fails more often by the clock than it succeeds.
+TIMEOUT_RATE_CEILING: float = 0.5
+
+#: Message kinds that carry command state — the learned acts of command an
+#: agent pays airtime for. The OPORD is excluded: it is HQ's, once, and no
+#: policy decided it.
+COMMAND_KINDS: frozenset[str] = frozenset({"order", "execute"})
+
+#: Message kinds spoken by VOICE (A5-4): free, uncharged, never
+#: net-arbitrated. The only learned transmission a stalling policy can emit
+#: without paying for it, which is why it is counted separately rather than
+#: pooled into "the radio".
+VOICE_KINDS: frozenset[str] = frozenset({"sync_propose", "sync_go"})
+
 
 def _dist(a: list | tuple, b: list | tuple) -> float:
     return math.hypot(a[0] - b[0], a[1] - b[1])
@@ -138,6 +171,11 @@ class TraceRecorder:
             "outcome": None,
             "length": 0,
             "root_mission": cfg.root_mission.name,
+            # the step ceiling this episode was played under: without it a
+            # recorded length of 375 is just a number, and "pinned at
+            # max_steps" — the stall signature of issue #18 — is not a
+            # statement the trace can support
+            "max_steps": int(cfg.max_steps),
             "root_objective": list(obj.pos) if obj is not None else None,
             "ring_radius": RING_RADIUS,
             # issue #11: the scenario's own weapon range defines "under
@@ -861,6 +899,44 @@ def _fight_disposition(trace: dict) -> dict[str, Any]:
     }
 
 
+def _traffic(trace: dict) -> dict[str, Any]:
+    """Everything said this episode, split by channel (refs issue #18).
+
+    The suite counted the channels it had a question about — orders, sync
+    bounds, CONTACTs, DONEs — but never the total, so *composition* was not
+    computable from ``behavior.json``: "the net went quiet" and "the net
+    changed hands" produced the same reading. They are not the same finding.
+    A stalled `squad_screen_v4/ckpt_latest` carries 1326 messages/episode
+    against its own successful `ckpt_best`'s 537, of which 0.6% are command
+    traffic against 15.5% — the net is louder and emptier at once.
+
+    Three counts, one denominator:
+
+    * ``messages`` — every message on the transcript, learned or automatic;
+    * ``messages_command`` — orders and EXECUTE releases (``COMMAND_KINDS``);
+    * ``messages_voice`` — SYNC PROPOSE / GO (``VOICE_KINDS``), which cost no
+      airtime and are never net-arbitrated, so they are the one transmission
+      a policy with nothing to say can emit for free.
+
+    ``ran_out_the_clock`` is the episode-level half of the signature: the
+    environment scores ``timeout`` exactly when the step ceiling is reached
+    with neither success nor defeat, so it *is* "pinned at ``max_steps``".
+    """
+    messages = command = voice = 0
+    for step in trace["steps"]:
+        for msg in step["messages"]:
+            messages += 1
+            command += msg["kind"] in COMMAND_KINDS
+            voice += msg["kind"] in VOICE_KINDS
+    return {
+        "messages": messages,
+        "messages_command": command,
+        "messages_voice": voice,
+        "ran_out_the_clock": trace.get("outcome") == "timeout",
+        "max_steps": trace.get("max_steps"),
+    }
+
+
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
     latencies, censored, obedience_by_task = _obedience(trace)
@@ -890,6 +966,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_vocabulary(trace),
         **_human_exposure(trace),
         **_fight_disposition(trace),
+        **_traffic(trace),
     }
 
 
@@ -1054,6 +1131,18 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             total("threat_objective_dist_sum"), total("threat_objective_dist_pairs")
         ),
         "threat_pairs": total("threat_pairs"),
+        # clock expiry + traffic composition (refs #18). The rate is the
+        # gated number; the composition is diagnosis, deliberately not gated
+        # — measured across the fleet, a healthy `fireteam_defend_v10` runs
+        # at a command share of 0.026 and a stalled `squad_recon_v6` at
+        # 0.022, so a fixed bound on composition separates nothing. It reads
+        # as a *within-scenario* contrast (best vs latest), not a threshold.
+        "timeout_rate": _ratio(sum(ep.get("ran_out_the_clock", False) for ep in episodes), n_eps),
+        "episode_length_mean": _mean([ep.get("length") for ep in episodes]),
+        "max_steps": next((ep["max_steps"] for ep in episodes if ep.get("max_steps")), None),
+        "messages_per_episode": _ratio(total("messages"), n_eps),
+        "command_traffic_share": _ratio(total("messages_command"), total("messages")),
+        "voice_traffic_share": _ratio(total("messages_voice"), total("messages")),
     }
 
 
@@ -1074,12 +1163,22 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     because it had walked off the position it was ordered to hold. Three
     million steps bought that lesson; these two numbers are ~free.
 
+    The clock-expiry gate (issue #18) applies to *every* root mission,
+    because running the step ceiling out is a failure mode no scenario wants
+    and the one signal that separated the collapsed checkpoints from the
+    healthy ones across the whole fleet: 0.0-0.2 healthy against exactly 1.0
+    for all three stalls. It is not redundant with the success rate — it
+    says *how* the episodes were lost, and a policy that rides out the clock
+    is a different repair from one that gets killed on the way in.
+
     Gates whose metric is None (never measured this run) are reported with
     ``passed=None`` — unmeasured is not the same as passed.
     """
+    gates = [_gate("timeout_rate", agg.get("timeout_rate"), TIMEOUT_RATE_CEILING, "max")]
     if agg.get("root_mission") != MissionType.DEFEND.name:
-        return []
+        return gates
     return [
+        *gates,
         _gate(
             "cover_occupancy_under_threat",
             agg.get("cover_occupancy_under_threat"),
@@ -1140,6 +1239,10 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("human_death_rate", "human: death rate", "{:.2f}"),
     ("cover_occupancy_under_threat", "fight: cover occupancy", "{:.3f}"),
     ("mean_distance_from_objective_under_threat", "fight: dist from OBJ", "{:.2f}"),
+    ("timeout_rate", "ran the clock out", "{:.2f}"),
+    ("messages_per_episode", "messages / ep", "{:.0f}"),
+    ("command_traffic_share", "of which command", "{:.3f}"),
+    ("voice_traffic_share", "of which voice (SYNC)", "{:.3f}"),
 )
 
 
@@ -1302,6 +1405,13 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             f"n={agg['succession_events']}, unrecovered {agg['succession_unrecovered']}"
         ),
         "cover_occupancy_under_threat": f"n={agg.get('threat_pairs', 0)} threatened agent-steps",
+        # the length next to its own ceiling: "375" only means "pinned" once
+        # the reader is told the cap is 375 (refs #18)
+        "timeout_rate": (
+            f"mean length {agg['episode_length_mean']:.0f}/{agg['max_steps']} steps"
+            if agg.get("episode_length_mean") is not None and agg.get("max_steps")
+            else ""
+        ),
     }
     notes = {k: v for k, v in notes.items() if v}
     lines = [f"behavior over {agg['episodes']} episodes:"]
