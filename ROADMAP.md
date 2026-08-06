@@ -871,3 +871,25 @@ terrain (still deferred).
   **Cost, stated plainly**: all eight published checkpoints are unloadable and
   the whole fleet needs retraining. The v1.9 numbers stay published as the
   standing baseline until that campaign runs. 341 → 348 tests.
+- **2026-08-06** — **defend preparation period** (`ScenarioSpec.assault_h_hour`,
+  owner's design call). `fireteam_defend` now draws its H-hour per episode from
+  **(55, 75)** and runs 450 steps (was 375, so the prep is bought without
+  shortening the fight). Before H the OpFor is spawned, alive, oracle-visible
+  and spottable, but does not move, fire, or advance. The OPORD announces the
+  band's **midpoint** on the net — `DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS
+  65.` — and that nominal H drives `time_to_contact`, so the arrival is
+  approximately, not exactly, known: a defense that waits for the announced
+  tick is late half the time, and the habit the scenario pays for is *being
+  set early*.
+  **Why this and not more reward weight**: the fire team spawns at (17,17) with
+  ALPHA at (18,18) — it starts ON the objective, so its problem was never
+  reaching the ground. v7 *left* it (cover occupancy 0.05, the fight 9.7 cells
+  out, ADVANCE missions holding 48% of threatened agent-steps, inherited from
+  the `defend_brique_v2` parent). ~21 steps of warning was just enough to walk
+  out and meet the assault in the open. A contact-free phase makes occupying
+  the position the only thing worth doing, and makes leaving expensive —
+  whoever walks out has to walk back before H.
+  Deliberately a **timer, not a new C2 obligation** (the TL owes no positioning
+  orders during prep): one variable at a time, so a miss stays diagnosable.
+  The draw is guarded, so scenarios without a preparation period consume no
+  randomness and reproduce their old seeds exactly. 348 → 357 tests.

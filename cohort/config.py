@@ -138,6 +138,18 @@ class ScenarioSpec:
     assault_spawn_min_dist: float = 10.0  # minimum distance from the assaulted objective
     #                               at which "assault"-mode OpFor spawns; larger values
     #                               model the early warning a prepared defense earns.
+    assault_h_hour: tuple[int, int] | None = None
+    #                               preparation period (v1.10): inclusive (lo, hi) band
+    #                               the actual H-hour is drawn from at reset. Before H
+    #                               the OpFor is on the map but does not move, fire, or
+    #                               advance — the defense gets time to occupy its
+    #                               prepared positions, which is what a DEFEND mission
+    #                               presumes. The OPORD announces the band's MIDPOINT as
+    #                               the nominal H (and drives the time_to_contact
+    #                               observation), so the arrival is approximately, not
+    #                               exactly, known: a defense must be set early rather
+    #                               than timed to the tick. None → no preparation
+    #                               period, the shipped behavior.
     observation_concealment: bool = False  # True → guarantee concealed observation
     #                               positions: small forest patches on the ring at
     #                               observation distance (~6 cells) around the root
@@ -221,12 +233,20 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         opfor_mode="assault",
         root_mission=MissionType.DEFEND,
         root_objective="ALPHA",
-        max_steps=375,
+        # v1.10: 375 → 450, buying the preparation period below without
+        # shortening the fight it precedes
+        max_steps=450,
         # defensive doctrine: prepared positions + early warning (see ROADMAP —
         # three trainings on the bare spec all plateaued at a ~55-60% coin-flip
         # brawl; a defense without defensible ground isn't a defense)
         objective_cover=True,
         assault_spawn_min_dist=21.0,
+        # preparation period (v1.10): the fire team spawns ON the objective, so
+        # its problem was never reaching the ground — v7 left it, fighting 9.7
+        # cells out with cover occupancy 0.05. A contact-free phase makes
+        # occupying the position the only thing worth doing, and makes leaving
+        # it expensive: whoever walks out has to walk back before H.
+        assault_h_hour=(55, 75),
     ),
     "squad": ScenarioSpec(
         name="squad",
