@@ -35,6 +35,44 @@ def _cleared_env(seed=1):
     return env
 
 
+def test_the_fallen_are_paid_the_team_terminal():
+    """A soldier who dies before the win still shares in it (v1.11).
+
+    THE regression test for the collapse the v1.11 bisect diagnosed. The
+    terminal used to be paid to ``roster.living``, so a casualty forfeited all
+    60 points, and the per-agent arithmetic on a 9-agent squad was:
+
+        hanging back cuts P(die) 0.129 -> 0.022, worth +6.4 to that agent
+        ...but ONE shared policy updates EVERY agent at once, so team success
+        goes 1.00 -> 0.00, worth -52.3 to that agent
+
+    A per-agent advantage only ever sees the first number. Three arms of the
+    squad_screen bisect collapsed into the resulting basin and none escaped it
+    in 350k+ further steps; the oracle measured the policy there at 19.96 cells
+    from the objective against 10.39 before, and 0.20 friendly deaths per
+    episode against 1.12. Dying must not forfeit the win.
+    """
+    from cohort.env.rewards import RewardConfig
+
+    env = _cleared_env()
+    dead = env.roster.by_callsign["RFN2"]
+    dead.health = 0
+    dead.alive = False
+    _step_all(env, {})  # T0: the condition is met, the grace window opens
+    assert "RFN2" in env.agents, "the fallen stay in the episode"
+    _obs, _rewards, terms, _tr, infos = _step_all(env, {"TL1": DONE})
+    assert env.outcome == "success"
+
+    fallen = infos["RFN2"]["components"]
+    survivor = infos["RFN3"]["components"]
+    assert survivor["terminal"] >= RewardConfig().success_team
+    assert fallen["terminal"] == pytest.approx(survivor["terminal"]), (
+        "a casualty is paid the same team terminal as a survivor"
+    )
+    assert fallen["time"] == 0.0, "and accrues nothing per step while it waits"
+    assert all(terms.values()), "success still terminates everyone, fallen included"
+
+
 def test_root_report_ends_the_episode_that_step():
     env = _cleared_env()
     _step_all(env, {})  # T0 = 1: condition met, window opens

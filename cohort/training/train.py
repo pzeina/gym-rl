@@ -291,7 +291,13 @@ class Trainer:
                     for comp, val in infos[a]["components"].items():
                         comp_sums[comp] += val
                     self._ep_return[e] += rewards[a]
-                agent_steps += len(present)
+                # LIVING agent-steps only. Since v1.11 the fallen stay in the
+                # episode (to be paid the team terminal), so counting every
+                # present agent here would silently dilute every per-agent-step
+                # figure in metrics.csv — the reward components, tx rate and
+                # message rate — by however many casualties a run takes, and
+                # nothing in the record would be comparable across the change.
+                agent_steps += sum(1 for a in present if self.envs[e].roster.by_callsign[a].alive)
                 tx_total += env.transmissions_last_step
                 # every message, not only the charged ones (refs #18)
                 message_total += len(env.last_messages)

@@ -703,9 +703,9 @@ class CohortEnv(ParallelEnv):
         views = self._compute_views()
         for callsign in present:
             soldier = self.roster.by_callsign[callsign]
-            ledger.add(callsign, "time", cfg.time_penalty)
             if not soldier.alive:
-                continue
+                continue  # a casualty accrues nothing per step, not even the clock
+            ledger.add(callsign, "time", cfg.time_penalty)
             ctx = self._compliance_ctx(soldier, prev_dist.get(callsign), views[callsign])
             if soldier.mission is not None:
                 self._update_crossing(soldier)
@@ -843,8 +843,26 @@ class CohortEnv(ParallelEnv):
         if success:
             self._episode_outcome = "success"
             speed = cfg.success_speed * max(0.0, 1.0 - self._success_step / self.spec_cfg.max_steps)
-            for s in self.roster.living:
-                ledger.add(s.callsign, "terminal", cfg.success_team + speed)
+            # v1.11: paid to everyone still IN the episode, which now includes
+            # the fallen (see `terminations` below). It used to be
+            # `roster.living`, so a soldier who died at step 50 of an episode
+            # that succeeded at step 200 received none of this — and the
+            # arithmetic of that, per agent on the squad, was:
+            #   hanging back cuts P(die) 0.129 -> 0.022, worth +6.4 ... but
+            #   ONE shared policy updates EVERY agent at once, so team success
+            #   goes 1.00 -> 0.00, worth -52.3.
+            # A per-agent advantage only ever sees the first number, which is
+            # how an individually-rational free-ride became a simultaneous
+            # collective defection. Measured with the oracle on the collapsed
+            # squad_screen policy: 19.96 cells from the objective against
+            # 10.39 before, 13.9 threatened steps/ep against 24.9, 0.20
+            # friendly deaths/ep against 1.12 — hang back, sit in cover, never
+            # trigger the observation, terminal exactly 0.0000 forever.
+            # A soldier who falls taking the objective shares in its being
+            # taken. Preservation is still priced, proportionately, by
+            # `death` and `teammate_death`.
+            for callsign in present:
+                ledger.add(callsign, "terminal", cfg.success_team + speed)
             if root_reported and self._root_done_callsign is not None:
                 ledger.add(self._root_done_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
@@ -865,7 +883,15 @@ class CohortEnv(ParallelEnv):
             soldier = self.roster.by_callsign[callsign]
             observations[callsign] = self._observe(soldier, views[callsign])
             rewards[callsign] = ledger.total(callsign)
-            terminations[callsign] = (not soldier.alive) or success or defeat
+            # v1.11: a casualty is NOT removed from the episode. It stays, with
+            # STAY as its only legal action (compute_mask already returns that
+            # for a dead soldier) and no per-step reward, until the episode
+            # actually ends — so it is still present to be paid the team
+            # terminal above. Two things follow, both wanted: the policy gets
+            # no spurious gradient from the fallen (a single legal action has
+            # zero entropy and a ratio of 1), while the CRITIC gets the correct
+            # value target for "dead, outcome still pending".
+            terminations[callsign] = success or defeat
             truncations[callsign] = truncated_all
             infos[callsign] = {
                 "components": ledger.breakdown(callsign),
