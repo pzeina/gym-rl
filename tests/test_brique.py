@@ -346,9 +346,17 @@ def test_trap_kill_flows_through_casualty_processing():
     rfn1.health = 30
     _obs, _r, terms, _tr, infos = _step_all(env, {"RFN1": MOVE_EAST})
     assert not rfn1.alive
-    assert terms["RFN1"] is True
     assert any(m.kind.value == "casualty" and "RFN1" in m.text for m in env.transcript.messages)
     assert infos["RFN2"]["components"]["combat"] < 0, "teammates pay the death penalty"
+    # v1.11: dying no longer ENDS this agent's episode. The casualty stays in
+    # play, STAY-only and earning nothing, so it is still there to be paid the
+    # team terminal if the cohort goes on to win. Forfeiting that reward was
+    # worth +6.4 per agent to hang back and -52.3 when every agent did it at
+    # once under one shared policy — see the terminal block in cohort_env.
+    assert terms["RFN1"] is False, "a casualty is not terminated out of the episode"
+    assert "RFN1" in env.agents, "the fallen stay present until the episode ends"
+    mask = _obs["RFN1"]["action_mask"]
+    assert mask.sum() == 1 and mask[0] == 1, "and may only STAY"
 
 
 def test_traps_spawn_on_route_and_are_oracle_visible_from_reset():

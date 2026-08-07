@@ -15,6 +15,16 @@ fireteam 84±7 · squad 93±5 · platoon **98±3** · recon 94±5 · screen 98±
 patrol_brique 95±4 · defend_brique 85±7 · **fireteam_defend 51±10** (v6; the
 diagnosed v7 retrain missed at 35±9).
 
+> **⚠ Every number in that line is `ckpt_best` — a best-rolling-WINDOW figure,
+> not the policy its run ended with, and four of the eight fail the stability
+> bar** (`scripts/publish_audit.py`, added 2026-08-07). Final deciles, in the
+> same order: 75 · 93 · 98 · 85 · 95 · 98 · 88 · **32**. Across all 18 published
+> runs, 11 fail with a mean give-back of 25.9 points, and six carry a headline
+> ≥10 points above where their run finished — worst, `squad_recon_v6` published
+> at 91±6 off a run whose rolling success ended at **0.00**. The cause is
+> diagnosed in the 2026-08-07 progress-log entry; the whole fleet is superseded
+> by the v1.11 retrain.
+
 **What v1.10 changed (owner's design calls this session, all committed, none
 yet trained on)** — see the progress log for the full reasoning:
 1. `human_death` **−25 → 0.0** — the correlated −25 × n_agents shock, the
@@ -1985,3 +1995,91 @@ deliberately deferred (`docs/vision.md` §2c).
   death rises with success and why false DONE sits at 0.944 — a 0.85 ± 0.16
   built on those is not a result to replicate yet. Owner's call; no reward
   change proposed here. refs #19
+- **2026-08-07** — **D4 diagnosed: the dominance test was in the wrong units,
+  and the collapse is a free-ride the shared policy takes collectively.** Three
+  defects found and fixed, one diagnosis retracted, one new mechanism measured.
+  Commits `60cb6c3`, `da5bdb1`, `d44ee8d`. 491 tests green, ruff clean.
+
+  **1. The dominance invariant never applied the discount.**
+  `test_terminal_dominates_stalling` asserts `success_team > max_step_farm() *
+  max_steps` — 60 > 54 on platoon — and has passed since v1.0. PPO maximizes
+  the DISCOUNTED return, and at γ 0.99 the planning horizon is 1/(1-γ) = 100
+  steps against episodes of 300-600. Discounted, platoon's terminal was worth
+  **4.52 against a stall's 8.98**: not marginal, inverted. squad sat at exactly
+  1.00, which is what its oscillation between 22% and 99% success was.
+  Scoring every run's OBSERVED final-decile reward stream this way separates
+  the record **8 times out of 8** — collapsed runs at farm 0.044-0.068/step
+  with terminal 0.0000, converged runs at ≤0.03 with terminal 0.12-0.39.
+  The mechanism is `compliance()`'s flat in-position credit: the only
+  non-telescoping term in the shaping, a per-step RENT whose lifetime total is
+  proportional to `max_steps`, where `_progress` is potential-based and
+  `observe_progress`/`prep_in_position` are explicit budgets. Raising
+  `success_team` 25 → 45 → 60 fought it three times and could not have won —
+  the shortfall is in the exponent. **Fixed**: γ 0.99 → 0.999, position rents
+  halved behind names (`POSTURE_HOLD`/`POSITION_HOLD`/`POSITION_DRIFT`).
+  Worst-case discounted win/stall **0.50 → 2.56**; observed farm in the
+  collapsed state **0.068 → 0.012/step**. The invariant is now stated in the
+  units that decide it, at a 2x bar, and a companion test asserts the OLD
+  economics FAIL it — a regression test that also passes on the broken
+  configuration proves nothing.
+
+  **2. The value head owned 95-99% of the gradient budget.** Value targets of
+  scale 60, unnormalized, drove `value_loss` to 94-188 across the fleet; since
+  `max_grad_norm` clips the WHOLE gradient, the POLICY update was attenuated
+  ~5x on exactly the iterations where something happened. Measured live in the
+  bisect: control `grad_norm` **46.1** (clipped ~90x) against treatment
+  **0.3-1.6** (clip inert). **Fixed**: the critic fits standardized returns and
+  has its own torso and its own gradient clip. Checkpoints stay loadable — the
+  architecture flags default to the pre-v1.11 shape when absent.
+
+  **3. Nothing was instrumented.** `grad_norm`, `clipfrac`,
+  `explained_variance`, the value/return scales, `epochs_used`, `lr` and
+  `n_episodes` are now logged, and the rest of `PPOConfig` — including γ — is
+  on the CLI, so a campaign can sweep it without editing the tree mid-run.
+  Issues #16-#19 were all diagnosed without any of it.
+
+  **RETRACTION: the discount inversion is NOT the trigger.** The bisect
+  (`squad_screen_ctl_gamma099_v1` control; `squad_screen_v9`/`v10` treatment,
+  seeds 17 and 23) collapsed on **all three arms** — control at 395k, treatment
+  at 118k and 151k — with no recovery in 350k+ further steps. The 8/8
+  correlation was real but it describes where collapsed runs LAND, not why they
+  leave. The economics fix removed the reward for staying; it did not stop the
+  policy arriving.
+
+  **What the instrumentation bought instead: three hypotheses killed in one
+  run.** Through the collapse (12k steps, 147k → 160k) entropy is **flat at
+  1.70**, `approx_kl` flat at **0.005**, `grad_norm` **0.3-1.9**, `clipfrac`
+  flat. So: not an entropy collapse, not a destructive update, not a numerical
+  blow-up — the three standing suspects. A fourth, mine, died too: raw
+  advantage std in the collapsed basin is **0.82**, amplified 1.2x by
+  normalization. There is a healthy gradient there; it points nowhere.
+
+  **What the oracle found.** The collapsed squad stands **19.96 cells from the
+  root objective against 10.39** before, takes **13.9 threatened steps/ep
+  against 24.9**, and loses **0.20 friendly/ep against 1.12**. A survival
+  policy: hang back, sit in cover, never trigger the team observation.
+  `terminal` goes to exactly 0.0000 and never returns.
+
+  **The mechanism.** The terminal was paid `for s in roster.living`, so a
+  soldier who died at step 50 of an episode that succeeded at step 200 received
+  none of the 60 points. Per agent on a 9-agent squad: hanging back cuts P(die)
+  0.129 → 0.022, worth **+6.4** — but ONE shared policy updates EVERY agent at
+  once, so team success goes 1.00 → 0.00, worth **−52.3**. A per-agent
+  advantage only ever sees the first number. Parameter sharing converts an
+  individually-rational free-ride into a simultaneous collective defection,
+  which explains the abruptness, the non-recovery, and the flat entropy.
+  **Fixed** (`d44ee8d`): a casualty is no longer terminated out of the episode.
+  It stays, STAY-only and accruing nothing, and is paid the team terminal with
+  everyone else — the policy takes no spurious gradient from the fallen (one
+  legal action, zero entropy, ratio 1) while the critic gets the correct value
+  target for "dead, outcome still pending". **Honest caveat: platoon has 16
+  agents, the most dilution, and converged at 92%. Free-riding alone does not
+  predict that.** Not yet validated — the A/B against these three arms is the
+  next run.
+
+  **Publishing standard changed.** `ckpt_latest` is now evaluated alongside
+  `ckpt_best` (`behavior_final.json`), `run_report` prints both with the FINAL
+  as the headline, and `scripts/publish_audit.py` applies the gate: **11 of 18
+  published runs fail it, mean give-back 25.9 points**, six carrying a headline
+  ≥10 points above where their run finished (`squad_recon_v6` published 91±6
+  off a run that ended at **0.00**). README and the handoff block are corrected.

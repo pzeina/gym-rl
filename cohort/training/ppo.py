@@ -10,6 +10,25 @@ The rollout buffer is rectangular over (time, env, agent-slot) with a
 validity mask: agents that died (or an env between episodes) simply
 contribute no transitions. Truncated episodes bootstrap the final state's
 value into the last reward, so timeouts are not mistaken for failures.
+
+v1.11 — two changes to how the critic is fitted, both measured:
+
+* **Return normalization** (``normalize_value``). Value targets here span
+  ~-3 (a stalled episode) to ~+78 (a fast win paid to every agent), so the
+  unnormalized ``value_loss`` reached 94-188 on the shipped fleet. Measured on
+  a realistic bimodal batch, that put **95-99% of the total gradient norm in
+  the value head**, and since ``max_grad_norm`` clips the *whole* gradient, the
+  policy update was attenuated ~5x on exactly the iterations where something
+  happened. Fitting the critic against standardized returns removes the
+  attenuation entirely (clip scale 0.19 -> 1.00).
+* **Split critic** (``separate_critic``). With one torso the value objective
+  and the policy objective compete for the same features. Given a separate
+  trunk they no longer do, and their gradients can be clipped independently —
+  which is what makes the split mean something, since a shared global clip
+  would re-couple them at the first value spike.
+
+Both default OFF so every checkpoint published before v1.11 reconstructs its
+exact original architecture (``load_policy`` reads the flags off the file).
 """
 
 from __future__ import annotations
@@ -30,7 +49,15 @@ class PPOConfig:
     horizon: int = 128
     lr: float = 3.0e-4
     anneal_lr: bool = True
-    gamma: float = 0.99
+    #: v1.11: 0.99 -> 0.999. At 0.99 the effective planning horizon is
+    #: 1/(1-gamma) = 100 steps against episodes of 300-600, so gamma^T ran to
+    #: 0.0024 on platoon — the terminal reward was invisible to the optimizer
+    #: while the per-step compliance rent was paid in full. Measured over all
+    #: 69 runs, the three families whose DISCOUNTED stall out-earned their
+    #: discounted win are exactly the three that collapsed to 0% success
+    #: (8/8 correlation; see ROADMAP). ``RewardConfig.win_beats_stall`` is the
+    #: invariant, and it is checked against this value.
+    gamma: float = 0.999
     gae_lambda: float = 0.95
     clip_coef: float = 0.2
     ent_coef: float = 0.01
@@ -41,8 +68,15 @@ class PPOConfig:
     #: Stop the update epochs early once the mean per-minibatch approximate KL
     #: exceeds this. Guards against the destructive updates that four times
     #: collapsed a converged policy mid-run (ROADMAP D4). None disables.
+    #: NOTE: measured approx_kl across the shipped fleet is 0.0001-0.006, so
+    #: this guard has never fired — the collapses were an economics failure,
+    #: not a too-large-step failure. Kept as a cheap ceiling, not a fix.
     target_kl: float | None = 0.02
     hidden: int = 256
+    #: fit the critic against standardized returns (see module docstring)
+    normalize_value: bool = True
+    #: give the critic its own torso, and clip its gradient independently
+    separate_critic: bool = True
     device: str = "cpu"
 
 
@@ -52,26 +86,121 @@ def _layer(m: nn.Linear, std: float = np.sqrt(2), bias: float = 0.0) -> nn.Linea
     return m
 
 
-class PolicyNet(nn.Module):
-    """Shared actor-critic MLP with action masking."""
+def _torso(obs_dim: int, hidden: int) -> nn.Sequential:
+    return nn.Sequential(
+        _layer(nn.Linear(obs_dim, hidden)),
+        nn.Tanh(),
+        _layer(nn.Linear(hidden, hidden)),
+        nn.Tanh(),
+    )
 
-    def __init__(self, obs_dim: int, n_actions: int, hidden: int = 256) -> None:
+
+class ValueNorm(nn.Module):
+    """Running mean/variance of returns, for standardizing value targets.
+
+    The critic learns in units of standard deviations; everything outside the
+    value loss (GAE, advantages, logging) works in reward units and goes
+    through :meth:`denormalize`. Statistics live in buffers so they ride along
+    in ``state_dict`` and a resumed run does not restart its critic's scale.
+
+    With ``enabled=False`` this is the identity, which is how pre-v1.11
+    checkpoints keep their exact original behavior.
+    """
+
+    def __init__(self, enabled: bool = True, epsilon: float = 1e-5) -> None:
         super().__init__()
-        self.torso = nn.Sequential(
-            _layer(nn.Linear(obs_dim, hidden)),
-            nn.Tanh(),
-            _layer(nn.Linear(hidden, hidden)),
-            nn.Tanh(),
-        )
+        self.enabled = enabled
+        self.epsilon = epsilon
+        self.register_buffer("running_mean", torch.zeros(()))
+        self.register_buffer("running_var", torch.ones(()))
+        self.register_buffer("count", torch.zeros(()))
+
+    @torch.no_grad()
+    def update(self, returns: torch.Tensor) -> None:
+        """Fold a batch of returns into the running statistics (Welford)."""
+        if not self.enabled or returns.numel() == 0:
+            return
+        batch_mean = returns.mean()
+        batch_var = returns.var(unbiased=False)
+        batch_count = torch.tensor(float(returns.numel()), device=returns.device)
+        delta = batch_mean - self.running_mean
+        total = self.count + batch_count
+        new_mean = self.running_mean + delta * batch_count / total
+        m_a = self.running_var * self.count
+        m_b = batch_var * batch_count
+        new_var = (m_a + m_b + delta**2 * self.count * batch_count / total) / total
+        self.running_mean.copy_(new_mean)
+        self.running_var.copy_(new_var)
+        self.count.copy_(total)
+
+    def _std(self) -> torch.Tensor:
+        return torch.sqrt(self.running_var + self.epsilon)
+
+    def normalize(self, x: torch.Tensor) -> torch.Tensor:
+        """Reward units -> standardized units (what the critic head fits)."""
+        if not self.enabled or float(self.count) == 0.0:
+            return x
+        return (x - self.running_mean) / self._std()
+
+    def denormalize(self, x: torch.Tensor) -> torch.Tensor:
+        """Standardized units -> reward units (what GAE and logging want)."""
+        if not self.enabled or float(self.count) == 0.0:
+            return x
+        return x * self._std() + self.running_mean
+
+
+class PolicyNet(nn.Module):
+    """Shared actor-critic MLP with action masking.
+
+    ``separate_critic`` gives the value head its own torso; ``normalize_value``
+    makes the head predict standardized returns. Both default to False so that
+    ``PolicyNet(obs_dim, n_actions, hidden)`` reconstructs the pre-v1.11
+    architecture exactly — the published fleet's checkpoints load unchanged.
+    """
+
+    def __init__(
+        self,
+        obs_dim: int,
+        n_actions: int,
+        hidden: int = 256,
+        *,
+        separate_critic: bool = False,
+        normalize_value: bool = False,
+    ) -> None:
+        super().__init__()
+        self.separate_critic = separate_critic
+        self.torso = _torso(obs_dim, hidden)
+        self.critic_torso = _torso(obs_dim, hidden) if separate_critic else None
         self.pi = _layer(nn.Linear(hidden, n_actions), std=0.01)
         self.v = _layer(nn.Linear(hidden, 1), std=1.0)
+        self.value_norm = ValueNorm(enabled=normalize_value)
+
+    # -- parameter groups: what the actor owns vs what the critic owns ----- #
+
+    def actor_parameters(self) -> list[nn.Parameter]:
+        """Parameters the policy loss may move."""
+        return [*self.torso.parameters(), *self.pi.parameters()]
+
+    def critic_parameters(self) -> list[nn.Parameter]:
+        """Parameters the value loss may move (the shared torso, if shared)."""
+        if self.critic_torso is None:
+            return [*self.torso.parameters(), *self.v.parameters()]
+        return [*self.critic_torso.parameters(), *self.v.parameters()]
+
+    # -- forward ----------------------------------------------------------- #
+
+    def dist_value_raw(self, obs: torch.Tensor, mask: torch.Tensor) -> tuple[Categorical, torch.Tensor]:
+        """Masked distribution and the RAW critic output (standardized units)."""
+        h = self.torso(obs)
+        logits = self.pi(h).masked_fill(mask == 0, -1e9)
+        # a shared torso is computed once; a split one needs its own pass
+        h_v = h if self.critic_torso is None else self.critic_torso(obs)
+        return Categorical(logits=logits), self.v(h_v).squeeze(-1)
 
     def dist_value(self, obs: torch.Tensor, mask: torch.Tensor) -> tuple[Categorical, torch.Tensor]:
-        """Masked action distribution and state value."""
-        h = self.torso(obs)
-        logits = self.pi(h)
-        logits = logits.masked_fill(mask == 0, -1e9)
-        return Categorical(logits=logits), self.v(h).squeeze(-1)
+        """Masked action distribution and state value IN REWARD UNITS."""
+        dist, raw = self.dist_value_raw(obs, mask)
+        return dist, self.value_norm.denormalize(raw)
 
     @torch.no_grad()
     def act(
@@ -139,6 +268,20 @@ class RolloutBuffer:
         return advantages, returns
 
 
+def explained_variance(values: np.ndarray, returns: np.ndarray) -> float:
+    """1 - Var(returns - values) / Var(returns); 1.0 is a perfect critic.
+
+    The one number that says whether the critic is doing its job. Negative
+    means the value head is worse than predicting the batch mean — under which
+    every advantage in the update is noise, and the run is not learning from
+    what it thinks it is learning from.
+    """
+    var = float(np.var(returns))
+    if var < 1e-9:
+        return float("nan")
+    return float(1.0 - np.var(returns - values) / var)
+
+
 def ppo_update(
     net: PolicyNet,
     optimizer: torch.optim.Optimizer,
@@ -147,7 +290,13 @@ def ppo_update(
     returns: np.ndarray,
     cfg: PPOConfig,
 ) -> dict[str, float]:
-    """One PPO update over all valid transitions; returns loss metrics."""
+    """One PPO update over all valid transitions; returns loss metrics.
+
+    Diagnostics returned alongside the losses — ``grad_norm``, ``clipfrac``,
+    ``explained_variance``, the value/return scales and how many epochs
+    actually ran. Every collapse investigated on this project so far
+    (issues #16-#19) was conducted without them.
+    """
     device = torch.device(cfg.device)
     idx = buffer.valid.reshape(-1)
     flat = lambda arr, extra=():  torch.as_tensor(  # noqa: E731
@@ -157,24 +306,38 @@ def ppo_update(
     b_masks = flat(buffer.masks, (buffer.n_actions,))
     b_actions = flat(buffer.actions)
     b_logprobs = flat(buffer.logprobs)
+    b_values = flat(buffer.values)
     b_advantages = flat(advantages.astype(np.float32))
     b_returns = flat(returns.astype(np.float32))
     b_advantages = (b_advantages - b_advantages.mean()) / (b_advantages.std() + 1e-8)
 
+    # Fold this batch's returns into the critic's scale BEFORE building its
+    # targets, so the head always fits against the statistics it will be
+    # denormalized with. (MAPPO's ValueNorm ordering.)
+    net.value_norm.update(b_returns)
+    b_targets = net.value_norm.normalize(b_returns)
+
+    ev = explained_variance(buffer.values.reshape(-1)[idx], returns.reshape(-1)[idx])
+
     n = b_obs.shape[0]
     minibatch = max(64, n // cfg.num_minibatches)
-    metrics = {"policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0, "approx_kl": 0.0}
+    metrics = {
+        "policy_loss": 0.0, "value_loss": 0.0, "entropy": 0.0,
+        "approx_kl": 0.0, "clipfrac": 0.0, "grad_norm": 0.0,
+    }
     updates = 0
+    epochs_used = 0
     kl_stop = False
     for _ in range(cfg.update_epochs):
         if kl_stop:
             break
+        epochs_used += 1
         perm = torch.randperm(n, device=device)
         for start in range(0, n, minibatch):
             mb = perm[start : start + minibatch]
             if mb.shape[0] < 2:
                 continue
-            dist, value = net.dist_value(b_obs[mb], b_masks[mb])
+            dist, value = net.dist_value_raw(b_obs[mb], b_masks[mb])
             logprob = dist.log_prob(b_actions[mb])
             entropy = dist.entropy().mean()
             logratio = logprob - b_logprobs[mb]
@@ -184,17 +347,27 @@ def ppo_update(
             pg1 = -adv * ratio
             pg2 = -adv * torch.clamp(ratio, 1 - cfg.clip_coef, 1 + cfg.clip_coef)
             policy_loss = torch.max(pg1, pg2).mean()
-            value_loss = 0.5 * ((value - b_returns[mb]) ** 2).mean()
+            value_loss = 0.5 * ((value - b_targets[mb]) ** 2).mean()
             loss = policy_loss - cfg.ent_coef * entropy + cfg.vf_coef * value_loss
 
             optimizer.zero_grad()
             loss.backward()
-            nn.utils.clip_grad_norm_(net.parameters(), cfg.max_grad_norm)
+            if net.critic_torso is None:
+                grad_norm = float(nn.utils.clip_grad_norm_(net.parameters(), cfg.max_grad_norm))
+            else:
+                # A split critic that shares a global gradient clip is still
+                # coupled to the actor: one value spike scales BOTH down. Clip
+                # the two groups independently so the split does what it says.
+                g_pi = nn.utils.clip_grad_norm_(net.actor_parameters(), cfg.max_grad_norm)
+                g_v = nn.utils.clip_grad_norm_(net.critic_parameters(), cfg.max_grad_norm)
+                grad_norm = float(torch.sqrt(g_pi**2 + g_v**2))
             optimizer.step()
 
             with torch.no_grad():
                 kl = ((ratio - 1) - logratio).mean().item()
                 metrics["approx_kl"] += kl
+                metrics["clipfrac"] += ((ratio - 1.0).abs() > cfg.clip_coef).float().mean().item()
+            metrics["grad_norm"] += grad_norm
             metrics["policy_loss"] += policy_loss.item()
             metrics["value_loss"] += value_loss.item()
             metrics["entropy"] += entropy.item()
@@ -202,4 +375,11 @@ def ppo_update(
             if cfg.target_kl is not None and kl > cfg.target_kl:
                 kl_stop = True  # this update has moved the policy far enough
                 break
-    return {k: v / max(1, updates) for k, v in metrics.items()}
+    out = {k: v / max(1, updates) for k, v in metrics.items()}
+    out["explained_variance"] = ev
+    out["epochs_used"] = float(epochs_used)
+    out["return_mean"] = float(b_returns.mean())
+    out["return_std"] = float(b_returns.std())
+    out["value_mean"] = float(b_values.mean())
+    out["value_std"] = float(b_values.std())
+    return out

@@ -362,16 +362,39 @@ from scratch** on the new spaces. These are the current published
 checkpoints; the sections below narrate the pre-A5 (B5-era) runs, kept on
 disk and in history for provenance.
 
-| scenario | run | success (N=100) | prev | bound (prev −5) | vocabulary in the eval traffic |
-|---|---|---|---|---|---|
-| fireteam | `fireteam_v6` | **84% ± 7** | 78 | 73 ✓ | 4.3 ADVANCE/ep, 2.6 timed/ep, 5.8 sync GO/ep |
-| squad | `squad_v5` | **93% ± 5** | 82 | 77 ✓ | 15 ADVANCE, 11 timed, 24 FORMATION/ep, stance 76% of steps |
-| fireteam_defend | `fireteam_defend_v6` | **51% ± 10** | 73 | 68 **✗ (−17)** | 7.6 ADVANCE, 33.5 sync GO/ep |
-| squad_recon | `squad_recon_v5b` | **94% ± 5** | 85 | 80 ✓ | 14 ADVANCE, 15 FORMATION/ep, stance 73% |
-| squad_screen | `squad_screen_v3` | **98% ± 3** | 92 | 87 ✓ | 13 FORMATION/ep, stance 76%, 29 sync GO/ep |
-| patrol_brique | `patrol_brique_v3` | **95% ± 4** | 99 | 94 ✓ | 12 ADVANCE, 15 FORMATION/ep, stance 54% |
-| defend_brique | `defend_brique_v2` | **85% ± 7** | 87 | 82 ✓ | 7.8 ADVANCE, 17.9 sync GO/ep |
-| platoon | `platoon_v3` | **98% ± 3** | 91 | 86 ✓ | 39 ADVANCE, 17 timed, 49 FORMATION/ep, 101 sync GO/ep |
+> **Read the stability column before quoting any number here.** Every figure in
+> the `success` column is `ckpt_best.pt` — the best rolling WINDOW seen during
+> training, not the policy the run ended with. On a stable run the two agree.
+> On an unstable one the published number measures a transient, and four of the
+> eight rows below are unstable. `scripts/publish_audit.py` recomputes this
+> table's verdicts from `metrics.csv` at any time; the standard is in
+> `scripts/run_report.py::PUBLISH_STABILITY_POINTS`.
+
+| scenario | run | success (N=100) | final decile | stability | prev | bound (prev −5) | vocabulary in the eval traffic |
+|---|---|---|---|---|---|---|---|
+| fireteam | `fireteam_v6` | **84% ± 7** | 75% | ✗ gave back 20 | 78 | 73 ✓ | 4.3 ADVANCE/ep, 2.6 timed/ep, 5.8 sync GO/ep |
+| squad | `squad_v5` | **93% ± 5** | 93% | ✓ gap 5 | 82 | 77 ✓ | 15 ADVANCE, 11 timed, 24 FORMATION/ep, stance 76% of steps |
+| fireteam_defend | `fireteam_defend_v6` | **51% ± 10** | 32% | ✗ **gave back 22** | 73 | 68 **✗ (−17)** | 7.6 ADVANCE, 33.5 sync GO/ep |
+| squad_recon | `squad_recon_v5b` | **94% ± 5** | 85% | ✗ gave back 12 | 85 | 80 ✓ | 14 ADVANCE, 15 FORMATION/ep, stance 73% |
+| squad_screen | `squad_screen_v3` | **98% ± 3** | 95% | ✓ gap 5 | 92 | 87 ✓ | 13 FORMATION/ep, stance 76%, 29 sync GO/ep |
+| patrol_brique | `patrol_brique_v3` | **95% ± 4** | 98% | ✓ gap 2 | 99 | 94 ✓ | 12 ADVANCE, 15 FORMATION/ep, stance 54% |
+| defend_brique | `defend_brique_v2` | **85% ± 7** | 88% | ✗ gave back 10 | 87 | 82 ✓ | 7.8 ADVANCE, 17.9 sync GO/ep |
+| platoon | `platoon_v3` | **98% ± 3** | 98% | ✓ gap 2 | 91 | 86 ✓ | 39 ADVANCE, 17 timed, 49 FORMATION/ep, 101 sync GO/ep |
+
+**Correction (2026-08-07).** The four ✗ rows do not clear the publishing bar and
+should not be quoted as results without their final-decile number beside them.
+One is materially overstated: `fireteam_defend_v6` publishes **51%** off a run
+whose rolling success ended at **32%**. `defend_brique_v2` and `patrol_brique_v3`
+are the benign direction — their published numbers are at or below where their
+runs finished.
+
+The same audit over every published run, not just this table, finds **11 of 18**
+failing the gate with a mean give-back of **25.9 points**, and six carrying a
+headline at least 10 points above the policy their run ended with — worst,
+`squad_recon_v6` at **91% ± 6** off a run whose rolling success ended at **0.00**.
+Those six are narrated in the sections below and are superseded by the v1.11
+retrain. The cause of the give-backs is diagnosed in the ROADMAP progress log
+for 2026-08-07.
 
 Seven of eight scenarios met the campaign bound and six beat their previous
 published numbers outright — the richer command language is not a tax on

@@ -343,8 +343,38 @@ class ComplianceContext:
     anchor_moved: bool = False
 
 
+#: Per-step compliance credit for OCCUPYING a mission position.
+#:
+#: v1.11: halved (0.6 -> 0.3, 0.5 -> 0.25, the in-position-but-drifting 0.1 ->
+#: 0.05, ratios preserved). This is the ONLY non-telescoping term in the
+#: shaping. ``_progress`` below is potential-based (its total is bounded by the
+#: initial distance to the anchor), and ``observe_progress`` / ``prep_in_position``
+#: are explicit budgets — but position credit is a per-step RENT that accrues
+#: for as long as the episode runs, so its lifetime total is proportional to
+#: ``max_steps``.
+#:
+#: At 0.6 that rent beat winning under the objective PPO actually maximizes.
+#: ``RewardConfig.max_step_farm`` and ``test_terminal_dominates_stalling``
+#: compared UNDISCOUNTED totals (60 > 0.09 x 600), but at gamma 0.99 the
+#: terminal arrives discounted by gamma^T = 0.0024 on platoon while the rent is
+#: paid in full from step 0: discounted, stalling was worth 8.98 against a win's
+#: 4.52. Across all 69 runs, "discounted stall out-earns discounted win" picked
+#: out the collapsing families with an 8/8 hit rate. Halving the rent and
+#: raising gamma to 0.999 together move the worst-case scenario (platoon) from
+#: 0.50 to 2.56. See ``RewardConfig.win_beats_stall``.
+POSTURE_HOLD = 0.3    # OBSERVE / SCREEN / RECON / SUPPORT — watching IS the task
+POSITION_HOLD = 0.25  # SEIZE / DEFEND / DENY / RALLY / ADVANCE / HOLD / COVER
+POSITION_DRIFT = 0.05  # in position, but moving where the posture wants stillness
+
+
 def _progress(ctx: ComplianceContext) -> float:
-    """Potential-based progress toward the mission anchor, in ~[-0.75, 0.75]."""
+    """Potential-based progress toward the mission anchor, in ~[-0.75, 0.75].
+
+    Exactly potential-based (Ng et al. 1999) at one cell per step: the clip
+    never binds for a legal move, so any round trip nets zero and the total
+    payout is bounded by the initial anchor distance. It is safe to leave
+    un-halved for that reason — it cannot be farmed, only spent.
+    """
     delta = ctx.dist_prev - ctx.dist_now
     return 0.5 * max(-1.5, min(1.5, delta))
 
@@ -355,16 +385,19 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         return 0.0
     if mission is MissionType.RECON:
         # RECONNAÎTRE may engage: no fire penalty (manual p. 30)
-        return 0.6 if ctx.in_position else _progress(ctx)
+        return POSTURE_HOLD if ctx.in_position else _progress(ctx)
     if mission is MissionType.SCREEN:
-        # ÉCLAIRER: intel without engaging (manual p. 32) — weapons tight
+        # ÉCLAIRER: intel without engaging (manual p. 32) — weapons tight.
+        # The fire penalty is NOT halved with the position rents: a negative
+        # score cannot be farmed, and weakening it would blunt the
+        # weapons-tight regression hazard.
         if ctx.fired:
             return -0.6
-        return 0.6 if ctx.in_position else _progress(ctx)
+        return POSTURE_HOLD if ctx.in_position else _progress(ctx)
     if mission is MissionType.OBSERVE:
         # a genuinely static posture: the anchor never moves, so settle on it
         if ctx.in_position:
-            return 0.6 if ctx.stationary else 0.1
+            return POSTURE_HOLD if ctx.stationary else POSITION_DRIFT
         return _progress(ctx)
     if mission is MissionType.SUPPORT:
         # APPUYER is overwatch of a MOVING element — "pas un pas sans appui".
@@ -382,11 +415,11 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         # station is execution. If the element is holding, so should its
         # support — which is what stops this paying for aimless drift.
         if ctx.in_position:
-            return 0.6 if (ctx.stationary or ctx.anchor_moved) else 0.1
+            return POSTURE_HOLD if (ctx.stationary or ctx.anchor_moved) else POSITION_DRIFT
         return _progress(ctx)
     if mission is MissionType.COVER:
         if ctx.in_position:
-            return 0.5 if ctx.stationary else 0.1
+            return POSITION_HOLD if ctx.stationary else POSITION_DRIFT
         return _progress(ctx)
     if mission in (
         MissionType.SEIZE,
@@ -395,14 +428,16 @@ def compliance(mission: MissionType | None, ctx: ComplianceContext) -> float:
         MissionType.RALLY,
         MissionType.ADVANCE,  # reach the control measure, then hold on it
     ):
-        return 0.5 if ctx.in_position else _progress(ctx)
+        return POSITION_HOLD if ctx.in_position else _progress(ctx)
     if mission is MissionType.CLEAR:
+        # firing is bounded by ammo and by living enemies, so this is not a
+        # stall rent and is left at its original weight
         if ctx.fired:
             return 0.8
         return 0.0 if ctx.visible_enemies > 0 else _progress(ctx)
     # HOLD
     if ctx.in_position:
-        return 0.5 if ctx.stationary else 0.1
+        return POSITION_HOLD if ctx.stationary else POSITION_DRIFT
     return _progress(ctx)
 
 
