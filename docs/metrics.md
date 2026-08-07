@@ -403,6 +403,44 @@ tx charges by design, so through the `squad_screen_v4` flood it read 0.029
 and the run was written up as "the whole radio goes quiet" when the net had
 got 2.5× louder.
 
+### The success axis: defeat-shaped collapse (issue #21)
+
+Issue #21 pre-registered and **confirmed** a premise behind the survivor-scaled
+defend terminal: "no defend scenario ever collapsed" is true when "collapse"
+means the D4 stall (`timeout_rate` above, ≈ 30/30). It also found the premise
+is shape-specific. The defend family's worst measured runs do not stall —
+they are wiped, well before `max_steps`:
+
+| corpus (`ckpt_best`) | success | defeat | timeout |
+|---|---|---|---|
+| `fireteam_defend_v6` | 14/30 | 12 | 4 |
+| `fireteam_defend_v6b` | 1/30 | 27 | 2 |
+| `fireteam_defend_v7` | 12/30 | 11 | 7 |
+| `squad_screen_v7` (not defend; same shape) | 6/30 | 24 | 0 |
+
+None of the four is within an order of magnitude of the stall signature
+(≥ 28/30 timeout on record), so `timeout_rate` reads all four as healthy on
+the clock. The repo's own composite gate happened to catch every one of them
+anyway, but on `human_death_rate` — a wiped team's commander usually dies
+with it — which is right about these four runs for a reason other than the
+one it names, and has no axis of its own for "the team lost."
+
+`regression_gates(agg)` closes that gap with a floor on `success_rate`,
+gated **only once `timeout_rate` has already cleared its own ceiling** —
+i.e. only once the run is known not to be stall-shaped. That ordering keeps
+the two axes mutually exclusive in a report: a collapsed run reads as
+**STALLED** (`timeout_rate` fails) or **WIPED** (`success_rate` fails), never
+both, because the two shapes want opposite fixes. The bound, `0.5`, sits in
+the empty band between the highest documented defeat-shaped corpus
+(`fireteam_defend_v6`, 0.467) and the lowest healthy record on file
+(`fireteam_defend_v11`, 0.74) — the same style of placement as
+`TIMEOUT_RATE_CEILING`, and, not by design, the same value.
+
+This gives the success axis independently of commander death — issue #21's
+own closing question ("can a defeat-shaped collapse leave the commander
+alive?") is not answered by this change and is not answerable from the
+record on file; it remains open.
+
 ### Aggregation
 
 Event-level metrics pool events across the run's episodes (one latency mean

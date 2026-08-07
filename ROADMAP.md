@@ -2733,3 +2733,58 @@ deliberately deferred (`docs/vision.md` §2c).
   `--reward defend_survivor_scale=0` restores v1.11 behaviour exactly.
 
   Also still open and now unblocked, independent of the above: `squad_v9`.
+
+- **2026-08-07 — assurance #21: premise CONFIRMED, and the instrument that
+  confirmed it just got a second axis.** Not a bug fix — no reward code
+  touched, no reward weight or semantic changed, v1.12's survivor-scaled
+  defend terminal is untouched.
+
+  Issue #21 pre-registered a falsifier for the owner's-call line "costs
+  nothing: no defend scenario ever collapsed" (option 1's justification for
+  scoping the payout by scenario) — read as the D4 **stall** (≈0.00 success,
+  clock runs out). **Confirmed**: ten defend corpora over five generations
+  run 2–7/30 timeout everywhere on record; the stall signature reads 28–30/30
+  in this repo's history. No defend scenario has ever stalled.
+
+  The scoping note, which is why the issue exists: the defend family's worst
+  measured runs do not collapse by stalling — they collapse by getting
+  **wiped**, and that shape was invisible to the instrument tuned to the
+  other one. Four corpora on record: `fireteam_defend_v6b` 1/30 success at
+  2/30 timeout (27/30 defeat); `fireteam_defend_v6` 14/30 at 4/30 timeout;
+  `fireteam_defend_v7` 12/30 at 7/30 timeout; `squad_screen_v7` (not defend,
+  same shape) 6/30 at 0/30 timeout. `timeout_rate` reads all four as healthy
+  on the clock. The repo's own composite gate (`human_death_rate` gated on
+  `timeout_rate ≤ 0.5`) happened to catch all four anyway — but on the death
+  axis, because a wiped team's commander usually dies with it. Right about
+  every run on record, for a reason other than the one it names, and with no
+  axis of its own for "the team lost."
+
+  **Added**: `SUCCESS_RATE_FLOOR = 0.5` (`cohort/metrics.py`), a floor on
+  `success_rate` in `regression_gates`, gated only once `timeout_rate` has
+  already cleared `TIMEOUT_RATE_CEILING` — i.e. only once the run is known
+  *not* to be stall-shaped. The bound sits in the empty band between the
+  highest documented defeat-shaped corpus (`fireteam_defend_v6`, 0.467) and
+  the lowest healthy record on file (`fireteam_defend_v11`, 0.74); it does
+  not fire on `fireteam_v8` (0.90) or the fleet's 1.00 runs either. Ordering
+  the check on `timeout_rate` first keeps the two axes mutually exclusive in
+  a report by construction: a collapsed run reads as **STALLED**
+  (`timeout_rate` fails) or **WIPED** (`success_rate` fails), never both,
+  which matters because the two shapes want opposite fixes. `run_report.py`
+  needed no change — it already prints every gate in `behavior.json`
+  generically by name.
+
+  Tests: 530 → 534 (`tests/test_metrics.py`), fixtured on the exact corpora
+  above plus the healthy fleet, and three pre-existing positional-gate tests
+  updated for the new gate now appearing alongside `timeout_rate`.
+  Mutation-checked by hand: zeroing `SUCCESS_RATE_FLOOR` and removing the
+  `timeout_rate`-first ordering each broke a distinct new test, then both
+  were reverted. `pytest` green, `ruff` clean.
+
+  **Not answered, and not this change's job**: the issue's closing question —
+  can a defeat-shaped collapse leave the commander alive? — has no case on
+  record either way. The new axis reads `success_rate` directly and does not
+  consult `human_death_rate`, so going forward the two are independently
+  measured and a defeat-shaped collapse with a surviving commander *would*
+  now show up as a `success_rate`-only failure instead of nothing — but that
+  is a statement about what the instrument can now see, not a claim that such
+  a case exists. It doesn't, yet, in anything we've trained.

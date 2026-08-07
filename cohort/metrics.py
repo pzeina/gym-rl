@@ -55,6 +55,17 @@ behaves* while doing so, per evaluation run:
   charged transmissions only, so it read 0.029 ("the radio went quiet")
   through a message flood. Every channel had a counter; the net had no
   denominator
+* success axis (refs issue #21) — a floor on `success_rate`, gated only once
+  `timeout_rate` clears its own ceiling. Issue #21 pre-registered and
+  CONFIRMED a premise ("no defend scenario ever collapsed" reads as the D4
+  stall, and none do) while finding a scoping gap: the defend family's worst
+  measured runs collapse DEFEAT-shaped instead of stall-shaped —
+  `fireteam_defend_v6b` succeeds 1/30 at only 2/30 timeout — and the D4 stall
+  detector above, tuned to >= 28/30 timeout, never trips on them. The repo's
+  own composite gate caught all four documented cases anyway, but on
+  `human_death_rate`, because a wiped team's commander usually dies with it —
+  right for a reason other than the one it names. This axis reads
+  `success_rate` directly so a wipe is measured, not inferred
 
 The pipeline has two halves, split so the math is unit-testable:
 
@@ -122,6 +133,28 @@ DEFEND_OBJECTIVE_DIST_CEILING: float = 5.0
 #: `ckpt_latest`). 0.5 is the middle of an empty band, and it is also the
 #: point past which a policy fails more often by the clock than it succeeds.
 TIMEOUT_RATE_CEILING: float = 0.5
+
+#: Success-axis gate (refs issue #21): a floor on ``success_rate``, checked
+#: only once ``timeout_rate`` has already cleared ``TIMEOUT_RATE_CEILING`` —
+#: i.e. once the run is known NOT to be stall-shaped. Issue #21's premise
+#: check found the D4 stall detector above is tuned to one collapse shape
+#: (near-zero success WITH the clock running out, >= 28/30 timeout on
+#: record) and blind to another: the defend family's catastrophic runs are
+#: DEFEAT-shaped instead — the team is wiped, not stalled — and never trip
+#: it. Four documented corpora establish the shape and its ceiling:
+#: `fireteam_defend_v6b` 1/30 success at 2/30 timeout (27/30 defeat),
+#: `fireteam_defend_v7` 12/30 at 7/30 timeout, `squad_screen_v7` 6/30 at
+#: 0/30 timeout, and `fireteam_defend_v6` 14/30 (0.467) at 4/30 timeout —
+#: all defeat-shaped, none within an order of magnitude of the stall
+#: signature. The healthy floor is `fireteam_defend_v11` at 0.74. 0.5 sits
+#: in the empty band between them (0.467, 0.74): it is also the point past
+#: which a cohort loses more episodes outright than it wins, so it separates
+#: the record without hair-splitting, the same way TIMEOUT_RATE_CEILING does
+#: on its own axis. Gating it only when timeout_rate already passes keeps
+#: the two axes mutually exclusive in a report: a run reads as STALLED
+#: (timeout_rate fails) or WIPED (success_rate fails), never both, which is
+#: the point — the two shapes want opposite fixes.
+SUCCESS_RATE_FLOOR: float = 0.5
 
 #: Message kinds that carry command state — the learned acts of command an
 #: agent pays airtime for. The OPORD is excluded: it is HQ's, once, and no
@@ -1171,10 +1204,32 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     says *how* the episodes were lost, and a policy that rides out the clock
     is a different repair from one that gets killed on the way in.
 
+    The success-axis gate (issue #21) also applies to every root mission, and
+    exists because the clock-expiry gate has a blind spot: it is tuned to the
+    STALL shape (near-zero success WITH the clock running out) and the defend
+    family's worst measured collapses are DEFEAT-shaped instead — the team is
+    wiped well before `max_steps`, so `timeout_rate` reads low and the only
+    reason the fleet's own composite gate (elsewhere: `human_death_rate`
+    gated on `timeout_rate <= 0.5`) ever caught them was that a wiped team's
+    commander usually dies with it — a proxy, not a measurement of success.
+    This gate reads `success_rate` directly instead, but ONLY once
+    `timeout_rate` has cleared its own ceiling: a run already failing on the
+    clock is stall-shaped, not wipe-shaped, and should read as one verdict,
+    not two. That makes the two axes mutually exclusive by construction — a
+    collapsed run fails exactly one of them, so the report always says which
+    shape it was.
+
     Gates whose metric is None (never measured this run) are reported with
     ``passed=None`` — unmeasured is not the same as passed.
     """
-    gates = [_gate("timeout_rate", agg.get("timeout_rate"), TIMEOUT_RATE_CEILING, "max")]
+    timeout_rate = agg.get("timeout_rate")
+    gates = [_gate("timeout_rate", timeout_rate, TIMEOUT_RATE_CEILING, "max")]
+    # refs #21: only meaningful once we know the run isn't stall-shaped —
+    # otherwise a stalled run would fail both axes and the report could not
+    # say which collapse it was. `timeout_rate is None` (never measured)
+    # leaves the shape unknown, so the gate is skipped rather than guessed.
+    if timeout_rate is not None and timeout_rate <= TIMEOUT_RATE_CEILING:
+        gates.append(_gate("success_rate", agg.get("success_rate"), SUCCESS_RATE_FLOOR, "min"))
     if agg.get("root_mission") != MissionType.DEFEND.name:
         return gates
     return [
