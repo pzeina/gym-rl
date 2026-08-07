@@ -4,7 +4,8 @@
 A run's metrics.csv is ~3000 rows x 20 columns. Feeding that to Opus/Fable at
 150k context is what makes a training campaign expensive. This collapses it to
 ~30 lines: config, learning curve by decile, reward-component drift, the
-behavioral suite, and (optionally) deltas against a baseline run.
+behavioral suite, and (optionally) deltas against a baseline run — including
+whether the two runs are actually a single-variable A/B (refs #20).
 
     scripts/run_report.py <run>
     scripts/run_report.py <run> --vs <baseline-run>
@@ -263,6 +264,50 @@ def report(run: str, show_components: bool) -> dict:
     return summary
 
 
+def economics_diff(run: str, baseline: str) -> None:
+    """Which reward/scenario prices actually differ between two runs.
+
+    refs #20: this campaign's own confound audit was done by hand — open
+    economics.json for each run, eyeball the ``rewards`` dict, count what
+    changed — and it undercounted at least once. `squad_v7` -> `squad_v8`
+    reads as a single-variable A/B (`done_false` only, the pair ROADMAP's
+    audit used); `squad_v6` -> `squad_v8` — an equally legitimate choice of
+    "the run before this one" — differs by TWO keys, `done_false` AND
+    `contact_redundant`. Nothing forced the choice of baseline to be checked
+    against the file that would have caught it: `economics.json` was written
+    (train.py) *specifically* so "two runs a reward commit apart are
+    indistinguishable after the fact" could not happen, and the manual
+    process re-created the failure the file exists to prevent.
+
+    This makes the check a function call instead of a transcription exercise,
+    so the next campaign's "the only difference is X" claim is verified
+    against the actual JSON, not asserted from memory of which commit landed
+    when. Diffs both ``rewards`` (the price list) and ``spec`` (the scenario
+    knobs) — `train.py::_spec_economics` calls scenario knobs part of the same
+    "what is this run actually an experiment about" question.
+    """
+    a_path, b_path = RUNS / run / "economics.json", RUNS / baseline / "economics.json"
+    if not a_path.exists() or not b_path.exists():
+        missing = run if not a_path.exists() else baseline
+        print(f"\n  economics: uncheckable — {missing} predates economics.json")
+        return
+    a, b = json.loads(a_path.read_text()), json.loads(b_path.read_text())
+    diffs = [
+        (section, key, b.get(section, {}).get(key), a.get(section, {}).get(key))
+        for section in ("rewards", "spec")
+        for key in sorted(set(a.get(section, {})) | set(b.get(section, {})))
+        if a.get(section, {}).get(key) != b.get(section, {}).get(key)
+    ]
+    if not diffs:
+        print(f"\n  economics: CLEAN — {run} and {baseline} share every reward/spec value")
+        return
+    label = ("single-variable A/B" if len(diffs) == 1 else
+             f"CONFOUNDED — {len(diffs)} keys differ, NOT a single-variable A/B")
+    print(f"\n  economics: {label} ({run} vs {baseline})")
+    for section, key, bv, av in diffs:
+        print(f"    {section}.{key:<24} {bv!r} → {av!r}")
+
+
 def main() -> int:
     args = sys.argv[1:]
     if not args:
@@ -285,6 +330,7 @@ def main() -> int:
             if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
                 mark = "  <-- " if abs(va - vb) > max(0.05 * abs(vb or 1), 0.02) else "      "
                 print(f"  {key:<28} {vb:>8.3f} → {va:>8.3f}  ({va - vb:+.3f}){mark}")
+        economics_diff(run, baseline)
     return 0
 
 
