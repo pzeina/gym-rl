@@ -284,7 +284,7 @@ class RewardConfig:
     # largest admissible scale is 1 - 2.0/3.42 = 0.415; 0.35 leaves 2.22.
     # Raising this above ~0.41 re-creates the stall basin on fireteam_defend
     # and test_defend_terminal_scaling_preserves_dominance will say so.
-    defend_survivor_scale: float = 0.0
+    defend_survivor_scale: float = 0.35
     root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
     #                                   DONE inside the completion-report grace window
     #                                   (one-shot, paid with the terminal reward — not
