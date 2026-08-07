@@ -2510,3 +2510,32 @@ deliberately deferred (`docs/vision.md` §2c).
   `done_false` is not on the CLI (only `PPOConfig` was exposed). Add it, then run
   one arm — `squad_v9` at `done_false` −2.0 with the fix — to separate the two.
   One run decides it.
+- **2026-08-07** — **v1.11 fleet, arm 6/7: `patrol_brique_v5`, and a second CLEAN
+  pair found in the queue.**
+
+  **The arm.** 100% best → **99% final**, 1-pt gap, **PUBLISHABLE**, FINAL policy
+  **1.00 ± 0.00**. Its predecessor `patrol_brique_v4` was already converged at 98%
+  final, so there is little here to attribute — and the pair is **CONFOUNDED**
+  (`done_false` −2.0 → −0.5) like the others. `v4` was built at `b8b3763`
+  (08-06 22:24), an hour before the revert at `ac1fb19`. Worth recording anyway:
+  ep length 250 → 80, human death 0.716 → 0.129, churn 16.6 retasks against 22.2
+  orders.
+
+  **The find.** `defend_brique_v3` was built at **`ac1fb19` — the revert commit
+  itself** — so it ran at `done_false` −0.5 and **PRE-`d44ee8d`**. Its
+  `economics.json` diffs CLEAN against `defend_brique_v4`, now training. That
+  makes **`defend_brique_v3` → `v4` a second single-variable A/B for the free-ride
+  fix**, on a scenario unrelated to `squad_screen`, arriving by luck of timing
+  rather than design.
+
+  It is the arm that decides the generalization question the correction above left
+  open. `v3` finished at **91%**; if `v4` clears it with `done_false` held fixed,
+  the fix generalizes on evidence rather than on consistency. Full pair status
+  after the economics audit:
+
+  | pair | status |
+  |---|---|
+  | `squad_screen_v9`/`v10` → `fallen_v1`/`v2` | **CLEAN** (the D4 verdict) |
+  | `defend_brique_v3` → `v4` | **CLEAN** ← decides generalization |
+  | `squad`, `squad_recon`, `platoon`, `fireteam_defend`, `patrol_brique` | CONFOUNDED |
+  | `fireteam_v7` → `v8` | uncheckable |
