@@ -2454,3 +2454,59 @@ deliberately deferred (`docs/vision.md` §2c).
   Four of five improve substantially at the FINAL checkpoint. `fireteam_v8` is the
   one that gets *worse*, and with `platoon_v5`'s silence those two are the fleet's
   open reporting defects.
+- **2026-08-07** — **v1.11 fleet, arm 5/7: `fireteam_defend_v11` — and a CORRECTION
+  to the four entries above.**
+
+  **The arm.** FINAL policy at **N=100: 0.74 ± 0.09**, against
+  `fireteam_defend_v10`'s FINAL **0.87 ± 0.07** — both measured under identical
+  current code, so it is a fair policy comparison. CIs overlap at 0.80–0.83, so
+  by this file's own bar (*non-overlapping intervals or it is not an effect*)
+  **it is not an effect** — but it is the only arm in the fleet that did not
+  improve, 13 points below its pre-fix predecessor, fighting further out (3.80 vs
+  2.52 cells) with less cover (0.776 vs 0.897). v1.10's prep period does work:
+  in-cover-at-OBJ during prep **0.786**, and both v6's and v7's documented misses
+  are gone (fire rate 0.750 where v6 would not fire; 4.06 cells where v7 fought
+  9.7 out).
+
+  **A hypothesis raised and refuted in the same pass.** `fireteam_defend` is the
+  one scenario where survival *is* the mission — you hold ground to H+N, with no
+  fast win to substitute — so removing forfeiture should make trading bodies
+  cheaper with nothing to trade it for. Test: `v11`'s defeat (cohort-wiped) rate
+  should exceed both predecessors'. It does not — **`v11` 0.150 sits between `v9`
+  0.200 and `v10` 0.050**. Dropped.
+
+  **⚠ THE CORRECTION.** Diffing `economics.json` across every fleet pair turns up
+  exactly one non-commit difference, and it is in almost all of them:
+  **`done_false` −2.0 → −0.5**, the v1.10 setting against the reverted one.
+
+  | pair | status |
+  |---|---|
+  | `squad_screen_v9` → `fallen_v1` | **CLEAN** |
+  | `squad_screen_v10` → `fallen_v2` | **CLEAN** |
+  | `squad_v7` → `v8` · `squad_recon_v6` → `v7` · `platoon_v4` → `v5` · `fireteam_defend_v10` → `v11` | **CONFOUNDED** (`done_false`) |
+  | `fireteam_v7` → `v8` | uncheckable — `v7` predates `economics.json` |
+
+  So: **the D4 verdict stands and is untouched.** The `squad_screen` A/B is clean
+  on both seeds — `v9`/`v10` and the `fallen` arms all ran at `done_false` −0.5,
+  and at *fixed* `done_false` the fix is the difference between 0.00 and 1.00.
+
+  **But "five of five, the fix generalizes" is DOWNGRADED to "consistent with
+  generalization, not established."** Each of those four pairs differs by two
+  variables, not one, and the second is not innocent: `rewards.py`'s own note says
+  −2.0 bought *silence* and cost the report-centric scenarios their terminal
+  income entirely (`squad_recon_v6`, `squad_screen_v4` both ended at 0%). The
+  revert to −0.5 is therefore a live alternative explanation for why
+  `squad`/`squad_recon`/`fireteam` stopped collapsing — and, symmetrically, for
+  why `fireteam_defend` got *worse*: it is not report-centric, and it scored
+  0.87–0.89 at −2.0.
+
+  **This is my error and it is in the campaign file.** `v1_11_fleet.jobs` claims
+  "the ONLY difference from the superseded fleet is the environment, so a miss
+  stays attributable". True as written and wrong in effect — the environment
+  carried *two* changes, and I pinned budgets, seeds and lr while leaving the
+  economics to drift with the tree.
+
+  **Next, and it needs a code change so it waits for the campaign to drain**:
+  `done_false` is not on the CLI (only `PPOConfig` was exposed). Add it, then run
+  one arm — `squad_v9` at `done_false` −2.0 with the fix — to separate the two.
+  One run decides it.
