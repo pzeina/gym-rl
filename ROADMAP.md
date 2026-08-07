@@ -2125,3 +2125,34 @@ deliberately deferred (`docs/vision.md` §2c).
   are paid the team terminal and casualties stay in the episode. That is not the
   environment they trained in, so the number would be neither the run's result
   nor a current one. They are superseded by the v1.11 retrain regardless.
+- **2026-08-07** — **the v1.11 bisect baselines close at 0.00, and seeded
+  evaluation no longer crosses the `d44ee8d` boundary.** Commit `d4f3be8`.
+
+  All three arms finished 2M steps. Their own processes predate `da5bdb1`, so
+  none wrote `behavior_final.json`; recovered by evaluating `ckpt_latest` under
+  the current tree. **Final policy, N=20: `ctl_gamma099_v1` 0.00 ± 0.00,
+  `v9` 0.00 ± 0.00, `v10` 0.00 ± 0.00, clock-out 1.00 on all three** — against
+  `ckpt_best` figures of 1.00, a **100-point best–final gap per arm**, the
+  largest in the record and a clean illustration of why the publish gate
+  changed. The free-ride fix now has an unambiguous floor to beat.
+
+  **The optimizer fixes completed the disengagement rather than softening it.**
+  `v9` and `v10` (γ0.999, separate critic, value normalization) record **zero
+  threatened agent-steps across 20 episodes** — the squad never comes within
+  threat range of anything. The control (γ0.99, no value fix) still musters 39
+  and a 0.308 cover occupancy. Whatever the value-head fix bought, it was not
+  engagement.
+
+  **Constraint on every cross-boundary comparison from here.** Re-evaluating
+  `ctl`'s `ckpt_best` under the current tree — same seed 123, same 20 episodes —
+  does **not** reproduce its own `behavior.json`: **42 of 55 numeric metrics
+  move**, success 1.00 → 0.95, mean episode length 164 → 175. Diagnosed to
+  `d44ee8d`: the fallen now stay in the episode, the policy is queried for them,
+  and each masked sample consumes a draw that shifts the RNG stream for every
+  agent after it. The physics are unchanged — dead soldiers were already inert —
+  but **a pre-`d44ee8d` artifact and a post-`d44ee8d` artifact are not the same
+  measurement**, which is why the three baselines were re-measured rather than
+  compared as found. Implied follow-up, deliberately **not** taken while the
+  treatment arms are in flight: an agent with exactly one legal action should
+  take it without drawing, which is both cheaper and stream-stable. Landing that
+  now would desynchronize the A/B it is meant to clean up.
