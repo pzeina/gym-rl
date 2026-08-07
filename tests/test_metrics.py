@@ -12,6 +12,7 @@ import numpy as np
 
 from cohort.env.cohort_env import make_env
 from cohort.metrics import (
+    SUCCESS_RATE_FLOOR,
     TraceRecorder,
     aggregate_behavior,
     episode_behavior,
@@ -446,13 +447,17 @@ def _defend_agg(*, cover, dist_from_obj):
 
 def test_positional_gate_fails_the_v7_disposition():
     # fireteam_defend_v7: cover 0.060 at 9.09 cells — both bounds broken.
+    # `_defend_agg` traces default to outcome="success" (timeout_rate 0.0), so
+    # the success-axis gate (issue #21) is also in scope and passes (1.0);
+    # it is excluded from `positional` below alongside timeout_rate.
     gates = regression_gates(_defend_agg(cover=False, dist_from_obj=9))
     assert [g["name"] for g in gates] == [
         "timeout_rate",
+        "success_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
     ]
-    positional = [g for g in gates if g["name"] != "timeout_rate"]
+    positional = [g for g in gates if g["name"] not in ("timeout_rate", "success_rate")]
     assert [g["passed"] for g in positional] == [False, False]
     assert "FAIL" in format_gate_report(positional)
     assert "PASS" not in format_gate_report(positional)
@@ -468,10 +473,11 @@ def test_positional_gate_passes_a_prepared_defense():
 def test_positional_gate_applies_to_defend_roots_only():
     # The same disposition under a SEIZE root gates on position at all: an
     # assault is supposed to leave its start point and cross open ground.
-    # Only the universal clock-expiry gate remains (issue #18).
+    # Only the universal gates remain: clock-expiry (issue #18) and the
+    # success axis (issue #21), both root-mission-agnostic.
     seize = _defend_agg(cover=False, dist_from_obj=9)
     seize["root_mission"] = "SEIZE"
-    assert [g["name"] for g in regression_gates(seize)] == ["timeout_rate"]
+    assert [g["name"] for g in regression_gates(seize)] == ["timeout_rate", "success_rate"]
     assert format_gate_report([]) == ""
 
 
@@ -480,7 +486,10 @@ def test_unmeasured_gate_is_not_a_pass():
     agg = aggregate_behavior(
         [episode_behavior(trace(steps, root_objective=(10, 10), root_mission="DEFEND"))]
     )
-    positional = [g for g in regression_gates(agg) if g["name"] != "timeout_rate"]
+    # success_rate IS measured here (outcome defaults to "success"), so it is
+    # excluded alongside timeout_rate — this test is about the positional
+    # gates (issue #11), which go unmeasured with no threat pairs.
+    positional = [g for g in regression_gates(agg) if g["name"] not in ("timeout_rate", "success_rate")]
     assert positional and all(g["passed"] is None for g in positional)
     assert "FAIL" not in format_gate_report(positional)
 
@@ -581,6 +590,82 @@ def test_traffic_composition_is_diagnosis_not_a_gate():
     assert verdicts == [True, False]
     assert healthy["command_traffic_share"] > stalled["command_traffic_share"]
     assert "command_traffic_share" not in [g["name"] for g in regression_gates(stalled)]
+
+
+# ---------------------------------------------------------------------- #
+# success axis: the defeat-shaped collapse (issue #21)
+# ---------------------------------------------------------------------- #
+
+
+def _shape_agg(successes, defeats, timeouts, *, root_mission="DEFEND"):
+    """Aggregate built from an outcome mix — the corpora shapes issue #21 cites."""
+    steps = [step(0, [sold("TL1")]), step(1, [sold("TL1")])]
+    outcomes = ["success"] * successes + ["defeat"] * defeats + ["timeout"] * timeouts
+    eps = [episode_behavior(trace(steps, outcome=out, root_mission=root_mission)) for out in outcomes]
+    return aggregate_behavior(eps)
+
+
+def test_success_axis_fires_on_documented_defeat_shaped_corpora():
+    """refs issue #21: the premise check found four measured collapses that
+    are DEFEAT-shaped, not STALL-shaped — none within an order of magnitude
+    of the D4 stall signature (>= 28/30 timeout on record) — so the
+    clock-expiry gate alone reads every one of them as healthy on the clock.
+    `squad_screen_v7` is not a defend scenario, included to show the axis
+    (like the clock-expiry gate) is root-mission-agnostic.
+    """
+    corpora = {
+        "fireteam_defend_v6b": (1, 27, 2, "DEFEND"),  # 1/30 success, 2/30 timeout
+        "fireteam_defend_v6": (14, 12, 4, "DEFEND"),  # 14/30 success, 4/30 timeout
+        "fireteam_defend_v7": (12, 11, 7, "DEFEND"),  # 12/30 success, 7/30 timeout
+        "squad_screen_v7": (6, 24, 0, "SCREEN"),  # 6/30 success, 0/30 timeout
+    }
+    for name, (successes, defeats, timeouts, root) in corpora.items():
+        agg = _shape_agg(successes, defeats, timeouts, root_mission=root)
+        gates = regression_gates(agg)
+        timeout_gate = next(g for g in gates if g["name"] == "timeout_rate")
+        success_gate = next((g for g in gates if g["name"] == "success_rate"), None)
+        assert timeout_gate["passed"] is True, f"{name}: not stall-shaped by the clock"
+        assert success_gate is not None, f"{name}: the success axis should apply"
+        assert success_gate["passed"] is False, f"{name}: should read as a collapse"
+        assert "FAIL" in format_gate_report([success_gate])
+
+
+def test_success_axis_does_not_fire_on_the_healthy_fleet():
+    """The v1.11 fleet the reward decision was measured against: neither the
+    two lowest-success healthy checkpoints on record nor a clean 1.00 run
+    should trip the new axis.
+    """
+    healthy = {
+        "fireteam_v8": (27, 3, 0),  # 0.90
+        "fireteam_defend_v11": (74, 26, 0),  # 0.74, N=100
+        "squad_v8": (30, 0, 0),  # 1.00
+    }
+    for name, (successes, defeats, timeouts) in healthy.items():
+        agg = _shape_agg(successes, defeats, timeouts)
+        success_gate = next(g for g in regression_gates(agg) if g["name"] == "success_rate")
+        assert success_gate["passed"] is True, name
+
+
+def test_success_axis_is_silent_on_a_genuine_stall():
+    """A stalled run (30/30 timeout, 0 success) must read as STALLED only —
+    the point of gating the success axis on timeout_rate already passing is
+    that a collapsed run fails exactly one axis, never both, so the report
+    always says which shape it was.
+    """
+    agg = _shape_agg(0, 0, 30, root_mission="SEIZE")  # SEIZE: no positional gate in play
+    gates = regression_gates(agg)
+    assert [g["name"] for g in gates] == ["timeout_rate"]
+    assert gates[0]["passed"] is False
+    report = format_gate_report(gates)
+    assert "FAIL" in report
+    assert "success_rate" not in report
+
+
+def test_success_axis_bound_sits_in_the_measured_gap():
+    # The floor (0.5) must separate every documented defeat-shaped corpus
+    # (highest: fireteam_defend_v6 at 0.467) from the lowest healthy record
+    # on file (fireteam_defend_v11 at 0.74) without hair-splitting.
+    assert 0.467 < SUCCESS_RATE_FLOOR < 0.74
 
 
 def test_recorder_records_the_step_ceiling():
