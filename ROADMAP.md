@@ -2539,3 +2539,28 @@ deliberately deferred (`docs/vision.md` §2c).
   | `defend_brique_v3` → `v4` | **CLEAN** ← decides generalization |
   | `squad`, `squad_recon`, `platoon`, `fireteam_defend`, `patrol_brique` | CONFOUNDED |
   | `fireteam_v7` → `v8` | uncheckable |
+- **2026-08-07** — **assurance #20: the confound audit is now mechanical, not
+  manual.** Commit `80166d9` (dedicated fix agent). 497 tests green, ruff clean.
+
+  The issue is about the audit two entries above. The external review diffed
+  `squad_v6` → `squad_v8` and found **two** differing reward keys
+  (`done_false` *and* `contact_redundant` −0.02 → −0.25); this file's table said
+  one. Both are right for the pair each chose: `squad_v7` is the correct baseline
+  here — it is the scenario's last run, and the campaign inherited *its* budget,
+  seed and lr — but the review's real point lands anyway. **Two careful readings
+  of the same artifacts produced two different answers, because the check was a
+  JSON diff done by eye.** `train.py` writes `economics.json` precisely so that
+  "two runs a reward commit apart are [not] indistinguishable after the fact",
+  and nothing was reading it.
+
+  Now `run_report.py <run> --vs <baseline>` diffs the `rewards` and `spec`
+  sections automatically and prints `CLEAN` / `single-variable A/B` /
+  `CONFOUNDED — N keys differ` with every differing key named; a missing
+  `economics.json` reads as `uncheckable` instead of crashing. Verified against
+  the live artifacts: `squad_v8 --vs squad_v6` → **CONFOUNDED, 2 keys**;
+  `squad_v8 --vs squad_v7` → **single-variable A/B**; `fallen_v1 --vs
+  squad_screen_v9` → **CLEAN**. It reproduces the review's finding and this
+  file's claim, and the D4 pair still audits clean independently.
+
+  Every `--vs` from here carries its own attribution verdict, so no future entry
+  can quietly assert a single-variable A/B that the artifacts do not support.
