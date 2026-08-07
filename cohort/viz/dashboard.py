@@ -25,6 +25,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import math
+import os
 import threading
 import traceback
 import webbrowser
@@ -410,14 +412,57 @@ def checkpoint_meta(path: Path) -> dict:
     return meta
 
 
+def job_state(run_dir: Path) -> dict:
+    """Is this run training *right now*? — from the job file ``train.sh`` writes.
+
+    Same liveness test as ``scripts/train_status.py``: a run is live when its
+    ``.job.json`` names a pid that still exists. ``signal 0`` only probes, it
+    never touches the process, so this is safe to call on every /api/state poll.
+    """
+    path = run_dir / ".job.json"
+    if not path.is_file():
+        return {"live": False}
+    try:
+        job = json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {"live": False}
+    pid = job.get("pid")
+    try:
+        os.kill(int(pid), 0)
+    except (OSError, TypeError, ValueError):
+        return {"live": False}
+    args = job.get("args") or []
+    scenario = None
+    for i, a in enumerate(args):  # train.py writes config.json only after setup
+        if a == "--scenario" and i + 1 < len(args):
+            scenario = args[i + 1]
+        elif a.startswith("--scenario="):
+            scenario = a.split("=", 1)[1]
+    return {
+        "live": True,
+        "pid": int(pid),
+        "started": job.get("started_human"),
+        "total_steps": job.get("total_steps"),
+        "scenario": scenario,
+    }
+
+
 def scan_runs(runs_dir: Path) -> list[dict]:
-    """Discover training runs with their config and latest metrics row."""
+    """Discover training runs with their config and latest metrics row.
+
+    A run appears once it has metrics — or as soon as it is live, so a run
+    launched seconds ago is visible (marked live) before its first iteration
+    lands, rather than missing from the list exactly when it matters most.
+    """
     runs = []
     if not runs_dir.is_dir():
         return runs
     for run in sorted(runs_dir.iterdir()):
+        if not run.is_dir():
+            continue
         metrics = run / "metrics.csv"
-        if not metrics.is_file():
+        job = job_state(run)
+        if not metrics.is_file() and not job["live"]:
             continue
         config = {}
         cfg_file = run / "config.json"
@@ -432,13 +477,15 @@ def scan_runs(runs_dir: Path) -> list[dict]:
                 for row in csv.DictReader(f):
                     last = row
         except OSError:
-            continue
+            if not job["live"]:
+                continue
         runs.append(
             {
                 "name": run.name,
-                "scenario": config.get("scenario"),
+                "scenario": config.get("scenario") or job.get("scenario"),
                 "config": config,
                 "last": last,
+                "job": job,
                 "checkpoints": [
                     {"kind": kind, **checkpoint_meta(run / f"ckpt_{kind}.pt")}
                     for kind in ("best", "latest")
@@ -468,16 +515,26 @@ def load_behavior(runs_dir: Path, run_name: str) -> dict:
 def load_metrics(runs_dir: Path, run_name: str) -> dict:
     """metrics.csv → {fields: [...], rows: {field: [floats]}} for charting."""
     path = runs_dir / run_name / "metrics.csv"
+    if not path.is_file():
+        # a run launched seconds ago is listed (live) before it has written a
+        # first row: empty columns, not a 400 the UI has to render as an error
+        return {"fields": [], "columns": {}}
     with path.open() as f:
         reader = csv.DictReader(f)
         fields = reader.fieldnames or []
-        columns: dict[str, list[float]] = {k: [] for k in fields}
+        columns: dict[str, list[float | None]] = {k: [] for k in fields}
         for row in reader:
             for k in fields:
                 try:
-                    columns[k].append(float(row[k]))
+                    v = float(row[k])
                 except (TypeError, ValueError):
-                    columns[k].append(0.0)
+                    v = float("nan")
+                # NaN means "this iteration completed no episode" (the same
+                # reading as scripts/train_status.py). JSON has no NaN, and
+                # Python's json emits a bare `NaN` token that JSON.parse
+                # rejects — which blanked the entire charts pane for any run
+                # with a single such iteration. Missing stays missing: null.
+                columns[k].append(v if math.isfinite(v) else None)
     return {"fields": fields, "columns": columns}
 
 
