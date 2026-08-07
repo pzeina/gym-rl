@@ -2208,3 +2208,80 @@ deliberately deferred (`docs/vision.md` §2c).
   then a **reward call for the owner**: price cover under threat, or raise
   `death` now that forfeiture is gone. Not taken unilaterally, and not while the
   arms measuring `d44ee8d` are still in flight.
+- **2026-08-07** — **D4 is solved.** Commits `9933a3a` (runs), `d44ee8d` (the
+  fix). The A/B against `squad_screen_v9`/`v10` — identical config, identical
+  seeds, `d44ee8d` the only difference — and it is not close.
+
+  | seed | baseline (final N=20) | + `d44ee8d` (final N=20) | gate |
+  |---|---|---|---|
+  | 17 | `v9` **0.00 ± 0.00**, clock-out 1.00 | `fallen_v1` **1.00 ± 0.00** | 99-pt gap → **0-pt gap** |
+  | 23 | `v10` **0.00 ± 0.00**, clock-out 1.00 | `fallen_v2` **1.00 ± 0.00** | 99-pt gap → **1-pt gap** |
+
+  Non-overlapping CIs on both seeds, both arms **PUBLISHABLE**. The treatment
+  arms never collapsed at all — they cleared 118k, 151k and 395k (the three
+  baseline collapse points) without a dip and closed at 100% and 99% rolling.
+  The collapse that has haunted this repo since v1.0 was one shared policy
+  free-riding on a terminal its casualties could not collect.
+
+  **This also kills the width suspect outright**, which #19 could only eliminate
+  by exhaustion. The fallen arms run the **same 220-input observation** that
+  `v9`/`v10` collapsed on. Width was never the cause; the v1.10 space break is
+  exonerated by direct evidence.
+
+  **The prediction logged one entry above was WRONG, on every element.** I
+  predicted a body-count policy — deaths/ep ≥ 1.30, cover ≤ 0.016 — reasoning
+  that `d44ee8d` removes forfeiture and leaves a life priced at −1.0 against a
+  +60 terminal. Oracle, 20 eps, seeds 500–519, `ckpt_latest`:
+
+  | | `core_v1` (pre-fix) | `fallen_v1` | `fallen_v2` |
+  |---|---|---|---|
+  | cover occupancy [team] | 0.016 | **0.260** | **0.245** |
+  | cover occupancy [human] | 0.000 | **0.227** | **0.211** |
+  | friendly deaths open/ep | 1.30 | **0.65** | **0.60** |
+  | human death rate | 0.700 | **0.050** | **0.100** |
+  | threatened steps/ep | 21.8 | **36.9** | 23.5 |
+  | fire rate [human] | 0.830 | 0.200 | 0.408 |
+  | fire rate [rifleman] | 0.624 | 0.593 | 0.709 |
+
+  Deaths halved, cover up 15×, commander death 0.70 → 0.05, and **more**
+  engagement, not less. The error was treating cover and survival as goods that
+  must be priced. They are **instrumental**: removing the incentive to hang back
+  let the policy engage, and once engaged the fastest route to +60 dominates —
+  episode length falls **165 → 53**. A short fight is a survivable fight, so
+  cover and survival rose in service of a terminal now reachable by everyone,
+  including the dead. The role structure corrected itself unprompted: the
+  commander stopped being the lead shooter (0.830 → 0.200) and started using
+  cover (0.000 → 0.227) while the riflemen shoot. Doctrine falling out of
+  economics.
+
+  **The reward call escalated one entry above is therefore WITHDRAWN.** Cover
+  needs no price and `death` needs no raise. *Caveat*: `core_v1` is
+  `squad_screen_core` (166 inputs) against the fallen arms' `squad_screen` (220)
+  — a cross-scenario reference, not a controlled contrast, used because every
+  pre-fix `squad_screen` arm ended at zero with ~no threatened steps to measure.
+  The effect sizes are far too large for that to explain them.
+
+  **Residuals this does NOT fix** — the standing exploit signatures, all still
+  open: false-DONE **0.279/0.288** final-decile (0.500–0.600 on the behavior
+  suite), retask/order churn **0.69** and **0.51**, and `fallen_v2` reporting a
+  contact recall of **0.00**. None contradicts the success rate; none is closed.
+
+- **2026-08-07** — **v1.11 fleet retrain launched** (`scripts/campaigns/v1_11_fleet.jobs`,
+  7 jobs, ~19.5M steps, detached, `logs/queue_20260807_123439.log`). Every
+  published number in the repo predates `d44ee8d` and is superseded. Budgets,
+  seeds and lr are each scenario's own last run, unchanged on purpose, so the
+  only difference is the environment and a miss stays attributable; PPO defaults
+  now carry the validated recipe (γ 0.999, `normalize_value`, `separate_critic`),
+  so no arm passes them. `squad_screen` is deliberately absent — `fallen_v1/v2`
+  already are its v1.11 result. **Watch, in order**: (1) the collapse — four of
+  these scenarios collapsed pre-fix; (2) **`platoon`**, 16 agents and the most
+  dilution, which converged at 92% *without* the fix and remains the one arm the
+  diagnosis does not explain; (3) `fireteam_defend`, where v1.10's prep period
+  and `prep_in_position` get measured for the first time; (4) false-DONE and
+  churn on every arm.
+
+  **Held back deliberately**: the single-legal-action sampling fix (an agent with
+  one legal action should take it without drawing). It is a strict improvement,
+  but it shifts the RNG stream, and keeping the tree exactly as validated means
+  this campaign reproduces the result that justified it. Land it **after** the
+  fleet is retrained and published, not during.
