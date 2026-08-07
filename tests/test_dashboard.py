@@ -1,13 +1,20 @@
 """Dashboard server: episode traces, run discovery, HTTP endpoints."""
 
 import json
+import os
 import threading
 import urllib.request
 from http.server import ThreadingHTTPServer
 
 import pytest
 
-from cohort.viz.dashboard import DashboardHandler, load_behavior, record_episode, scan_runs
+from cohort.viz.dashboard import (
+    DashboardHandler,
+    load_behavior,
+    load_metrics,
+    record_episode,
+    scan_runs,
+)
 
 
 def test_episode_trace_structure():
@@ -63,6 +70,64 @@ def test_scan_runs(tmp_path):
     assert runs[0]["checkpoints"][0]["loadable"] is False
     assert "unreadable checkpoint" in runs[0]["checkpoints"][0]["reason"]
     assert runs[0]["behavior"] is False
+
+
+def test_scan_runs_marks_live_training(tmp_path):
+    """The dashboard's red 'live' marker: a run whose job pid is still alive.
+
+    Same liveness test as scripts/train_status.py, so the two never disagree.
+    A live run is listed *before* its first metrics row — that is exactly the
+    moment you want to see it — and its metrics read as empty, not as an error.
+    """
+    run = tmp_path / "live_run"
+    run.mkdir()
+    (run / ".job.json").write_text(
+        json.dumps({
+            "pid": os.getpid(),
+            "total_steps": 3_000_000,
+            "started_human": "2026-08-07 09:00:00",
+            "args": ["--scenario", "platoon", "--total-steps", "3000000"],
+        })
+    )
+
+    runs = scan_runs(tmp_path)
+    assert [r["name"] for r in runs] == ["live_run"]
+    assert runs[0]["job"]["live"] is True
+    assert runs[0]["job"]["total_steps"] == 3_000_000
+    # config.json lands only after train.py finishes setting up; until then the
+    # scenario is read off the launch args so the list entry is not just "?"
+    assert runs[0]["scenario"] == "platoon"
+    assert load_metrics(tmp_path, "live_run")["columns"] == {}
+
+    # a finished run's job file names a pid that is gone: not live, and with no
+    # metrics of its own it is not a run at all
+    (run / ".job.json").write_text(json.dumps({"pid": 2**30}))
+    assert scan_runs(tmp_path) == []
+    (run / "metrics.csv").write_text("iteration,env_steps\n1,1024\n")
+    assert scan_runs(tmp_path)[0]["job"]["live"] is False
+
+    # a corrupt or half-written job file is "not live", never an exception
+    (run / ".job.json").write_text("{not json")
+    assert scan_runs(tmp_path)[0]["job"]["live"] is False
+
+
+def test_metrics_nan_serializes_as_null(tmp_path):
+    """An iteration that completed no episode logs NaN — which is not JSON.
+
+    Python's json emits a bare `NaN` token; JSON.parse rejects it, and the
+    browser then rendered *no charts at all* for any run containing one such
+    iteration (most of them). NaN is missing data, so it goes out as null.
+    """
+    run = tmp_path / "myrun"
+    run.mkdir()
+    (run / "metrics.csv").write_text(
+        "iteration,env_steps,ep_return\n1,1024,nan\n2,2048,3.5\n3,3072,\n"
+    )
+    m = load_metrics(tmp_path, "myrun")
+    assert m["columns"]["ep_return"] == [None, 3.5, None]
+    assert m["columns"]["env_steps"] == [1024.0, 2048.0, 3072.0]
+    assert "NaN" not in json.dumps(m), "payload must be valid JSON for the browser"
+    json.loads(json.dumps(m))
 
 
 def test_behavior_json_discovery_and_load(tmp_path):

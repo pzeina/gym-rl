@@ -35,7 +35,17 @@
   .runitem { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; margin-bottom: 6px; background: var(--panel2); }
   .runitem:hover { border-color: var(--accent); }
   .runitem.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .runitem .nm { font-weight: 600; } .runitem .meta { color: var(--dim); font-size: 11px; }
+  .runitem .nm { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .runitem .nm .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .runitem .meta { color: var(--dim); font-size: 11px; }
+  /* a run training RIGHT NOW — the one thing you want to spot at a glance */
+  .runitem.live { border-color: #5a2020; }
+  .live-tag { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none;
+    font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--bad); background: #2a1414; border: 1px solid #5a2020; border-radius: 9px; padding: 1px 6px 1px 5px; }
+  .live-tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bad); animation: livepulse 1.6s ease-in-out infinite; }
+  @keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  @media (prefers-reduced-motion: reduce) { .live-tag::before { animation: none; } }
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .stat { text-align: center; padding: 10px 6px; }
   .stat .v { font-size: 20px; font-weight: 700; } .stat .k { color: var(--dim); font-size: 11px; }
@@ -231,14 +241,19 @@ function drawChart(canvas, series, opts = {}) {
   const g = canvas.getContext("2d"); g.scale(dpr, dpr);
   g.clearRect(0, 0, W, H);
   const padL = 40, padR = 8, padT = 8, padB = 18;
-  const xs = series[0]?.x || [];
-  if (!xs.length) { g.fillStyle = "#8a919c"; g.fillText("no data", W / 2 - 18, H / 2); return; }
+  // x range spans every series: a series that starts late (its first
+  // iterations completed no episode) must not compress the axis for the rest
+  let xmin = Infinity, xmax = -Infinity;
+  for (const s of series) {
+    if (!s.x.length) continue;
+    xmin = Math.min(xmin, s.x[0]); xmax = Math.max(xmax, s.x[s.x.length - 1]);
+  }
+  if (!Number.isFinite(xmin)) { g.fillStyle = "#8a919c"; g.fillText("no data", W / 2 - 18, H / 2); return; }
   let ymin = Infinity, ymax = -Infinity;
   for (const s of series) for (const v of s.y) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
   if (opts.zero) ymin = Math.min(ymin, 0);
   if (ymin === ymax) { ymin -= 1; ymax += 1; }
   const pad = (ymax - ymin) * 0.08; ymin -= pad; ymax += pad;
-  const xmin = xs[0], xmax = xs[xs.length - 1] || 1;
   const X = (v) => padL + (v - xmin) / (xmax - xmin || 1) * (W - padL - padR);
   const Y = (v) => padT + (1 - (v - ymin) / (ymax - ymin)) * (H - padT - padB);
   g.strokeStyle = "#2e333b"; g.fillStyle = "#8a919c"; g.font = "10px sans-serif"; g.lineWidth = 1;
@@ -285,12 +300,22 @@ async function loadState() {
 function renderRunList() {
   const el = $("runlist");
   if (!STATE.runs.length) { el.innerHTML = '<div class="empty">no runs yet</div>'; return; }
-  el.innerHTML = STATE.runs.map((r) => {
+  // live runs first: current work sits at the top of the list, not wherever
+  // the alphabet happens to put it. Stable within each group (server order).
+  const live = (r) => !!(r.job && r.job.live);
+  const ordered = [...STATE.runs.filter(live), ...STATE.runs.filter((r) => !live(r))];
+  el.innerHTML = ordered.map((r) => {
     const succ = r.last.success_rate_rolling
       ? (100 * +r.last.success_rate_rolling).toFixed(0) + "%" : "–";
-    return `<div class="runitem${r.name === selectedRun ? " sel" : ""}" data-name="${r.name}">
-      <div class="nm">${r.name}</div>
-      <div class="meta">${r.scenario || "?"} · ${(+r.last.env_steps || 0).toLocaleString()} steps · success ${succ}</div>
+    const steps = +r.last.env_steps || 0;
+    const total = live(r) ? +r.job.total_steps || 0 : 0;
+    const progress = total
+      ? `${steps.toLocaleString()}/${total.toLocaleString()} steps (${(100 * steps / total).toFixed(0)}%)`
+      : `${steps.toLocaleString()} steps`;
+    return `<div class="runitem${r.name === selectedRun ? " sel" : ""}${live(r) ? " live" : ""}" data-name="${r.name}">
+      <div class="nm"><span class="name">${r.name}</span>${live(r)
+        ? `<span class="live-tag" title="training now — pid ${r.job.pid}, started ${r.job.started || "?"}">live</span>` : ""}</div>
+      <div class="meta">${r.scenario || "?"} · ${progress} · success ${succ}</div>
     </div>`;
   }).join("");
 }
@@ -320,12 +345,28 @@ async function loadRunCharts() {
 async function renderRunCharts() {
   const m = await api(`/api/metrics?run=${encodeURIComponent(selectedRun)}`);
   const c = m.columns, x = c.env_steps;
+  if (!x || !x.length) {
+    // a just-launched live run: listed already, but no first row written yet
+    $("traincards").innerHTML = "";
+    $("traincharts").innerHTML = "";
+    $("trainempty").textContent = `${selectedRun} — waiting for the first metrics row…`;
+    $("trainempty").classList.remove("hidden");
+    return;
+  }
   $("trainempty").classList.add("hidden");
-  const last = (k) => c[k] ? c[k][c[k].length - 1] : null;
-  $("traincards").innerHTML = ["env steps|" + (+last("env_steps")).toLocaleString(),
-    "success (rolling)|" + (100 * last("success_rate_rolling")).toFixed(0) + "%",
+  // last *reported* value: the final iterations of a run can complete no
+  // episode, and "–" beats reporting their absence as a 0
+  const last = (k) => {
+    const col = c[k] || [];
+    for (let i = col.length - 1; i >= 0; i--) if (col[i] != null) return col[i];
+    return null;
+  };
+  const pct = (v) => v == null ? "–" : (100 * v).toFixed(0) + "%";
+  const num = (v) => v == null ? "–" : (+v).toLocaleString();
+  $("traincards").innerHTML = ["env steps|" + num(last("env_steps")),
+    "success (rolling)|" + pct(last("success_rate_rolling")),
     "episode return|" + fmt(last("ep_return")),
-    "steps / sec|" + (+last("sps")).toLocaleString()]
+    "steps / sec|" + num(last("sps"))]
     .map((s) => { const [k, v] = s.split("|"); return `<div class="card stat"><div class="v">${v}</div><div class="k">${k}</div></div>`; }).join("");
   const charts = [
     ["episode return", [["ep_return", "#6fb3ff"]], { smooth: 9, zero: true }],
@@ -342,8 +383,13 @@ async function renderRunCharts() {
   }
   charts.forEach((ch, i) => {
     const series = ch[1].filter(([k]) => c[k]).map(([k, color]) => {
-      const raw = c[k], y = ch[2].smooth ? smooth(raw, ch[2].smooth) : raw;
-      return { name: k.replace("comp_", ""), x, y, color, raw, faint: !!ch[2].smooth };
+      // /api/metrics sends null for an iteration that completed no episode;
+      // those points are dropped (x and y together) rather than drawn as 0,
+      // which would invent a datum the run never produced
+      const sx = [], raw = [];
+      c[k].forEach((v, j) => { if (v != null) { sx.push(x[j]); raw.push(v); } });
+      const y = ch[2].smooth ? smooth(raw, ch[2].smooth) : raw;
+      return { name: k.replace("comp_", ""), x: sx, y, color, raw, faint: !!ch[2].smooth };
     });
     drawChart($(`tc${i}`), series, ch[2]);
   });
@@ -1082,7 +1128,12 @@ window.addEventListener("resize", () => { drawMap(); drawTimeline(); if (selecte
 (async () => {
   try {
     await loadState();
-    if (STATE.runs.length) { selectedRun = STATE.runs[0].name; renderRunList(); loadRunCharts(); }
+    // open on a run that is training now, if there is one — that is the run
+    // you came to look at; otherwise the first run as before
+    if (STATE.runs.length) {
+      selectedRun = (STATE.runs.find((r) => r.job && r.job.live) || STATE.runs[0]).name;
+      renderRunList(); loadRunCharts();
+    }
   } catch (e) { $("status").textContent = "error: " + e.message; }
 })();
 </script>
