@@ -1,0 +1,3505 @@
+{
+ "checkpoint": "runs/squad_v8/ckpt_best.pt",
+ "scenario": "squad",
+ "episodes": 20,
+ "seed": 123,
+ "greedy": false,
+ "success_ci95": "1.00 \u00b1 0.00",
+ "metrics": {
+  "episodes": 20,
+  "root_mission": "SEIZE",
+  "success_rate": 1.0,
+  "obedience_latency_mean": 1.4985163204747773,
+  "obedience_orders": 348,
+  "obedience_censored": 11,
+  "obedience_by_task": {
+   "ADVANCE": {
+    "latency_mean": 2.25,
+    "orders": 21,
+    "censored": 5
+   },
+   "CLEAR": {
+    "latency_mean": 1.8275862068965518,
+    "orders": 29,
+    "censored": 0
+   },
+   "COVER": {
+    "latency_mean": 1.9589041095890412,
+    "orders": 76,
+    "censored": 3
+   },
+   "HOLD": {
+    "latency_mean": 0.0,
+    "orders": 16,
+    "censored": 0
+   },
+   "OBSERVE": {
+    "latency_mean": 1.2714285714285714,
+    "orders": 143,
+    "censored": 3
+   },
+   "SEIZE": {
+    "latency_mean": 1.6491228070175439,
+    "orders": 57,
+    "censored": 0
+   },
+   "SUPPORT": {
+    "latency_mean": 0.16666666666666666,
+    "orders": 6,
+    "censored": 0
+   }
+  },
+  "orders_staged": 20,
+  "staged_released": 2,
+  "staged_abandoned": 18,
+  "staging_gap_mean": 12.5,
+  "report_precision": null,
+  "report_recall": 0.0,
+  "contact_reports": 0,
+  "doctrine_preference_rate": 0.3914285714285714,
+  "doctrine_allowed_rate": 1.0,
+  "orders_allowed": 213,
+  "orders_violating": 0,
+  "orders_underivable": 0,
+  "orders_by_task": {
+   "OBSERVE": {
+    "preferred": 70,
+    "allowed": 74,
+    "violating": 0,
+    "underivable": 0
+   },
+   "COVER": {
+    "preferred": 0,
+    "allowed": 76,
+    "violating": 0,
+    "underivable": 0
+   },
+   "SEIZE": {
+    "preferred": 37,
+    "allowed": 0,
+    "violating": 0,
+    "underivable": 0
+   },
+   "CLEAR": {
+    "preferred": 12,
+    "allowed": 17,
+    "violating": 0,
+    "underivable": 0
+   },
+   "SUPPORT": {
+    "preferred": 0,
+    "allowed": 6,
+    "violating": 0,
+    "underivable": 0
+   },
+   "ADVANCE": {
+    "preferred": 18,
+    "allowed": 24,
+    "violating": 0,
+    "underivable": 0
+   },
+   "HOLD": {
+    "preferred": 0,
+    "allowed": 16,
+    "violating": 0,
+    "underivable": 0
+   }
+  },
+  "order_availability": {
+   "ADVANCE": 0.20188095238095238,
+   "CLEAR": 0.11132142857142857,
+   "COVER": 0.19836734693877547,
+   "HOLD": 0.0666938775510204,
+   "OBSERVE": 0.3010221088435374,
+   "SEIZE": 0.07846428571428571,
+   "SUPPORT": 0.042249999999999996
+  },
+  "orders_matched": 350,
+  "orders_issued": 350,
+  "orders_per_episode": 17.5,
+  "retasks": 231,
+  "retasks_priced": 153,
+  "retasks_excepted": 78,
+  "retask_rotations": 184,
+  "retasks_per_episode": 11.55,
+  "retasks_priced_per_episode": 7.65,
+  "retasks_by_rank": {
+   "TL": {
+    "priced": 114,
+    "excepted": 68
+   },
+   "SL": {
+    "priced": 39,
+    "excepted": 10
+   }
+  },
+  "false_complete_rate": 0.75,
+  "done_reports": 4,
+  "done_rejected": 3,
+  "done_admissible": 3359,
+  "done_admissible_root": 1615,
+  "done_claim_rate": 0.0011908306043465317,
+  "succession_recovery_mean": null,
+  "succession_events": 1,
+  "succession_unrecovered": 1,
+  "coverage_time": 0.7835437120149603,
+  "advance_orders_per_episode": 2.1,
+  "timed_orders_per_episode": 1.0,
+  "execute_signals_per_episode": 0.0,
+  "formation_orders_per_episode": 0.8,
+  "sync_proposals_per_episode": 0.65,
+  "sync_bounds_per_episode": 0.2,
+  "stance_share": 0.15194864740944522,
+  "human_death_rate": 0.05,
+  "human_mean_enemy_dist": 18.562215460259843,
+  "human_mean_objective_dist": 18.312415246146635,
+  "human_ring_entries_mean": 1.4,
+  "cover_occupancy_under_threat": 0.14285714285714285,
+  "mean_distance_from_objective_under_threat": 8.844577463620015,
+  "threat_pairs": 966,
+  "timeout_rate": 0.0,
+  "episode_length_mean": 80.75,
+  "max_steps": 450,
+  "messages_per_episode": 46.3,
+  "command_traffic_share": 0.3952483801295896,
+  "voice_traffic_share": 0.0183585313174946
+ },
+ "gates": [
+  {
+   "name": "timeout_rate",
+   "value": 0.0,
+   "bound": 0.5,
+   "direction": "max",
+   "passed": true
+  }
+ ],
+ "per_episode": [
+  {
+   "outcome": "success",
+   "length": 73,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    0
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      1,
+      1,
+      0
+     ],
+     "censored": 1
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      2,
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 10,
+   "orders_preferred": 5,
+   "orders_allowed": 5,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 3.5749999999999997,
+    "SUPPORT": 0.125,
+    "SEIZE": 0.575,
+    "CLEAR": 0.575,
+    "ADVANCE": 1.15,
+    "COVER": 2.9999999999999996,
+    "HOLD": 0.9999999999999998
+   },
+   "orders_matched": 10,
+   "retasks": 7,
+   "retasks_priced": 5,
+   "retasks_excepted": 2,
+   "retask_rotations": 3,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 5,
+     "excepted": 1
+    },
+    "SL": {
+     "priced": 0,
+     "excepted": 1
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 90,
+   "done_admissible_root": 73,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 144,
+   "coverage_covered": 68,
+   "advance_orders": 0,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 489,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.020127703963638,
+   "human_mean_objective_dist": 17.538614559051428,
+   "human_ring_entries": 2,
+   "threat_pairs": 22,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 196.53580352279334,
+   "threat_objective_dist_pairs": 22,
+   "messages": 29,
+   "messages_command": 10,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 108,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    3,
+    1,
+    3,
+    1,
+    3,
+    2,
+    1,
+    3,
+    1,
+    1,
+    1,
+    2,
+    1,
+    4,
+    1,
+    3,
+    3,
+    5,
+    8,
+    3,
+    6,
+    3,
+    4,
+    2,
+    1,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      2,
+      6,
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      3,
+      1,
+      3,
+      1,
+      4,
+      1,
+      5,
+      3,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      3,
+      1,
+      1,
+      1,
+      3,
+      3,
+      8,
+      3,
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      3,
+      2,
+      1,
+      4
+     ],
+     "censored": 0
+    },
+    "SUPPORT": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 27,
+   "orders_preferred": 9,
+   "orders_allowed": 18,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 5,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 9,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 2,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 7.646428571428572,
+    "SUPPORT": 1.375,
+    "SEIZE": 2.075,
+    "CLEAR": 4.325,
+    "ADVANCE": 4.15,
+    "COVER": 5.571428571428571,
+    "HOLD": 1.8571428571428565
+   },
+   "orders_matched": 27,
+   "retasks": 20,
+   "retasks_priced": 12,
+   "retasks_excepted": 8,
+   "retask_rotations": 15,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 9,
+     "excepted": 6
+    },
+    "SL": {
+     "priced": 3,
+     "excepted": 2
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 4,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 251,
+   "done_admissible_root": 108,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 289,
+   "coverage_covered": 241,
+   "advance_orders": 1,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 3,
+   "sync_bounds": 2,
+   "stance_steps": 18,
+   "stance_agent_steps": 710,
+   "human_died": false,
+   "human_mean_enemy_dist": 20.58361462624009,
+   "human_mean_objective_dist": 14.472041075157948,
+   "human_ring_entries": 5,
+   "threat_pairs": 109,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 911.6109319534229,
+   "threat_objective_dist_pairs": 109,
+   "messages": 76,
+   "messages_command": 28,
+   "messages_voice": 5,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 81,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    2,
+    1,
+    0,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    3,
+    1,
+    3
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1,
+      2,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      2,
+      3
+     ],
+     "censored": 1
+    },
+    "SUPPORT": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 18,
+   "orders_preferred": 8,
+   "orders_allowed": 10,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 5,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 4,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.258928571428572,
+    "SUPPORT": 0.7625,
+    "SEIZE": 2.0875,
+    "CLEAR": 2.0875,
+    "ADVANCE": 4.175,
+    "COVER": 2.571428571428571,
+    "HOLD": 1.057142857142857
+   },
+   "orders_matched": 18,
+   "retasks": 11,
+   "retasks_priced": 6,
+   "retasks_excepted": 5,
+   "retask_rotations": 6,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 3,
+     "excepted": 5
+    },
+    "SL": {
+     "priced": 3,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 4,
+   "enemies_reported": 0,
+   "done_reports": 1,
+   "done_rejected": 0,
+   "done_admissible": 178,
+   "done_admissible_root": 81,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 213,
+   "coverage_covered": 126,
+   "advance_orders": 1,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 524,
+   "human_died": false,
+   "human_mean_enemy_dist": 17.9062577895209,
+   "human_mean_objective_dist": 19.073730504913783,
+   "human_ring_entries": 2,
+   "threat_pairs": 68,
+   "threat_cover_pairs": 15,
+   "threat_objective_dist_sum": 709.0451140677955,
+   "threat_objective_dist_pairs": 68,
+   "messages": 46,
+   "messages_command": 18,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 73,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    3,
+    1,
+    1,
+    1,
+    1,
+    3,
+    1,
+    2,
+    3,
+    3,
+    3,
+    4,
+    0,
+    1,
+    0,
+    1,
+    5,
+    4,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      3,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      3,
+      1,
+      3,
+      4,
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      2,
+      3,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      3,
+      5,
+      4
+     ],
+     "censored": 0
+    },
+    "SUPPORT": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 19,
+   "orders_preferred": 8,
+   "orders_allowed": 11,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 1,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.7160714285714285,
+    "SUPPORT": 0.7625,
+    "SEIZE": 1.6875,
+    "CLEAR": 1.6875,
+    "ADVANCE": 4.575,
+    "COVER": 3.428571428571428,
+    "HOLD": 1.1428571428571426
+   },
+   "orders_matched": 19,
+   "retasks": 13,
+   "retasks_priced": 8,
+   "retasks_excepted": 5,
+   "retask_rotations": 11,
+   "retasks_by_rank": {
+    "SL": {
+     "priced": 3,
+     "excepted": 0
+    },
+    "TL": {
+     "priced": 5,
+     "excepted": 5
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 140,
+   "done_admissible_root": 73,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 177,
+   "coverage_covered": 123,
+   "advance_orders": 3,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 150,
+   "stance_agent_steps": 518,
+   "human_died": false,
+   "human_mean_enemy_dist": 17.634541257505877,
+   "human_mean_objective_dist": 18.16585065178963,
+   "human_ring_entries": 1,
+   "threat_pairs": 28,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 237.46921435535117,
+   "threat_objective_dist_pairs": 28,
+   "messages": 48,
+   "messages_command": 20,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 75,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    2,
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    1,
+    1,
+    3,
+    0,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0,
+      0,
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 12,
+   "orders_preferred": 3,
+   "orders_allowed": 9,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 3,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 4.660714285714286,
+    "SUPPORT": 0.125,
+    "SEIZE": 0.375,
+    "CLEAR": 0.375,
+    "ADVANCE": 0.75,
+    "COVER": 4.285714285714285,
+    "HOLD": 1.4285714285714282
+   },
+   "orders_matched": 12,
+   "retasks": 6,
+   "retasks_priced": 6,
+   "retasks_excepted": 0,
+   "retask_rotations": 6,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 6,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 75,
+   "done_admissible_root": 75,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 215,
+   "coverage_covered": 179,
+   "advance_orders": 0,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 1,
+   "sync_bounds": 1,
+   "stance_steps": 0,
+   "stance_agent_steps": 532,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.027781579657653,
+   "human_mean_objective_dist": 18.0384940797834,
+   "human_ring_entries": 1,
+   "threat_pairs": 31,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 239.3365224384158,
+   "threat_objective_dist_pairs": 31,
+   "messages": 32,
+   "messages_command": 12,
+   "messages_voice": 2,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 90,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    2,
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    2,
+    1,
+    1,
+    2,
+    5,
+    0,
+    1,
+    0,
+    0,
+    1,
+    0
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      2,
+      2,
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      2,
+      1,
+      1,
+      1,
+      2,
+      1,
+      1,
+      5,
+      0,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [],
+     "censored": 1
+    },
+    "CLEAR": {
+     "latencies": [
+      0,
+      1
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 23,
+   "orders_preferred": 8,
+   "orders_allowed": 15,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 5,
+     "allowed": 6,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 5,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 2,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 6.7892857142857155,
+    "SUPPORT": 0.875,
+    "SEIZE": 2.075,
+    "CLEAR": 2.825,
+    "ADVANCE": 4.15,
+    "COVER": 4.7142857142857135,
+    "HOLD": 1.571428571428571
+   },
+   "orders_matched": 23,
+   "retasks": 17,
+   "retasks_priced": 8,
+   "retasks_excepted": 9,
+   "retask_rotations": 12,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 4,
+     "excepted": 8
+    },
+    "SL": {
+     "priced": 4,
+     "excepted": 1
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 4,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 179,
+   "done_admissible_root": 90,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 228,
+   "coverage_covered": 205,
+   "advance_orders": 2,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 69,
+   "stance_agent_steps": 564,
+   "human_died": false,
+   "human_mean_enemy_dist": 18.39285361199541,
+   "human_mean_objective_dist": 17.57404129916388,
+   "human_ring_entries": 1,
+   "threat_pairs": 55,
+   "threat_cover_pairs": 9,
+   "threat_objective_dist_sum": 477.4790434542879,
+   "threat_objective_dist_pairs": 55,
+   "messages": 63,
+   "messages_command": 24,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 90,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    2,
+    2,
+    1,
+    2,
+    0,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    3
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      2,
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 11,
+   "orders_preferred": 3,
+   "orders_allowed": 8,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 2,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 3.321428571428571,
+    "SUPPORT": 0.5,
+    "SEIZE": 0.75,
+    "CLEAR": 1.5,
+    "ADVANCE": 1.5,
+    "COVER": 2.571428571428571,
+    "HOLD": 0.857142857142857
+   },
+   "orders_matched": 11,
+   "retasks": 5,
+   "retasks_priced": 4,
+   "retasks_excepted": 1,
+   "retask_rotations": 4,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 2,
+     "excepted": 1
+    },
+    "SL": {
+     "priced": 2,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 236,
+   "done_admissible_root": 90,
+   "succession_events": 1,
+   "succession_recovery": [],
+   "succession_unrecovered": 1,
+   "coverage_pairs": 239,
+   "coverage_covered": 215,
+   "advance_orders": 0,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 112,
+   "stance_agent_steps": 525,
+   "human_died": true,
+   "human_mean_enemy_dist": 16.742423757670274,
+   "human_mean_objective_dist": 21.30184555672715,
+   "human_ring_entries": 1,
+   "threat_pairs": 77,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 590.6909849841735,
+   "threat_objective_dist_pairs": 77,
+   "messages": 37,
+   "messages_command": 12,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 77,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    2,
+    2,
+    1,
+    1,
+    5,
+    1,
+    1,
+    1,
+    4,
+    1,
+    2,
+    0,
+    1,
+    0,
+    1,
+    3,
+    3
+   ],
+   "obedience_censored": 2,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      2,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      1,
+      1,
+      1,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      5,
+      2,
+      1,
+      3,
+      3
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      4,
+      1
+     ],
+     "censored": 2
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 18,
+   "orders_preferred": 5,
+   "orders_allowed": 13,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 3,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 6,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 1,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.898214285714286,
+    "SUPPORT": 0.5375,
+    "SEIZE": 1.3125,
+    "CLEAR": 1.3125,
+    "ADVANCE": 3.225,
+    "COVER": 4.285714285714285,
+    "HOLD": 1.4285714285714282
+   },
+   "orders_matched": 18,
+   "retasks": 12,
+   "retasks_priced": 9,
+   "retasks_excepted": 3,
+   "retask_rotations": 10,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 6,
+     "excepted": 3
+    },
+    "SL": {
+     "priced": 3,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 147,
+   "done_admissible_root": 77,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 216,
+   "coverage_covered": 146,
+   "advance_orders": 4,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 156,
+   "stance_agent_steps": 546,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.044020811201424,
+   "human_mean_objective_dist": 19.47647202244189,
+   "human_ring_entries": 1,
+   "threat_pairs": 36,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 377.81768675494465,
+   "threat_objective_dist_pairs": 36,
+   "messages": 42,
+   "messages_command": 19,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 76,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    0,
+    1,
+    1,
+    5,
+    1
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1,
+      5
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 15,
+   "orders_preferred": 6,
+   "orders_allowed": 9,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.12797619047619,
+    "SUPPORT": 0.3125,
+    "SEIZE": 0.9375,
+    "CLEAR": 0.9375,
+    "ADVANCE": 2.5416666666666665,
+    "COVER": 3.8571428571428563,
+    "HOLD": 1.2857142857142854
+   },
+   "orders_matched": 15,
+   "retasks": 9,
+   "retasks_priced": 6,
+   "retasks_excepted": 3,
+   "retask_rotations": 8,
+   "retasks_by_rank": {
+    "SL": {
+     "priced": 1,
+     "excepted": 1
+    },
+    "TL": {
+     "priced": 5,
+     "excepted": 2
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 106,
+   "done_admissible_root": 76,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 218,
+   "coverage_covered": 191,
+   "advance_orders": 2,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 516,
+   "human_died": false,
+   "human_mean_enemy_dist": 17.97039774189026,
+   "human_mean_objective_dist": 18.310509689356504,
+   "human_ring_entries": 1,
+   "threat_pairs": 46,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 336.4292096442165,
+   "threat_objective_dist_pairs": 46,
+   "messages": 34,
+   "messages_command": 15,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 87,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    0,
+    1,
+    1,
+    1,
+    1,
+    10,
+    3,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      10,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "SUPPORT": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 6,
+   "staged_released": 1,
+   "staging_gaps": [
+    12
+   ],
+   "orders_issued": 24,
+   "orders_preferred": 10,
+   "orders_allowed": 14,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 6,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 5,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 7.569642857142856,
+    "SUPPORT": 1.2375,
+    "SEIZE": 1.3125,
+    "CLEAR": 1.3125,
+    "ADVANCE": 7.424999999999999,
+    "COVER": 3.8571428571428563,
+    "HOLD": 1.2857142857142854
+   },
+   "orders_matched": 24,
+   "retasks": 18,
+   "retasks_priced": 10,
+   "retasks_excepted": 8,
+   "retask_rotations": 18,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 7,
+     "excepted": 7
+    },
+    "SL": {
+     "priced": 3,
+     "excepted": 1
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 4,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 109,
+   "done_admissible_root": 87,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 239,
+   "coverage_covered": 218,
+   "advance_orders": 7,
+   "timed_orders": 6,
+   "execute_signals": 0,
+   "formation_orders": 2,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 263,
+   "stance_agent_steps": 579,
+   "human_died": false,
+   "human_mean_enemy_dist": 20.318080391976444,
+   "human_mean_objective_dist": 21.470732837547043,
+   "human_ring_entries": 0,
+   "threat_pairs": 27,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 342.2363936072727,
+   "threat_objective_dist_pairs": 27,
+   "messages": 60,
+   "messages_command": 26,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 80,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    3,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    3,
+    1,
+    0,
+    1,
+    0,
+    1,
+    1,
+    0,
+    0,
+    1
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      3,
+      1,
+      0,
+      1,
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 7,
+   "staged_released": 1,
+   "staging_gaps": [
+    13
+   ],
+   "orders_issued": 26,
+   "orders_preferred": 13,
+   "orders_allowed": 13,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 7,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 8,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 8.153571428571427,
+    "SUPPORT": 1.5750000000000004,
+    "SEIZE": 1.125,
+    "CLEAR": 1.125,
+    "ADVANCE": 9.449999999999998,
+    "COVER": 3.428571428571428,
+    "HOLD": 1.1428571428571426
+   },
+   "orders_matched": 26,
+   "retasks": 20,
+   "retasks_priced": 17,
+   "retasks_excepted": 3,
+   "retask_rotations": 18,
+   "retasks_by_rank": {
+    "SL": {
+     "priced": 2,
+     "excepted": 0
+    },
+    "TL": {
+     "priced": 15,
+     "excepted": 3
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 154,
+   "done_admissible_root": 80,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 233,
+   "coverage_covered": 211,
+   "advance_orders": 10,
+   "timed_orders": 7,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 2,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 567,
+   "human_died": false,
+   "human_mean_enemy_dist": 16.884826414073093,
+   "human_mean_objective_dist": 19.015854787097567,
+   "human_ring_entries": 2,
+   "threat_pairs": 35,
+   "threat_cover_pairs": 7,
+   "threat_objective_dist_sum": 320.3354022957702,
+   "threat_objective_dist_pairs": 35,
+   "messages": 69,
+   "messages_command": 26,
+   "messages_voice": 2,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 78,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    3,
+    1,
+    1,
+    6,
+    1,
+    1,
+    1,
+    1,
+    3,
+    2,
+    1,
+    1,
+    1,
+    2,
+    4,
+    1,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      3,
+      1,
+      1,
+      6,
+      1,
+      3,
+      4,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      2,
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 22,
+   "orders_preferred": 10,
+   "orders_allowed": 12,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 6,
+     "allowed": 5,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 4,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 6.294642857142857,
+    "SUPPORT": 0.8125,
+    "SEIZE": 2.4375,
+    "CLEAR": 2.4375,
+    "ADVANCE": 4.875,
+    "COVER": 3.8571428571428563,
+    "HOLD": 1.2857142857142854
+   },
+   "orders_matched": 22,
+   "retasks": 16,
+   "retasks_priced": 12,
+   "retasks_excepted": 4,
+   "retask_rotations": 13,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 10,
+     "excepted": 4
+    },
+    "SL": {
+     "priced": 2,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 176,
+   "done_admissible_root": 78,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 210,
+   "coverage_covered": 181,
+   "advance_orders": 2,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 2,
+   "sync_bounds": 0,
+   "stance_steps": 225,
+   "stance_agent_steps": 553,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.807814451256494,
+   "human_mean_objective_dist": 17.548227289000405,
+   "human_ring_entries": 1,
+   "threat_pairs": 30,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 321.30375247070697,
+   "threat_objective_dist_pairs": 30,
+   "messages": 51,
+   "messages_command": 23,
+   "messages_voice": 2,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 75,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    2,
+    1,
+    1,
+    2,
+    1,
+    2,
+    2,
+    4,
+    0,
+    0,
+    0,
+    4,
+    1,
+    2,
+    0,
+    2,
+    1,
+    1,
+    0
+   ],
+   "obedience_censored": 2,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      2,
+      2,
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      2,
+      1,
+      0,
+      1,
+      0,
+      1,
+      0
+     ],
+     "censored": 1
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      2,
+      2,
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1,
+      4,
+      4
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "SUPPORT": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [],
+     "censored": 1
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 21,
+   "orders_preferred": 9,
+   "orders_allowed": 12,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 5,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 1,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.973214285714286,
+    "SUPPORT": 1.0625,
+    "SEIZE": 1.6875,
+    "CLEAR": 3.1875,
+    "ADVANCE": 3.375,
+    "COVER": 4.285714285714285,
+    "HOLD": 1.4285714285714282
+   },
+   "orders_matched": 21,
+   "retasks": 15,
+   "retasks_priced": 9,
+   "retasks_excepted": 6,
+   "retask_rotations": 12,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 5,
+     "excepted": 6
+    },
+    "SL": {
+     "priced": 4,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 202,
+   "done_admissible_root": 75,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 205,
+   "coverage_covered": 176,
+   "advance_orders": 1,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 3,
+   "sync_bounds": 1,
+   "stance_steps": 63,
+   "stance_agent_steps": 532,
+   "human_died": false,
+   "human_mean_enemy_dist": 18.41889656346953,
+   "human_mean_objective_dist": 18.32805644943752,
+   "human_ring_entries": 2,
+   "threat_pairs": 26,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 234.54018354737298,
+   "threat_objective_dist_pairs": 26,
+   "messages": 52,
+   "messages_command": 22,
+   "messages_voice": 4,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 77,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    2,
+    1,
+    1,
+    1,
+    0,
+    1,
+    1,
+    4,
+    1,
+    0,
+    2,
+    1,
+    0,
+    0,
+    0
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1,
+      2,
+      1,
+      4,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      0,
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      2
+     ],
+     "censored": 0
+    },
+    "SUPPORT": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [],
+     "censored": 1
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 18,
+   "orders_preferred": 6,
+   "orders_allowed": 12,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "CLEAR": {
+     "preferred": 2,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 2,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SUPPORT": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 4.371428571428571,
+    "SUPPORT": 1.35,
+    "SEIZE": 1.5,
+    "CLEAR": 3.75,
+    "ADVANCE": 3.6,
+    "COVER": 2.571428571428571,
+    "HOLD": 0.857142857142857
+   },
+   "orders_matched": 18,
+   "retasks": 12,
+   "retasks_priced": 8,
+   "retasks_excepted": 4,
+   "retask_rotations": 10,
+   "retasks_by_rank": {
+    "SL": {
+     "priced": 4,
+     "excepted": 0
+    },
+    "TL": {
+     "priced": 4,
+     "excepted": 4
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 2,
+   "done_rejected": 2,
+   "done_admissible": 177,
+   "done_admissible_root": 77,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 187,
+   "coverage_covered": 127,
+   "advance_orders": 2,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 1,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 546,
+   "human_died": false,
+   "human_mean_enemy_dist": 18.066454736499956,
+   "human_mean_objective_dist": 18.097019307227008,
+   "human_ring_entries": 1,
+   "threat_pairs": 59,
+   "threat_cover_pairs": 7,
+   "threat_objective_dist_sum": 447.7688958697727,
+   "threat_objective_dist_pairs": 59,
+   "messages": 52,
+   "messages_command": 18,
+   "messages_voice": 1,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 80,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    3,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    3,
+    3,
+    1,
+    0,
+    5,
+    0,
+    1,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      3,
+      1,
+      1,
+      0
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      3,
+      3
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      5,
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 18,
+   "orders_preferred": 8,
+   "orders_allowed": 10,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 4,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 2,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 1,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.261904761904762,
+    "SUPPORT": 0.5,
+    "SEIZE": 1.5,
+    "CLEAR": 2.5,
+    "ADVANCE": 3.6666666666666665,
+    "COVER": 3.428571428571428,
+    "HOLD": 1.1428571428571426
+   },
+   "orders_matched": 18,
+   "retasks": 12,
+   "retasks_priced": 5,
+   "retasks_excepted": 7,
+   "retask_rotations": 8,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 4,
+     "excepted": 5
+    },
+    "SL": {
+     "priced": 1,
+     "excepted": 2
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 192,
+   "done_admissible_root": 80,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 219,
+   "coverage_covered": 179,
+   "advance_orders": 2,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 4,
+   "stance_agent_steps": 506,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.035723139180334,
+   "human_mean_objective_dist": 20.47059566621717,
+   "human_ring_entries": 1,
+   "threat_pairs": 53,
+   "threat_cover_pairs": 0,
+   "threat_objective_dist_sum": 408.71721751975105,
+   "threat_objective_dist_pairs": 53,
+   "messages": 45,
+   "messages_command": 19,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 75,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    2,
+    5,
+    0,
+    3
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      2,
+      5,
+      3
+     ],
+     "censored": 1
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 8,
+   "orders_preferred": 2,
+   "orders_allowed": 6,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 2,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 2.946428571428571,
+    "SUPPORT": 0.125,
+    "SEIZE": 0.375,
+    "CLEAR": 0.375,
+    "ADVANCE": 0.75,
+    "COVER": 2.571428571428571,
+    "HOLD": 0.857142857142857
+   },
+   "orders_matched": 8,
+   "retasks": 2,
+   "retasks_priced": 2,
+   "retasks_excepted": 0,
+   "retask_rotations": 2,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 2,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 75,
+   "done_admissible_root": 75,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 153,
+   "coverage_covered": 52,
+   "advance_orders": 0,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 39,
+   "stance_agent_steps": 532,
+   "human_died": false,
+   "human_mean_enemy_dist": 17.79172031836135,
+   "human_mean_objective_dist": 17.40045203117723,
+   "human_ring_entries": 1,
+   "threat_pairs": 47,
+   "threat_cover_pairs": 37,
+   "threat_objective_dist_sum": 488.23651633973736,
+   "threat_objective_dist_pairs": 47,
+   "messages": 25,
+   "messages_command": 9,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 85,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    1,
+    0,
+    3,
+    0,
+    1,
+    14,
+    3,
+    1,
+    0
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1,
+      1,
+      1,
+      3,
+      1,
+      3
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      2,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      14,
+      1
+     ],
+     "censored": 1
+    },
+    "HOLD": {
+     "latencies": [
+      0,
+      0,
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 0,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 17,
+   "orders_preferred": 6,
+   "orders_allowed": 11,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "CLEAR": {
+     "preferred": 4,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 1,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 1,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 4.366071428571428,
+    "SUPPORT": 1.3125,
+    "SEIZE": 0.9375,
+    "CLEAR": 3.9375,
+    "ADVANCE": 1.875,
+    "COVER": 3.428571428571428,
+    "HOLD": 1.1428571428571426
+   },
+   "orders_matched": 17,
+   "retasks": 11,
+   "retasks_priced": 8,
+   "retasks_excepted": 3,
+   "retask_rotations": 9,
+   "retasks_by_rank": {
+    "SL": {
+     "priced": 1,
+     "excepted": 0
+    },
+    "TL": {
+     "priced": 7,
+     "excepted": 3
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 1,
+   "done_rejected": 1,
+   "done_admissible": 277,
+   "done_admissible_root": 85,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 249,
+   "coverage_covered": 183,
+   "advance_orders": 0,
+   "timed_orders": 0,
+   "execute_signals": 0,
+   "formation_orders": 3,
+   "sync_proposals": 1,
+   "sync_bounds": 0,
+   "stance_steps": 273,
+   "stance_agent_steps": 568,
+   "human_died": false,
+   "human_mean_enemy_dist": 18.98651065189365,
+   "human_mean_objective_dist": 17.488477116910882,
+   "human_ring_entries": 1,
+   "threat_pairs": 39,
+   "threat_cover_pairs": 11,
+   "threat_objective_dist_sum": 376.13528943681234,
+   "threat_objective_dist_pairs": 39,
+   "messages": 47,
+   "messages_command": 20,
+   "messages_voice": 1,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 80,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    2,
+    1,
+    0,
+    0,
+    9,
+    2,
+    0
+   ],
+   "obedience_censored": 1,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      2
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      2
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      9
+     ],
+     "censored": 1
+    },
+    "HOLD": {
+     "latencies": [
+      0
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 13,
+   "orders_preferred": 5,
+   "orders_allowed": 8,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 2,
+     "allowed": 3,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "HOLD": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 3.6428571428571423,
+    "SUPPORT": 0.5,
+    "SEIZE": 1.5,
+    "CLEAR": 1.5,
+    "ADVANCE": 3.0,
+    "COVER": 2.142857142857143,
+    "HOLD": 0.7142857142857142
+   },
+   "orders_matched": 13,
+   "retasks": 7,
+   "retasks_priced": 5,
+   "retasks_excepted": 2,
+   "retask_rotations": 6,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 5,
+     "excepted": 1
+    },
+    "SL": {
+     "priced": 0,
+     "excepted": 1
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 217,
+   "done_admissible_root": 80,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 237,
+   "coverage_covered": 198,
+   "advance_orders": 1,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 225,
+   "stance_agent_steps": 532,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.13155475835754,
+   "human_mean_objective_dist": 17.12883333396627,
+   "human_ring_entries": 2,
+   "threat_pairs": 35,
+   "threat_cover_pairs": 7,
+   "threat_objective_dist_sum": 347.53838874863226,
+   "threat_objective_dist_pairs": 35,
+   "messages": 42,
+   "messages_command": 14,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 72,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    5,
+    1,
+    1,
+    1,
+    2,
+    1,
+    2,
+    1,
+    5
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      2,
+      2,
+      5
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      1,
+      5,
+      1
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 16,
+   "orders_preferred": 8,
+   "orders_allowed": 8,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "OBSERVE": {
+     "preferred": 5,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 5.169642857142857,
+    "SUPPORT": 0.4375,
+    "SEIZE": 1.3125,
+    "CLEAR": 1.3125,
+    "ADVANCE": 2.625,
+    "COVER": 3.8571428571428563,
+    "HOLD": 1.2857142857142854
+   },
+   "orders_matched": 16,
+   "retasks": 10,
+   "retasks_priced": 8,
+   "retasks_excepted": 2,
+   "retask_rotations": 7,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 6,
+     "excepted": 2
+    },
+    "SL": {
+     "priced": 2,
+     "excepted": 0
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 133,
+   "done_admissible_root": 72,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 193,
+   "coverage_covered": 161,
+   "advance_orders": 2,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 1,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 60,
+   "stance_agent_steps": 511,
+   "human_died": false,
+   "human_mean_enemy_dist": 19.434612504002253,
+   "human_mean_objective_dist": 18.75977287223124,
+   "human_ring_entries": 1,
+   "threat_pairs": 23,
+   "threat_cover_pairs": 3,
+   "threat_objective_dist_sum": 218.03585236805833,
+   "threat_objective_dist_pairs": 23,
+   "messages": 41,
+   "messages_command": 17,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  },
+  {
+   "outcome": "success",
+   "length": 83,
+   "root_mission": "SEIZE",
+   "obedience_latencies": [
+    1,
+    3,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    8,
+    0,
+    2,
+    0
+   ],
+   "obedience_censored": 0,
+   "obedience_by_task": {
+    "SEIZE": {
+     "latencies": [
+      1,
+      3,
+      1,
+      8
+     ],
+     "censored": 0
+    },
+    "ADVANCE": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    },
+    "OBSERVE": {
+     "latencies": [
+      1,
+      1,
+      1,
+      1,
+      0,
+      0
+     ],
+     "censored": 0
+    },
+    "COVER": {
+     "latencies": [
+      1,
+      2
+     ],
+     "censored": 0
+    },
+    "CLEAR": {
+     "latencies": [
+      1
+     ],
+     "censored": 0
+    }
+   },
+   "orders_staged": 1,
+   "staged_released": 0,
+   "staging_gaps": [],
+   "orders_issued": 14,
+   "orders_preferred": 5,
+   "orders_allowed": 9,
+   "orders_violating": 0,
+   "orders_underivable": 0,
+   "orders_by_task": {
+    "SEIZE": {
+     "preferred": 3,
+     "allowed": 0,
+     "violating": 0,
+     "underivable": 0
+    },
+    "ADVANCE": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "OBSERVE": {
+     "preferred": 2,
+     "allowed": 4,
+     "violating": 0,
+     "underivable": 0
+    },
+    "COVER": {
+     "preferred": 0,
+     "allowed": 2,
+     "violating": 0,
+     "underivable": 0
+    },
+    "CLEAR": {
+     "preferred": 0,
+     "allowed": 1,
+     "violating": 0,
+     "underivable": 0
+    }
+   },
+   "order_availability": {
+    "OBSERVE": 3.6142857142857143,
+    "SUPPORT": 0.5,
+    "SEIZE": 1.9,
+    "CLEAR": 1.9,
+    "ADVANCE": 3.8,
+    "COVER": 1.7142857142857142,
+    "HOLD": 0.5714285714285714
+   },
+   "orders_matched": 14,
+   "retasks": 8,
+   "retasks_priced": 5,
+   "retasks_excepted": 3,
+   "retask_rotations": 6,
+   "retasks_by_rank": {
+    "TL": {
+     "priced": 4,
+     "excepted": 2
+    },
+    "SL": {
+     "priced": 1,
+     "excepted": 1
+    }
+   },
+   "contacts": 0,
+   "contacts_informative": 0,
+   "enemies_seen": 3,
+   "enemies_reported": 0,
+   "done_reports": 0,
+   "done_rejected": 0,
+   "done_admissible": 245,
+   "done_admissible_root": 83,
+   "succession_events": 0,
+   "succession_recovery": [],
+   "succession_unrecovered": 0,
+   "coverage_pairs": 214,
+   "coverage_covered": 172,
+   "advance_orders": 2,
+   "timed_orders": 1,
+   "execute_signals": 0,
+   "formation_orders": 0,
+   "sync_proposals": 0,
+   "sync_bounds": 0,
+   "stance_steps": 0,
+   "stance_agent_steps": 555,
+   "human_died": false,
+   "human_mean_enemy_dist": 17.04609639648071,
+   "human_mean_objective_dist": 16.588683793734806,
+   "human_ring_entries": 1,
+   "threat_pairs": 120,
+   "threat_cover_pairs": 42,
+   "threat_objective_dist_sum": 962.5994264776464,
+   "threat_objective_dist_pairs": 120,
+   "messages": 35,
+   "messages_command": 14,
+   "messages_voice": 0,
+   "ran_out_the_clock": false,
+   "max_steps": 450
+  }
+ ]
+}
