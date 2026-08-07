@@ -2156,3 +2156,44 @@ deliberately deferred (`docs/vision.md` §2c).
   treatment arms are in flight: an agent with exactly one legal action should
   take it without drawing, which is both cheaper and stream-stable. Landing that
   now would desynchronize the A/B it is meant to clean up.
+- **2026-08-07** — **#19's open question answered: the width arm buys its success
+  with a no-cover firefight, and `d44ee8d` just removed the price.** Commit
+  `b5ab8cc`. Oracle diagnosis, as the #19 entry required before spending a
+  second seed.
+
+  **`squad_screen_core_v1` FINAL policy: success 1.00 ± 0.00 (N=20)**, against
+  `ckpt_best`'s 0.85 ± 0.16 — a 4-point best–final gap the *right* way. It also
+  predated `da5bdb1` and had no `behavior_final.json`; recovered here. The
+  width-bisect treated arm is genuinely converged, which #19 could not yet say.
+
+  **What it costs** (oracle, 20 eps, seeds 500–519, `ckpt_latest`):
+  fire rate [human] **0.830** (team 0.676, leader 0.549, rifleman 0.624) ·
+  cover occupancy [human] **0.000** (team 0.016) · friendly deaths at OBJ
+  **0.00**/ep · friendly deaths in the open **1.30**/ep · human death rate
+  **0.700** (0.900 on the behavior suite's seed block) · success **1.000**.
+
+  The commander is *not* dying to reach the objective — **nobody** dies at the
+  objective. The squad has learned a stand-up firefight in the open with
+  essentially no cover, and the commander is its most aggressive shooter: highest
+  fire rate on the field, cover occupancy exactly zero. Root death rises with
+  success because success is bought that way. #19 guessed exposure-to-complete;
+  the oracle says trade-bodies-for-terminal.
+
+  **The economics, and why this is urgent.** Nothing in `RewardConfig` pays for
+  cover under threat — `bound_bonus` pays a covering shooter for someone *else's*
+  bound, `prep_in_position` is defend-only and bounded by H. Being in cover while
+  being shot at is worth **zero**. `death` is **−1.0** against `success_team`
+  **60.0**. The only disincentive to dying ever commensurate with the objective
+  was **forfeiture** — a casualty received no terminal, and 60 forfeited is 60×
+  the explicit price of the death. **`d44ee8d` removes exactly that.** The whole
+  remaining price of a soldier's life is now −1.0 plus −0.2 per surviving
+  teammate against a +60 objective: a tax under 2%.
+
+  **Prediction, recorded before the treatment arms land** (both ~42%, 99–100%
+  rolling): `squad_screen_fallen_v1/v2` should **succeed** where the baselines
+  closed at 0.00, *and* show friendly deaths/ep **no lower than 1.30** and cover
+  occupancy **no better than 0.016**. If it holds, the free-ride fix is right
+  about the collapse and has traded it for a body-count policy. The follow-up is
+  then a **reward call for the owner**: price cover under threat, or raise
+  `death` now that forfeiture is gone. Not taken unilaterally, and not while the
+  arms measuring `d44ee8d` are still in flight.
