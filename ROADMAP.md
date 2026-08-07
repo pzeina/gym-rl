@@ -1,87 +1,89 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-07, autocycle)
+## ⟳ Session handoff — resume here (2026-08-07, autocycle complete)
 
-**State**: `multi-agent-dev` at `ccba9ae`, **64 commits ahead of `main`**; latest
-tag v1.9.0; **493 tests green, ruff clean**. **No git remote is configured**
-(`git remote -v` is empty) — one must be added before anything can be pushed.
-Spaces **Discrete(228)/Box(220)**.
+**State**: `multi-agent-dev`, **~75 commits ahead of `main`**; latest tag v1.9.0;
+**497 tests green, ruff clean**; **nothing training**. **No git remote is
+configured** (`git remote -v` is empty) — one must be added before anything can
+be pushed. Spaces **Discrete(228)/Box(220)**.
 
-**⚙ A 7-job fleet campaign is running right now** —
-`scripts/campaigns/v1_11_fleet.jobs`, ~19.5M steps, ~5–6h from 12:34,
-`logs/queue_20260807_123439.log`. Check with `scripts/train_status.py`. **Do not
-edit `cohort/` until it drains** unless you mean to; the import snapshot protects
-already-imported modules, but the campaign is deliberately running the exact tree
-that produced the result below, so that it reproduces it.
+**⚑ ONE DECISION IS WAITING ON YOU** — reward structure, deliberately not taken.
+See the last progress-log entry for the four options and the recommendation
+(scope the fallen payout by scenario). Everything else below is settled.
 
-**🎉 D4 IS SOLVED.** The collapse that has haunted this repo since v1.0 was one
+**D4 IS SOLVED.** The collapse that has haunted this repo since v1.0 was one
 shared policy free-riding on a terminal its casualties could not collect: the
 payout read `for s in roster.living`, so a soldier who died at step 50 of an
 episode that succeeded at step 200 got none of the 60 points. Per agent, hanging
 back cuts P(die) 0.129→0.022 (+6.4) while team success goes 1.00→0.00 (−52.3) —
 but ONE shared policy updates EVERY agent at once, and a per-agent advantage only
-ever sees the first number. `d44ee8d` keeps casualties in the episode (STAY-only,
-accruing nothing) and pays them the team terminal.
+sees the first number. `d44ee8d` keeps casualties in the episode (STAY-only,
+accruing nothing) and pays them the team terminal. Clean A/B, both seeds:
+`squad_screen_v9`/`v10` **0.00 ± 0.00** → `fallen_v1`/`v2` **1.00 ± 0.00**,
+non-overlapping, `done_false` held fixed. Observation width is exonerated by
+direct evidence — the fallen arms run the same 220-input space that collapsed.
 
-**The A/B, identical config and seeds, `d44ee8d` the only difference**:
+**…AND IT REGRESSES DEFEND-TYPE SCENARIOS.** Second clean pair,
+`defend_brique_v3` → `v4` at N=100: success **0.88 ± 0.06 → 0.91 ± 0.06**
+(indistinguishable), but commander death **0.24 → 0.61**, cover 0.513 → 0.416,
+and fight distance **2.87 → 6.09** — the final policy **FAILS**
+`mean_distance_from_objective_under_threat` (bar ≤ 5.0), an encoded regression
+gate that `v3` passes. Oracle friendly deaths/ep 0.60 → 1.85. `fireteam_defend_v11`
+agrees directionally (0.87 → 0.74). **Mechanism**: where a decisive objective
+exists, engaging ends the episode sooner, so cover and survival rise as
+instruments (`squad_screen` 165 → 53 steps, deaths halved, cover ×15). In a
+defend scenario there is no fast win — the mission is to still be there later —
+so removing forfeiture makes bodies cheap with nothing to buy.
 
-| seed | baseline, final N=20 | + fix, final N=20 |
-|---|---|---|
-| 17 | `squad_screen_v9` **0.00 ± 0.00** | `squad_screen_fallen_v1` **1.00 ± 0.00** |
-| 23 | `squad_screen_v10` **0.00 ± 0.00** | `squad_screen_fallen_v2` **1.00 ± 0.00** |
+**v1.11 fleet, final-policy numbers, all under identical current code**:
+`squad_v8` **1.00 ± 0.00** · `squad_recon_v7` **1.00 ± 0.00** · `platoon_v5`
+**1.00 ± 0.00** · `patrol_brique_v5` **1.00 ± 0.00** · `fireteam_v8` 0.90 ± 0.13 ·
+`defend_brique_v4` 0.91 ± 0.06 (N=100) · `fireteam_defend_v11` 0.74 ± 0.09 (N=100)
+· `squad_screen_fallen_v1`/`v2` **1.00 ± 0.00**.
 
-Non-overlapping CIs on both seeds; both treatment arms publishable (0- and 1-pt
-best–final gap) and neither ever collapsed — they cleared all three baseline
-collapse points (118k, 151k, 395k) without a dip. **Observation width is
-exonerated by direct evidence**, not just elimination: the fallen arms run the
-same 220-input space `v9`/`v10` collapsed on. Two earlier suspects were refuted
-by measurement: the discount inversion (`60cb6c3` — real, but all three bisect
-arms collapsed anyway) and entropy/KL/grad-norm blow-up (all flat through it).
+**⚠ Attribution: only two pairs are single-variable.** `run_report.py <run> --vs
+<baseline>` now prints this automatically from `economics.json` (assurance #20,
+`80166d9`). `squad_screen` ×2 and `defend_brique` are **CLEAN**; `squad`,
+`squad_recon`, `platoon`, `fireteam_defend`, `patrol_brique` are **CONFOUNDED**
+by `done_false` −2.0 → −0.5; `fireteam_v7`→`v8` is uncheckable. So the collapse
+being gone on those five is *consistent with* the fix generalizing, **not
+established** — the `done_false` revert is a live alternative explanation, and
+`rewards.py` records that −2.0 killed terminal income in report-centric
+scenarios. My campaign file caused this: it pinned budgets/seeds/lr and let
+economics drift with the tree.
 
-**The behaviour is better, not just the score** (oracle, seeds 500–519): cover
-occupancy 0.016 → **0.245–0.260**, friendly deaths/ep 1.30 → **0.60–0.65**,
-commander death 0.700 → **0.050–0.100**, with *more* engagement (threatened
-steps/ep 21.8 → 36.9). Episode length 165 → 53: a short fight is a survivable
-fight. The commander stopped being the lead shooter (fire rate 0.830 → 0.200) and
-started using cover (0.000 → 0.227) while the riflemen shoot — doctrine falling
-out of economics. **A prediction of the opposite was recorded and refuted; the
-reward call it raised (price cover / raise `death`) is WITHDRAWN.**
-
-**Still open — the residuals the fix does not touch**: false-DONE **0.279/0.288**
-final-decile (0.500–0.600 on the behavior suite), retask/order churn **0.69** and
-**0.51**, and `fallen_v2` reporting a contact recall of **0.00**. None
-contradicts the success rate; none is closed. Also unexplained: **`platoon` has
-16 agents, the most dilution, and converged at 92% *without* the fix** — free-
-riding alone never predicted that, and `platoon_v5` in the campaign is the test.
-
-**Every published number in the repo predates `d44ee8d` and is superseded.**
-Separately, `scripts/publish_audit.py` gates on the FINAL policy and 11 of 18
-published runs fail it (mean give-back 25.9 points). `ckpt_best` is a best-rolling-
-*window* figure; both numbers are now measured by default (`behavior.json` +
-`behavior_final.json`).
+**Open residuals, none closed by the fix**: `platoon_v5` has gone **mute** —
+MISSION COMPLETE claims 35 (`v4`) → 3 → **0** at the final, forfeiting
+`root_done_bonus` every episode; obedience latency 3.9 → 21.0, staged-order
+release 60% → 4%. Suspect is exploration not price (entropy 1.957 → 1.380,
+`done_false` −0.5 makes claiming cheap at break-even p ≈ 0.14); **refutable** —
+if exploration, `done_reports` recovers with higher `ent_coef` at unchanged
+`done_false`. `fireteam_v8` false-DONE **0.908** at the final and report recall
+0.75 → 0.34, the one arm whose reporting gets worse. Staging abandon is
+fleet-wide (18/20, 18/23, 68/68 on platoon).
 
 **Next, in order**:
-1. **When the campaign drains, judge it** — `scripts/run_report.py <run>` per arm.
-   Watch (a) the collapse, on the four scenarios that collapsed pre-fix; (b)
-   **`platoon_v5`**, the arm the diagnosis cannot explain; (c) `fireteam_defend_v11`,
-   where v1.10's prep period + `prep_in_position` are measured for the first time;
-   (d) false-DONE and churn everywhere.
-2. **Re-publish the fleet** off the FINAL-policy numbers at N=100 (`/publish`),
-   and correct README + the v1.9 table, which are superseded twice over.
-3. **Then** land the single-legal-action sampling fix — an agent with one legal
-   action should take it without drawing. Held back on purpose: it shifts the RNG
+1. **Make the reward call** (last progress-log entry). Everything downstream waits
+   on it, because re-publishing a fleet that fails a regression gate on two
+   scenarios would repeat the mistake the publish audit just corrected.
+2. **Disentangle the five confounded arms** — one run, `squad_v9` at `done_false`
+   −2.0 with the fix. Needs `done_false` on the CLI first (only `PPOConfig` is
+   exposed); small change.
+3. **Then re-publish** at N=100 off FINAL numbers (`/publish`), correcting README
+   and the v1.9 table, which are superseded twice over. `scripts/publish_audit.py`
+   is the gate: 11 of 18 older published runs fail it.
+4. **Land the single-legal-action sampling fix** — an agent with one legal action
+   should take it without drawing. Held all session on purpose: it shifts the RNG
    stream (42 of 55 metrics move on the *same* checkpoint across `d44ee8d`), so
-   landing it mid-campaign would desynchronize the result that justified the
-   campaign.
-4. **Transparency probe** still trails the OPORD-only baseline (best squad gap
-   −0.090); residuals in `docs/transparency.md` §A5. **Untouched by v1.10/v1.11.**
-5. **`docs/vision.md`** is designed and decided — v1.11 as originally scoped
-   (directional vision) comes after the fleet ships. Arc semantics: `vision_arc
-   180°` / `fire_arc 90°` / 4-dir facing / all-round awareness at 2 cells. Binding
-   constraint: `PolicyNet` is a **memoryless MLP**, so an explicit
+   landing it earlier would have desynchronized the A/Bs above.
+5. **Transparency probe** still trails the OPORD-only baseline (best squad gap
+   −0.090); `docs/transparency.md` §A5. Untouched by v1.10/v1.11.
+6. **`docs/vision.md`** — directional vision, designed and decided, after the
+   fleet ships. `vision_arc 180°` / `fire_arc 90°` / 4-dir facing / all-round at 2
+   cells. Binding constraint: `PolicyNet` is a **memoryless MLP**, so an explicit
    remembered-contact block is mandatory and its stale-track invariant is a
-   first-class exploit hazard. `squad_short_vision` is registered as the V0 probe.
-6. **A3 self-play**, buildings + pathfinding (v1.4 deferral).
+   first-class exploit hazard. `squad_short_vision` is the registered V0 probe.
+7. **A3 self-play**, buildings + pathfinding (v1.4 deferral).
 
 **How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
 the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
@@ -2564,3 +2566,62 @@ deliberately deferred (`docs/vision.md` §2c).
 
   Every `--vs` from here carries its own attribution verdict, so no future entry
   can quietly assert a single-variable A/B that the artifacts do not support.
+- **2026-08-07** — **v1.11 fleet COMPLETE, arm 7/7 `defend_brique_v4`: the second
+  clean pair says where the fix does not reach.** Commit `2957ae8`.
+
+  **Final-policy numbers, all under identical current code**: `fireteam_v8`
+  0.90 ± 0.13 · `squad_v8` **1.00 ± 0.00** · `squad_recon_v7` **1.00 ± 0.00** ·
+  `platoon_v5` **1.00 ± 0.00** · `patrol_brique_v5` **1.00 ± 0.00** ·
+  `fireteam_defend_v11` 0.74 ± 0.09 (N=100) · `defend_brique_v4` 0.91 ± 0.06
+  (N=100). The collapse is gone everywhere it used to happen.
+
+  **The clean pair, at N=100** (`defend_brique_v3` → `v4`, `done_false` held,
+  `d44ee8d` the only difference):
+
+  | | `v3` (pre-fix) | `v4` (post-fix) |
+  |---|---|---|
+  | success | 0.88 ± 0.06 | 0.91 ± 0.06 — **indistinguishable** |
+  | commander death rate | 0.24 | **0.61** |
+  | cover occupancy under threat | 0.513 | 0.416 |
+  | dist from OBJ under threat | 2.87 | **6.09 — GATE FAIL** (bar ≤ 5.0) |
+  | friendly deaths/ep (oracle) | 0.60 | **1.85** |
+
+  Success is flat; the behaviour is worse. The commander dies 2.5× as often, and
+  a **DEFEND** mission is fought twice as far from the objective it exists to
+  hold — far enough that the FINAL policy **fails
+  `mean_distance_from_objective_under_threat`**, one of this repo's encoded
+  regression gates. `v3`'s final passes it at 2.87. Per the standing rule, a
+  behaviour suite that contradicts the success rate outranks the success rate.
+
+  **The prediction I withdrew was not wrong — it was unscoped.** Where a decisive
+  objective exists (screen, recon, patrol, assault), engaging ends the episode
+  sooner, so cover and survival *rise* as instruments of a terminal now reachable
+  by everyone: `squad_screen` went 165 → 53 steps with deaths halved and cover up
+  15×. In a defend scenario there is no fast win — the mission is to still be
+  there later — so removing forfeiture makes bodies cheap with nothing to buy.
+  Both defend scenarios agree: `fireteam_defend_v11` (confounded, same direction)
+  is 0.87 → 0.74 with dist 2.52 → 3.80 and cover 0.897 → 0.776.
+
+  **VERDICT: `d44ee8d` fixes the collapse — cleanly, two seeds, 0.00 → 1.00 — and
+  regresses defend-type scenarios.** Both halves are now on clean single-variable
+  evidence.
+
+  **⚑ OWNER'S CALL — reward structure, not taken here.** Options, with the
+  measurement each is aimed at:
+  1. **Scope the payout by scenario** — pay the fallen the team terminal only
+     where a decisive objective exists; keep forfeiture in defend-type scenarios.
+     *Fits the mechanism*, which is structural (fast win available or not), and
+     costs nothing: no defend scenario ever collapsed. **Recommended.**
+  2. **Price cover under threat** (currently worth exactly zero). Targets the
+     measured defect directly and is scenario-agnostic — but `squad_screen`
+     reached cover 0.245 *without* it, so it may distort where nothing is broken.
+  3. **Raise `death`** from −1.0, now commensurate with a +60 terminal that no
+     longer forfeits. Blunt; hits every scenario including the five that are fine.
+  4. **Make the defend terminal proportional to survivors** — the mission is to
+     hold, so pay for holding *with a force*. Most faithful to doctrine, largest
+     redesign.
+
+  Held pending that call, and **not** attempted: `done_false` is not on the CLI,
+  so the one run that separates `d44ee8d` from the `done_false` revert on the five
+  confounded arms (`squad_v9` at −2.0 with the fix) still needs a small CLI
+  change first.
