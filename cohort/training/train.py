@@ -617,6 +617,20 @@ def main() -> None:
     # step budget and then died importing a name their in-memory actions did not
     # have. Import the deferred modules HERE, by hand: the snapshot has to cover
     # what the entry points reach, not just the entry points.
+    # That correction was itself still one level too shallow. "What the entry
+    # points reach" is a TRANSITIVE property: cohort.metrics defers
+    # cohort.env.cohort_env, which defers cohort.core.oracle, which no run has
+    # ever held in memory — measured 2026-08-07, `cohort.core.oracle` is absent
+    # from sys.modules after this whole block runs. Nothing on today's artifact
+    # path calls env.oracle(), so no run has died of it yet; the moment an
+    # oracle-backed behavior metric joins evaluate() — which is where this
+    # repo's diagnose-first rule keeps pointing — it would resume killing runs
+    # at 3M steps apiece. The invariant is therefore stated over the CLOSURE:
+    # nothing reachable from the snapshot may be read fresh off disk later.
+    # test_import_snapshot.py computes that closure and fails if it is open.
+    import cohort.core  # for the closure below, not for a name used here
+    import cohort.core.language  # deferred by cohort.config
+    import cohort.core.oracle  # deferred by CohortEnv.oracle()
     import cohort.metrics  # imported for the snapshot, not for a name used here
     import cohort.viz.render  # noqa: F401  # same; reached only when --gif is set
     from cohort.training.evaluate import evaluate
