@@ -1,0 +1,35 @@
+# v1.11 fleet retrain — the first fleet trained with the free-ride fixed.
+#
+# Launched 2026-08-07 after squad_screen_fallen_v1/v2 took squad_screen from
+# 0.00 to 1.00 +/- 0.00 on both seeds against squad_screen_v9/v10 (identical
+# config, d44ee8d the only difference). Every published number in the repo
+# predates that fix and is superseded by this campaign.
+#
+# squad_screen is deliberately ABSENT: fallen_v1 (seed 17, final 1.00) and
+# fallen_v2 (seed 23, final 1.00) already ARE its v1.11 result, and re-running
+# it would only spend 2M steps to reproduce what the A/B just measured.
+#
+# Budgets, seeds and lr are each scenario's own last run, unchanged on purpose:
+# the ONLY difference from the superseded fleet is the environment, so a miss
+# stays attributable. PPO defaults now carry the validated recipe (gamma 0.999,
+# normalize_value, separate_critic), so no arm passes them explicitly.
+#
+# Watch on arrival, in this order:
+#   1. the collapse — every arm should hold its curve; four of these scenarios
+#      (fireteam, squad, squad_recon, squad_screen) collapsed pre-fix
+#   2. platoon — 16 agents, the most dilution, and it converged at 92% WITHOUT
+#      the fix. Free-riding alone never predicted that, and it is still the one
+#      arm whose behaviour the diagnosis does not explain
+#   3. fireteam_defend — the two documented misses (v6 held but would not fire,
+#      v7 fired but fought 9.7 cells out). v1.10's prep period + prep_in_position
+#      are being measured here for the first time
+#   4. false-DONE and retask churn on every arm — the residuals the fix does NOT
+#      address, still 0.28 and 0.69 on the winning squad_screen arms
+
+fireteam_v8           --scenario fireteam        --total-steps 2500000 --seed 1
+squad_v8              --scenario squad           --total-steps 3000000 --seed 3
+squad_recon_v7        --scenario squad_recon     --total-steps 3000000 --seed 13
+platoon_v5            --scenario platoon         --total-steps 3000000 --seed 7  --lr 1e-4
+fireteam_defend_v11   --scenario fireteam_defend --total-steps 3500000 --seed 12
+patrol_brique_v5      --scenario patrol_brique   --total-steps 3000000 --seed 3  --lr 1e-4
+defend_brique_v4      --scenario defend_brique   --total-steps 3000000 --seed 12 --lr 1e-4
