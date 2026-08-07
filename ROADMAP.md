@@ -1,84 +1,95 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-06)
+## ⟳ Session handoff — resume here (2026-08-07)
 
-**State**: `multi-agent-dev` at `d3174b3`, **14 commits ahead of `main`**; latest
-tag v1.9.0; **395 tests green, ruff clean**; nothing training. **The repo has NO
-git remote configured** (`git remote -v` is empty) — the older "= origin" note was
-wrong; a remote must be added before anything can be pushed. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
-**Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
-The fleet has NOT been retrained — the v1.9 numbers below are the standing
-baseline, not v1.10 results.
+**State**: `multi-agent-dev` at `4599e30`, **58 commits ahead of `main`**; latest
+tag v1.9.0; **493 tests green, ruff clean**. **No git remote is configured**
+(`git remote -v` is empty) — one must be added before anything can be pushed.
+Spaces are **Discrete(228)/Box(220)**; **v1.10 is still an OPEN BREAKING CYCLE**
+and every pre-v1.10 checkpoint is unloadable. The published fleet has **not**
+been retrained and is superseded twice over — first by v1.10's spaces, then by
+v1.11's economics.
 
-**Published fleet (N=100 ± CI, all measured under v1.9 spaces/economics)**:
-fireteam 84±7 · squad 93±5 · platoon **98±3** · recon 94±5 · screen 98±3 ·
-patrol_brique 95±4 · defend_brique 85±7 · **fireteam_defend 51±10** (v6; the
-diagnosed v7 retrain missed at 35±9).
+**Do not trust any published number without checking which checkpoint it came
+from.** `scripts/publish_audit.py` gates on the FINAL policy: 11 of 18 published
+runs fail, mean give-back 25.9 points, six with a headline ≥10 points above where
+their run finished. `ckpt_best` is a best-rolling-*window* figure. Both numbers
+are now measured by default (`behavior.json` + `behavior_final.json`).
 
-> **⚠ Every number in that line is `ckpt_best` — a best-rolling-WINDOW figure,
-> not the policy its run ended with, and four of the eight fail the stability
-> bar** (`scripts/publish_audit.py`, added 2026-08-07). Final deciles, in the
-> same order: 75 · 93 · 98 · 85 · 95 · 98 · 88 · **32**. Across all 18 published
-> runs, 11 fail with a mean give-back of 25.9 points, and six carry a headline
-> ≥10 points above where their run finished — worst, `squad_recon_v6` published
-> at 91±6 off a run whose rolling success ended at **0.00**. The cause is
-> diagnosed in the 2026-08-07 progress-log entry; the whole fleet is superseded
-> by the v1.11 retrain.
+**The live thread — v1.11, the D4 collapse.** D4 is diagnosed and the fix is
+under test. The mechanism: the terminal was paid `for s in roster.living`, so a
+soldier who died at step 50 of an episode that succeeded at step 200 got none of
+the 60 points. Per agent, hanging back cuts P(die) 0.129→0.022 (+6.4) while team
+success goes 1.00→0.00 (−52.3) — but ONE shared policy updates EVERY agent at
+once, so a per-agent advantage only ever sees the first number. Parameter sharing
+converts an individually-rational free-ride into a simultaneous collective
+defection, which explains the abruptness, the non-recovery and the flat entropy.
+`d44ee8d` keeps casualties in the episode (STAY-only, accruing nothing) and pays
+them the team terminal. Two earlier suspects were **refuted by measurement**, not
+abandoned: the discount inversion (`60cb6c3`, real but not the trigger — all
+three bisect arms collapsed anyway) and entropy/KL/grad-norm blow-up (all flat
+through the collapse).
 
-**What v1.10 changed (owner's design calls this session, all committed, none
-yet trained on)** — see the progress log for the full reasoning:
-1. `human_death` **−25 → 0.0** — the correlated −25 × n_agents shock, the
-   standing D4 suspect. Preservation is now measured, not priced.
-2. **Observation Box(166) → Box(220)** — tempo block (episode progress +
-   time-to-contact), nearest-cover vector, 7×7 terrain patch (was 5×5),
-   sitrep_due in its own slot, plus derived `OFF_*` block offsets.
-3. **Defend preparation period** — `fireteam_defend` draws H from (55, 75),
-   `max_steps` 375 → 450; OpFor held (but present and spottable) until H; the
-   OPORD announces the band midpoint as nominal H.
-4. **`prep_in_position` 0.05/step** — pay for standing IN COVER at the
-   objective before H. Bounded by H, in the terminal-dominance test.
-5. **False COMPLETE**: `done_false` −0.5 → **−2.0** (break-even p 0.33 → 0.67)
-   plus `done_cooldown` = 8 masking DONE after a rejection.
+**Bisect baselines, final policy N=20 — the floor the fix must beat**:
+`squad_screen_ctl_gamma099_v1` **0.00 ± 0.00** · `squad_screen_v9` **0.00 ± 0.00** ·
+`squad_screen_v10` **0.00 ± 0.00**, clock-out 1.00 on all three, against
+`ckpt_best` figures of 1.00 — a **100-point best–final gap per arm**. `v9`/`v10`
+record **zero threatened agent-steps** in 20 episodes: the optimizer fixes
+completed the disengagement rather than softening it.
+
+**Open verdict — `squad_screen_fallen_v1` (seed 17) / `_v2` (seed 23)**, the A/B
+against `v9`/`v10` (identical config, `d44ee8d` the only difference). Both were
+past **99% rolling at ~42%** of 2M steps, having already cleared all three
+baseline collapse points (118k, 151k, 395k). **Read them with
+`scripts/run_report.py squad_screen_fallen_v1 --vs squad_screen_v9`.**
+
+**Standing prediction, recorded before those arms landed** (2026-08-07 progress
+log): they should succeed, *and* show friendly deaths/ep **no lower than 1.30**
+and cover occupancy **no better than 0.016**. Basis: the oracle on the converged
+`squad_screen_core_v1` (final **1.00 ± 0.00**) shows success bought by a stand-up
+firefight — **nobody dies at the objective**, 1.30 friendly deaths/ep in the
+open, commander fire rate 0.830 at cover occupancy **0.000**. Nothing in
+`RewardConfig` pays for cover under threat, and `death` is **−1.0** against
+`success_team` **60.0**; the only commensurate disincentive was *forfeiture*,
+which `d44ee8d` removes. If the prediction holds, the fix traded a collapse for a
+body-count policy.
 
 **Verdicts that still shape what's next**:
-- Orders now *bind* (v1.8 economics: patrol anchor rotations 1364→1) and the
-  vocabulary now *names maneuver* (v1.9) — but the transparency probe still trails
-  the OPORD-only baseline (best-ever squad gap −0.090 against a harder stick);
-  residuals named in `docs/transparency.md` §A5. **Untouched by v1.10.**
-- fireteam_defend: two documented misses. v6 held the position but would not fire;
-  v7 fires at 1.000 but fights 9.7 cells out with cover occupancy 0.05. The
-  assault defense needs fire AND the prepared position; v1.10 items 3–4 are the
-  attempt at both, and the fire-gradient fix (`9519326`) is already in.
-- D4 collapse remains unsolved and is the reason item 1 was spent.
-
-**New this session (design only, nothing trained)**: **`docs/vision.md`** —
-directional vision designed end to end and **decided**. Sequencing call:
-**v1.10 ships fully first (all 8 retrained + published), then vision as v1.11**
-— the fleet retrain is paid twice on purpose, buying an uncontaminated v1.10
-verdict. Arc semantics decided: `vision_arc 180°` / `fire_arc 90°` / 4-dir
-facing / all-round awareness at 2 cells. Milestone v1.11 (V0–V5) is in this
-file below. The binding constraint on the whole feature is that `PolicyNet` is
-a **memoryless MLP**, so an explicit remembered-contact block is mandatory, and
-its stale-track invariant is a first-class exploit hazard. Scenario
-**`squad_short_vision`** is registered and ready: it is the V0 probe of whether
-the transparency gap is caused by too little information asymmetry, and it is
-the one piece of vision work that runs *before* the v1.10 publish.
+- Orders *bind* (v1.8: patrol anchor rotations 1364→1) and the vocabulary *names
+  maneuver* (v1.9) — but the transparency probe still trails the OPORD-only
+  baseline (best squad gap −0.090); residuals in `docs/transparency.md` §A5.
+  **Untouched by v1.10 and v1.11.**
+- fireteam_defend: two documented misses. v6 held the ground but would not fire;
+  v7 fires at 1.000 but fights 9.7 cells out at cover occupancy 0.05. v1.10 items
+  3–4 (prep period, `prep_in_position`) are the attempt at both.
+- **`docs/vision.md`** is designed and decided; sequencing call stands — **v1.10
+  ships fully first (all 8 retrained + published), then vision as v1.11**. Arc
+  semantics: `vision_arc 180°` / `fire_arc 90°` / 4-dir facing / all-round
+  awareness at 2 cells. The binding constraint is that `PolicyNet` is a
+  **memoryless MLP**, so an explicit remembered-contact block is mandatory and
+  its stale-track invariant is a first-class exploit hazard. `squad_short_vision`
+  is registered as the V0 probe.
 
 **Next recommended, in order**:
-1. **Retrain `fireteam_defend` under v1.10** — the whole point of the cycle.
-   Suggested parent: `fireteam_defend_v6` (the only policy that ever held the
-   ground) — but note the space break means v6 **cannot** be fine-tuned from;
-   this is a from-scratch train. Diagnose with the oracle regardless of the
-   success number: **cover occupancy under threat** is the prep-period metric,
-   **off-objective fight distance** the occupancy-pay metric. Two variables
-   moved at once here — that separation is how a miss stays diagnosable.
-2. **Retrain the rest of the fleet** on the new spaces (all 8 scenarios) and
-   re-publish; watch `human_death_rate` (item 1 may raise it — that is the
-   accepted trade) and `false_complete_rate` (item 5 should cut it; watch
-   `done_reports` for the *muteness* failure, which is the worse outcome).
-3. **Probe vs baseline** — the two named residual fixes (probe formation/order
-   primacy; fireteam churn-through-pricing).
-4. **A3 self-play**, buildings+pathfinding (v1.4 deferral).
+1. **Judge the `fallen` A/B** against `squad_screen_v9`/`v10` and the recorded
+   prediction. Non-overlapping CIs or it is not an effect.
+2. **The reward call this forces, and it is the owner's**: cover under threat is
+   worth zero and `death` is −1.0 against a +60 terminal. Either price cover
+   directly or raise `death` now that forfeiture is gone. Options are in the
+   2026-08-07 progress-log entry; do not autopilot it.
+3. **Deferred, deliberately**: an agent with exactly one legal action should take
+   it without drawing. `d44ee8d` made the fallen consume action samples, so
+   seeded evaluation no longer reproduces across that commit (42 of 55 metrics
+   move on the *same* checkpoint). Held back so as not to desynchronize the A/B
+   it would clean up. Land it **after** the verdict.
+4. **Retrain `fireteam_defend` under v1.10** — the point of that cycle. From
+   scratch: the space break means `v6` cannot be fine-tuned from. Diagnose with
+   the oracle regardless of the success number (**cover occupancy under threat**
+   for the prep period, **off-objective fight distance** for occupancy pay).
+5. **Retrain the rest of the fleet** on the new spaces and re-publish, watching
+   `human_death_rate` and `false_complete_rate` (`done_reports` for the *muteness*
+   failure, which is the worse outcome).
+6. **Probe vs baseline** residuals, then **A3 self-play** + buildings/pathfinding.
 
 **How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
 the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
@@ -2083,3 +2094,117 @@ deliberately deferred (`docs/vision.md` §2c).
   published runs fail it, mean give-back 25.9 points**, six carrying a headline
   ≥10 points above where their run finished (`squad_recon_v6` published 91±6
   off a run that ended at **0.00**). README and the handoff block are corrected.
+- **2026-08-07** — **the import snapshot is now closed, not one level deep.**
+  Commit `3eceaa9`. Autocycle item, found by measurement rather than by another
+  lost run.
+
+  Yesterday's guard hoists post-training entry points before training starts so
+  a run holds one consistent snapshot of the code for its whole life. It was
+  stated at **depth one**, against a hardcoded two-entry list — the same shape
+  of mistake it was fixing. Measured in a clean interpreter: after train.main's
+  entire eager block runs, **`cohort.core.oracle` is not in `sys.modules`**. The
+  path is `cohort.metrics` → `cohort.env.cohort_env` → `cohort.core.oracle`,
+  that last edge a function-scope import inside `CohortEnv.oracle()`. Both
+  intermediate modules are hoisted; nothing walks past them.
+
+  **Cost so far: zero, and that is the point.** Nothing on the artifact path
+  calls `env.oracle()` — only `scripts/oracle_probe.py` does — so this hole is
+  latent where its four predecessors were not (`fireteam_defend_v10` on
+  `is_done_admissible`; `squad_v7`, `squad_recon_v6`, `platoon_v4` on
+  `order_options`, 3M steps each, no evaluation produced). It would not have
+  stayed latent: the diagnose-first rule keeps pulling the oracle toward the
+  evaluation path, and an oracle-backed behavior metric in `evaluate()` would
+  have resumed killing runs at the very end of their step budget.
+
+  **Fixed as a redesign, not a patch** (owner's stated bias). The invariant is
+  no longer "the entry points are hoisted" but *nothing reachable from the
+  snapshot may be read fresh off disk later* — a closure, with roots **derived**
+  from whatever `train.main` imports before `trainer.train` rather than listed.
+  A hardcoded list is precisely what needed editing twice. `test_import_snapshot`
+  walks the deferred-import graph transitively and reports every open edge at
+  once; against the pre-fix tree it fails with all three
+  (`cohort.core`, `cohort.core.language`, `cohort.core.oracle`), against this
+  one it is clean. A fourth test guards the walk itself, because a traversal
+  that silently stopped recursing would decay into the weaker check it replaced.
+  493 tests green, ruff clean.
+
+  **Not done, deliberately**: the artifacts `squad_v7` / `squad_recon_v6` /
+  `platoon_v4` lost are *not* being recovered. Their `behavior.json` was
+  re-generated by hand on 2026-08-07 00:14, but `eval.gif`, `eval_transcript.txt`
+  and `behavior_final.json` are still missing, and re-running evaluation now
+  would score those checkpoints under **post-`d44ee8d` physics** — the fallen
+  are paid the team terminal and casualties stay in the episode. That is not the
+  environment they trained in, so the number would be neither the run's result
+  nor a current one. They are superseded by the v1.11 retrain regardless.
+- **2026-08-07** — **the v1.11 bisect baselines close at 0.00, and seeded
+  evaluation no longer crosses the `d44ee8d` boundary.** Commit `d4f3be8`.
+
+  All three arms finished 2M steps. Their own processes predate `da5bdb1`, so
+  none wrote `behavior_final.json`; recovered by evaluating `ckpt_latest` under
+  the current tree. **Final policy, N=20: `ctl_gamma099_v1` 0.00 ± 0.00,
+  `v9` 0.00 ± 0.00, `v10` 0.00 ± 0.00, clock-out 1.00 on all three** — against
+  `ckpt_best` figures of 1.00, a **100-point best–final gap per arm**, the
+  largest in the record and a clean illustration of why the publish gate
+  changed. The free-ride fix now has an unambiguous floor to beat.
+
+  **The optimizer fixes completed the disengagement rather than softening it.**
+  `v9` and `v10` (γ0.999, separate critic, value normalization) record **zero
+  threatened agent-steps across 20 episodes** — the squad never comes within
+  threat range of anything. The control (γ0.99, no value fix) still musters 39
+  and a 0.308 cover occupancy. Whatever the value-head fix bought, it was not
+  engagement.
+
+  **Constraint on every cross-boundary comparison from here.** Re-evaluating
+  `ctl`'s `ckpt_best` under the current tree — same seed 123, same 20 episodes —
+  does **not** reproduce its own `behavior.json`: **42 of 55 numeric metrics
+  move**, success 1.00 → 0.95, mean episode length 164 → 175. Diagnosed to
+  `d44ee8d`: the fallen now stay in the episode, the policy is queried for them,
+  and each masked sample consumes a draw that shifts the RNG stream for every
+  agent after it. The physics are unchanged — dead soldiers were already inert —
+  but **a pre-`d44ee8d` artifact and a post-`d44ee8d` artifact are not the same
+  measurement**, which is why the three baselines were re-measured rather than
+  compared as found. Implied follow-up, deliberately **not** taken while the
+  treatment arms are in flight: an agent with exactly one legal action should
+  take it without drawing, which is both cheaper and stream-stable. Landing that
+  now would desynchronize the A/B it is meant to clean up.
+- **2026-08-07** — **#19's open question answered: the width arm buys its success
+  with a no-cover firefight, and `d44ee8d` just removed the price.** Commit
+  `b5ab8cc`. Oracle diagnosis, as the #19 entry required before spending a
+  second seed.
+
+  **`squad_screen_core_v1` FINAL policy: success 1.00 ± 0.00 (N=20)**, against
+  `ckpt_best`'s 0.85 ± 0.16 — a 4-point best–final gap the *right* way. It also
+  predated `da5bdb1` and had no `behavior_final.json`; recovered here. The
+  width-bisect treated arm is genuinely converged, which #19 could not yet say.
+
+  **What it costs** (oracle, 20 eps, seeds 500–519, `ckpt_latest`):
+  fire rate [human] **0.830** (team 0.676, leader 0.549, rifleman 0.624) ·
+  cover occupancy [human] **0.000** (team 0.016) · friendly deaths at OBJ
+  **0.00**/ep · friendly deaths in the open **1.30**/ep · human death rate
+  **0.700** (0.900 on the behavior suite's seed block) · success **1.000**.
+
+  The commander is *not* dying to reach the objective — **nobody** dies at the
+  objective. The squad has learned a stand-up firefight in the open with
+  essentially no cover, and the commander is its most aggressive shooter: highest
+  fire rate on the field, cover occupancy exactly zero. Root death rises with
+  success because success is bought that way. #19 guessed exposure-to-complete;
+  the oracle says trade-bodies-for-terminal.
+
+  **The economics, and why this is urgent.** Nothing in `RewardConfig` pays for
+  cover under threat — `bound_bonus` pays a covering shooter for someone *else's*
+  bound, `prep_in_position` is defend-only and bounded by H. Being in cover while
+  being shot at is worth **zero**. `death` is **−1.0** against `success_team`
+  **60.0**. The only disincentive to dying ever commensurate with the objective
+  was **forfeiture** — a casualty received no terminal, and 60 forfeited is 60×
+  the explicit price of the death. **`d44ee8d` removes exactly that.** The whole
+  remaining price of a soldier's life is now −1.0 plus −0.2 per surviving
+  teammate against a +60 objective: a tax under 2%.
+
+  **Prediction, recorded before the treatment arms land** (both ~42%, 99–100%
+  rolling): `squad_screen_fallen_v1/v2` should **succeed** where the baselines
+  closed at 0.00, *and* show friendly deaths/ep **no lower than 1.30** and cover
+  occupancy **no better than 0.016**. If it holds, the free-ride fix is right
+  about the collapse and has traded it for a body-count policy. The follow-up is
+  then a **reward call for the owner**: price cover under threat, or raise
+  `death` now that forfeiture is gone. Not taken unilaterally, and not while the
+  arms measuring `d44ee8d` are still in flight.
