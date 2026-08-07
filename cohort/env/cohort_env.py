@@ -61,7 +61,7 @@ from cohort.env.actions import (
     compute_mask,
     is_root_opord_claim,
 )
-from cohort.env.observations import OBS_DIM, AgentView, build_observation
+from cohort.env.observations import AgentView, build_observation, obs_dim
 from cohort.env.rewards import RewardConfig, RewardLedger
 
 #: Steps after which an unrefreshed contact report goes stale.
@@ -107,7 +107,11 @@ class CohortEnv(ParallelEnv):
 
         self._obs_space = spaces.Dict(
             {
-                "observation": spaces.Box(low=-1.0, high=1.0, shape=(OBS_DIM,), dtype=np.float32),
+                "observation": spaces.Box(
+                    low=-1.0, high=1.0,
+                    shape=(obs_dim(self.spec_cfg.observation_profile),),
+                    dtype=np.float32,
+                ),
                 "action_mask": spaces.Box(low=0, high=1, shape=(N_ACTIONS,), dtype=np.int8),
             }
         )
@@ -1836,7 +1840,10 @@ class CohortEnv(ParallelEnv):
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:
         return {
-            "observation": build_observation(soldier, self.roster, self.world, view),
+            "observation": build_observation(
+                soldier, self.roster, self.world, view,
+                profile=self.spec_cfg.observation_profile,
+            ),
             "action_mask": self._mask_for(soldier),
         }
 
