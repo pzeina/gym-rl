@@ -2400,3 +2400,57 @@ deliberately deferred (`docs/vision.md` §2c).
   **`platoon_v5` is now training** — 16 agents, the most dilution, and the one
   arm that converged at 92% *without* the fix. It is the test the diagnosis
   cannot currently explain.
+- **2026-08-07** — **v1.11 fleet, arm 4/7: `platoon_v5` — five of five, the open
+  question answered, and a muteness regression.**
+
+  This was the arm the free-ride diagnosis could not explain: 16 agents, the most
+  dilution, and it converged at 92% *without* the fix. The answer is that it was
+  leaving a great deal on the table.
+
+  | | `platoon_v4` (pre-fix) | `platoon_v5` (post-fix) |
+  |---|---|---|
+  | rolling best → final | 99% → 92% (7-pt gap) | 100% → **99%** (1-pt gap) |
+  | measured | 0.93 ± 0.05 (N=100, `ckpt_best`) | **1.00 ± 0.00** FINAL |
+  | terminal (final decile) | 0.2089 | **0.7060** |
+  | ep length | 501 → 270 | 583 → **108** |
+  | human death rate | 0.233 | **0.000** |
+  | **retasks / ep** | **65.09** | **0.05** |
+  | orders / ep | 75.75 | 6.70 |
+  | messages / ep | 664 | 70 |
+
+  **The churn hazard is gone.** 65.09 retasks per episode against 75.75 orders is
+  the rotation-churn signature this repo keeps a regression test for; `v5` runs at
+  **0.05**. Command traffic falls 10× and the platoon still wins more often. So
+  the fix helps even the arm that never collapsed — `platoon` was not exempt from
+  the free-ride, it was paying for it in churn instead of in collapse.
+
+  **The regression, and it is the failure mode this file already named as the
+  worse one.** MISSION COMPLETE claims, 20 episodes: `v4` **35** claims (80%
+  false) → `v5` `ckpt_best` **3** claims (all three rejected) → `v5` **FINAL: 0
+  claims**. The platoon has gone **mute**. My first read of the training line
+  called this "false DONE 100%"; that rate is **n=3**, and the real finding is the
+  denominator, not the ratio. A policy that never claims forfeits `root_done_bonus`
+  (+3) on every episode and ends each one at T0 + `grace_window` instead of on its
+  own report — it wins the mission and never says so, which for a project whose
+  premise is that every C2 event reaches the transcript is a worse outcome than
+  claiming badly.
+
+  Consistent with it: obedience latency **3.9 → 21.0** steps (ADVANCE 21.1,
+  OBSERVE 35.7), and staged orders released **1900/3179 (60%) → 4/93 (4%)**.
+
+  **Mechanism NOT established** — logged as the next diagnosis, not as a story.
+  `done_false` is −0.5 (the −2.0 experiment was reverted precisely because it
+  bought silence, not precision), so the claim is cheap: break-even is p ≈ 0.14
+  against `root_done_bonus`. The suspect is exploration, not price — final-decile
+  entropy is **1.380** against `v4`'s **1.957**, and a policy this economical
+  (6.7 orders/ep) may simply never sample DONE often enough to learn when it is
+  true. **Refutable**: if it is exploration, `done_reports` should recover with a
+  higher `ent_coef` at unchanged `done_false`. Probe before touching the price.
+
+  **Fleet-wide DONE picture** (claims / rejected / false-rate), `ckpt_best` →
+  FINAL: `squad_v8` 4/3/0.750 → 65/31/**0.477** · `squad_recon_v7` 113/108/0.956 →
+  35/12/**0.343** · `fallen_v1` 10/6/0.600 → 36/7/**0.194** · `fallen_v2`
+  2/1/0.500 → 35/10/**0.286** · `fireteam_v8` 288/241/0.837 → 87/79/**0.908**.
+  Four of five improve substantially at the FINAL checkpoint. `fireteam_v8` is the
+  one that gets *worse*, and with `platoon_v5`'s silence those two are the fleet's
+  open reporting defects.
