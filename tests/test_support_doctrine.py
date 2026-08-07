@@ -29,13 +29,18 @@ import pytest
 from cohort import make_env
 from cohort.core.missions import (
     IN_POSITION_RADIUS,
+    POSITION_DRIFT,
+    POSTURE_HOLD,
     Mission,
     MissionType,
     compliance,
 )
 
-FULL = 0.6
-LOITER = 0.1
+# Read off the source, not copied: v1.11 halved the position rents (see
+# missions.POSTURE_HOLD) and the doctrine these tests pin is the RATIO between
+# holding station and loitering, not either absolute number.
+FULL = POSTURE_HOLD
+LOITER = POSITION_DRIFT
 
 
 @pytest.fixture

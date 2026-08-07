@@ -16,7 +16,7 @@ import pytest
 
 from cohort import make_env
 from cohort.config import get_scenario
-from cohort.core.missions import Mission, MissionType
+from cohort.core.missions import POSITION_HOLD, Mission, MissionType
 from cohort.core.units import Trap
 from cohort.env.actions import CATALOG
 from cohort.env.rewards import RewardConfig
@@ -250,13 +250,13 @@ def test_tenure_grows_positive_compliance_and_caps_at_horizon():
 
     def expected(t):
         held = min(t, cfg.tenure_horizon)
-        return 0.5 * cfg.compliance_weight * (1 + cfg.tenure_factor * held / cfg.tenure_horizon)
+        return POSITION_HOLD * cfg.compliance_weight * (1 + cfg.tenure_factor * held / cfg.tenure_horizon)
 
     assert seen[1] == pytest.approx(expected(1))
     assert seen[20] == pytest.approx(expected(20))
     assert seen[20] > seen[1], "credit grows with tenure"
     assert seen[cfg.tenure_horizon + 5] == pytest.approx(
-        0.5 * cfg.compliance_weight * (1 + cfg.tenure_factor)
+        POSITION_HOLD * cfg.compliance_weight * (1 + cfg.tenure_factor)
     ), "capped at the horizon"
 
 
@@ -277,7 +277,7 @@ def test_tenure_resets_on_retask():
     for _ in range(cfg.tenure_horizon + 2):  # ride the clock past the horizon
         *_, infos = _step_all(env)
     assert infos["RFN1"]["components"]["compliance"] == pytest.approx(
-        0.5 * cfg.compliance_weight * (1 + cfg.tenure_factor)
+        POSITION_HOLD * cfg.compliance_weight * (1 + cfg.tenure_factor)
     ), "full tenure before the re-task"
     _step_all(env, {"TL1": _order_spec(MissionType.SEIZE, objective="ALPHA").index})
     t0 = env._step_count
@@ -285,7 +285,7 @@ def test_tenure_resets_on_retask():
     rfn1.pos = alpha.pos  # in position for the NEW order
     *_, infos = _step_all(env)
     assert infos["RFN1"]["components"]["compliance"] == pytest.approx(
-        0.5 * cfg.compliance_weight * (1 + cfg.tenure_factor * 1 / cfg.tenure_horizon)
+        POSITION_HOLD * cfg.compliance_weight * (1 + cfg.tenure_factor * 1 / cfg.tenure_horizon)
     ), "tenure restarted from the re-task step"
 
 
@@ -326,7 +326,7 @@ def test_knobs_at_zero_disable_the_new_economics():
     for _ in range(45):
         *_, infos = _step_all(env2)
     assert infos["RFN1"]["components"]["compliance"] == pytest.approx(
-        0.5 * cfg.compliance_weight
+        POSITION_HOLD * cfg.compliance_weight
     )
 
 
@@ -335,17 +335,70 @@ def test_terminal_dominance_margin_survives_the_tenure_ceiling():
     (the main dominance regression test iterates all scenarios; this one pins
     the B5 arithmetic explicitly)."""
     from cohort.config import SCENARIOS
-    from cohort.core.missions import RECON_OBSERVE_STEPS
+    from cohort.core.missions import POSTURE_HOLD, RECON_OBSERVE_STEPS
 
     cfg = RewardConfig()
     assert cfg.max_step_farm() == pytest.approx(
-        cfg.compliance_weight * 0.6 * (1 + cfg.tenure_factor)
+        cfg.compliance_weight * POSTURE_HOLD * (1 + cfg.tenure_factor)
         + cfg.coverage_bonus
         + cfg.time_penalty
     )
     longest = max(spec.max_steps for spec in SCENARIOS.values())
     observe_cap = cfg.observe_progress * 2 * RECON_OBSERVE_STEPS
     assert cfg.success_team > cfg.max_step_farm() * longest + observe_cap
+
+
+def test_winning_beats_stalling_under_the_shipped_discount():
+    """The dominance invariant, in the units the optimizer actually uses.
+
+    THE regression test for the v1.11 diagnosis. The undiscounted assertion
+    above passed for the entire life of the project (60 > 0.09 x 600) while
+    30% of all runs (21/69) ended >= 25 points below their own peak, because
+    PPO maximizes the DISCOUNTED return: at gamma 0.99 the terminal reward
+    reached the optimizer multiplied by gamma^600 = 0.0024 on platoon, worth
+    4.52 against a stall's 8.98. Scoring every run's observed reward stream
+    this way separated collapsed from converged 8 times out of 8.
+
+    A bare ratio of 1.0 is NOT enough and must not be accepted as passing:
+    squad sat at exactly 1.00 and oscillated between 22% and 99% success,
+    which is what a coin-flip between two equal-value basins looks like. The
+    bar is 2x, and it is checked at the gamma the trainer actually ships.
+    """
+    from cohort.config import SCENARIOS
+    from cohort.training.ppo import PPOConfig
+
+    cfg = RewardConfig()
+    gamma = PPOConfig.gamma
+    thin = {
+        name: cfg.win_beats_stall(gamma, spec.max_steps)
+        for name, spec in SCENARIOS.items()
+        if cfg.win_beats_stall(gamma, spec.max_steps) < 2.0
+    }
+    assert not thin, (
+        f"winning must be worth >= 2x stalling at gamma={gamma}, but "
+        f"{ {k: round(v, 2) for k, v in thin.items()} } are at or below it. "
+        "Raise gamma, cut the per-step position rent (missions.POSTURE_HOLD), "
+        "or shorten max_steps — raising success_team alone cannot fix a "
+        "shortfall that lives in the exponent."
+    )
+
+
+def test_the_discounted_invariant_would_have_caught_the_shipped_collapse():
+    """The pre-v1.11 economics must FAIL the new test, or it proves nothing.
+
+    A regression test that also passes on the broken configuration is not a
+    regression test. These are the exact values the collapsed fleet trained
+    on: gamma 0.99, POSTURE_HOLD 0.6.
+    """
+    from cohort.config import get_scenario
+
+    old = RewardConfig()
+    object.__setattr__(old, "compliance_weight", 0.1 * (0.6 / 0.3))  # the old rent
+    platoon = get_scenario("platoon").max_steps
+    assert old.win_beats_stall(0.99, platoon) < 1.0, (
+        "the old economics must score below parity on platoon — that inversion "
+        "is the finding this test exists to keep out"
+    )
 
 
 # ---------------------------------------------------------------------- #

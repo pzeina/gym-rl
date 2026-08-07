@@ -42,6 +42,30 @@ METRIC_FIELDS = [
     "policy_loss",
     "value_loss",
     "approx_kl",
+    # Optimizer diagnostics (v1.11). Every collapse investigated on this
+    # project so far (issues #16-#19, the D4 thread) was diagnosed without a
+    # single one of these, which is why the search ran through done_false,
+    # contact_redundant, learning rate and observation width before anyone
+    # scored the reward economics.
+    #   grad_norm           — the pre-clip norm. With unnormalized returns the
+    #                         value head held 95-99% of it and max_grad_norm
+    #                         then scaled the POLICY update down ~5x.
+    #   clipfrac            — fraction of the batch hitting the PPO clip.
+    #   explained_variance  — 1 - Var(R-V)/Var(R). Negative means the critic is
+    #                         worse than the batch mean and every advantage in
+    #                         the update is noise.
+    #   value/return scale  — the units the critic is being asked to fit.
+    #   epochs_used         — how many of update_epochs ran before target_kl.
+    "grad_norm",
+    "clipfrac",
+    "explained_variance",
+    "value_mean",
+    "value_std",
+    "return_mean",
+    "return_std",
+    "epochs_used",
+    "lr",
+    "n_episodes",
     "sps",
     "tx_per_agent_step",
     # refs issue #18: tx counts CHARGED transmissions only — voice (SYNC
@@ -85,6 +109,28 @@ def best_save_gate(episodes_seen: int, window: int, rolling: float, best_so_far:
     return episodes_seen >= window and rolling > best_so_far
 
 
+def _load_compatible(net: PolicyNet, state: dict) -> list[str]:
+    """Load ``state`` into ``net``, tolerating only the v1.11 additions.
+
+    A pre-v1.11 checkpoint has no ``critic_torso.*`` (shared torso) and no
+    ``value_norm.*`` (no return normalization). Curriculum-initializing a
+    v1.11 network from one is legitimate — the actor transfers, the new critic
+    starts fresh — but "tolerate missing keys" must not become a blanket
+    ``strict=False`` that silently swallows a real architecture mismatch. So
+    only those two prefixes may be absent; anything else still raises.
+    """
+    missing, unexpected = net.load_state_dict(state, strict=False)
+    allowed = ("critic_torso.", "value_norm.")
+    hard = [k for k in missing if not k.startswith(allowed)]
+    if hard or unexpected:
+        msg = (
+            f"checkpoint does not match this network: missing {hard}, "
+            f"unexpected {list(unexpected)}"
+        )
+        raise RuntimeError(msg)
+    return list(missing)
+
+
 class Trainer:
     """Vectorized rollout collection + PPO updates for CohortEnv."""
 
@@ -118,10 +164,16 @@ class Trainer:
         # read the width off the env, not the module: a scenario may present
         # the pre-v1.10 `core` observation (ScenarioSpec.observation_profile)
         self.obs_dim = obs_dim(self.envs[0].spec_cfg.observation_profile)
-        self.net = PolicyNet(self.obs_dim, N_ACTIONS, cfg.hidden).to(self.device)
+        self.net = PolicyNet(
+            self.obs_dim,
+            N_ACTIONS,
+            cfg.hidden,
+            separate_critic=cfg.separate_critic,
+            normalize_value=cfg.normalize_value,
+        ).to(self.device)
         if init_from is not None:
             ckpt = torch.load(init_from, map_location=self.device, weights_only=True)
-            self.net.load_state_dict(ckpt["model"])
+            _load_compatible(self.net, ckpt["model"])
             print(f"initialized weights from {init_from} (scenario {ckpt.get('scenario')}, {ckpt.get('env_steps')} steps)")
         self.optimizer = torch.optim.Adam(self.net.parameters(), lr=cfg.lr, eps=1e-5)
 
@@ -288,6 +340,7 @@ class Trainer:
 
         n_eps = max(1, len(ep_returns))
         stats = {
+            "n_episodes": len(ep_returns),
             "ep_return": float(np.mean(ep_returns)) if ep_returns else float("nan"),
             "ep_length": float(np.mean(ep_lengths)) if ep_lengths else float("nan"),
             "success_rate": sum(o == "success" for o in outcomes) / n_eps if outcomes else 0.0,
@@ -331,10 +384,12 @@ class Trainer:
         start = time.time()
         while self.env_steps < total_steps:
             self.iteration += 1
+            lr_now = cfg.lr
             if cfg.anneal_lr:
                 frac = 1.0 - min(1.0, self.env_steps / total_steps)
+                lr_now = cfg.lr * max(0.05, frac)
                 for group in self.optimizer.param_groups:
-                    group["lr"] = cfg.lr * max(0.05, frac)
+                    group["lr"] = lr_now
 
             buffer = RolloutBuffer(cfg.horizon, cfg.n_envs, self.n_agents, self.obs_dim, N_ACTIONS)
             t0 = time.time()
@@ -348,13 +403,17 @@ class Trainer:
                 "iteration": self.iteration,
                 "env_steps": self.env_steps,
                 "sps": round(sps),
+                "lr": round(lr_now, 8),
                 **{k: round(v, 5) if isinstance(v, float) else v for k, v in stats.items()},
                 **{k: round(v, 6) for k, v in losses.items()},
             }
             with self.metrics_path.open("a", newline="") as f:
                 csv.DictWriter(f, fieldnames=METRIC_FIELDS, extrasaction="ignore").writerow(row)
             if self.writer is not None:
-                for key in ("ep_return", "success_rate_rolling", "entropy", "policy_loss", "value_loss"):
+                for key in (
+                    "ep_return", "success_rate_rolling", "entropy", "policy_loss",
+                    "value_loss", "grad_norm", "clipfrac", "explained_variance",
+                ):
                     val = row.get(key, stats.get(key, losses.get(key)))
                     if val is not None and not (isinstance(val, float) and np.isnan(val)):
                         self.writer.add_scalar(key, float(val), self.env_steps)
@@ -365,6 +424,7 @@ class Trainer:
                     f"iter {self.iteration:>4} | steps {self.env_steps:>8,} | "
                     f"return {stats['ep_return']:>7.2f} | success {stats['success_rate_rolling']:.0%} | "
                     f"len {stats['ep_length']:>5.0f} | ent {losses['entropy']:.2f} | "
+                    f"ev {losses['explained_variance']:>5.2f} | gnorm {losses['grad_norm']:.2f} | "
                     f"sps {sps:>5.0f} | {elapsed:>5.0f}s"
                 )
             self.save_checkpoint("ckpt_latest.pt")
@@ -388,6 +448,11 @@ class Trainer:
                 "obs_dim": self.obs_dim,
                 "n_actions": N_ACTIONS,
                 "hidden": self.cfg.hidden,
+                # v1.11 architecture flags. Absent on every earlier checkpoint,
+                # and load_policy defaults them to False, so the published
+                # fleet keeps reconstructing its exact original network.
+                "separate_critic": self.cfg.separate_critic,
+                "normalize_value": self.cfg.normalize_value,
                 "scenario": self.scenario,
                 "iteration": self.iteration,
                 "env_steps": self.env_steps,
@@ -399,10 +464,23 @@ class Trainer:
 
 
 def load_policy(checkpoint: str | Path, device: str = "cpu") -> tuple[PolicyNet, dict]:
-    """Load a trained policy from a checkpoint file."""
+    """Load a trained policy from a checkpoint file.
+
+    The architecture is reconstructed from flags stored in the file, which
+    default to the pre-v1.11 shape when absent — so every checkpoint the fleet
+    published before the split critic landed still loads exactly as it trained.
+    """
     ckpt = torch.load(checkpoint, map_location=device, weights_only=True)
-    net = PolicyNet(ckpt["obs_dim"], ckpt["n_actions"], ckpt["hidden"]).to(device)
-    net.load_state_dict(ckpt["model"])
+    net = PolicyNet(
+        ckpt["obs_dim"],
+        ckpt["n_actions"],
+        ckpt["hidden"],
+        separate_critic=ckpt.get("separate_critic", False),
+        normalize_value=ckpt.get("normalize_value", False),
+    ).to(device)
+    # ValueNorm's buffers exist even when it is disabled, so a pre-v1.11 file
+    # is missing exactly those three keys and nothing else.
+    _load_compatible(net, ckpt["model"])
     net.eval()
     return net, ckpt
 
@@ -442,6 +520,26 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=128)
     parser.add_argument("--lr", type=float, default=3e-4)
     parser.add_argument("--ent-coef", type=float, default=0.01)
+    # The rest of PPOConfig, exposed (v1.11). These were code-only defaults, so
+    # a campaign could not sweep them without editing the tree mid-run — and
+    # `gamma`, the one that turned out to decide whether a run collapses, was
+    # among them. Defaults mirror PPOConfig, so omitting a flag changes nothing.
+    parser.add_argument("--gamma", type=float, default=PPOConfig.gamma)
+    parser.add_argument("--gae-lambda", type=float, default=PPOConfig.gae_lambda)
+    parser.add_argument("--clip-coef", type=float, default=PPOConfig.clip_coef)
+    parser.add_argument("--vf-coef", type=float, default=PPOConfig.vf_coef)
+    parser.add_argument("--max-grad-norm", type=float, default=PPOConfig.max_grad_norm)
+    parser.add_argument("--update-epochs", type=int, default=PPOConfig.update_epochs)
+    parser.add_argument("--num-minibatches", type=int, default=PPOConfig.num_minibatches)
+    parser.add_argument("--target-kl", type=float, default=PPOConfig.target_kl,
+                        help="early-stop the update epochs above this approx KL (<=0 disables)")
+    parser.add_argument("--hidden", type=int, default=PPOConfig.hidden)
+    parser.add_argument("--normalize-value", action=argparse.BooleanOptionalAction,
+                        default=PPOConfig.normalize_value,
+                        help="fit the critic against standardized returns")
+    parser.add_argument("--separate-critic", action=argparse.BooleanOptionalAction,
+                        default=PPOConfig.separate_critic,
+                        help="give the critic its own torso and its own gradient clip")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--run-name", default=None)
@@ -458,6 +556,17 @@ def main() -> None:
         horizon=args.horizon,
         lr=args.lr,
         ent_coef=args.ent_coef,
+        gamma=args.gamma,
+        gae_lambda=args.gae_lambda,
+        clip_coef=args.clip_coef,
+        vf_coef=args.vf_coef,
+        max_grad_norm=args.max_grad_norm,
+        update_epochs=args.update_epochs,
+        num_minibatches=args.num_minibatches,
+        target_kl=args.target_kl if args.target_kl and args.target_kl > 0 else None,
+        hidden=args.hidden,
+        normalize_value=args.normalize_value,
+        separate_critic=args.separate_critic,
         device=args.device,
     )
     print(f"training scenario={args.scenario} → {run_dir}")

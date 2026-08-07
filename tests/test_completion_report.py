@@ -227,6 +227,8 @@ def test_subordinate_recon_done_stays_personal():
 def test_root_compliance_pays_from_cover_while_team_observes():
     """In-position credit for the OPORD holder follows the team: the reward
     no longer pulls the commander's body onto the observation ring."""
+    from cohort.core.missions import POSTURE_HOLD
+
     env = _recon_env()
     obj = env.world.objective_by_name("BRAVO")
     env.roster.by_callsign["TL2"].pos = (obj.pos[0] - 5, obj.pos[1])
@@ -236,7 +238,7 @@ def test_root_compliance_pays_from_cover_while_team_observes():
     # OPORD held since step 0: 1 step of standing-order tenure at step 1 (B5)
     tenure = 1.0 + cfg.tenure_factor * 1 / cfg.tenure_horizon
     assert infos["SL1"]["components"]["compliance"] == pytest.approx(
-        0.6 * cfg.compliance_weight * tenure
+        POSTURE_HOLD * cfg.compliance_weight * tenure
     )
 
     env2 = _recon_env()  # control: nobody observes

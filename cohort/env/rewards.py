@@ -261,16 +261,68 @@ class RewardConfig:
     def max_step_farm(self) -> float:
         """Upper bound on per-step reward farmable by stalling (not winning).
 
-        Best-case stall: perfect posture compliance (0.6 x weight) at FULL
-        standing-order tenure (the B5 multiplier's ceiling, 1 + tenure_factor)
-        plus the leader coverage bonus, minus the time penalty. Used by tests
-        to prove terminal dominance for every scenario's episode cap.
+        Best-case stall: perfect posture compliance (``POSTURE_HOLD`` x weight)
+        at FULL standing-order tenure (the B5 multiplier's ceiling,
+        1 + tenure_factor) plus the leader coverage bonus, minus the time
+        penalty.
+
+        This is the UNDISCOUNTED rate. On its own it is not a sufficient
+        dominance test and must not be used as one again — see
+        :meth:`win_beats_stall`.
         """
+        from cohort.core.missions import POSTURE_HOLD
+
         return (
-            self.compliance_weight * 0.6 * (1.0 + max(0.0, self.tenure_factor))
+            self.compliance_weight * POSTURE_HOLD * (1.0 + max(0.0, self.tenure_factor))
             + self.coverage_bonus
             + self.time_penalty
         )
+
+    # ------------------------------------------------------------------ #
+    # Terminal dominance, as the optimizer sees it
+    # ------------------------------------------------------------------ #
+    #
+    # The v1.0 invariant was ``success_team > max_step_farm() x max_steps``:
+    # an UNDISCOUNTED comparison. PPO maximizes the DISCOUNTED return, and at
+    # the shipped gamma of 0.99 the two disagree badly — 1/(1-gamma) is a
+    # 100-step planning horizon against episodes of 300-600, so gamma^600 =
+    # 0.0024 and platoon's terminal reward was worth 4.52 against a stall's
+    # 8.98. The undiscounted test passed the whole time (60 > 54).
+    #
+    # 30% of all runs to date (21/69) ended >= 25 points below their own peak,
+    # and scoring every run's observed reward stream this way separated the
+    # collapsed from the converged 8 times out of 8. So the invariant is now
+    # stated in the units that decide the outcome.
+
+    def stall_value(self, gamma: float, max_steps: int) -> float:
+        """Discounted value of farming shaping for a whole episode."""
+        rate = self.max_step_farm()
+        if gamma >= 1.0:
+            return rate * max_steps
+        return rate * (1.0 - gamma**max_steps) / (1.0 - gamma)
+
+    def win_value(self, gamma: float, max_steps: int, win_step: int) -> float:
+        """Discounted value of winning at ``win_step``, speed bonus included."""
+        undiscounted = self.success_team + self.success_speed * max(
+            0.0, 1.0 - win_step / max_steps
+        )
+        return undiscounted * gamma**win_step
+
+    def win_beats_stall(
+        self, gamma: float, max_steps: int, win_fraction: float = 0.45
+    ) -> float:
+        """Ratio of discounted win to discounted stall; > 1 means winning pays.
+
+        ``win_fraction`` is when in the episode the win lands, as a fraction of
+        the cap — 0.45 is roughly what the converged fleet actually achieves.
+        The invariant tests require a margin of 2x, not a bare 1x: at 1.0 the
+        two are equal and which basin a run falls into is left to noise, which
+        is exactly what squad (ratio 1.00) and platoon (0.50) did.
+        """
+        stall = self.stall_value(gamma, max_steps)
+        if stall <= 0.0:
+            return float("inf")
+        return self.win_value(gamma, max_steps, int(max_steps * win_fraction)) / stall
 
 
 #: Component names, fixed so metrics stay aligned across runs.

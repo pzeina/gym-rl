@@ -19,7 +19,7 @@ merely because it was staged.
 """
 
 from cohort import make_env
-from cohort.core.missions import MissionType
+from cohort.core.missions import POSITION_HOLD, MissionType
 from cohort.env.actions import CATALOG
 from cohort.metrics import (
     TraceRecorder,
@@ -125,4 +125,6 @@ def test_recorder_scores_a_pending_mission_the_way_the_environment_pays_it():
     r = next(s for s in rec.trace["steps"][-1]["soldiers"] if s["cs"] == "RFN1")
     assert r["pending"] is True
     assert r["mission"] == "RECON"
-    assert r["comp"] == 0.5, "staged: scored as HOLD at the staging spot, not as RECON"
+    assert r["comp"] == POSITION_HOLD, (
+        "staged: scored as HOLD at the staging spot, not as RECON"
+    )
