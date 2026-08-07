@@ -1890,3 +1890,98 @@ deliberately deferred (`docs/vision.md` §2c).
   v4` 97% final, `defend_brique_v3` 90% final) and **4 collapsed** (`squad`,
   `fireteam`, `squad_recon`, `squad_screen`). Nothing republishes until the
   second half is understood; `fireteam_defend_v10`'s publish is held with them.
+- **2026-08-07** — **The width bisect returns a result: `squad_screen_core_v1`
+  (166, A5 vocabulary and the voice channel both present, only the space
+  narrowed) converges where every same-scenario 220-width run collapsed.**
+  Issue #19 (assurance layer) first established *why* the record alone could
+  not settle this: the only pre-A5 corpora we hold (`squad_screen_v1/v1b/v2`,
+  `OBS_DIM` 166) predate the trinôme voice channel entirely — voice share reads
+  exactly **0.000** in all three, by their measurement — so a 166-vs-220
+  contrast drawn from history is really a v1.8-vs-v1.10 contrast wearing a
+  width label. It offered one number to hold onto regardless:
+  `squad_screen_v2`'s pre-break profile, **30/30 success, 111-step episodes,
+  command share 0.790** — the last surviving description of this scenario
+  working, since that checkpoint no longer loads under the current spaces. It
+  also dated the channel itself: voice share goes 0.000 → 0.41–0.57 exactly at
+  **A5 (v1.9), two versions before the collapses**, which makes an un-taxed
+  voice channel *necessary-at-most* for the stall, not sufficient — so
+  `cf3f5fe` (charging SYNC airtime) was never expected to fix this alone.
+
+  `squad_screen_core_v1` (registered `ba688c2`, trained since) is the
+  controlled instrument the issue asked for: same voice channel, same A5
+  vocabulary, `OBS_DIM` frozen at 166. Read with `run_report.py`, one variable
+  against the four 220-width runs that collapsed: **final-decile success
+  (rolling) 0.965, best-final gap 4 pts, `[converged]`** — the same band as
+  the four v1.10 runs that held (gaps 3/4/7/8), not the four that didn't (gap
+  100/100/26, final 0%/0%/3%). The clock gate that separated the record
+  completely in the #18 entry separates it again: `ran clock out` final
+  decile **0.027** (behavior suite: **0.10**), `timeout_rate` gate **PASS** —
+  against exactly 1.0 for every collapsed `ckpt_latest`.
+
+  **One caveat, and it is the one the issue flagged in advance rather than one
+  found after the fact.** Command share (our protocol: 20 eps, `ckpt_best`,
+  greedy=False) reads **0.318** for `squad_screen_core_v1` — inside the
+  collapsed group's own command-share range from the issue's table (`v4`
+  0.311, `v5` 0.099, `v7` 0.392; their protocol: 30 eps, seeds 500–529, a
+  different corpus than ours), not the pre-break reference's 0.790. That is
+  consistent with the #18 correction that command share is scenario idiom and
+  separates nothing on its own — the training curve and the clock gate carry
+  this result, not composition, and the two protocols are not directly
+  comparable besides.
+
+  **Width is no longer the last suspect by elimination — it now has a
+  single-variable bisect in its favor.** One run, one seed (17); not yet a
+  replication, and the `squad_screen_core` profile still differs from the
+  true v1.9 166-vector in the one documented way (`ba688c2`: it omits the
+  SITREP-due slot rather than reproducing the overload that packed it into
+  the "known enemy present" flag) — the issue independently checked its
+  corpora for SITREP-cadence traffic in the screen family and found none,
+  which is the condition under which `ba688c2` called the omission exact for
+  this scenario specifically. Next: replicate on a second seed before
+  treating width as confirmed, then decide what a width-caused collapse
+  implies for the rest of the v1.10 fleet (`squad`, `fireteam`, `squad_recon`
+  — none yet re-run at 166). refs #19
+- **2026-08-07** — **Correction to the entry above: the bisect arm shows
+  "did not collapse", not "reached the pre-break profile" — and the entry
+  quoted the one protocol that flatters it.** The previous entry's headline
+  numbers (final-decile rolling success 0.965, `[converged]`) come from the
+  *training curve*; the clock number it cites next to them (0.10) comes from
+  the *behavior suite*. On the behavior suite — the protocol issue #19 asked
+  to be compared on, `ckpt_best`, greedy=False — `squad_screen_core_v1`
+  reads **success 0.85 ± 0.16**, and that number appears nowhere in the entry.
+  For scale, collapsed `squad_screen_v4` reads **1.00 ± 0.00** on the same
+  protocol, because its `ckpt_best` predates its own collapse. Comparing a
+  converged run's training tail against a collapsed run's best checkpoint is
+  not one series.
+
+  Issue #19 named an explicit bar: roughly `squad_screen_v2`'s pre-break
+  profile — **30/30 success, 2/30 root deaths, 111-step episodes, command
+  share 0.790**. The arm misses it on every dimension except non-collapse:
+  **root death 0.822** (final decile, and *rising* through training: 0.205 →
+  0.822), **episodes 165 steps**, **command share 0.318**, **false DONE 0.944**
+  (behavior suite). Its reward is dominated by the terminal component
+  (**0.3453** final decile, ~100x every other component; the collapsed runs
+  sit at 0.000 and -0.0042) with **41.2 retasks against 47.15 orders per
+  episode** — terminal dominance and churn are two of the named
+  regression-hazard signatures in CLAUDE.md, and this run wears both.
+
+  What survives the correction, and it is not nothing: the collapse itself
+  did not happen at 166. `squad_screen_core_v1` goes 0.742 → 0.965 where
+  `squad_screen_v4` goes 0.658 → **0.000** and `v7` 0.115 → 0.028 — the
+  latest policy is alive rather than dead, which is the width-relevant
+  signal and is real. What does *not* survive is "leading suspect by
+  evidence": the exploit-shaped metrics are family-wide (root death 0.983 on
+  `v7`, false DONE 1.000 on `v7`, churn ratios high across all three), so
+  they neither indict nor exonerate width — but they do mean the arm
+  converged to something well short of what the scenario looked like when it
+  worked, and a bisect whose treated arm lands on a terminal-reward exploit
+  cannot yet distinguish "width caused the collapse" from "the narrower
+  vector made the exploit easier to reach".
+
+  Standing: width remains the last suspect, now with one run showing
+  non-collapse at 166 and no run showing recovery of the pre-break profile.
+  Before a second seed is worth spending, the arm needs diagnosing against
+  the oracle (`env.oracle()`, this repo's diagnose-first rule) on why root
+  death rises with success and why false DONE sits at 0.944 — a 0.85 ± 0.16
+  built on those is not a result to replicate yet. Owner's call; no reward
+  change proposed here. refs #19
