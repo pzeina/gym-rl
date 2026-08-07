@@ -648,9 +648,31 @@ def main() -> None:
             transcript_path=str(run_dir / "eval_transcript.txt"),
         )
 
+    def _eval_final() -> None:
+        """Score the policy the run ENDED with, not only its best window.
+
+        ``ckpt_best`` captures the best rolling window over the whole run, so
+        on an unstable run it measures a peak. Measured across 18 runs the gap
+        between peak rolling success and the published N=100 number averages
+        +8.2 points, and three published policies — squad_recon_v5/v6 and
+        squad_v7 — come from runs whose rolling success ENDED AT 0.00/0.41.
+        Those numbers are real for that checkpoint and say nothing about
+        whether the recipe reproduces. A run cannot be honestly published
+        without both, so both are now measured, always, by default.
+        """
+        latest = run_dir / "ckpt_latest.pt"
+        if not latest.exists() or not (run_dir / "ckpt_best.pt").exists():
+            return  # only one checkpoint: _eval already scored it
+        evaluate(
+            str(latest),
+            episodes=20,
+            behavior_path=str(run_dir / "behavior_final.json"),
+        )
+
     artifact("training_curves.png", _curves)
     if not args.no_eval:
         artifact("evaluate", _eval)
+        artifact("evaluate_final", _eval_final)
 
     if failures:
         names = ", ".join(name for name, _ in failures)

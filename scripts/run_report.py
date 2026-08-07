@@ -63,6 +63,14 @@ def deciles(rows: list[dict], n: int = 10) -> list[list[dict]]:
 #: gave back 10 (defend_v8), 17 (defend_v9), 33 (squad_v6) and 68 (fireteam_v7).
 COLLAPSE_POINTS = 15
 
+#: The PUBLISHING bar, tighter than the collapse warning above: a run may not
+#: contribute a headline number to README/ROADMAP unless it gave back less than
+#: this. A warning that a digest prints is advice; this is a gate, because the
+#: advice was already there and three collapsed runs got published anyway
+#: (squad_recon_v5 and v6 both ended at 0.00 rolling and are published at 0.77
+#: and 0.91; squad_v7 ended at 0.41 and is published at 0.92).
+PUBLISH_STABILITY_POINTS = 10
+
 
 def stability(best: float, final: float) -> str:
     """One line separating "this run converged" from "this run peaked".
@@ -84,7 +92,40 @@ def stability(best: float, final: float) -> str:
         verdict = "UNSTABLE — ckpt_best overstates this run; quote both numbers"
     else:
         verdict = "converged"
-    return f"stability  best-final gap {drop:.0f} pts  [{verdict}]"
+    gate = "PUBLISHABLE" if drop < PUBLISH_STABILITY_POINTS else "NOT PUBLISHABLE"
+    return (
+        f"stability  best-final gap {drop:.0f} pts  [{verdict}]\n"
+        f"  publish gate  [{gate}]  (bar: gap < {PUBLISH_STABILITY_POINTS} pts, "
+        f"and the headline number is the FINAL policy)"
+    )
+
+
+def optimizer_line(first: list[dict], last: list[dict]) -> str | None:
+    """The PPO diagnostics, or None on a run that predates them (v1.11).
+
+    ``explained_variance`` is the one to read first: below ~0 the critic is
+    worse than predicting the batch mean, so every advantage in the update is
+    noise and the run is not learning from what it looks like it is learning
+    from. ``grad_norm`` next — if it sits far above max_grad_norm the update is
+    being scaled down wholesale, which is how the value head used to swallow
+    95-99% of the policy's gradient budget.
+    """
+    if not any(k in (first[0] if first else {}) for k in ("explained_variance", "grad_norm")):
+        return None
+    out = []
+    for key, label, fmt in [
+        ("explained_variance", "explained var", "{:+.3f}"),
+        ("grad_norm", "grad norm", "{:.3f}"),
+        ("clipfrac", "clip frac", "{:.3f}"),
+        ("value_std", "value scale", "{:.2f}"),
+        ("return_std", "return scale", "{:.2f}"),
+        ("epochs_used", "epochs used", "{:.2f}"),
+    ]:
+        a, b = mean(first, key), mean(last, key)
+        if b != b:
+            continue
+        out.append(f"{label} {fmt.format(b)} ({b - a:+.3f})")
+    return "  optimizer  " + "  ".join(out) if out else None
 
 
 def curve(rows: list[dict]) -> str:
@@ -112,6 +153,8 @@ def report(run: str, show_components: bool) -> dict:
     final_roll = mean(last, "success_rate_rolling")
     print(f"  curve   {curve(rows)}   best rolling {best:.0%}   final {final_roll:.0%}")
     print(f"  {stability(best, final_roll)}")
+    if opt := optimizer_line(first, last):
+        print(opt)
     print("  final decile vs first decile:")
     summary = {}
     for key, label in [
@@ -200,6 +243,23 @@ def report(run: str, show_components: bool) -> dict:
             print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
     else:
         print("  behavior: none — run `evaluate --behavior` for the B2 suite")
+
+    # The FINAL policy's own number, side by side with ckpt_best's. On a run
+    # that peaked and fell back these differ enormously (squad_screen_v4:
+    # ckpt_best 30/30, ckpt_latest 0/30 on the same seeds), and the publishing
+    # standard is that both are quoted — the headline is this one.
+    final_path = RUNS / run / "behavior_final.json"
+    if final_path.exists():
+        fb = json.loads(final_path.read_text())
+        fm = fb.get("metrics", {})
+        print(f"  FINAL policy ({fb.get('episodes','?')} eps, ckpt_latest.pt): "
+              f"success {fb.get('success_ci95','?')}")
+        summary["final_success"] = fm.get("success_rate")
+        if (bs := summary.get("beh_success")) is not None and (fs := fm.get("success_rate")) is not None:
+            print(f"    vs ckpt_best {bs:.2f} → final {fs:.2f}  ({fs - bs:+.2f})")
+    elif beh_path.exists():
+        print("  FINAL policy: not measured — re-run `evaluate ckpt_latest.pt "
+              "--behavior-out behavior_final.json` (the headline number)")
     return summary
 
 
