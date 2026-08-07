@@ -2277,3 +2277,39 @@ deliberately deferred (`docs/vision.md` §2c).
   but it shifts the RNG stream, and keeping the tree exactly as validated means
   this campaign reproduces the result that justified it. Land it **after** the
   fleet is retrained and published, not during.
+- **2026-08-07** — **v1.11 fleet, arm 1/7: `fireteam_v8` — the fix generalizes.**
+  `fireteam` is one of the four scenarios that collapsed pre-fix, and the
+  contrast against its own last run is the point:
+
+  | | `fireteam_v7` (pre-fix) | `fireteam_v8` (post-fix) |
+  |---|---|---|
+  | rolling best → final | 94% → **26%** (68-pt gap, **COLLAPSED**) | 96% → **84%** (12-pt gap, converged) |
+  | measured `ckpt_best` | 0.95 ± 0.04 (N=100) | 0.75 ± 0.19 (N=20) |
+  | measured FINAL | — | **0.90 ± 0.13** (N=20) |
+  | terminal (final decile) | 0.0712 | **0.6892** |
+  | ep length | 276 | **121** |
+  | human death rate | 0.216 | **0.000** |
+
+  `v7` is the publish-audit pathology in one line: **0.95 ± 0.04 at N=100 off a
+  policy whose run ended at 26%**. `v8` does not collapse, and its terminal
+  income is ~10× — the same signature the `squad_screen` arms showed. Two of two
+  collapse-prone scenarios now hold.
+
+  **Not published, and the gate is worth watching.** `run_report` calls `v8`
+  NOT PUBLISHABLE on a **12-point rolling** best–final gap, while its *measured*
+  final (0.90 ± 0.13) sits **above** its measured best (0.75 ± 0.19) — the CIs
+  overlap, so the honest statement is that the two are indistinguishable at N=20
+  and the rolling gap is the only evidence of instability. The gate is doing its
+  job as designed (`stability()` compares the rolling curve), but a run whose
+  measured final beats its measured best is not the failure mode the audit was
+  built to catch. **Deliberately not changed on one run's evidence**: that guard
+  was installed hours ago after 21 runs were mis-published, and loosening it
+  against a single N=20 pair is exactly the mistake it exists to prevent. If
+  several v1.11 arms show the same shape, that is the evidence to act on.
+
+  **Residuals, consistent with the `squad_screen` arms and worse here**:
+  false-DONE **0.830** final-decile (0.837 behavior suite) — `v7`'s 0.078 is not
+  a real improvement, a collapsed policy claims nothing. Doctrine preference
+  **0.115**, with the top three order tasks (OBSERVE 0.42, CLEAR 0.23, SUPPORT
+  0.13) each at preference **0.00**. A5-2 staging: 23 staged, 5 released, **18
+  abandoned**. None of these is touched by the free-ride fix and all are open.
