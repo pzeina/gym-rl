@@ -3,9 +3,24 @@
 ## ⟳ Session handoff — resume here (2026-08-07, autocycle complete)
 
 **State**: `multi-agent-dev`, **~75 commits ahead of `main`**; latest tag v1.9.0;
-**497 tests green, ruff clean**; **nothing training**. **No git remote is
-configured** (`git remote -v` is empty) — one must be added before anything can
-be pushed. Spaces **Discrete(228)/Box(220)**.
+**497 tests green, ruff clean**; **nothing training**. Spaces
+**Discrete(228)/Box(220)**.
+
+**Note on the remote — earlier handoffs got this wrong, including mine.** They
+said "no git remote is configured, one must be added before anything can be
+pushed". **Pushing works** (`git push --dry-run` → `d8fa125..dd878a8
+multi-agent-dev`). There is no *named* remote — no `[remote "origin"]` section,
+so `git remote -v` is empty — but every branch carries
+`branch.<name>.remote = https://github.com/pzeina/gym-rl.git` as a URL, which git
+accepts for push/pull. What this shape costs is the *tooling*: no
+remote-tracking refs (`origin/main` does not exist, so `git rev-list
+origin/main..HEAD` and ahead/behind in `git status` fail), and `gh` reports "no
+git remotes found" from this directory. Possibly deliberate —
+`~/Documents/gym-rl-fork` holds a proper `origin` plus a `local` remote pointing
+here, so GitHub interaction may be intended to run through the assurance fork.
+**Do not "fix" it without asking.** If the owner does want the standard shape:
+`git remote add origin https://github.com/pzeina/gym-rl.git && git fetch origin &&
+git branch -u origin/multi-agent-dev`.
 
 **⚑ ONE DECISION IS WAITING ON YOU** — reward structure, deliberately not taken.
 See the last progress-log entry for the four options and the recommendation
