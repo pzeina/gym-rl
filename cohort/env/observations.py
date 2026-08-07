@@ -85,17 +85,58 @@ _COMMS_BLOCK = 5 + 1
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
 #: point) + 6 comms + patch (98, radius 3)
 #: = 13 + 22 + 2 + 2 + 3 + 5 + 20 + 16 + 12 + 12 + 9 + 6 + 98 = 220
-OBS_DIM = (
-    _SELF_BLOCK + _MISSION_BLOCK + _SYNC_BLOCK + _TEMPO_BLOCK + _COVER_BLOCK
-    + _LEADER_BLOCK
-    + 5 * N_SUB_SLOTS
-    + 4 * N_ENEMY_SLOTS
-    + 3 * N_OBJECTIVE_SLOTS
-    + 3 * N_WAYPOINT_SLOTS
-    + 3 * N_PHASE_LINE_SLOTS
-    + _COMMS_BLOCK
-    + (2 * PATCH_RADIUS + 1) ** 2 * 2
-)
+#: Observation profiles.
+#:
+#: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
+#: v1.10 added — tempo (2), nearest cover (3), the SITREP-due slot (1), and the
+#: patch widened from 5x5 to 7x7 (+48) — reproducing the 166-wide vector the
+#: fleet trained on through v1.9. 220 - 54 = 166.
+#:
+#: It exists to bisect the v1.10 space break. Three explanations for the four
+#: collapsed v1.10 runs have been tested and killed (``done_false``,
+#: ``contact_redundant``, learning rate), leaving the space change standing by
+#: elimination rather than by evidence. ``core`` is how that becomes a
+#: measurement: same code, same rewards, same scenario, one variable — the
+#: width of the input.
+#:
+#: One honest difference from the real v1.9 vector: that one overloaded the
+#: "known enemy present" comms flag to carry SITREP due-ness, to avoid changing
+#: OBS_DIM. ``core`` simply omits the slot instead of reproducing the overload,
+#: so the two differ ONLY when the SITREP doctrine is active
+#: (``ScenarioSpec.sitrep_cadence``). It is off in ``squad_screen``, the
+#: scenario this was built to bisect, so there the rebuild is exact.
+OBS_PROFILES: tuple[str, ...] = ("full", "core")
+
+#: the pre-v1.10 patch radius (5x5) — see PATCH_RADIUS for why it grew
+CORE_PATCH_RADIUS = 2
+
+
+def patch_radius(profile: str = "full") -> int:
+    """Local terrain patch radius for an observation profile."""
+    return PATCH_RADIUS if profile == "full" else CORE_PATCH_RADIUS
+
+
+def obs_dim(profile: str = "full") -> int:
+    """Width of the observation vector under ``profile``."""
+    if profile not in OBS_PROFILES:
+        msg = f"Unknown observation profile {profile!r} (expected one of {OBS_PROFILES})"
+        raise ValueError(msg)
+    wide = profile == "full"
+    return (
+        _SELF_BLOCK + _MISSION_BLOCK + _SYNC_BLOCK
+        + (_TEMPO_BLOCK + _COVER_BLOCK if wide else 0)
+        + _LEADER_BLOCK
+        + 5 * N_SUB_SLOTS
+        + 4 * N_ENEMY_SLOTS
+        + 3 * N_OBJECTIVE_SLOTS
+        + 3 * N_WAYPOINT_SLOTS
+        + 3 * N_PHASE_LINE_SLOTS
+        + (_COMMS_BLOCK if wide else _COMMS_BLOCK - 1)
+        + (2 * patch_radius(profile) + 1) ** 2 * 2
+    )
+
+
+OBS_DIM = obs_dim("full")
 
 # --- block offsets -------------------------------------------------------- #
 # Derived, never hand-written: tests and tools index the layout through these
@@ -164,12 +205,18 @@ def build_observation(
     roster: Roster,
     world: World,
     view: AgentView,
+    profile: str = "full",
 ) -> np.ndarray:
-    """Assemble the flat observation vector for one agent."""
+    """Assemble the flat observation vector for one agent.
+
+    ``profile`` selects the layout: ``full`` (v1.10, 220) or ``core``
+    (pre-v1.10, 166). See OBS_PROFILES.
+    """
+    wide = profile == "full"
     w, h = float(world.width), float(world.height)
     diag = float(np.hypot(w, h))
     x, y = float(soldier.pos[0]), float(soldier.pos[1])
-    out = np.zeros(OBS_DIM, dtype=np.float32)
+    out = np.zeros(obs_dim(profile), dtype=np.float32)
     i = 0
 
     # --- self (13) ---
@@ -238,17 +285,18 @@ def build_observation(
     i += 2
 
     # --- tempo (v1.10, 2): episode progress + time to the announced H-hour ---
-    out[i] = view.episode_progress
-    out[i + 1] = view.time_to_contact
-    i += 2
+    if wide:
+        out[i] = view.episode_progress
+        out[i + 1] = view.time_to_contact
+        i += 2
 
-    # --- nearest cover (v1.10, 3): present, dx, dy ---
-    cover = world.nearest_cover(soldier.pos, COVER_SEARCH_RADIUS)
-    if cover is not None:
-        out[i] = 1.0
-        out[i + 1] = (cover[0] - x) / w
-        out[i + 2] = (cover[1] - y) / h
-    i += 3
+        # --- nearest cover (v1.10, 3): present, dx, dy ---
+        cover = world.nearest_cover(soldier.pos, COVER_SEARCH_RADIUS)
+        if cover is not None:
+            out[i] = 1.0
+            out[i + 1] = (cover[0] - x) / w
+            out[i + 2] = (cover[1] - y) / h
+        i += 3
 
     # --- leader (5) ---
     if leader is not None:
@@ -318,13 +366,17 @@ def build_observation(
         out[i + 4] = (nearest[1] - y) / h
     # v1.10: SITREP due-ness has its own slot — it no longer displaces the
     # "known enemy present" flag above (0.0 when the doctrine is off)
-    out[i + 5] = view.sitrep_due if view.sitrep_due is not None else 0.0
-    i += 6
+    if wide:
+        out[i + 5] = view.sitrep_due if view.sitrep_due is not None else 0.0
+        i += 6
+    else:
+        i += 5
 
     # --- terrain patch ---
-    patch = world.local_patch(soldier.pos, PATCH_RADIUS).reshape(-1)
+    patch = world.local_patch(soldier.pos, patch_radius(profile)).reshape(-1)
     out[i : i + patch.shape[0]] = patch
     i += patch.shape[0]
 
-    assert i == OBS_DIM, f"obs layout mismatch: wrote {i}, expected {OBS_DIM}"
+    expected = obs_dim(profile)
+    assert i == expected, f"obs layout mismatch: wrote {i}, expected {expected}"
     return np.clip(out, -1.0, 1.0)

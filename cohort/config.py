@@ -200,9 +200,26 @@ class ScenarioSpec:
     #                               it (revealed once triggered). Oracle ground truth
     #                               from step 0; never in blue observations.
 
+    #: which observation layout the scenario presents — "full" (v1.10, 220
+    #: wide) or "core" (pre-v1.10, 166). A bisect knob, not a feature: the
+    #: v1.10 space break is the last unfalsified explanation for the four
+    #: collapsed v1.10 runs, and an arm that differs from its control ONLY in
+    #: the width of the input is how that stops being a guess. See
+    #: cohort.env.observations.OBS_PROFILES. Checkpoints are not portable
+    #: across profiles — the network's first layer is a different shape.
+    observation_profile: str = "full"
+
     def __post_init__(self) -> None:
         if self.ablation not in ("full", "nomask", "flat"):
             msg = f"Unknown ablation arm {self.ablation!r} (expected full | nomask | flat)"
+            raise ValueError(msg)
+        from cohort.env.observations import OBS_PROFILES
+
+        if self.observation_profile not in OBS_PROFILES:
+            msg = (
+                f"Unknown observation profile {self.observation_profile!r} "
+                f"(expected one of {OBS_PROFILES})"
+            )
             raise ValueError(msg)
         from cohort.core.language import PHASE_LINE_NAMES, WAYPOINT_NAMES
 
@@ -440,6 +457,34 @@ SCENARIOS["squad_short_vision"] = replace(
     # the arm cannot silently drift from its control if squad is ever retuned
     combat=replace(SCENARIOS["squad"].combat, vision_range=5.0, forest_vision_range=3.0),
     experiment_arm="short vision",
+)
+
+# Observation-width bisect (2026-08-07): squad_screen with the pre-v1.10
+# observation and nothing else touched — same geometry, OpFor, rewards,
+# economics, ablation arm and step budget as `squad_screen`.
+#
+# Why it exists: four v1.10 runs collapsed (`squad`, `fireteam`, `squad_recon`,
+# `squad_screen`) while four converged. Three explanations were tested and
+# killed — `done_false` (squad_screen_v5 reproduced the collapse at -0.5),
+# `contact_redundant` (squad_v6 ran at -0.02 and collapsed anyway), and
+# learning rate (squad_screen_v7 at 1e-4 failed a third way, dying rather than
+# stalling). The v1.10 space break is what remains, and it remains by
+# ELIMINATION, not by evidence. This arm is the evidence: run it against
+# `squad_screen` on identical code and the only difference is 220 vs 166
+# inputs.
+#
+# Read a null result as exonerating the space, not as explaining the collapse:
+# it would mean all four named suspects are dead and the cause is something
+# nobody has proposed yet.
+SCENARIOS["squad_screen_core"] = replace(
+    SCENARIOS["squad_screen"],
+    name="squad_screen_core",
+    description=(
+        "Observation-width bisect: the squad_screen scenario presented through "
+        "the pre-v1.10 166-wide observation, everything else identical."
+    ),
+    observation_profile="core",
+    experiment_arm="core observation",
 )
 
 

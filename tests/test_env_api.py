@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from cohort import SCENARIOS, make_env
-from cohort.env.observations import OBS_DIM
+from cohort.env.observations import obs_dim
 
 
 def test_pettingzoo_parallel_api():
@@ -19,8 +19,12 @@ def test_all_scenarios_reset_and_step(scenario):
     env = make_env(scenario)
     obs, infos = env.reset(seed=0)
     assert set(obs) == set(env.possible_agents)
+    # width is a property of the scenario's observation profile, not a
+    # global: the bisect arms present 166 where the fleet presents 220
+    width = obs_dim(env.spec_cfg.observation_profile)
+    assert env.observation_space(env.agents[0])["observation"].shape == (width,)
     for agent in env.agents:
-        assert obs[agent]["observation"].shape == (OBS_DIM,)
+        assert obs[agent]["observation"].shape == (width,)
         assert np.all(np.isfinite(obs[agent]["observation"]))
         assert np.all(np.abs(obs[agent]["observation"]) <= 1.0)
         assert obs[agent]["action_mask"].sum() >= 1

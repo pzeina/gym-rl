@@ -27,7 +27,7 @@ from cohort.core.missions import MissionType
 from cohort.core.world import dist
 from cohort.env.actions import N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
-from cohort.env.observations import OBS_DIM
+from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
 from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update
 
@@ -115,7 +115,10 @@ class Trainer:
             self.current_obs.append(obs)
 
         self.device = torch.device(cfg.device)
-        self.net = PolicyNet(OBS_DIM, N_ACTIONS, cfg.hidden).to(self.device)
+        # read the width off the env, not the module: a scenario may present
+        # the pre-v1.10 `core` observation (ScenarioSpec.observation_profile)
+        self.obs_dim = obs_dim(self.envs[0].spec_cfg.observation_profile)
+        self.net = PolicyNet(self.obs_dim, N_ACTIONS, cfg.hidden).to(self.device)
         if init_from is not None:
             ckpt = torch.load(init_from, map_location=self.device, weights_only=True)
             self.net.load_state_dict(ckpt["model"])
@@ -333,7 +336,7 @@ class Trainer:
                 for group in self.optimizer.param_groups:
                     group["lr"] = cfg.lr * max(0.05, frac)
 
-            buffer = RolloutBuffer(cfg.horizon, cfg.n_envs, self.n_agents, OBS_DIM, N_ACTIONS)
+            buffer = RolloutBuffer(cfg.horizon, cfg.n_envs, self.n_agents, self.obs_dim, N_ACTIONS)
             t0 = time.time()
             stats = self.collect(buffer)
             next_values, next_valid = self._bootstrap
@@ -382,7 +385,7 @@ class Trainer:
         torch.save(
             {
                 "model": self.net.state_dict(),
-                "obs_dim": OBS_DIM,
+                "obs_dim": self.obs_dim,
                 "n_actions": N_ACTIONS,
                 "hidden": self.cfg.hidden,
                 "scenario": self.scenario,
