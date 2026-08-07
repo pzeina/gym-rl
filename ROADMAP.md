@@ -6,21 +6,20 @@
 **497 tests green, ruff clean**; **nothing training**. Spaces
 **Discrete(228)/Box(220)**.
 
-**Note on the remote — earlier handoffs got this wrong, including mine.** They
-said "no git remote is configured, one must be added before anything can be
-pushed". **Pushing works** (`git push --dry-run` → `d8fa125..dd878a8
-multi-agent-dev`). There is no *named* remote — no `[remote "origin"]` section,
-so `git remote -v` is empty — but every branch carries
-`branch.<name>.remote = https://github.com/pzeina/gym-rl.git` as a URL, which git
-accepts for push/pull. What this shape costs is the *tooling*: no
-remote-tracking refs (`origin/main` does not exist, so `git rev-list
-origin/main..HEAD` and ahead/behind in `git status` fail), and `gh` reports "no
-git remotes found" from this directory. Possibly deliberate —
-`~/Documents/gym-rl-fork` holds a proper `origin` plus a `local` remote pointing
-here, so GitHub interaction may be intended to run through the assurance fork.
-**Do not "fix" it without asking.** If the owner does want the standard shape:
-`git remote add origin https://github.com/pzeina/gym-rl.git && git fetch origin &&
-git branch -u origin/multi-agent-dev`.
+**The remote is now the standard shape — resolved, on the owner's instruction.**
+Three earlier handoffs (mine included) described a repo with no named remote:
+every branch carried `branch.<name>.remote` as a bare URL, which git accepts for
+push/pull, so pushing always worked — but `git remote -v` was empty, there were
+no remote-tracking refs, ahead/behind in `git status` was blank, and `gh` said
+"no git remotes found". The owner asked for the conventional setup, so:
+`git remote add origin https://github.com/pzeina/gym-rl.git`, `git fetch origin`,
+`git branch -u origin/<name>` for `main`, `multi-agent-dev`, `single-agent-dev`.
+All three now track. `gh` authenticates as `pzeina` and resolves `pzeina/gym-rl`
+from this directory. All 11 local tags (through v1.9.0) were already on the
+remote; nothing but the 75 commits is unpushed. `origin/multi-agent-dev` and
+`origin/main` both sit at `d8fa125`. The assurance fork at
+`~/Documents/gym-rl-fork` is untouched and keeps its own `origin` + `local`
+remotes — the ASSURANCE-SYNC.md contract is unaffected.
 
 **⚑ ONE DECISION IS WAITING ON YOU** — reward structure, deliberately not taken.
 See the last progress-log entry for the four options and the recommendation
