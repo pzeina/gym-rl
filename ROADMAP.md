@@ -1941,3 +1941,47 @@ deliberately deferred (`docs/vision.md` §2c).
   treating width as confirmed, then decide what a width-caused collapse
   implies for the rest of the v1.10 fleet (`squad`, `fireteam`, `squad_recon`
   — none yet re-run at 166). refs #19
+- **2026-08-07** — **Correction to the entry above: the bisect arm shows
+  "did not collapse", not "reached the pre-break profile" — and the entry
+  quoted the one protocol that flatters it.** The previous entry's headline
+  numbers (final-decile rolling success 0.965, `[converged]`) come from the
+  *training curve*; the clock number it cites next to them (0.10) comes from
+  the *behavior suite*. On the behavior suite — the protocol issue #19 asked
+  to be compared on, `ckpt_best`, greedy=False — `squad_screen_core_v1`
+  reads **success 0.85 ± 0.16**, and that number appears nowhere in the entry.
+  For scale, collapsed `squad_screen_v4` reads **1.00 ± 0.00** on the same
+  protocol, because its `ckpt_best` predates its own collapse. Comparing a
+  converged run's training tail against a collapsed run's best checkpoint is
+  not one series.
+
+  Issue #19 named an explicit bar: roughly `squad_screen_v2`'s pre-break
+  profile — **30/30 success, 2/30 root deaths, 111-step episodes, command
+  share 0.790**. The arm misses it on every dimension except non-collapse:
+  **root death 0.822** (final decile, and *rising* through training: 0.205 →
+  0.822), **episodes 165 steps**, **command share 0.318**, **false DONE 0.944**
+  (behavior suite). Its reward is dominated by the terminal component
+  (**0.3453** final decile, ~100x every other component; the collapsed runs
+  sit at 0.000 and -0.0042) with **41.2 retasks against 47.15 orders per
+  episode** — terminal dominance and churn are two of the named
+  regression-hazard signatures in CLAUDE.md, and this run wears both.
+
+  What survives the correction, and it is not nothing: the collapse itself
+  did not happen at 166. `squad_screen_core_v1` goes 0.742 → 0.965 where
+  `squad_screen_v4` goes 0.658 → **0.000** and `v7` 0.115 → 0.028 — the
+  latest policy is alive rather than dead, which is the width-relevant
+  signal and is real. What does *not* survive is "leading suspect by
+  evidence": the exploit-shaped metrics are family-wide (root death 0.983 on
+  `v7`, false DONE 1.000 on `v7`, churn ratios high across all three), so
+  they neither indict nor exonerate width — but they do mean the arm
+  converged to something well short of what the scenario looked like when it
+  worked, and a bisect whose treated arm lands on a terminal-reward exploit
+  cannot yet distinguish "width caused the collapse" from "the narrower
+  vector made the exploit easier to reach".
+
+  Standing: width remains the last suspect, now with one run showing
+  non-collapse at 166 and no run showing recovery of the pre-break profile.
+  Before a second seed is worth spending, the arm needs diagnosing against
+  the oracle (`env.oracle()`, this repo's diagnose-first rule) on why root
+  death rises with success and why false DONE sits at 0.944 — a 0.85 ± 0.16
+  built on those is not a result to replicate yet. Owner's call; no reward
+  change proposed here. refs #19
