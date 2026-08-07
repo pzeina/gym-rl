@@ -2313,3 +2313,42 @@ deliberately deferred (`docs/vision.md` §2c).
   **0.115**, with the top three order tasks (OBSERVE 0.42, CLEAR 0.23, SUPPORT
   0.13) each at preference **0.00**. A5-2 staging: 23 staged, 5 released, **18
   abandoned**. None of these is touched by the free-ride fix and all are open.
+- **2026-08-07** — **v1.11 fleet, arm 2/7: `squad_v8` — three of three.**
+
+  | | `squad_v7` (pre-fix) | `squad_v8` (post-fix) |
+  |---|---|---|
+  | rolling best → final | 99% → **60%** (39-pt gap, **COLLAPSED**) | 100% → **96%** (4-pt gap, converged) |
+  | publish gate | NOT PUBLISHABLE | **PUBLISHABLE** |
+  | measured FINAL | — (artifacts died on the import bug) | **1.00 ± 0.00** |
+  | terminal (final decile) | 0.0758 | **0.8664** |
+  | ep length | 336 → 406 | 170 → **87** |
+
+  Every collapse-prone scenario tested so far now holds: `squad_screen` (both
+  seeds), `fireteam`, `squad`. The signature repeats exactly — terminal income up
+  ~10×, episode length halved, no collapse.
+
+  **CORRECTION to the two entries above.** I logged "a contact recall of **0.00**"
+  as an open residual for `squad_screen_fallen_v2`, and `squad_v8` first appeared
+  to repeat it. It is an artifact of *which checkpoint the suite scored*, not a
+  behaviour. Contacts reported / recall / precision, `ckpt_best` → `ckpt_latest`:
+
+  | run | `ckpt_best` | FINAL (`ckpt_latest`) |
+  |---|---|---|
+  | `squad_v8` | 0 reports, recall 0.00 | 54 reports, recall **0.87**, prec **0.91** |
+  | `squad_screen_fallen_v2` | 0 reports, recall 0.00 | 34 reports, recall **0.90**, prec **0.94** |
+  | `squad_screen_fallen_v1` | 27 reports, recall 0.50 | 54 reports, recall **0.93**, prec **0.98** |
+  | `fireteam_v8` | 45 reports, recall 0.75 | 16 reports, recall **0.34**, prec 0.81 |
+
+  So the residual as I stated it is **withdrawn**: the final policies report well,
+  and on the three squad-family arms they report *far* better than the checkpoint
+  that scored the best rolling window. That is a third independent argument for
+  the FINAL being the headline — `ckpt_best` here captures a policy that wins
+  without talking, and the run goes on to learn the reporting. `fireteam_v8`
+  moves the other way (0.75 → 0.34) and is the one arm where reporting is a real
+  open question.
+
+  **Still open**: false-DONE **0.568** final-decile (0.750 on the suite), doctrine
+  preference 0.391 with COVER at 0.00 preference on 22% of orders, and A5-2
+  staging at 20 staged / 2 released / **18 abandoned** — the same abandon ratio as
+  `fireteam_v8`, on a different scenario, which makes it a fleet-wide pattern
+  rather than an arm's quirk.
