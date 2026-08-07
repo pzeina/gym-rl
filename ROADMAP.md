@@ -1,84 +1,95 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-06)
+## ⟳ Session handoff — resume here (2026-08-07)
 
-**State**: `multi-agent-dev` at `d3174b3`, **14 commits ahead of `main`**; latest
-tag v1.9.0; **395 tests green, ruff clean**; nothing training. **The repo has NO
-git remote configured** (`git remote -v` is empty) — the older "= origin" note was
-wrong; a remote must be added before anything can be pushed. **v1.10 is an OPEN BREAKING CYCLE**: spaces are now
-**Discrete(228)/Box(220)** and **every published checkpoint is unloadable**.
-The fleet has NOT been retrained — the v1.9 numbers below are the standing
-baseline, not v1.10 results.
+**State**: `multi-agent-dev` at `4599e30`, **58 commits ahead of `main`**; latest
+tag v1.9.0; **493 tests green, ruff clean**. **No git remote is configured**
+(`git remote -v` is empty) — one must be added before anything can be pushed.
+Spaces are **Discrete(228)/Box(220)**; **v1.10 is still an OPEN BREAKING CYCLE**
+and every pre-v1.10 checkpoint is unloadable. The published fleet has **not**
+been retrained and is superseded twice over — first by v1.10's spaces, then by
+v1.11's economics.
 
-**Published fleet (N=100 ± CI, all measured under v1.9 spaces/economics)**:
-fireteam 84±7 · squad 93±5 · platoon **98±3** · recon 94±5 · screen 98±3 ·
-patrol_brique 95±4 · defend_brique 85±7 · **fireteam_defend 51±10** (v6; the
-diagnosed v7 retrain missed at 35±9).
+**Do not trust any published number without checking which checkpoint it came
+from.** `scripts/publish_audit.py` gates on the FINAL policy: 11 of 18 published
+runs fail, mean give-back 25.9 points, six with a headline ≥10 points above where
+their run finished. `ckpt_best` is a best-rolling-*window* figure. Both numbers
+are now measured by default (`behavior.json` + `behavior_final.json`).
 
-> **⚠ Every number in that line is `ckpt_best` — a best-rolling-WINDOW figure,
-> not the policy its run ended with, and four of the eight fail the stability
-> bar** (`scripts/publish_audit.py`, added 2026-08-07). Final deciles, in the
-> same order: 75 · 93 · 98 · 85 · 95 · 98 · 88 · **32**. Across all 18 published
-> runs, 11 fail with a mean give-back of 25.9 points, and six carry a headline
-> ≥10 points above where their run finished — worst, `squad_recon_v6` published
-> at 91±6 off a run whose rolling success ended at **0.00**. The cause is
-> diagnosed in the 2026-08-07 progress-log entry; the whole fleet is superseded
-> by the v1.11 retrain.
+**The live thread — v1.11, the D4 collapse.** D4 is diagnosed and the fix is
+under test. The mechanism: the terminal was paid `for s in roster.living`, so a
+soldier who died at step 50 of an episode that succeeded at step 200 got none of
+the 60 points. Per agent, hanging back cuts P(die) 0.129→0.022 (+6.4) while team
+success goes 1.00→0.00 (−52.3) — but ONE shared policy updates EVERY agent at
+once, so a per-agent advantage only ever sees the first number. Parameter sharing
+converts an individually-rational free-ride into a simultaneous collective
+defection, which explains the abruptness, the non-recovery and the flat entropy.
+`d44ee8d` keeps casualties in the episode (STAY-only, accruing nothing) and pays
+them the team terminal. Two earlier suspects were **refuted by measurement**, not
+abandoned: the discount inversion (`60cb6c3`, real but not the trigger — all
+three bisect arms collapsed anyway) and entropy/KL/grad-norm blow-up (all flat
+through the collapse).
 
-**What v1.10 changed (owner's design calls this session, all committed, none
-yet trained on)** — see the progress log for the full reasoning:
-1. `human_death` **−25 → 0.0** — the correlated −25 × n_agents shock, the
-   standing D4 suspect. Preservation is now measured, not priced.
-2. **Observation Box(166) → Box(220)** — tempo block (episode progress +
-   time-to-contact), nearest-cover vector, 7×7 terrain patch (was 5×5),
-   sitrep_due in its own slot, plus derived `OFF_*` block offsets.
-3. **Defend preparation period** — `fireteam_defend` draws H from (55, 75),
-   `max_steps` 375 → 450; OpFor held (but present and spottable) until H; the
-   OPORD announces the band midpoint as nominal H.
-4. **`prep_in_position` 0.05/step** — pay for standing IN COVER at the
-   objective before H. Bounded by H, in the terminal-dominance test.
-5. **False COMPLETE**: `done_false` −0.5 → **−2.0** (break-even p 0.33 → 0.67)
-   plus `done_cooldown` = 8 masking DONE after a rejection.
+**Bisect baselines, final policy N=20 — the floor the fix must beat**:
+`squad_screen_ctl_gamma099_v1` **0.00 ± 0.00** · `squad_screen_v9` **0.00 ± 0.00** ·
+`squad_screen_v10` **0.00 ± 0.00**, clock-out 1.00 on all three, against
+`ckpt_best` figures of 1.00 — a **100-point best–final gap per arm**. `v9`/`v10`
+record **zero threatened agent-steps** in 20 episodes: the optimizer fixes
+completed the disengagement rather than softening it.
+
+**Open verdict — `squad_screen_fallen_v1` (seed 17) / `_v2` (seed 23)**, the A/B
+against `v9`/`v10` (identical config, `d44ee8d` the only difference). Both were
+past **99% rolling at ~42%** of 2M steps, having already cleared all three
+baseline collapse points (118k, 151k, 395k). **Read them with
+`scripts/run_report.py squad_screen_fallen_v1 --vs squad_screen_v9`.**
+
+**Standing prediction, recorded before those arms landed** (2026-08-07 progress
+log): they should succeed, *and* show friendly deaths/ep **no lower than 1.30**
+and cover occupancy **no better than 0.016**. Basis: the oracle on the converged
+`squad_screen_core_v1` (final **1.00 ± 0.00**) shows success bought by a stand-up
+firefight — **nobody dies at the objective**, 1.30 friendly deaths/ep in the
+open, commander fire rate 0.830 at cover occupancy **0.000**. Nothing in
+`RewardConfig` pays for cover under threat, and `death` is **−1.0** against
+`success_team` **60.0**; the only commensurate disincentive was *forfeiture*,
+which `d44ee8d` removes. If the prediction holds, the fix traded a collapse for a
+body-count policy.
 
 **Verdicts that still shape what's next**:
-- Orders now *bind* (v1.8 economics: patrol anchor rotations 1364→1) and the
-  vocabulary now *names maneuver* (v1.9) — but the transparency probe still trails
-  the OPORD-only baseline (best-ever squad gap −0.090 against a harder stick);
-  residuals named in `docs/transparency.md` §A5. **Untouched by v1.10.**
-- fireteam_defend: two documented misses. v6 held the position but would not fire;
-  v7 fires at 1.000 but fights 9.7 cells out with cover occupancy 0.05. The
-  assault defense needs fire AND the prepared position; v1.10 items 3–4 are the
-  attempt at both, and the fire-gradient fix (`9519326`) is already in.
-- D4 collapse remains unsolved and is the reason item 1 was spent.
-
-**New this session (design only, nothing trained)**: **`docs/vision.md`** —
-directional vision designed end to end and **decided**. Sequencing call:
-**v1.10 ships fully first (all 8 retrained + published), then vision as v1.11**
-— the fleet retrain is paid twice on purpose, buying an uncontaminated v1.10
-verdict. Arc semantics decided: `vision_arc 180°` / `fire_arc 90°` / 4-dir
-facing / all-round awareness at 2 cells. Milestone v1.11 (V0–V5) is in this
-file below. The binding constraint on the whole feature is that `PolicyNet` is
-a **memoryless MLP**, so an explicit remembered-contact block is mandatory, and
-its stale-track invariant is a first-class exploit hazard. Scenario
-**`squad_short_vision`** is registered and ready: it is the V0 probe of whether
-the transparency gap is caused by too little information asymmetry, and it is
-the one piece of vision work that runs *before* the v1.10 publish.
+- Orders *bind* (v1.8: patrol anchor rotations 1364→1) and the vocabulary *names
+  maneuver* (v1.9) — but the transparency probe still trails the OPORD-only
+  baseline (best squad gap −0.090); residuals in `docs/transparency.md` §A5.
+  **Untouched by v1.10 and v1.11.**
+- fireteam_defend: two documented misses. v6 held the ground but would not fire;
+  v7 fires at 1.000 but fights 9.7 cells out at cover occupancy 0.05. v1.10 items
+  3–4 (prep period, `prep_in_position`) are the attempt at both.
+- **`docs/vision.md`** is designed and decided; sequencing call stands — **v1.10
+  ships fully first (all 8 retrained + published), then vision as v1.11**. Arc
+  semantics: `vision_arc 180°` / `fire_arc 90°` / 4-dir facing / all-round
+  awareness at 2 cells. The binding constraint is that `PolicyNet` is a
+  **memoryless MLP**, so an explicit remembered-contact block is mandatory and
+  its stale-track invariant is a first-class exploit hazard. `squad_short_vision`
+  is registered as the V0 probe.
 
 **Next recommended, in order**:
-1. **Retrain `fireteam_defend` under v1.10** — the whole point of the cycle.
-   Suggested parent: `fireteam_defend_v6` (the only policy that ever held the
-   ground) — but note the space break means v6 **cannot** be fine-tuned from;
-   this is a from-scratch train. Diagnose with the oracle regardless of the
-   success number: **cover occupancy under threat** is the prep-period metric,
-   **off-objective fight distance** the occupancy-pay metric. Two variables
-   moved at once here — that separation is how a miss stays diagnosable.
-2. **Retrain the rest of the fleet** on the new spaces (all 8 scenarios) and
-   re-publish; watch `human_death_rate` (item 1 may raise it — that is the
-   accepted trade) and `false_complete_rate` (item 5 should cut it; watch
-   `done_reports` for the *muteness* failure, which is the worse outcome).
-3. **Probe vs baseline** — the two named residual fixes (probe formation/order
-   primacy; fireteam churn-through-pricing).
-4. **A3 self-play**, buildings+pathfinding (v1.4 deferral).
+1. **Judge the `fallen` A/B** against `squad_screen_v9`/`v10` and the recorded
+   prediction. Non-overlapping CIs or it is not an effect.
+2. **The reward call this forces, and it is the owner's**: cover under threat is
+   worth zero and `death` is −1.0 against a +60 terminal. Either price cover
+   directly or raise `death` now that forfeiture is gone. Options are in the
+   2026-08-07 progress-log entry; do not autopilot it.
+3. **Deferred, deliberately**: an agent with exactly one legal action should take
+   it without drawing. `d44ee8d` made the fallen consume action samples, so
+   seeded evaluation no longer reproduces across that commit (42 of 55 metrics
+   move on the *same* checkpoint). Held back so as not to desynchronize the A/B
+   it would clean up. Land it **after** the verdict.
+4. **Retrain `fireteam_defend` under v1.10** — the point of that cycle. From
+   scratch: the space break means `v6` cannot be fine-tuned from. Diagnose with
+   the oracle regardless of the success number (**cover occupancy under threat**
+   for the prep period, **off-objective fight distance** for occupancy pay).
+5. **Retrain the rest of the fleet** on the new spaces and re-publish, watching
+   `human_death_rate` and `false_complete_rate` (`done_reports` for the *muteness*
+   failure, which is the worse outcome).
+6. **Probe vs baseline** residuals, then **A3 self-play** + buildings/pathfinding.
 
 **How to work here**: read `CLAUDE.md` (Operating guide + Training workflow) first;
 the assurance contract is `ASSURANCE-SYNC.md` (Stop hook active: commits auto-queue;
