@@ -23,6 +23,7 @@ import numpy as np
 import torch
 
 from cohort.env.cohort_env import CohortEnv, make_env
+from cohort.env.rewards import RewardConfig
 
 
 def _pick_actions(
@@ -122,11 +123,20 @@ def evaluate(
     writes nothing unless a path is given).
     """
     net = None
+    rewards = None
     if checkpoint is not None:
         from cohort.training.train import load_policy
 
         net, ckpt = load_policy(checkpoint)
         scenario = scenario or ckpt["scenario"]
+        # v1.12: score the policy under the prices it TRAINED under. With
+        # rewards on the CLI these can differ from the tree defaults, and
+        # `mean_return` measured against the wrong ones is a number that
+        # invites comparison and does not support it. Pre-v1.12 checkpoints
+        # carry no such key and fall back to the defaults, which for them is
+        # exactly right — the defaults are what they trained under.
+        if ckpt.get("reward_config"):
+            rewards = RewardConfig(**ckpt["reward_config"])
     if scenario is None:
         msg = "Need --scenario when evaluating the random baseline."
         raise ValueError(msg)
@@ -138,7 +148,7 @@ def evaluate(
     else:
         recorders = [None] * episodes
 
-    env = make_env(scenario)
+    env = make_env(scenario, reward_config=rewards)
     results = [
         _seeded_episode(env, net, seed + i, greedy=greedy, recorder=recorders[i])
         for i in range(episodes)
@@ -199,7 +209,7 @@ def evaluate(
             print(f"behavior → {out}")
 
     if gif_path or transcript_path:
-        env_r = make_env(scenario, render_mode="rgb_array")
+        env_r = make_env(scenario, render_mode="rgb_array", reward_config=rewards)
         frames: list = []
         # replay a few seeds, keep the first success (or the last attempt)
         for i in range(5):

@@ -143,15 +143,19 @@ class Trainer:
         *,
         tensorboard: bool = True,
         init_from: str | None = None,
+        reward_config: RewardConfig | None = None,
     ) -> None:
         self.cfg = cfg
         self.run_dir = run_dir
         run_dir.mkdir(parents=True, exist_ok=True)
         self.scenario = scenario
+        self.reward_config = reward_config or RewardConfig()
 
         torch.manual_seed(seed)
         np.random.seed(seed)
-        self.envs: list[CohortEnv] = [make_env(scenario) for _ in range(cfg.n_envs)]
+        self.envs: list[CohortEnv] = [
+            make_env(scenario, reward_config=self.reward_config) for _ in range(cfg.n_envs)
+        ]
         self.agent_ids = list(self.envs[0].possible_agents)
         self.slot = {a: i for i, a in enumerate(self.agent_ids)}
         self.n_agents = len(self.agent_ids)
@@ -463,6 +467,14 @@ class Trainer:
                 "iteration": self.iteration,
                 "env_steps": self.env_steps,
                 "ppo_config": asdict(self.cfg),
+                # v1.12: the PRICES this policy learned under. Absent on every
+                # earlier checkpoint, where the defaults were the only prices
+                # there were — so the published fleet is unaffected. Stored so
+                # evaluate() can score a run under its own economics: with
+                # rewards on the CLI, a checkpoint and RewardConfig() are no
+                # longer the same thing, and `mean_return` measured against the
+                # wrong prices is a number that looks comparable and is not.
+                "reward_config": asdict(self.reward_config),
             },
             path,
         )
@@ -517,6 +529,36 @@ def _spec_economics(scenario: str) -> dict:
     return {k: getattr(spec, k, None) for k in keys}
 
 
+def _warn_if_stalling_pays(rewards: RewardConfig, scenario: str, spec, cfg_gamma: float) -> None:
+    """Shout if the requested prices make stalling competitive with winning.
+
+    This is the v1.11 finding turned into a pre-flight check. The invariant
+    that decides whether a run collapses is DISCOUNTED terminal dominance, and
+    it is now reachable from the CLI: `--reward success_team=10` is one
+    keystroke away from the economics that produced 21 collapsed runs. On a
+    DEFEND/DENY scenario the bar is checked at the WORST-CASE terminal, since
+    `defend_survivor_scale` can only scale the payout down.
+
+    Deliberately a warning, not an error: ablating the economics below the bar
+    is a legitimate experiment here (`test_the_discounted_invariant_would_have
+    _caught_the_shipped_collapse` depends on being able to express it). What is
+    not legitimate is doing it by accident and reading the wreckage as a
+    finding about something else — so it goes to stdout, which train.sh tees
+    into the run's log where a post-mortem will find it.
+    """
+    scale = rewards.terminal_scale_floor(spec.root_mission)
+    ratio = rewards.win_beats_stall(cfg_gamma, spec.max_steps, terminal_scale=scale)
+    if ratio >= 2.0:
+        return
+    worst = " (worst case: whole force lost)" if scale < 1.0 else ""  # defend scaling
+    print(
+        f"\n!! WARNING: on {scenario}, winning is worth {ratio:.2f}x stalling"
+        f"{worst} at gamma={cfg_gamma} — the bar is 2.0.\n"
+        f"!! Below ~1.0 the policy is expected to learn to farm shaping and "
+        f"never finish (v1.11: 21/69 runs). Proceeding anyway.\n"
+    )
+
+
 def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description="Train the cohort with masked PPO.")
@@ -546,6 +588,12 @@ def main() -> None:
     parser.add_argument("--separate-critic", action=argparse.BooleanOptionalAction,
                         default=PPOConfig.separate_critic,
                         help="give the critic its own torso and its own gradient clip")
+    # Reward weights, exposed (v1.12). Repeatable KEY=VALUE against any
+    # RewardConfig field: `--reward done_false=-2.0 --reward death=-3.0`.
+    # Until this existed, an experiment about a price meant editing the tree,
+    # which is both unrecorded and unsafe mid-campaign.
+    parser.add_argument("--reward", action="append", default=[], metavar="KEY=VALUE",
+                        help="override a RewardConfig weight; repeatable")
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--run-name", default=None)
@@ -554,7 +602,14 @@ def main() -> None:
     parser.add_argument("--no-eval", action="store_true", help="skip post-training eval + GIF")
     args = parser.parse_args()
 
-    get_scenario(args.scenario)  # fail fast on typos
+    spec = get_scenario(args.scenario)  # fail fast on typos
+    try:  # ...and on bad prices, as a usage error rather than a traceback
+        rewards = RewardConfig.from_overrides(args.reward)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.reward:
+        print(f"reward overrides: {' '.join(args.reward)}")
+    _warn_if_stalling_pays(rewards, args.scenario, spec, cfg_gamma=args.gamma)
     run_name = args.run_name or f"{args.scenario}_{time.strftime('%Y%m%d_%H%M%S')}"
     run_dir = Path("runs") / run_name
     cfg = PPOConfig(
@@ -591,7 +646,13 @@ def main() -> None:
             {
                 "scenario": args.scenario,
                 "git_commit": _git_commit(),
-                "rewards": asdict(RewardConfig()),
+                # The prices this run ACTUALLY used, not the tree's defaults —
+                # with --reward those diverge, and the confound audit in
+                # run_report.py --vs diffs this file to decide whether an A/B
+                # is single-variable. A defaults dump here would make every
+                # override-driven experiment read as a no-op change.
+                "rewards": asdict(rewards),
+                "reward_overrides": list(args.reward),
                 "spec": _spec_economics(args.scenario),
             },
             indent=2,
@@ -637,7 +698,8 @@ def main() -> None:
     from cohort.viz.plots import plot_training
 
     trainer = Trainer(
-        args.scenario, cfg, run_dir, seed=args.seed, tensorboard=not args.no_tb, init_from=args.init_from
+        args.scenario, cfg, run_dir, seed=args.seed, tensorboard=not args.no_tb,
+        init_from=args.init_from, reward_config=rewards,
     )
     trainer.train(args.total_steps)
 

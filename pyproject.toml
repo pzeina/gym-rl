@@ -36,6 +36,11 @@ tb = ["tensorboard>=2.10"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = ["legacy", ".venv", "runs"]
+markers = [
+    # tests that shell out to a real (tiny) training run: seconds, not
+    # milliseconds. `-m "not slow"` skips them.
+    "slow: spawns a subprocess training run",
+]
 
 [tool.ruff]
 line-length = 120

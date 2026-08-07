@@ -19,7 +19,9 @@ getting better (more compliance vs. more kills vs. better reporting).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass, field, fields, replace
+from difflib import get_close_matches
 
 
 @dataclass(frozen=True)
@@ -252,11 +254,81 @@ class RewardConfig:
     # x1.5 maps, 45 → 60 for the B5 tenure ceiling).
     success_team: float = 60.0
     success_speed: float = 15.0       # x fraction of steps remaining at success
+
+    # Defend terminal, scaled by the force that held it (v1.12, owner's option
+    # 4). On DEFEND/DENY root missions ONLY, the team terminal is multiplied by
+    #   (1 - scale) + scale x surviving_weight / starting_weight
+    # so a cohort that holds intact is paid in full and one that holds with
+    # half its rank-weighted strength gone is not. 0 → off (flat terminal).
+    #
+    # WHY THIS AND NOT FORFEITURE. v1.11 paid the fallen nothing, which fixed
+    # nothing and caused D4: the individual gain from hanging back (P(die)
+    # 0.129 -> 0.022, +6.4) is visible to a per-agent advantage while the
+    # collective cost (success 1.00 -> 0.00, -52.3) is not, so one shared
+    # policy defected everywhere at once. `d44ee8d` paid everyone and fixed
+    # that — and left defend scenarios with bodies that cost 1.0 apiece and
+    # nothing to buy, so `defend_brique_v4` fought 6.09 cells off an objective
+    # it was there to hold and failed the regression gate.
+    #
+    # A survivor-scaled terminal restores the preservation pressure WITHOUT
+    # restoring the asymmetry, because it is paid to the fallen too: every
+    # agent, living or dead, sees the same multiplier, so a death is a shared
+    # loss rather than a private one. The residual private gain from hanging
+    # back is the ~1/n of the multiplier your own body accounts for — on a
+    # fireteam that is 60/4 x 0.35 ≈ 5.3 at most against the same -52.3, an
+    # order of magnitude short of the D4 arithmetic instead of comparable to it.
+    #
+    # 0.35 IS SET BY THE DOMINANCE INVARIANT, NOT BY TASTE. The multiplier can
+    # only reduce the terminal, so `win_beats_stall` must clear 2x at the FLOOR
+    # (whole force lost). fireteam_defend sits at 3.42 undiminished, so the
+    # largest admissible scale is 1 - 2.0/3.42 = 0.415; 0.35 leaves 2.22.
+    # Raising this above ~0.41 re-creates the stall basin on fireteam_defend
+    # and test_defend_terminal_scaling_preserves_dominance will say so.
+    defend_survivor_scale: float = 0.35
     root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
     #                                   DONE inside the completion-report grace window
     #                                   (one-shot, paid with the terminal reward — not
     #                                   farmable per-step, so terminal dominance holds)
     defeat: float = -2.0              # whole cohort wiped out
+
+    # ------------------------------------------------------------------ #
+    # CLI overrides
+    # ------------------------------------------------------------------ #
+
+    @classmethod
+    def from_overrides(cls, items: Sequence[str]) -> RewardConfig:
+        """Build a config from ``KEY=VALUE`` strings, defaults for the rest.
+
+        Reward weights were code-only defaults until v1.12, which meant an
+        experiment about a PRICE could not be run without editing the tree —
+        and editing the tree mid-campaign is how ``fireteam_defend_v10`` died.
+        It also blocked the one run that would separate ``d44ee8d`` from the
+        ``done_false`` revert on the five confounded arms.
+
+        Every field is settable, typed off the dataclass, so this does not go
+        stale when a weight is added. Unknown keys raise with the near misses
+        listed — a silently-ignored typo would produce a run whose
+        ``economics.json`` says one thing and whose policy learned another.
+        """
+        types = {f.name: f.type for f in fields(cls)}
+        parsed: dict[str, float | int | bool] = {}
+        for item in items:
+            key, sep, raw = item.partition("=")
+            key, raw = key.strip(), raw.strip()
+            if not sep or not key:
+                msg = f"--reward expects KEY=VALUE, got {item!r}"
+                raise ValueError(msg)
+            if key not in types:
+                # close_matches catches the transposition (`done_flase`), which
+                # a substring check does not — and a typo that reaches training
+                # is a run whose economics.json disagrees with its policy
+                near = get_close_matches(key, types, n=3, cutoff=0.6)
+                near += [k for k in types if key in k or k in key if k not in near]
+                hint = f" Did you mean: {', '.join(near)}?" if near else ""
+                msg = f"unknown reward key {key!r}.{hint} Valid keys: {', '.join(sorted(types))}"
+                raise ValueError(msg)
+            parsed[key] = _coerce(key, raw, str(types[key]))
+        return replace(cls(), **parsed)
 
     def max_step_farm(self) -> float:
         """Upper bound on per-step reward farmable by stalling (not winning).
@@ -301,15 +373,49 @@ class RewardConfig:
             return rate * max_steps
         return rate * (1.0 - gamma**max_steps) / (1.0 - gamma)
 
-    def win_value(self, gamma: float, max_steps: int, win_step: int) -> float:
+    def survivor_multiplier(self, surviving_weight: float, starting_weight: float) -> float:
+        """Terminal multiplier for a defend force with this much strength left.
+
+        Weights are the caller's business (the env uses rank-weighted bodies);
+        this only has to be monotone in the ratio and equal to 1.0 when the
+        force is intact. Clamped, so a caller that hands over a ratio above 1
+        (succession inflating the numerator, say) cannot mint terminal reward.
+        """
+        if self.defend_survivor_scale <= 0.0 or starting_weight <= 0.0:
+            return 1.0
+        held = max(0.0, min(1.0, surviving_weight / starting_weight))
+        return (1.0 - self.defend_survivor_scale) + self.defend_survivor_scale * held
+
+    def terminal_scale_floor(self, root_mission=None) -> float:
+        """Smallest multiplier the terminal can take on this root mission.
+
+        The dominance invariant has to be checked against the WORST case a
+        scenario can produce, not the nominal payout: a defend policy that
+        holds but is wiped doing it collects ``success_team x this``, and if
+        THAT is not worth more than stalling then stalling is the better play
+        in exactly the situation the scenario is about.
+        """
+        from cohort.core.missions import MissionType
+
+        if root_mission in (MissionType.DEFEND, MissionType.DENY):
+            return self.survivor_multiplier(0.0, 1.0)
+        return 1.0
+
+    def win_value(
+        self, gamma: float, max_steps: int, win_step: int, terminal_scale: float = 1.0
+    ) -> float:
         """Discounted value of winning at ``win_step``, speed bonus included."""
         undiscounted = self.success_team + self.success_speed * max(
             0.0, 1.0 - win_step / max_steps
         )
-        return undiscounted * gamma**win_step
+        return undiscounted * terminal_scale * gamma**win_step
 
     def win_beats_stall(
-        self, gamma: float, max_steps: int, win_fraction: float = 0.45
+        self,
+        gamma: float,
+        max_steps: int,
+        win_fraction: float = 0.45,
+        terminal_scale: float = 1.0,
     ) -> float:
         """Ratio of discounted win to discounted stall; > 1 means winning pays.
 
@@ -322,7 +428,34 @@ class RewardConfig:
         stall = self.stall_value(gamma, max_steps)
         if stall <= 0.0:
             return float("inf")
-        return self.win_value(gamma, max_steps, int(max_steps * win_fraction)) / stall
+        win = self.win_value(gamma, max_steps, int(max_steps * win_fraction), terminal_scale)
+        return win / stall
+
+
+#: Accepted spellings for a boolean reward flag on the CLI.
+_TRUE = frozenset({"true", "1", "yes", "on"})
+_FALSE = frozenset({"false", "0", "no", "off"})
+
+
+def _coerce(key: str, raw: str, annotation: str) -> float | int | bool:
+    """Parse ``raw`` into the type ``key`` is annotated with.
+
+    ``bool`` is handled by name, never by truthiness: ``bool("false")`` is
+    ``True``, so a coerce-by-constructor would read ``--reward
+    fire_discipline=false`` as ON and quietly train the opposite experiment.
+    """
+    if annotation == "bool":
+        if raw.lower() in _TRUE:
+            return True
+        if raw.lower() in _FALSE:
+            return False
+        msg = f"reward {key}: expected a boolean, got {raw!r}"
+        raise ValueError(msg)
+    try:
+        return int(raw) if annotation == "int" else float(raw)
+    except ValueError as exc:
+        msg = f"reward {key}: expected {annotation}, got {raw!r}"
+        raise ValueError(msg) from exc
 
 
 #: Component names, fixed so metrics stay aligned across runs.

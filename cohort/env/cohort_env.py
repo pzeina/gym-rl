@@ -861,8 +861,17 @@ class CohortEnv(ParallelEnv):
             # A soldier who falls taking the objective shares in its being
             # taken. Preservation is still priced, proportionately, by
             # `death` and `teammate_death`.
+            #
+            # v1.12 (owner's option 4): on a DEFEND/DENY root the whole payout
+            # is scaled by the force that is still standing — holding is what
+            # the mission IS, so it is paid for with a force or not fully paid
+            # for. The multiplier is identical for every agent, fallen
+            # included, which is the entire point: it restores the
+            # preservation pressure that forfeiture used to supply without
+            # restoring the per-agent asymmetry that made forfeiture cause D4.
+            scale = self._defend_terminal_scale()
             for callsign in present:
-                ledger.add(callsign, "terminal", cfg.success_team + speed)
+                ledger.add(callsign, "terminal", (cfg.success_team + speed) * scale)
             if root_reported and self._root_done_callsign is not None:
                 ledger.add(self._root_done_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
@@ -2166,6 +2175,36 @@ class CohortEnv(ParallelEnv):
             enemies_at_objective=enemies_at_obj,
             dist_to_leader=dist(soldier.pos, leader.pos) if leader is not None else float("inf"),
         )
+
+    def _defend_terminal_scale(self) -> float:
+        """Terminal multiplier for this episode: 1.0 unless holding with losses.
+
+        Non-defend roots are untouched — the five scenarios sitting at 1.00
+        success under the flat terminal keep exactly the economics they
+        converged on, which is why this is scoped rather than global.
+
+        Bodies are weighted by rank the way casualties already are
+        (``rank_casualty_scale``), so losing the commander costs more of the
+        payout than losing a rifleman — the measured half of the v1.11 defend
+        regression was commander death going 0.24 -> 0.61.
+
+        The weights use INTRINSIC rank, not ``effective_authority``, and that
+        is load-bearing: succession promotes a survivor into the dead leader's
+        slot, so an effective-authority sum over the living RISES after the
+        commander falls and would report a force that got stronger by losing
+        its commander. Intrinsic rank fixes the denominator at the force that
+        started the episode and lets the numerator only ever fall.
+        """
+        if self.spec_cfg.root_mission not in (MissionType.DEFEND, MissionType.DENY):
+            return 1.0
+        scale = self.rewards_cfg.rank_casualty_scale
+        total = alive = 0.0
+        for s in self.roster.soldiers:
+            weight = 1.0 + scale * AUTHORITY[s.rank]
+            total += weight
+            if s.alive:
+                alive += weight
+        return self.rewards_cfg.survivor_multiplier(alive, total)
 
     def _band_neutralized(self, root_obj: Any) -> bool:
         """BRIQUE terminal semantics: the band is out of the fight.
