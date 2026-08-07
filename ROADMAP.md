@@ -2352,3 +2352,51 @@ deliberately deferred (`docs/vision.md` §2c).
   staging at 20 staged / 2 released / **18 abandoned** — the same abandon ratio as
   `fireteam_v8`, on a different scenario, which makes it a fleet-wide pattern
   rather than an arm's quirk.
+- **2026-08-07** — **v1.11 fleet, arm 3/7: `squad_recon_v7` — four of four, with a
+  caveat I introduced myself.**
+
+  | | `squad_recon_v6` (pre-fix) | `squad_recon_v7` (post-fix) |
+  |---|---|---|
+  | rolling best → final | 97% → **0%** (97-pt gap, **COLLAPSED**) | 100% → **98%** (2-pt gap, converged) |
+  | publish gate | NOT PUBLISHABLE | **PUBLISHABLE** |
+  | measured FINAL | — | **1.00 ± 0.00** (`ckpt_best` 0.90 ± 0.13) |
+  | terminal (final decile) | — | **1.2919** |
+  | ep length | 220 → 374 | 98 → **59** |
+
+  `v6` is the worst entry in the publish audit — **published at 91 ± 6 off a run
+  whose rolling success ended at 0.00**. The same scenario, same seed, now ends
+  at 98% and measures 1.00.
+
+  **The caveat: this arm is confounded and the campaign file is why.** It claims
+  budgets/seeds/lr are each scenario's own last run "unchanged on purpose", and
+  that is true — but `ent_coef` and `gamma` are *not* in that list, and `v6` ran
+  at **ent 0.02 / γ 0.99** against `v7`'s **ent 0.01 / γ 0.999**. So three things
+  differ here, not one. Checked the other arms: `fireteam_v7`→`v8`, `squad_v7`→`v8`
+  and `v9`/`v10`→`fallen` are all matched at ent 0.01, so **this is the only
+  confounded arm.**
+
+  It survives anyway, because the bisect already exonerated both confounders
+  separately: `squad_screen_v9`/`v10` ran at **ent 0.01, γ 0.999** and collapsed,
+  and `ctl_gamma099_v1` ran at **ent 0.01, γ 0.99** and collapsed. Neither value
+  prevents the collapse on its own. The contrast is weaker than the other three
+  arms and should be quoted as such.
+
+  **A fleet-level pattern, now on four arms — `ckpt_best` is systematically the
+  worse-behaved policy**, not merely the luckier one:
+
+  | run | `ckpt_best` recall / false-DONE | FINAL recall / false-DONE |
+  |---|---|---|
+  | `squad_recon_v7` | **0.01** / **0.956** | **0.95** / **0.343** |
+  | `squad_v8` | 0.00 / 0.750 | 0.87 / — |
+  | `squad_screen_fallen_v2` | 0.00 / 0.500 | 0.90 / — |
+  | `squad_screen_fallen_v1` | 0.50 / 0.600 | 0.93 / — |
+
+  The best *rolling-window* checkpoint is a mute policy that wins by claiming
+  completion falsely; the policy the run actually ends with talks, and claims
+  honestly. That is a fourth independent argument for the FINAL being the
+  headline, and it means the pre-audit fleet was not just over-quoted — it was
+  quoting the wrong *behaviour*.
+
+  **`platoon_v5` is now training** — 16 agents, the most dilution, and the one
+  arm that converged at 92% *without* the fix. It is the test the diagnosis
+  cannot currently explain.
