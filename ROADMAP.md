@@ -2,9 +2,10 @@
 
 ## ⟳ Session handoff — resume here (2026-08-07, autocycle complete)
 
-**State**: `multi-agent-dev`, **~75 commits ahead of `main`**; latest tag v1.9.0;
-**497 tests green, ruff clean**; **nothing training**. Spaces
-**Discrete(228)/Box(220)**.
+**State**: `multi-agent-dev`, **78 commits ahead of `origin/main`**; latest tag
+v1.9.0; **530 tests green, ruff clean**; **nothing training**. Spaces
+**Discrete(228)/Box(220)** — unchanged by the v1.12 reward work, so the whole
+fleet stays loadable.
 
 **The remote is now the standard shape — resolved, on the owner's instruction.**
 Three earlier handoffs (mine included) described a repo with no named remote:
@@ -21,9 +22,38 @@ remote; nothing but the 75 commits is unpushed. `origin/multi-agent-dev` and
 `~/Documents/gym-rl-fork` is untouched and keeps its own `origin` + `local`
 remotes — the ASSURANCE-SYNC.md contract is unaffected.
 
-**⚑ ONE DECISION IS WAITING ON YOU** — reward structure, deliberately not taken.
-See the last progress-log entry for the four options and the recommendation
-(scope the fallen payout by scenario). Everything else below is settled.
+**⚑ THE REWARD DECISION IS TAKEN — option 4, by the owner, 2026-08-07.** Not
+the recommended option 1 (scope the payout by scenario) but the more principled
+one: *make the defend terminal proportional to survivors*. Implemented in
+`f39b5a9`, **untrained** — this is the economics, not a result. On DEFEND/DENY
+roots only, the terminal is multiplied by
+`(1 - scale) + scale x surviving_weight / starting_weight`, rank-weighted, at
+`defend_survivor_scale = 0.35`. It is not forfeiture again because the
+multiplier is identical for every agent, **fallen included** — a death is a
+shared loss, not a private one, so the D4 asymmetry cannot re-form. The
+constant is fixed by the dominance invariant, not by taste: the multiplier can
+only scale the terminal down, so `win_beats_stall` must clear 2x at the FLOOR
+(hold, and be ground down doing it), and `fireteam_defend` at 3.42 undiminished
+puts the ceiling at `1 - 2.0/3.42 = 0.415`. **The owner authorised the fallback
+in advance**: if the A/B goes against it, revert to option 1 — which needs no
+code change, only `--reward defend_survivor_scale=0`.
+
+**⇒ THE NEXT THING TO DO IS RUN THE A/B.** `defend_brique_v5` and
+`fireteam_defend_v12` against `v4` / `v11`, single-variable. Nothing else here
+is blocked.
+
+**Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
+repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
+kept naming — `squad_v9` (separating `d44ee8d` from the `done_false` revert on
+the five confounded arms) is now one flag, `--reward done_false=-2.0`. Three
+silent failure modes went with it: `economics.json` recorded `RewardConfig()`
+rather than the prices in use (so every override-driven A/B would have read as
+a no-op to the assurance-#20 confound audit), checkpoints carried no prices (so
+`evaluate` scored every policy under tree defaults), and a typo'd key would
+have trained the default under an `economics.json` claiming otherwise. `train.py`
+also now prints a pre-flight warning when the requested prices put the
+discounted win/stall ratio under 2x — the v1.11 collapse economics is one
+keystroke away (`--reward success_team=10` scores 1.37x on fireteam).
 
 **D4 IS SOLVED.** The collapse that has haunted this repo since v1.0 was one
 shared policy free-riding on a terminal its casualties could not collect: the
@@ -2639,3 +2669,67 @@ deliberately deferred (`docs/vision.md` §2c).
   so the one run that separates `d44ee8d` from the `done_false` revert on the five
   confounded arms (`squad_v9` at −2.0 with the fix) still needs a small CLI
   change first.
+
+- **2026-08-07 — v1.12: the owner took option 4, and the CLI blocker is gone.**
+  Two commits, both untrained; spaces unchanged at Discrete(228)/Box(220).
+
+  **`b8ed7f1` — reward weights on the CLI.** `--reward KEY=VALUE`, repeatable,
+  typed off the dataclass so it cannot go stale when a weight is added.
+  `squad_v9` is now `--reward done_false=-2.0` and needs no tree edit — which
+  also removes the hazard that killed `fireteam_defend_v10`. Three *silent*
+  failure modes closed rather than documented: `economics.json` dumped
+  `RewardConfig()` instead of the prices in use, so every override-driven A/B
+  would have read as a no-op change to the assurance-#20 confound audit — the
+  audit reporting "nothing differs" about the one thing that does; checkpoints
+  carried no prices, so `evaluate` scored every policy under tree defaults and
+  `mean_return` invited comparisons it could not support (pre-v1.12 checkpoints
+  have no such key and correctly fall back to the defaults they trained under);
+  and an unknown key raised nothing, so a typo trained the default price under
+  an `economics.json` claiming otherwise. Booleans are parsed by name because
+  `bool("false")` is `True` — a coerce-by-constructor reads
+  `fire_discipline=false` as ON and trains the opposite experiment. Plus a
+  pre-flight dominance warning, since the v1.11 collapse economics is now one
+  keystroke away: `--reward success_team=10` scores 1.37x on fireteam. A
+  warning, not an error — ablating below the bar is legitimate here; doing it
+  by accident and reading the wreckage as a finding about something else is not.
+
+  **`f39b5a9` — option 4, the survivor-scaled defend terminal.** On DEFEND/DENY
+  roots only, the payout is multiplied by
+  `(1 - scale) + scale x surviving_weight / starting_weight`.
+
+  *Why it is not forfeiture again*, which is the whole design question:
+  forfeiture caused D4 because the gain from hanging back is visible to a
+  per-agent advantage and the collective cost is not. This multiplier is
+  **identical for every agent, fallen included**, so a death is a shared loss.
+  The residual private gain is the ~1/n of the multiplier your own body
+  accounts for — on a fireteam at most `60/4 x 0.35 ≈ 5.3` against the same
+  −52.3, an order of magnitude short of the D4 arithmetic rather than
+  comparable to it.
+
+  *Why 0.35 and not more.* The invariant, not taste. The multiplier can only
+  scale the terminal down, so `win_beats_stall` has to clear 2x at the **floor**
+  — a force that holds and is ground down doing it, which is the case a defend
+  scenario is actually about. `fireteam_defend` scores 3.42 undiminished, so the
+  ceiling is `1 - 2.0/3.42 = 0.415`; 0.35 leaves 2.22. Confirmed by mutation:
+  0.45 and 0.5 both fail `test_defend_terminal_scaling_preserves_dominance`,
+  which names the ceiling in its message. Note this made option 4 *cheaper* than
+  it looked — "largest redesign" overstated it; the terminal was already a
+  single payout site, and scoping plus one multiplier was the whole change.
+
+  *One trap worth recording.* Bodies are rank-weighted like casualties already
+  are, but by **intrinsic** rank, not `effective_authority`. Succession promotes
+  a survivor into the dead leader's slot, so an effective-authority sum over the
+  living RISES after the commander falls — a cohort could raise its own terminal
+  by getting its leader killed. Measured, that mutation yields 0.9028 against
+  the correct 0.8971, and the test catches it. On a fireteam the commander is
+  worth 60 → 52.0 against a rifleman's 60 → 54.4; commander death (0.24 → 0.61)
+  was the measured half of the regression.
+
+  **Not judged.** This is economics, not a result. The A/B is `defend_brique_v5`
+  and `fireteam_defend_v12` against `v4`/`v11`, single-variable — and the gate
+  to watch is `mean_distance_from_objective_under_threat` (bar ≤ 5.0), which v4
+  fails at 6.09 and v3 passes at 2.87. **The owner pre-authorised the fallback**:
+  if it goes against option 4, revert to option 1, which needs no code change —
+  `--reward defend_survivor_scale=0` restores v1.11 behaviour exactly.
+
+  Also still open and now unblocked, independent of the above: `squad_v9`.
