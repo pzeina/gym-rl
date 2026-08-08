@@ -1,11 +1,14 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-07, autocycle complete)
+## ⟳ Session handoff — resume here (2026-08-08, v1.12 A/B resolved)
 
-**State**: `multi-agent-dev`, **78 commits ahead of `origin/main`**; latest tag
-v1.9.0; **530 tests green, ruff clean**; **nothing training**. Spaces
-**Discrete(228)/Box(220)** — unchanged by the v1.12 reward work, so the whole
-fleet stays loadable.
+**State**: `multi-agent-dev`, **82 commits ahead of `origin/main`**; latest tag
+v1.9.0; **538 tests green, ruff clean**; **nothing training**. Spaces
+**Discrete(228)/Box(220)** — unchanged by the v1.12 reward work *and* by the
+`defend_brique` spec repair, so the whole fleet stays loadable. One caveat on
+that repair: `defend_brique` now draws an H-hour, which consumes RNG, so its
+seeds are a new era — pre-`450b392` brique runs (`_v1`…`_v5`) are not
+episode-comparable with `_v6`/`_v7`, though every checkpoint still loads.
 
 **The remote is now the standard shape — resolved, on the owner's instruction.**
 Three earlier handoffs (mine included) described a repo with no named remote:
@@ -25,7 +28,9 @@ remotes — the ASSURANCE-SYNC.md contract is unaffected.
 **⚑ THE REWARD DECISION IS TAKEN — option 4, by the owner, 2026-08-07.** Not
 the recommended option 1 (scope the payout by scenario) but the more principled
 one: *make the defend terminal proportional to survivors*. Implemented in
-`f39b5a9`, **untrained** — this is the economics, not a result. On DEFEND/DENY
+`f39b5a9` and, as of 2026-08-08, **trained and confirmed on both defend
+scenarios** — see the progress log. (This paragraph described the economics
+before any result existed; the result is now in.) On DEFEND/DENY
 roots only, the terminal is multiplied by
 `(1 - scale) + scale x surviving_weight / starting_weight`, rank-weighted, at
 `defend_survivor_scale = 0.35`. It is not forfeiture again because the
@@ -38,9 +43,20 @@ puts the ceiling at `1 - 2.0/3.42 = 0.415`. **The owner authorised the fallback
 in advance**: if the A/B goes against it, revert to option 1 — which needs no
 code change, only `--reward defend_survivor_scale=0`.
 
-**⇒ THE NEXT THING TO DO IS RUN THE A/B.** `defend_brique_v5` and
-`fireteam_defend_v12` against `v4` / `v11`, single-variable. Nothing else here
-is blocked.
+**⇒ THE A/B IS RUN AND OPTION 4 IS CONFIRMED — keep `defend_survivor_scale`
+at 0.35.** See the 2026-08-08 progress-log entry for the numbers. Headline:
+`fireteam_defend` `v11`→`v12` root deaths 0.35→0.15 (p=0.001) and success
+0.74→0.86 (p=0.034); `defend_brique` needed its scenario repaired first
+(`450b392` — it declared a DEFEND root with prepared positions and never gave
+the fire team time to occupy them), after which `v6`(0.35) beats `v7`(flat)
+0.97 vs 0.89 success (p=0.027) with both arms publishable and all gates
+passing. The pre-authorised option-1 fallback is **not** indicated.
+
+**⇒ THE NEXT THING TO DO IS FALSE DONE.** It is saturated across the whole
+defend family — **0.80** at the final policy in both brique arms, **1.00** in
+both fireteam arms — independent of reward setting and of the spec repair, and
+it is now the largest defect in these scenarios. `--reward done_false=-2.0` is
+one flag and has never been trained. Nothing else here is blocked.
 
 **Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
 repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
@@ -2839,3 +2855,61 @@ deliberately deferred (`docs/vision.md` §2c).
   N=100, so the two sides are not measured at equal power and the call belongs
   to whoever runs `evaluate` on `ckpt_latest` at matched episodes. Not run
   here, and no training launched.
+
+- **2026-08-08** — **v1.12 A/B resolved: option 4 confirmed on BOTH defend
+  scenarios — but only after `defend_brique` was repaired.** The result at
+  matched power, final policy, N=100, seed 123 (the fireteam pair needed
+  re-evaluating: the treatment arms were sitting at N=20 against N=100
+  baselines, so the first read of them was underpowered and partly wrong).
+
+  `fireteam_defend`, `v11` (flat) → `v12` (0.35): root deaths **0.35 → 0.15**
+  (p = 0.001), success **0.74 → 0.86** (p = 0.034), defeats **13 → 0**, all
+  four final-policy gates pass. Unambiguous.
+
+  `defend_brique`, `v4` → `v5`: primary landed at **14.4/30 root deaths**,
+  inside the 13–19 band #22 declared **partial** in advance. Both of its
+  positional predictions were **falsified** (cover 0.273 against a predicted
+  ≥ 0.40; distance 6.10 against a bound of 5.0, unmoved). Success *fell*
+  0.91 → 0.80 (p = 0.027). We went looking for why.
+
+  **The scenario could not be defended.** `defend_brique` declared a `DEFEND`
+  root and `objective_cover=True` — it built defensible ground — and then set
+  `assault_h_hour=None`, so the band ran from step 0 and the fire team never
+  had a moment to occupy it. Not a hard defense: a meeting engagement on
+  defensible ground. `_v4` fails the positional gate at its final policy too
+  (6.09), so **the miss predates the survivor-scaled terminal and the reward
+  A/B on this scenario was scoring a broken instrument.** Fixed in `450b392`
+  with v1.10's arithmetic: `assault_h_hour=(35, 55)` and `max_steps` 375 →
+  420, buying the preparation rather than taking it out of the 375-step fight.
+  Narrower and earlier than `fireteam_defend`'s (55, 75) — a band infiltrating
+  from the far edges gives less warning than a formed assault. Everything that
+  makes brique the hard one is untouched (5 enemies to 4, mines, the
+  probe/harass/raid intent machine, and now *less* warning than the easier
+  defend scenario gets). **Not a difficulty giveaway, measured**: masked-random
+  is 0/40 success before and after.
+
+  The repair was the dominant variable. `v5` → `v6` is single-variable at
+  constant reward (both 0.35): success **0.80 → 0.97** (p = 0.0002), root
+  deaths **0.48 → 0.05** (p < 0.0001), defeats 11 → 0, cover 0.273 → 0.799,
+  distance 6.10 → **3.72 (PASS)**. First brique run ever to clear the publish
+  gate (best-final gap 6 pts).
+
+  **The A/B re-asked with the scenario held constant** (`v6` 0.35 vs `v7`
+  flat, `economics.json` confirms single-variable): success **0.89 → 0.97**
+  (p = 0.027), timeouts **0.110 → 0.030**, episode length 126 → 109, cover
+  identical (0.802 / 0.799), root deaths **0.070 → 0.050 (n.s., p = 0.55)**.
+  Both arms publishable, both pass all four gates. Option 4 is kept at 0.35.
+
+  Note the mechanism honestly: on the repaired brique the multiplier is **no
+  longer buying casualty reduction** — the preparation period already drove
+  deaths to a 5–7% floor where the multiplier has no room to act. What it buys
+  there is *decisiveness* (timeouts 11% → 3%, 17 steps shorter). The
+  casualty-preservation effect is real and large, but it is `fireteam_defend`
+  that demonstrates it. Costs on `v6`: obedience latency 3.14 → 6.58 and
+  distance-under-threat 2.10 → 3.72 (both still inside the gate).
+
+  **Biggest open defect, unrelated to either change**: false DONE sits at
+  **0.80** at the final policy in both brique arms and **1.00** in both
+  fireteam arms. It is saturated across the whole defend family regardless of
+  reward or spec, and it is now the largest thing wrong with these scenarios.
+  `--reward done_false=-2.0` is the ready lever and has never been trained.
