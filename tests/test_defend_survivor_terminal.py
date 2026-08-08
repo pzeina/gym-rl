@@ -21,6 +21,8 @@ one. That is what these tests pin.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from cohort import make_env
@@ -135,6 +137,34 @@ def test_a_non_defend_root_is_never_scaled():
     cfg = RewardConfig()
     for mission in (MissionType.SEIZE, MissionType.RECON, MissionType.SCREEN):
         assert cfg.terminal_scale_floor(mission) == 1.0
+
+
+def test_a_deny_root_is_scaled_exactly_like_a_defend_root():
+    """The unexercised half of the branch, pinned (refs #22).
+
+    Both scaling sites read ``root_mission in (DEFEND, DENY)``, and DENY is
+    right there for the same reason DEFEND is — area denial is also a mission
+    you either hold with a force or do not fully accomplish. But no scenario in
+    ``SCENARIOS`` roots on DENY today, so nothing executed that leg: the whole
+    v1.12 economics could be silently narrowed to DEFEND-only by an edit no
+    test would notice, and the change would surface as an unexplained price
+    shift on the first DENY scenario anyone writes. Cheap to pin now; there is
+    no cheap way to find it later.
+    """
+    cfg = RewardConfig()
+    assert cfg.terminal_scale_floor(MissionType.DENY) == cfg.terminal_scale_floor(
+        MissionType.DEFEND
+    )
+    assert cfg.terminal_scale_floor(MissionType.DENY) < 1.0, "DENY must actually be scaled"
+
+    # and the env-side branch, on a force that has taken a casualty
+    env = _defend_env()
+    env.roster.by_callsign["RFN2"].alive = False
+    env.roster.by_callsign["RFN2"].health = 0
+    as_defend = env._defend_terminal_scale()
+    assert as_defend < 1.0
+    env.spec_cfg = replace(env.spec_cfg, root_mission=MissionType.DENY)
+    assert env._defend_terminal_scale() == pytest.approx(as_defend)
 
 
 # ---------------------------------------------------------------------- #

@@ -73,6 +73,34 @@ COLLAPSE_POINTS = 15
 PUBLISH_STABILITY_POINTS = 10
 
 
+#: (metric key, label, format) rows of a behavior block, in display order.
+#:
+#: ``human_death_rate`` — the rate at which the human root (the commander the
+#: cohort exists to keep alive) dies — is here because of assurance #22, whose
+#: pre-registration names *root deaths at the final policy* as the PRIMARY axis
+#: of the v1.12 survivor-scaled-terminal A/B. The metric was measured on every
+#: behavior run and printed by `evaluate`'s own table, but this digest — "the
+#: ONLY thing the big model reads" — dropped it, so the pre-registered primary
+#: could not be read from the artifact the verdict is written against.
+_BEHAVIOR_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("obedience_latency_mean", "obedience latency", "{:.2f}"),
+    ("report_precision", "report precision", "{:.2f}"),
+    ("report_recall", "report recall", "{:.2f}"),
+    ("doctrine_preference_rate", "doctrine preference", "{:.3f}"),
+    ("doctrine_allowed_rate", "doctrine containment", "{:.3f}"),
+    ("orders_per_episode", "orders / episode", "{:.2f}"),
+    ("retasks_per_episode", "retasks / episode", "{:.2f}"),
+    ("false_complete_rate", "false DONE", "{:.3f}"),
+    ("human_death_rate", "root death rate", "{:.3f}"),
+    ("cover_occupancy_under_threat", "cover under threat", "{:.3f}"),
+    ("mean_distance_from_objective_under_threat", "dist from OBJ", "{:.2f}"),
+    # refs #18: the clock and what the net carried while it ran out
+    ("timeout_rate", "ran the clock out", "{:.2f}"),
+    ("messages_per_episode", "messages / episode", "{:.0f}"),
+    ("command_traffic_share", "of which command", "{:.3f}"),
+)
+
+
 def stability(best: float, final: float) -> str:
     """One line separating "this run converged" from "this run peaked".
 
@@ -140,6 +168,64 @@ def curve(rows: list[dict]) -> str:
     return f"{spark}  ({lo:.0%}→{hi:.0%})"
 
 
+def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagnostics: bool) -> dict:
+    """Print one evaluated checkpoint's suite, and file it under ``prefix``.
+
+    Called twice per run — once for ``ckpt_best`` and once for the FINAL
+    policy — because a single behavior block is not a run's behavior. On
+    ``squad_screen_v4`` the two checkpoints evaluate 30/30 and 0/30 on the same
+    seeds, and on ``defend_brique_v4`` the whole positional regression lives in
+    the gap: ckpt_best passes all three gates, ckpt_latest FAILS
+    ``mean_distance_from_objective_under_threat`` at 6.09. Printing the suite
+    for ckpt_best and a single success number for the final policy meant the
+    digest showed three PASSes and hid the FAIL on the checkpoint the
+    publishing standard calls the headline (refs #22).
+
+    ``diagnostics`` adds the four command-quality composites (task mix,
+    availability lift, per-task obedience, staging). They stay on the ckpt_best
+    block alone: they diagnose how the cohort commands rather than whether the
+    run cleared its bars, and the digest's whole purpose is to stay short.
+    """
+    b = json.loads(path.read_text())
+    m = b.get("metrics", {})
+    # WHICH checkpoint produced these numbers, always: on squad_screen_v4
+    # ckpt_best evaluates 30/30 and ckpt_latest 0/30 on the same seeds, so
+    # a behavior block that does not name its checkpoint is unreadable
+    # next to a curve that ended at 0% (refs #18)
+    scored = Path(b.get("checkpoint") or "?").name or "?"
+    print(f"  {header} ({b.get('episodes','?')} eps, greedy={b.get('greedy')}, "
+          f"{scored}): success {b.get('success_ci95','?')}")
+    for key, label, fmt in _BEHAVIOR_ROWS:
+        if (v := m.get(key)) is not None:
+            print(f"    {label:<20} {fmt.format(v)}")
+            summary[f"{prefix}{key}"] = v
+    if diagnostics:
+        # refs #14: a low preference rate is only a command-quality finding if
+        # the ordered-task mix says it is not just adoption of one legal leg
+        if mix := format_order_task_mix(m):
+            print(f"    {'order task mix':<20} {mix}   (share/preference)")
+        # refs #16: an order share is availability-confounded — the mask offers
+        # the tasks in unequal numbers, and in opposite directions per scenario
+        # family. The lift is the share over the masked-random floor: 1.00 is
+        # no preference, and it is the number a fix has to move.
+        if avail := format_order_availability(m):
+            print(f"    {'order availability':<20} {avail}   (share/avail (xlift))")
+        # a pooled obedience mean cannot separate disobedience from a shift to
+        # slower-resolving tasks — see format_obedience_by_task
+        if obey := format_obedience_by_task(m):
+            print(f"    {'obey latency/task':<20} {obey}   (mean(orders))")
+        # refs #15: staged orders are excluded from obedience by construction
+        # (a staged agent complies by holding), so the AT MY COMMAND channel —
+        # and orders staged and then never released — reports separately
+        if staging := format_staging(m):
+            print(f"    {'A5-2 staging':<20} {staging}")
+    summary[f"{prefix}success"] = m.get("success_rate")
+    for g in b.get("gates", []):
+        mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
+        print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
+    return m
+
+
 def report(run: str, show_components: bool) -> dict:
     rows = rows_of(run)
     cfg_path = RUNS / run / "config.json"
@@ -191,71 +277,20 @@ def report(run: str, show_components: bool) -> dict:
 
     beh_path = RUNS / run / "behavior.json"
     if beh_path.exists():
-        b = json.loads(beh_path.read_text())
-        m = b.get("metrics", {})
-        # WHICH checkpoint produced these numbers, always: on squad_screen_v4
-        # ckpt_best evaluates 30/30 and ckpt_latest 0/30 on the same seeds, so
-        # a behavior block that does not name its checkpoint is unreadable
-        # next to a curve that ended at 0% (refs #18)
-        scored = Path(b.get("checkpoint") or "?").name or "?"
-        print(f"  behavior ({b.get('episodes','?')} eps, greedy={b.get('greedy')}, "
-              f"{scored}): success {b.get('success_ci95','?')}")
-        for key, label, fmt in [
-            ("obedience_latency_mean", "obedience latency", "{:.2f}"),
-            ("report_precision", "report precision", "{:.2f}"),
-            ("report_recall", "report recall", "{:.2f}"),
-            ("doctrine_preference_rate", "doctrine preference", "{:.3f}"),
-            ("doctrine_allowed_rate", "doctrine containment", "{:.3f}"),
-            ("orders_per_episode", "orders / episode", "{:.2f}"),
-            ("retasks_per_episode", "retasks / episode", "{:.2f}"),
-            ("false_complete_rate", "false DONE", "{:.3f}"),
-            ("cover_occupancy_under_threat", "cover under threat", "{:.3f}"),
-            ("mean_distance_from_objective_under_threat", "dist from OBJ", "{:.2f}"),
-            # refs #18: the clock and what the net carried while it ran out
-            ("timeout_rate", "ran the clock out", "{:.2f}"),
-            ("messages_per_episode", "messages / episode", "{:.0f}"),
-            ("command_traffic_share", "of which command", "{:.3f}"),
-        ]:
-            if (v := m.get(key)) is not None:
-                print(f"    {label:<20} {fmt.format(v)}")
-                summary[f"beh_{key}"] = v
-        # refs #14: a low preference rate is only a command-quality finding if
-        # the ordered-task mix says it is not just adoption of one legal leg
-        if mix := format_order_task_mix(m):
-            print(f"    {'order task mix':<20} {mix}   (share/preference)")
-        # refs #16: an order share is availability-confounded — the mask offers
-        # the tasks in unequal numbers, and in opposite directions per scenario
-        # family. The lift is the share over the masked-random floor: 1.00 is
-        # no preference, and it is the number a fix has to move.
-        if avail := format_order_availability(m):
-            print(f"    {'order availability':<20} {avail}   (share/avail (xlift))")
-        # a pooled obedience mean cannot separate disobedience from a shift to
-        # slower-resolving tasks — see format_obedience_by_task
-        if obey := format_obedience_by_task(m):
-            print(f"    {'obey latency/task':<20} {obey}   (mean(orders))")
-        # refs #15: staged orders are excluded from obedience by construction
-        # (a staged agent complies by holding), so the AT MY COMMAND channel —
-        # and orders staged and then never released — reports separately
-        if staging := format_staging(m):
-            print(f"    {'A5-2 staging':<20} {staging}")
-        summary["beh_success"] = m.get("success_rate")
-        for g in b.get("gates", []):
-            mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
-            print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
+        behavior_block(beh_path, "behavior", summary, "beh_", diagnostics=True)
     else:
         print("  behavior: none — run `evaluate --behavior` for the B2 suite")
 
-    # The FINAL policy's own number, side by side with ckpt_best's. On a run
+    # The FINAL policy's own suite, side by side with ckpt_best's. On a run
     # that peaked and fell back these differ enormously (squad_screen_v4:
     # ckpt_best 30/30, ckpt_latest 0/30 on the same seeds), and the publishing
-    # standard is that both are quoted — the headline is this one.
+    # standard is that both are quoted — the headline is this one. It gets the
+    # same rows and the same gates for that reason (refs #22): every prediction
+    # in the v1.12 pre-registration is stated at the final policy, and until
+    # this printed them the digest could not settle one of them.
     final_path = RUNS / run / "behavior_final.json"
     if final_path.exists():
-        fb = json.loads(final_path.read_text())
-        fm = fb.get("metrics", {})
-        print(f"  FINAL policy ({fb.get('episodes','?')} eps, ckpt_latest.pt): "
-              f"success {fb.get('success_ci95','?')}")
-        summary["final_success"] = fm.get("success_rate")
+        fm = behavior_block(final_path, "FINAL policy", summary, "final_", diagnostics=False)
         if (bs := summary.get("beh_success")) is not None and (fs := fm.get("success_rate")) is not None:
             print(f"    vs ckpt_best {bs:.2f} → final {fs:.2f}  ({fs - bs:+.2f})")
     elif beh_path.exists():

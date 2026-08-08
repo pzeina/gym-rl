@@ -34,7 +34,8 @@ python -m cohort.training.train --scenario fireteam --total-steps 1500000
 # monitor — cheap, one screen, no raw CSV
 python scripts/train_status.py           # all live + recent runs
 python scripts/train_status.py <run>     # progress, ETA, trend, log tail
-python scripts/run_report.py <run> --vs <baseline>   # ~30-line post-hoc digest
+python scripts/run_report.py <run> --vs <baseline>   # ~50-line post-hoc digest
+                                                    # (suite + gates for BOTH checkpoints)
 
 # monitor — heavyweight/interactive
 python -m cohort.viz.dashboard            # interactive dashboard (live charts + episode explorer)
