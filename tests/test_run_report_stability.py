@@ -93,3 +93,106 @@ def test_digest_names_the_checkpoint_it_scored(tmp_path, monkeypatch, capsys):
     assert "COLLAPSED" in out          # the curve's own verdict, unchanged
     assert "ran the clock out" in out
     assert "of which command" in out
+
+
+# The two checkpoints `defend_brique_v4` actually shipped, trimmed to the axes
+# the v1.12 pre-registration (assurance #22) names. ckpt_best clears all three
+# regression gates; the FINAL policy — the one the publishing standard calls
+# the headline — fails the positional gate at 6.09 against a bound of 5.0, and
+# kills the human root in 61 episodes in 100 against ckpt_best's 50 in 100.
+V4_BEST = {
+    "checkpoint": "runs/defend_brique_v4/ckpt_best.pt",
+    "episodes": 20,
+    "greedy": False,
+    "success_ci95": "0.90 ± 0.13",
+    "metrics": {
+        "success_rate": 0.9, "human_death_rate": 0.5, "timeout_rate": 0.1,
+        "cover_occupancy_under_threat": 0.4898,
+        "mean_distance_from_objective_under_threat": 2.7497,
+    },
+    "gates": [
+        {"name": "timeout_rate", "bound": 0.5, "direction": "max", "passed": True},
+        {"name": "cover_occupancy_under_threat", "bound": 0.4, "direction": "min", "passed": True},
+        {"name": "mean_distance_from_objective_under_threat", "bound": 5.0,
+         "direction": "max", "passed": True},
+    ],
+}
+V4_FINAL = {
+    "checkpoint": "runs/defend_brique_v4/ckpt_latest.pt",
+    "episodes": 100,
+    "greedy": False,
+    "success_ci95": "0.91 ± 0.06",
+    "metrics": {
+        "success_rate": 0.91, "human_death_rate": 0.61, "timeout_rate": 0.04,
+        "cover_occupancy_under_threat": 0.4161,
+        "mean_distance_from_objective_under_threat": 6.0907,
+    },
+    "gates": [
+        {"name": "timeout_rate", "bound": 0.5, "direction": "max", "passed": True},
+        {"name": "cover_occupancy_under_threat", "bound": 0.4, "direction": "min", "passed": True},
+        {"name": "mean_distance_from_objective_under_threat", "bound": 5.0,
+         "direction": "max", "passed": False},
+    ],
+}
+
+
+def _write_run(tmp_path, name: str, best: dict, final: dict | None = None):
+    run = tmp_path / name
+    run.mkdir()
+    with (run / "metrics.csv").open("w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=["iteration", "env_steps", "success_rate_rolling"])
+        w.writeheader()
+        for i in range(20):
+            w.writerow({"iteration": i, "env_steps": i * 100, "success_rate_rolling": 0.9})
+    (run / "behavior.json").write_text(json.dumps(best))
+    if final is not None:
+        (run / "behavior_final.json").write_text(json.dumps(final))
+
+
+def test_final_policy_gates_are_printed_not_only_ckpt_best_s(tmp_path, monkeypatch, capsys):
+    """A gate the headline policy fails must not be hidden by ckpt_best's PASS.
+
+    refs #22. `defend_brique_v4` is the case: three PASSes at ckpt_best, and
+    the positional regression the whole v1.12 reward decision was taken over
+    (`mean_distance_from_objective_under_threat` 6.09, bound 5.0) exists only
+    at ckpt_latest. The digest used to print the suite plus every gate for
+    ckpt_best and *one success number* for the final policy, so the FAIL that
+    justified the retrain was absent from the artifact the verdict is read off.
+    """
+    _write_run(tmp_path, "defend_brique_v4", V4_BEST, V4_FINAL)
+    monkeypatch.setattr(run_report, "RUNS", tmp_path)
+
+    run_report.report("defend_brique_v4", show_components=False)
+    out = capsys.readouterr().out
+
+    assert "gate [FAIL] mean_distance_from_objective_under_threat" in out
+    assert out.count("gate [PASS] timeout_rate") == 2      # both checkpoints gated
+    assert "ckpt_latest.pt" in out                         # and both named
+    assert "vs ckpt_best 0.90 → final 0.91" in out         # the old line survives
+
+
+def test_root_death_rate_is_reported_for_both_checkpoints(tmp_path, monkeypatch, capsys):
+    """The pre-registered PRIMARY axis has to be in the digest, at final.
+
+    refs #22 pins root deaths at the final policy as the primary measurement
+    of the survivor-scaled-terminal A/B. `human_death_rate` was aggregated on
+    every behavior run and printed by `evaluate`'s table, but this digest — the
+    only artifact a verdict is written against — dropped it, at either
+    checkpoint. The summary keys matter as much as the printed lines: `--vs`
+    deltas are built from them, so an axis missing here is an axis the A/B
+    cannot compare.
+    """
+    _write_run(tmp_path, "defend_brique_v4", V4_BEST, V4_FINAL)
+    monkeypatch.setattr(run_report, "RUNS", tmp_path)
+
+    summary = run_report.report("defend_brique_v4", show_components=False)
+    out = capsys.readouterr().out
+
+    assert out.count("root death rate") == 2
+    assert "0.500" in out and "0.610" in out
+    assert summary["beh_human_death_rate"] == 0.5
+    assert summary["final_human_death_rate"] == 0.61
+    # the positional pair, at the checkpoint the prediction is stated for
+    assert summary["final_cover_occupancy_under_threat"] == 0.4161
+    assert summary["final_mean_distance_from_objective_under_threat"] == 6.0907
+    assert summary["final_success"] == 0.91

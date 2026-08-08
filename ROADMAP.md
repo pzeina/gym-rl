@@ -2788,3 +2788,54 @@ deliberately deferred (`docs/vision.md` §2c).
   now show up as a `success_rate`-only failure instead of nothing — but that
   is a statement about what the instrument can now see, not a claim that such
   a case exists. It doesn't, yet, in anything we've trained.
+
+- **2026-08-08 — assurance #22: the digest could not settle the A/B it was
+  filed about.** Issue #22 is a pre-registration, not a defect report: it
+  commits, before `defend_brique_v5` / `fireteam_defend_v12` exist, to how the
+  option-4 A/B will be judged. Every prediction in it is stated **at the final
+  policy** — primary root deaths ≤ 12/30 (falsifier ≥ 20/30), positional gate
+  passes, cover ≥ 0.40, success ≥ 20/30 — and its method note is explicit
+  about why: §12.76 found the `v3`→`v4` regression **invisible at
+  `ckpt_best`**, appearing only at final.
+
+  `run_report.py` could not answer any of them. It printed the full behavior
+  suite plus every gate for `ckpt_best`, and for the FINAL policy **one
+  success number**. So (a) the pre-registered PRIMARY axis was absent at either
+  checkpoint — `human_death_rate` is aggregated on every behavior run and
+  printed by `evaluate`'s own table, but this digest, the only artifact a
+  verdict is written against, dropped it; and (b) a gate the headline policy
+  **fails** was hidden behind `ckpt_best`'s PASS. `defend_brique_v4` is that
+  case on file: three PASSes at `ckpt_best`, and
+  `mean_distance_from_objective_under_threat` **6.09 against a bound of 5.0**
+  at `ckpt_latest` — the exact regression the whole v1.12 reward decision was
+  taken over, absent from the digest of the run that produced it.
+
+  **Changed**: the behavior block is one function called twice — `ckpt_best`
+  under `beh_`, the final policy under `final_` — so both get the same rows and
+  the same gates, and both sets of metrics enter the `--vs` delta. Added
+  `human_death_rate` ("root death rate") to the printed rows. The four
+  command-quality composites (task mix, availability lift, per-task obedience,
+  staging) stay on the `ckpt_best` block alone: they diagnose how the cohort
+  commands rather than whether the run cleared its bars, and the digest's whole
+  point is to stay short. Digest length ~30 → ~50 lines; `docs/training.md`
+  updated to say so. **No reward code, weight, or semantic touched** —
+  `defend_survivor_scale` is exactly as `f39b5a9` left it.
+
+  Also from the issue's verified findings: its §1 notes that **no scenario
+  roots on `DENY`**, so that half of `root_mission in (DEFEND, DENY)` is dead
+  code today and nothing exercised it. Pinned with one test covering both
+  scaling sites (`RewardConfig.terminal_scale_floor` and
+  `CohortEnv._defend_terminal_scale`) — narrowing the branch to DEFEND-only
+  would otherwise pass every test and surface as an unexplained price shift on
+  the first DENY scenario anyone writes.
+
+  Tests 534 → 537. Mutation-checked by hand: reverting `run_report.py` broke
+  both new digest tests, and dropping `MissionType.DENY` from the four
+  branch sites broke the new DENY test. `pytest` green (537), `ruff` clean.
+
+  **What this does not do**: it does not judge the A/B. With the digest fixed,
+  `defend_brique_v5` vs `v4` reads `final_human_death_rate` **0.61 → 0.40** on
+  the pre-registered primary — but `v5`'s final block is N=20 against `v4`'s
+  N=100, so the two sides are not measured at equal power and the call belongs
+  to whoever runs `evaluate` on `ckpt_latest` at matched episodes. Not run
+  here, and no training launched.
