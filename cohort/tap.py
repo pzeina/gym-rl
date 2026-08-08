@@ -32,7 +32,9 @@ import argparse
 import gzip
 import hashlib
 import json
+import pathlib
 import re
+import subprocess
 from dataclasses import replace
 from typing import IO
 
@@ -72,6 +74,46 @@ def _file_sha256(path: str) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _cohort_provenance() -> dict[str, str | bool | None]:
+    """Which `cohort` package this process actually imported, and at what commit.
+
+    Recorded because it is NOT the directory this script lives in, and that
+    surprise invalidated a verification (assurance PLAN.md 12.82). Running
+    `python cohort/tap.py` puts sys.path[0] at the SCRIPT'S directory, so
+    `import cohort.config` misses the sibling package and falls through to
+    whatever `cohort` the interpreter has installed -- here an editable
+    install pointing at the upstream working tree. Consequence: checking out
+    an older commit and re-tapping does not roll the environment back. Two
+    taps from two different checkouts both execute the upstream tree and come
+    out byte-identical, which reads as "the change is inert" when in fact the
+    change was never exercised. Pin the import with PYTHONPATH to compare
+    checkouts.
+
+    Stamping the resolved path and commit into the header makes that failure
+    self-evident instead of silent: two corpora claiming to bracket a change
+    while carrying the same `cohort_commit` did not bracket anything.
+    """
+    import cohort
+
+    root = str(pathlib.Path(cohort.__file__).resolve().parent.parent)
+    commit: str | None = None
+    dirty: bool | None = None
+    try:
+        commit = subprocess.run(
+            ["git", "-C", root, "rev-parse", "HEAD"],
+            capture_output=True, text=True, timeout=10, check=True,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "-C", root, "status", "--porcelain"],
+                capture_output=True, text=True, timeout=10, check=True,
+            ).stdout.strip()
+        )
+    except (subprocess.SubprocessError, OSError):
+        pass  # not a checkout, or no git -- absent beats a wrong value
+    return {"cohort_source": root, "cohort_commit": commit, "cohort_dirty": dirty}
 
 
 def _callsign(env: CohortEnv, agent_id: int) -> str:
@@ -371,6 +413,9 @@ def tap_episodes(
             # rather than a default, so a consumer can tell "no policy" from
             # "policy not recorded" (the `briefing_anchor` rule).
             "checkpoint_sha256": _file_sha256(checkpoint) if checkpoint is not None else None,
+            # Identity of the CODE that produced this corpus, for the same
+            # reason as the digest above -- see `_cohort_provenance`.
+            **_cohort_provenance(),
             "episodes": episodes,
             "base_seed": seed,
             "greedy": greedy,
