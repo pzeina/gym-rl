@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import re
 from dataclasses import replace
@@ -58,6 +59,19 @@ def _open(path: str) -> IO[str]:
     if path.endswith(".gz"):
         return gzip.open(path, "wt", encoding="utf-8")
     return open(path, "w", encoding="utf-8")
+
+
+def _file_sha256(path: str) -> str:
+    """SHA-256 of a checkpoint file, read in chunks (weights run to ~700 KB).
+
+    Stamped into the tap header so a corpus identifies the weights that
+    produced it by content rather than by path -- see the header comment.
+    """
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _callsign(env: CohortEnv, agent_id: int) -> str:
@@ -342,6 +356,21 @@ def tap_episodes(
             "missions": [m.value for m in MissionType],
             "scenario": scenario,
             "checkpoint": checkpoint,
+            # Content identity of the weights, not merely where they sat
+            # (assurance PLAN.md 12.80). `checkpoint` is an absolute path into
+            # a working tree, and upstream republishes runs under the same
+            # directory name (`v4` vs `v4b`), so the path alone cannot say
+            # WHICH weights produced a corpus. At 12.51 three corpora were
+            # tapped from uncommitted checkpoints, and when those files were
+            # finally committed the provenance could only be argued
+            # behaviourally, never checked. A digest settles it: the corpus
+            # carries the identity of the policy that generated it,
+            # independently of the tree it was read from.
+            #
+            # None on the masked-random arm, which has no weights -- absent
+            # rather than a default, so a consumer can tell "no policy" from
+            # "policy not recorded" (the `briefing_anchor` rule).
+            "checkpoint_sha256": _file_sha256(checkpoint) if checkpoint is not None else None,
             "episodes": episodes,
             "base_seed": seed,
             "greedy": greedy,
