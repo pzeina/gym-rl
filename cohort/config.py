@@ -380,9 +380,24 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         opfor_mode="brique",
         root_mission=MissionType.DEFEND,
         root_objective="ALPHA",
-        max_steps=375,
+        # v1.12: 375 → 420, buying the preparation period below without
+        # shortening the 375-step fight it precedes (the v1.10 arithmetic that
+        # took `fireteam_defend` from a coin-flip brawl to a defense).
+        max_steps=420,
         objective_cover=True,
         assault_spawn_min_dist=21.0,  # the band infiltrates from the far edges
+        # Preparation period (v1.12). This spec asked for a DEFEND root and
+        # `objective_cover=True` — defensible ground — and then never gave the
+        # fire team a moment to occupy it: the band was free from step 0. That
+        # is not a hard defense, it is a meeting engagement on defensible
+        # ground, and it is what the positional gate had been reporting all
+        # along (cover occupancy 0.27 to 0.42, `mean_distance_from_objective_
+        # under_threat` failing at ~6.1 in BOTH arms of the v1.12 A/B, `_v4`
+        # included — so the miss predates the reward change and is not caused
+        # by it). Narrower and earlier than `fireteam_defend`'s (55, 75): a
+        # band infiltrating from the far edges gives less warning than a
+        # formed assault, so the defense is entitled to less of it.
+        assault_h_hour=(35, 55),
         band=BriqueBandConfig(initial_intent="harass", raid_period=60),
         n_traps=2,
         # BRIQUE terminal semantics: success = band destroyed OR scattered with
