@@ -103,13 +103,46 @@ def test_time_to_contact_counts_down_to_the_nominal_h():
 
 
 def test_scenarios_without_a_preparation_period_are_untouched():
-    for name in ("fireteam", "squad", "platoon", "defend_brique", "squad_recon"):
+    for name in ("fireteam", "squad", "platoon", "squad_recon"):
         env = make_env(name)
         env.reset(seed=3)
         assert env.spec_cfg.assault_h_hour is None
         assert env._h_hour is None
         assert not env._in_preparation()
         assert "EXPECT ASSAULT" not in env.transcript.messages[0].text
+
+
+def test_the_brique_band_is_frozen_before_h_like_any_other_opfor():
+    """v1.12: `defend_brique` earned a preparation period too.
+
+    The spec had asked for a DEFEND root and `objective_cover=True` and then
+    let the band run from step 0, so the fire team was never given a moment to
+    occupy the ground the scenario had built for it. The gate in `step()` is
+    mode-agnostic, so the fix is a spec value — but the protection worth
+    holding is behavioral: the band does not move before H, and does after.
+    """
+    spec = get_scenario("defend_brique")
+    assert spec.assault_h_hour == (35, 55)
+    # the preparation is bought, not taken out of the fight it precedes
+    assert spec.max_steps - ((35 + 55) // 2) == 375
+
+    env = make_env("defend_brique")
+    env.reset(seed=11)
+    assert env.band is not None, "still the BRIQUE band, not a formed assault"
+    h = env._h_hour
+    assert 35 <= h <= 55
+
+    start = [e.pos for e in env.enemies]
+    actions = {c: 0 for c in env.agents}
+    for _ in range(h - 1):
+        env.step(actions)
+    assert env._in_preparation()
+    assert [e.pos for e in env.enemies] == start, "band moved during preparation"
+
+    for _ in range(25):
+        env.step(actions)
+    assert not env._in_preparation()
+    assert [e.pos for e in env.enemies] != start, "band never started after H"
 
 
 def test_no_preparation_period_consumes_no_randomness():
@@ -267,7 +300,7 @@ def test_the_briefing_carries_the_announced_step_before_reset():
     assert brief["announced_assault_step"] == ANNOUNCED
     env, _ = _defend()
     assert env.briefing()["announced_assault_step"] == env._h_hour_nominal
-    for name in ("fireteam", "squad", "squad_recon", "defend_brique"):
+    for name in ("fireteam", "squad", "squad_recon"):
         assert briefing(name)["announced_assault_step"] is None
 
 

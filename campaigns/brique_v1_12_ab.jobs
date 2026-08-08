@@ -1,0 +1,12 @@
+# v1.12 — re-run the option-4 reward A/B on the repaired defend_brique.
+#
+# The v4/v5 pair scored a scenario whose final policy failed the positional
+# gate in BOTH arms (450b392): a DEFEND root with prepared positions and no
+# time to occupy them. Those arms cannot separate "the survivor-scaled
+# terminal did nothing" from "the scenario never let a defense form".
+#
+# Single variable, same seed as the arms they replace:
+#   v6 = option 4 (survivor-scaled defend terminal, the owner's decision)
+#   v7 = flat terminal (the pre-authorised option-1 fallback shape)
+defend_brique_v6  --scenario defend_brique --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35
+defend_brique_v7  --scenario defend_brique --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0
