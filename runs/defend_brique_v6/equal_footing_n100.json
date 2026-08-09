@@ -1,0 +1,91 @@
+{
+  "what": "defend_brique_v6 re-evaluated at N=100 on BOTH checkpoints, seed 123, under the criterion the b4a0d6d publication used. Its committed behavior.json is the run's old N=20 exit evaluation; defend_brique_v9 and v10 were each scored at N=100 on both checkpoints, so the published comparison rested on unequal footing.",
+  "why_committed": "refs #27. A between-run delta in this repo is quoted at both checkpoints or not at all (the rule 5d4c732 adopted). Applying it to the priced regression needs the baseline measured the same way as the arms. Committed as evidence rather than installed over the run's own evaluations, the same pattern as runs/fireteam_defend_v12/endex_rescore.json.",
+  "scored_at_commit": "e6f742a",
+  "scored_on": "2026-08-09",
+  "episodes": 100,
+  "seed": 123,
+  "note": "Does NOT replace behavior.json / behavior_final.json in this directory; those remain the evaluations the publication quoted. ckpt_latest.pt is gitignored, so the latest-checkpoint row is reproducible only where this run still lives on disk (refs #28).",
+  "checkpoints": {
+    "ckpt_best.pt": {
+      "policy": "rolling-best",
+      "success_ci95": "0.86 \u00b1 0.07",
+      "success_rate": 0.86,
+      "timeout_rate": 0.14,
+      "human_death_rate": 0.26,
+      "cover_occupancy_under_threat": 0.39042995839112343,
+      "mean_distance_from_objective_under_threat": 3.7639378478856838,
+      "gates": [
+        {
+          "name": "timeout_rate",
+          "value": 0.14,
+          "bound": 0.5,
+          "direction": "max",
+          "passed": true
+        },
+        {
+          "name": "success_rate",
+          "value": 0.86,
+          "bound": 0.5,
+          "direction": "min",
+          "passed": true
+        },
+        {
+          "name": "cover_occupancy_under_threat",
+          "value": 0.39042995839112343,
+          "bound": 0.4,
+          "direction": "min",
+          "passed": false
+        },
+        {
+          "name": "mean_distance_from_objective_under_threat",
+          "value": 3.7639378478856838,
+          "bound": 5.0,
+          "direction": "max",
+          "passed": true
+        }
+      ],
+      "committed_file_for_comparison": "behavior.json (N=20, 0.80 \u00b1 0.18)"
+    },
+    "ckpt_latest.pt": {
+      "policy": "final",
+      "success_ci95": "0.98 \u00b1 0.03",
+      "success_rate": 0.98,
+      "timeout_rate": 0.02,
+      "human_death_rate": 0.04,
+      "cover_occupancy_under_threat": 0.8177371331348362,
+      "mean_distance_from_objective_under_threat": 3.598802465479728,
+      "gates": [
+        {
+          "name": "timeout_rate",
+          "value": 0.02,
+          "bound": 0.5,
+          "direction": "max",
+          "passed": true
+        },
+        {
+          "name": "success_rate",
+          "value": 0.98,
+          "bound": 0.5,
+          "direction": "min",
+          "passed": true
+        },
+        {
+          "name": "cover_occupancy_under_threat",
+          "value": 0.8177371331348362,
+          "bound": 0.4,
+          "direction": "min",
+          "passed": true
+        },
+        {
+          "name": "mean_distance_from_objective_under_threat",
+          "value": 3.598802465479728,
+          "bound": 5.0,
+          "direction": "max",
+          "passed": true
+        }
+      ],
+      "committed_file_for_comparison": "behavior_final.json (N=100, 0.97 \u00b1 0.03)"
+    }
+  }
+}
