@@ -1,0 +1,29 @@
+# v1.15 — root_done_bonus is on the table for the episode's FIRST root claim,
+# and the first claim spends it whether or not it is accepted.
+#
+# WHY. v1.14 reopened MISSION COMPLETE to horizon-DEFEND roots and the channel
+# was farmed: defend_brique_v11/ckpt_latest files 321 root claims per 100
+# episodes, 227 rejected, a root false-complete rate of 0.71. An accepted claim
+# pays done_true 1.0 + root_done_bonus 3.0 = 4.0 against a rejected one's
+# done_false -0.5, done_cooldown 8 rate-limits the retries without changing
+# their sign, and the ledger comes to 94 x 4.0 - 227 x 0.5 = +262.5 per 100
+# episodes. With the slot spent, a further claim is worth 1.0 / -0.5 —
+# break-even moves from p > 0.111 to p > 0.333 and probing at v11's realised
+# 0.293 turns negative.
+#
+# THE CONTROL ARMS ARE ALREADY ON DISK. fireteam_defend_v16 and
+# defend_brique_v11 are the same scenarios, budgets, seed and
+# defend_survivor_scale, trained under the old bonus rule and the same v1.14
+# criterion. Nothing below differs from their .job.json except the new flag, so
+# the flag is the only variable and run_report.py --vs will say so.
+#
+# fireteam_defend_v17 IS A GENUINE CONTROL, not a second treatment: v16 filed
+# ZERO claims in 100 episodes against 13,787 admissible root agent-steps, so a
+# rule about the price of claiming should be a no-op there. If it moves, that is
+# a finding about something other than the price.
+#
+# The reward flag defaults to TRUE, so it is passed explicitly anyway: a run
+# whose economics.json states its arm in the same place as its control's is the
+# whole point of --reward existing.
+fireteam_defend_v17  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=true
+defend_brique_v12    --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=true

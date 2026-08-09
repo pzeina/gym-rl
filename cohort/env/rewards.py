@@ -289,6 +289,44 @@ class RewardConfig:
     #                                   DONE inside the completion-report grace window
     #                                   (one-shot, paid with the terminal reward — not
     #                                   farmable per-step, so terminal dominance holds)
+
+    # v1.15: the bonus is on the table for the episode's FIRST root claim only,
+    # and **the first claim consumes it whether or not it is accepted** — a
+    # rejected first claim burns the bonus for that episode. That second half is
+    # the whole mechanism. If a rejection left the slot open, the exploit below
+    # would survive untouched: spam until one lands, collect on "the first
+    # ACCEPTED claim".
+    #
+    # WHAT IT PRICES. v1.14 reopened MISSION COMPLETE to horizon-DEFEND roots
+    # and defend_brique_v11/ckpt_latest immediately filed 321 root claims in 100
+    # episodes, 227 of them rejected — a false-complete rate of 0.71. It is not
+    # irrationality, it is the arithmetic: an accepted claim pays done_true 1.0 +
+    # root_done_bonus 3.0 = 4.0 against a rejected one's done_false -0.5, so
+    # probing breaks even at p > 1/9 = 0.111 and pays +262 per 100 episodes at
+    # v11's realised acceptance of 94/321 = 0.293. ScenarioSpec.done_cooldown (8)
+    # rate-limits the retries but never changes their SIGN — the same shape as
+    # the pre-v1.10 re-roll exploit the cooldown was built against.
+    #
+    # WITH THE SLOT SPENT a further claim is worth done_true on success and
+    # done_false on rejection, so break-even moves to p > 0.333 and continued
+    # probing at 0.293 turns NEGATIVE (-0.07 a claim, transmission_cost
+    # included). The first claim keeps its old economics on purpose: this must
+    # not become another price that buys silence (the done_false=-2.0 lesson
+    # above — precision that is really muteness, and two report-centric
+    # scenarios losing their terminal income entirely). A policy that simply
+    # stops claiming has not passed; it has lost the channel v1.14 reopened.
+    #
+    # Fleet-wide, not defend-scoped: root_done_bonus pays every completable root,
+    # and the probing predates the horizon work — fireteam_v8 filed 87 claims at
+    # 0.908 false, defend_brique_v6 filed 442. The incentive is general.
+    #
+    # Per EPISODE, not per root agent: a successor that inherits the root after a
+    # casualty inherits a spent slot too. The opportunity belongs to the
+    # operation, not to whoever happens to be holding it.
+    #
+    # False → the pre-v1.15 rule exactly (every accepted root claim can pay).
+    root_done_bonus_first_claim_only: bool = True
+
     defeat: float = -2.0              # whole cohort wiped out
 
     # ------------------------------------------------------------------ #

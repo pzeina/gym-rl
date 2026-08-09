@@ -149,6 +149,14 @@ class CohortEnv(ParallelEnv):
         #: declare over — the root's SITREP once the end state holds.
         self._root_close_step: int | None = None
         self._root_close_callsign: str | None = None
+        #: has a root-OPORD MISSION COMPLETE been filed this episode at all
+        #: (v1.15)? The first one spends ``root_done_bonus`` whether it is
+        #: confirmed or rejected — see RewardConfig.root_done_bonus_first_claim_only.
+        self._root_claim_filed: bool = False
+        #: does the claim that closed the window still have the bonus to collect?
+        #: True until a claim spends the slot without closing on it; the ENDEX
+        #: route (which files no claim) is unaffected and keeps paying.
+        self._root_close_earns_bonus: bool = True
         #: last step the root transmitted a SITREP (v1.13: the report COMMAND
         #: reads before it transmits ENDEX).
         self._root_sitrep_step: int | None = None
@@ -279,6 +287,8 @@ class CohortEnv(ParallelEnv):
         self._defend_lost_step = None
         self._root_close_step = None
         self._root_close_callsign = None
+        self._root_claim_filed = False
+        self._root_close_earns_bonus = True
         self._root_sitrep_step = None
         self._endex_step = None
         self._h_hour = None
@@ -927,7 +937,14 @@ class CohortEnv(ParallelEnv):
             scale = self._defend_terminal_scale()
             for callsign in present:
                 ledger.add(callsign, "terminal", (cfg.success_team + speed) * scale)
-            if root_reported and self._root_close_callsign is not None:
+            # ``_root_close_earns_bonus`` is False (v1.15) when the root spent
+            # its one claim on a probe that was rejected. The window still
+            # closed, the operation still ends here, and the confirmed claim was
+            # still paid ``done_true`` — but the bonus is gone, which is what
+            # makes the first claim a judgement rather than a free roll.
+            if root_reported and self._root_close_callsign is not None and (
+                self._root_close_earns_bonus
+            ):
                 ledger.add(self._root_close_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
             self._episode_outcome = "defeat"
@@ -1184,6 +1201,15 @@ class CohortEnv(ParallelEnv):
             if is_root_mission_claim
             else is_complete(mission, ctx)
         )
+        # v1.15: root_done_bonus is on the table for the episode's FIRST root
+        # claim, and the first claim SPENDS it either way — a rejected probe
+        # burns the bonus for the rest of the episode. Read the verdict before
+        # the claim is adjudicated, because it has to be the state as it was
+        # when the root decided to transmit. Subordinate DONEs are untouched:
+        # they never earned this bonus and are not what was being farmed.
+        earns_bonus = not self._root_claim_filed or not cfg.root_done_bonus_first_claim_only
+        if is_root_mission_claim:
+            self._root_claim_filed = True
         obj_name = (
             self.world.objectives[mission.objective_id].name
             if mission.objective_id is not None
@@ -1213,6 +1239,10 @@ class CohortEnv(ParallelEnv):
                 # truthful root-mission COMPLETE: closes the grace window
                 self._root_close_step = self._step_count
                 self._root_close_callsign = soldier.callsign
+                # ...and collects the bonus only if this was the first claim.
+                # The close itself is never withheld: the operation is over when
+                # the root says so truthfully, whatever it said before.
+                self._root_close_earns_bonus = earns_bonus
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
         else:
