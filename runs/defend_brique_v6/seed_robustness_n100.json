@@ -1,0 +1,84 @@
+{
+  "what": "The defend_brique ENDEX comparison measured on a SECOND episode set (seed 500, N=100) for every arm and both checkpoints, under the pre-v1.14 criterion the publication used. A 2x2x2 with nothing left uneven.",
+  "why_committed": "refs #29. #27 fixed the baseline's N; this fixes its episode set \u2014 and then extends the same fix to the treatment arms, because pooling v6 over two seed sets against an ENDEX pair scored on one would have re-created the same asymmetry pointing the other way.",
+  "method": "Run in a detached git worktree at 1ab3758 (the last pre-v1.14 commit) with PYTHONPATH forcing imports to resolve there, because the editable install otherwise resolves cohort to the main tree and would have scored these under the NEW horizon criterion. Verified: v6/final at seed 123 reproduced 0.98 exactly.",
+  "scored_at_commit": "6babcd3",
+  "criterion_commit": "1ab3758",
+  "scored_on": "2026-08-09",
+  "cells": {
+    "defend_brique_v6/final": {
+      "checkpoint": "ckpt_latest.pt",
+      "checkpoint_sha256": "1d8440e915fc54fa6a44648b9b330c0adee193d36a053be2d604431a485cb609",
+      "seed_123": 98,
+      "seed_500": 92,
+      "seed_500_ci95": "0.92 \u00b1 0.05",
+      "episodes_each": 100,
+      "swing": 6
+    },
+    "defend_brique_v6/best": {
+      "checkpoint": "ckpt_best.pt",
+      "checkpoint_sha256": "bab057b1332e99d8eafa9872a9acdc099103f1f85063c150a44459ea98208f53",
+      "seed_123": 86,
+      "seed_500": 87,
+      "seed_500_ci95": "0.87 \u00b1 0.07",
+      "episodes_each": 100,
+      "swing": 1
+    },
+    "defend_brique_v9/final": {
+      "checkpoint": "ckpt_latest.pt",
+      "checkpoint_sha256": "ad81f9ac5ca18bfe8f800a8830661da45bc4e9808fc9e7efbb5fd3bb27bf7fb3",
+      "seed_123": 91,
+      "seed_500": 87,
+      "seed_500_ci95": "0.87 \u00b1 0.07",
+      "episodes_each": 100,
+      "swing": 4
+    },
+    "defend_brique_v9/best": {
+      "checkpoint": "ckpt_best.pt",
+      "checkpoint_sha256": "9bfbafa68fdbcf22b82c6122bff5aed985d80e61a82e3275cade71f572fb2673",
+      "seed_123": 90,
+      "seed_500": 92,
+      "seed_500_ci95": "0.92 \u00b1 0.05",
+      "episodes_each": 100,
+      "swing": 2
+    },
+    "defend_brique_v10/final": {
+      "checkpoint": "ckpt_latest.pt",
+      "checkpoint_sha256": "9dabb0a50cd24f15ad7ade593fca33c0066bf8350aa21491801750f696c2fbcc",
+      "seed_123": 88,
+      "seed_500": 90,
+      "seed_500_ci95": "0.90 \u00b1 0.06",
+      "episodes_each": 100,
+      "swing": 2
+    },
+    "defend_brique_v10/best": {
+      "checkpoint": "ckpt_best.pt",
+      "checkpoint_sha256": "683e0dba41eb224055b4ad6a69b989b593327fb9b863b08307b3ff08e059acab",
+      "seed_123": 91,
+      "seed_500": 89,
+      "seed_500_ci95": "0.89 \u00b1 0.06",
+      "episodes_each": 100,
+      "swing": 2
+    }
+  },
+  "equal_footing": {
+    "final/final": {
+      "v6": "190/200",
+      "endex": "356/400",
+      "p_fisher": 0.0153,
+      "reading": "v6 higher \u2014 the published regression survives equal footing"
+    },
+    "best/best": {
+      "v6": "173/200",
+      "endex": "362/400",
+      "p_fisher": 0.1631,
+      "reading": "ENDEX higher, not significant \u2014 the sign reverses on the other checkpoint"
+    },
+    "all_four_cells": {
+      "v6": "363/400",
+      "endex": "718/800",
+      "p_fisher": 0.6101,
+      "reading": "indistinguishable once no checkpoint is privileged"
+    }
+  }
+}

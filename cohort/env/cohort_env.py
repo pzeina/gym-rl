@@ -2344,6 +2344,16 @@ class CohortEnv(ParallelEnv):
         horizon = self._horizon_defense()
         if horizon is None or self._defend_lost_step is not None:
             return
+        if self._success_step is not None:
+            # the operation is already won: the grace window is aftermath, and
+            # ground given up in it did not fail anything. Without this guard
+            # the latch keeps recording past the decision and reads as a
+            # failure that never happened — measured on defend_brique_v9, 17
+            # latched losses against 12 lost episodes, the 5 extra all after
+            # an early release had already ended the mission. No verdict moves
+            # either way (success is locked at T0); what moves is whether the
+            # number means what its name says.
+            return
         if self._step_count < (self._h_hour or 0):
             return
         if not self._position_occupied(root_obj):
