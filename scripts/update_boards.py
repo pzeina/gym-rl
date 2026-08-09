@@ -22,7 +22,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -48,9 +47,18 @@ BOARDS = {
     },
 }
 
-# Fields that change what a board SAYS. Deliberately excludes the render
-# timestamp and a live run's percentage — otherwise every tick of a training
-# run would mark the artifacts stale and the signal would mean nothing.
+# Fields that change what a board SAYS about the FLEET. Deliberately excludes
+# the render timestamp and a live run's percentage — otherwise every tick of a
+# training run would mark the artifacts stale and the signal would mean nothing.
+#
+# Git HEAD is excluded for the same reason, decided once commits stopped being
+# gated one at a time (owner's call, 2026-08-09). The program board prints the
+# commits-ahead count and the last tag, so a commit genuinely does change a
+# corner of the page — but a "republish me" flag that fires on every commit is
+# the noisy signal this digest exists to avoid. The trade: those two header
+# numbers can sit stale on the published page until the next fleet change.
+# Anything about a RUN — a new evaluation, a gate flipping, a run starting or
+# landing — still marks the artifacts stale immediately.
 STABLE = (
     "run", "scenario", "success_ci95", "episodes", "policy", "gates_failed",
     "overrides", "env_steps", "obs_dim", "loadable", "state",
@@ -58,13 +66,9 @@ STABLE = (
 
 
 def data_digest(rows: list[dict]) -> str:
-    """A digest of what the boards would say, not of the bytes they render to."""
+    """A digest of what the boards say about the fleet, not of the rendered bytes."""
     stable = [{k: r.get(k) for k in STABLE} for r in rows]
-    head = subprocess.run(
-        ["git", "rev-parse", "--short", "HEAD"],
-        cwd=ROOT, capture_output=True, text=True,
-    ).stdout.strip()
-    payload = json.dumps({"rows": stable, "head": head}, sort_keys=True, default=str)
+    payload = json.dumps({"rows": stable}, sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 

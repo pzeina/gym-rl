@@ -49,6 +49,30 @@ def test_a_training_run_s_progress_does_not_mark_the_artifacts_stale():
     assert update_boards.data_digest(early) == update_boards.data_digest(later)
 
 
+def test_a_commit_alone_does_not_mark_the_artifacts_stale():
+    """Same rule as a training percentage, and for the same reason.
+
+    The program board prints the commits-ahead count, so a commit does change a
+    corner of the page — but commits are pre-authorised now, and a republish
+    flag that fires on every one of them is exactly the noise this digest
+    exists to avoid. Fleet content is what the flag tracks.
+
+    Checked at the mechanism, not the symptom: the digest went HEAD-dependent by
+    shelling out to `git rev-parse`, so the guard is that it reads nothing but
+    its argument. A test that merely called it twice would pass either way.
+    """
+    rows = [_row()]
+    assert update_boards.data_digest(rows) == update_boards.data_digest(rows)
+
+    src = (ROOT / "scripts" / "update_boards.py").read_text()
+    body = src[src.index("def data_digest"):src.index("def read_state")]
+    for reads_the_world in ("subprocess", "git", "Path(", "open("):
+        assert reads_the_world not in body, (
+            f"data_digest consults {reads_the_world!r}; it must be a pure "
+            "function of the rows, or the publish flag fires on unrelated changes"
+        )
+
+
 def test_a_new_evaluation_does_mark_them_stale():
     before = [_row(success_ci95="0.74 ± 0.09")]
     after = [_row(success_ci95="0.86 ± 0.07")]
