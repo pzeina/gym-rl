@@ -3172,3 +3172,38 @@ deliberately deferred (`docs/vision.md` §2c).
 
   Not changed: no reward default, no space, no scenario semantics, and the
   pricing decision stays closed. Tests 563 → 568, ruff clean.
+
+- **2026-08-09** — **`fireteam_defend_v15` publishes: the close rule works, and
+  success held.** N=100, seed 123, final policy **0.84 ± 0.07** against
+  `fireteam_defend_v12`'s **0.86 ± 0.07**. The intervals overlap almost
+  entirely — this is a hold, not an improvement, which is what the v1.13 entry
+  predicted and required. Peak `ckpt_best` 0.83 ± 0.07. First row of the new
+  v1.13 README table, which publishes FINAL numbers.
+
+  **The variable under test moved and nothing else had to.**
+  `closed_on_root_report_rate` **0.99**, against **0.47** for v12's own
+  `ckpt_latest` re-scored under the same rule
+  (`runs/fireteam_defend_v12/endex_rescore.json`, refs #24). Same scenario,
+  same rule, same N — the close rule is the only difference. All four behavior
+  gates pass on both checkpoints (timeout 0.16, success 0.84, cover 0.904,
+  distance 2.39).
+
+  **One gain, one cost, both stated.** `human_death_rate` 0.15 → **0.08**,
+  roughly halved, on an axis no gate covers. Against it, contact reporting
+  degraded on both axes: precision 0.562 → **0.465**, recall 0.786 → **0.699**.
+  The closing SITREP became near-universal while contact reporting got worse.
+  Nothing measured here identifies a mechanism for that, so it is logged as an
+  open question, not explained.
+
+  **Two caveats the tooling rounds away.** The stability give-back is **9.82
+  points** against a bar of `< 10` — `publish_audit.py` prints `10` at
+  `:>6.0f`, so this is a borderline pass and is published as one. And
+  `false_complete_rate` reads 1.00 over **n=2** DONE reports in 100 episodes:
+  root claims are masked shut under v1.13, so those are subordinate claims and
+  the ratio is not a rate of anything. Transparency probe unchanged and still
+  trailing (destination 0.471, −0.498 vs majority; RFN1 0.012).
+
+  Supersedes `v11`/`v12` as the published `fireteam_defend` policy. Both stay on
+  disk: `v12` is the option-4 evidence this file cites *and* the ENDEX baseline,
+  and its committed evaluations are untouched. `defend_brique_v9` is still at its
+  N=20 exit evaluation — publishing it completes the pair.
