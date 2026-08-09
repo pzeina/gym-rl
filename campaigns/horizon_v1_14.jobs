@@ -1,0 +1,16 @@
+# v1.14 — retrain both defend scenarios under the horizon criterion.
+#
+# DEFEND success is now conservation of the position to a stated hour, not
+# annihilation of the enemy (eccf816). Phase 2 established what the change is
+# worth as a RE-SCORING: on the committed checkpoints, at horizon =
+# int(0.5 * max_steps), N=100 seed 123, ckpt_latest, the criterion reproduces
+# the offline reference exactly — defend_brique_v9 91 -> 88, v10 88 -> 99,
+# v6 97 -> 99.
+#
+# That is a statement about the scoring rule and NOT about the policies. These
+# two runs are what separates the claims: same scenarios, same budgets, same
+# seed and the same `defend_survivor_scale=0.35` as the runs they replace
+# (fireteam_defend_v15, defend_brique_v9), so the criterion — and the DONE
+# channel it reopens to the root — is the only variable.
+fireteam_defend_v16  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35
+defend_brique_v11    --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35
