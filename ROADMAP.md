@@ -3098,3 +3098,77 @@ deliberately deferred (`docs/vision.md` §2c).
 
   Not changed: no reward default, no space, no scenario semantics. Boards
   re-rendered and flagged PUBLISH PENDING; publishing is a session action.
+
+- **2026-08-09** — **assurance #23: the blind-claim premise is refuted, the
+  campaign it pre-registers is already dead, and half its discriminator is now
+  in the suite.** The issue pre-registers `fireteam_defend_v13/v14` and
+  `defend_brique_v8` on the `done_false` pricing question. That campaign was
+  killed by v1.13 and is **not** being restarted; what is actionable is the
+  premise check and the instrument, and both are handled here.
+
+  **The premise correction, and it is a miss on this side.** `8c839ef` priced a
+  MISSION COMPLETE against **blind P** — the chance a claim filed at a random
+  admissible step happens to be truthful — and derived break-evens of 0.111 at
+  `done_false=-0.5` and 0.333 at −2.0. Measured against every corpus with a
+  live channel, realised acceptance runs **2–10× blind P** (their measurement,
+  70 pinned corpora, `results/done_channel.json`): `fireteam_defend_v10`
+  **13 claims, 13 accepted** against blind P 0.100; `v9` 0.654 vs 0.099;
+  `squad_screen_v5` 0.500 vs 0.097; `defend_brique_v6`/latest 0.211 vs 0.144.
+  A policy that can *time* the act is not the claimant that arithmetic
+  describes, so the break-evens do not describe the choice any policy on record
+  faced — and the conclusion "−2.0 is backwards, −0.1 is the ready lever"
+  **cannot be settled from that model in either direction**. That entry stated
+  it as settled; it was not. Their endogeneity note compounds it and is
+  accepted too: P is estimated from episode lengths, and a truthful root claim
+  *ends* an episode, so the estimate is shortened exactly where the channel is
+  alive. Any future pricing arithmetic must take P from a fixed reference
+  policy, not from the arm under evaluation.
+
+  **Why the campaign is not restarting.** v1.13 (`16cb2a6`, owner's decision)
+  dissolved the question rather than pricing it: MISSION COMPLETE is masked
+  shut on a continuous posture, the root reports and COMMAND transmits ENDEX.
+  `false_complete_rate` is structurally 0/None on defend scenarios now and was
+  replaced by `closed_on_root_report_rate`; the replacement campaign
+  `endex_v1_13` landed at **1.00 on both arms** against v12's re-scored
+  0.19/0.47. So the pre-registration is unadjudicable rather than refuted:
+  `v14` and `defend_brique_v8` will never run, and `v13` exists only as a
+  2.17M/3.5M partial. Recorded, not scored.
+
+  **One line of it does bear on a live owner option.** Their point 2 is that
+  `fireteam_defend_v10`'s 13-for-13 is an existence proof that the plain-DEFEND
+  completion condition was *already inferable from what the root can see*. If
+  option (c) — make completion observable in the obs, breaking `OBS_DIM` and
+  the whole checkpoint fleet — ever comes back to the table, it needs a
+  justification other than observability. Owner's call; flagged, not taken.
+
+  **Their discriminator, judged on the merits and adopted in part**
+  (`cohort/metrics.py`, +5 tests). Added: `done_claims_per_claiming_episode`
+  and its root-only twin, with `done_reports_root` / `done_rejected_root` /
+  `false_complete_rate_root` and the claiming-episode counts. **Not** added:
+  "realised acceptance" as a named metric — every DONE is adjudicated on the
+  step it is transmitted (DONE_CONFIRM or DONE_REJECT, never neither), so
+  accepted ≡ reports − rejected and realised acceptance ≡
+  `1 - false_complete_rate` at each level. A second name for a number the
+  suite already carries is noise. What was genuinely missing is **volume
+  against the episodes that carried it**, and the root/subordinate split: the
+  root's channel is the one that closes an operation, and `done_admissible_root`
+  has had no numerator since refs #13. Measured today, `ckpt_best`, N=20,
+  seed 123:
+
+  | run | claims / claiming ep | root's | root rejected | episodes claiming |
+  |---|---|---|---|---|
+  | `fireteam_v8` | **14.40** | 11.15 | 0.94 | 20/20 |
+  | `squad_screen_v5` | **3.00** | 2.77 | 0.67 | 14/20 |
+
+  Two policies whose pooled rejection ratios are 0.84 and 0.69 — near enough to
+  read as the same failure — behaving five times apart on the axis that says
+  whether a channel carries reports or spam. That is the issue's point,
+  reproduced on this repo's own instrument. Their method ask is satisfied by
+  the behavior table, which now prints concentration and the root split beside
+  `false_complete_rate`. **Caveat**: metrics are computed at evaluation time,
+  so the committed `behavior.json` fleet does not carry these keys — they
+  appear from the next evaluation onward, and any cross-fleet reading of them
+  needs a re-score.
+
+  Not changed: no reward default, no space, no scenario semantics, and the
+  pricing decision stays closed. Tests 563 → 568, ruff clean.
