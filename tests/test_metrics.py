@@ -288,6 +288,96 @@ def test_false_complete_rate():
     assert aggregate_behavior([ep])["false_complete_rate"] == 0.5
 
 
+def _claim_episode(claims, *, rejected=0, claimant="TL1", root=True):
+    """One episode in which ``claimant`` files ``claims`` MISSION COMPLETEs."""
+    who = {**sold(claimant), "root": root}
+    steps = [step(0, [who])]
+    for i in range(claims):
+        answer = "done_reject" if i < rejected else "done_confirm"
+        steps.append(
+            step(i + 1, [who], messages=[msg("done", claimant, "HQ"), msg(answer, "HQ", claimant)])
+        )
+    return episode_behavior(trace(steps))
+
+
+def test_the_same_rejection_rate_separates_a_report_from_a_flood():
+    """refs #23: a ratio cannot tell one-per-episode from spam. This can."""
+    # thirteen episodes, one claim each, every claim accepted
+    disciplined = aggregate_behavior([_claim_episode(1) for _ in range(13)])
+    # the same acceptance would be unreachable, so match the *ratio* instead:
+    # both policies are rejected on half their claims, at 1 and at 8 per episode
+    reporting = aggregate_behavior([_claim_episode(2, rejected=1) for _ in range(13)])
+    spamming = aggregate_behavior([_claim_episode(8, rejected=4) for _ in range(13)])
+
+    assert reporting["false_complete_rate"] == spamming["false_complete_rate"] == 0.5
+    assert reporting["done_claims_per_claiming_episode"] == 2.0
+    assert spamming["done_claims_per_claiming_episode"] == 8.0
+    assert disciplined["done_claims_per_claiming_episode"] == 1.0
+    assert disciplined["false_complete_rate"] == 0.0
+
+
+def test_the_denominator_is_claiming_episodes_not_episodes():
+    # silence in nine episodes out of ten must not read as restraint in the
+    # tenth: the episodes that carried no claim are not part of the ratio
+    quiet = [episode_behavior(trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])]))] * 9
+    agg = aggregate_behavior([*quiet, _claim_episode(4)])
+
+    assert agg["episodes"] == 10 and agg["done_claim_episodes"] == 1
+    assert agg["done_claims_per_claiming_episode"] == 4.0
+    assert agg["done_claim_rate"] is None  # nothing was ever admissible here
+
+
+def test_nobody_claiming_leaves_the_concentration_undefined():
+    agg = aggregate_behavior(
+        [episode_behavior(trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])]))]
+    )
+
+    assert agg["done_claim_episodes"] == 0
+    assert agg["done_claims_per_claiming_episode"] is None
+    assert agg["false_complete_rate"] is None
+
+
+def test_the_root_s_channel_is_counted_apart_from_its_subordinates():
+    # the pooled rate is carried by RFN1's four rejected claims; the root filed
+    # one and it was accepted. Reading the pooled number as the root's is the
+    # confusion this split exists to stop.
+    root = {**sold("TL1"), "root": True}
+    rifleman = {**sold("RFN1"), "root": False}
+    steps = [
+        step(0, [root, rifleman]),
+        step(1, [root, rifleman],
+             messages=[msg("done", "TL1", "HQ"), msg("done_confirm", "HQ", "TL1")]),
+    ]
+    for i in range(4):
+        steps.append(
+            step(i + 2, [root, rifleman],
+                 messages=[msg("done", "RFN1", "TL1"), msg("done_reject", "TL1", "RFN1")])
+        )
+    agg = aggregate_behavior([episode_behavior(trace(steps))])
+
+    assert agg["done_reports"] == 5 and agg["done_rejected"] == 4
+    assert agg["false_complete_rate"] == 0.8
+    assert agg["done_reports_root"] == 1 and agg["done_rejected_root"] == 0
+    assert agg["false_complete_rate_root"] == 0.0
+    assert agg["done_claims_per_claiming_episode_root"] == 1.0
+
+
+def test_a_successor_s_claim_counts_as_the_root_s():
+    # TL1 holds the root, dies, and SGT2 assumes command: the claim that closes
+    # the operation is whoever is root when it is made, not a fixed callsign
+    before = [{**sold("TL1"), "root": True}, {**sold("SGT2"), "root": False}]
+    after = [{**sold("TL1", alive=False), "root": False}, {**sold("SGT2"), "root": True}]
+    steps = [
+        step(0, before),
+        step(1, before, messages=[msg("done", "TL1", "HQ"), msg("done_reject", "HQ", "TL1")]),
+        step(2, after, messages=[msg("done", "SGT2", "HQ"), msg("done_confirm", "HQ", "SGT2")]),
+    ]
+    agg = aggregate_behavior([episode_behavior(trace(steps))])
+
+    assert agg["done_reports_root"] == 2 and agg["done_rejected_root"] == 1
+    assert agg["done_claims_per_claiming_episode_root"] == 2.0
+
+
 # ---------------------------------------------------------------------- #
 # succession recovery
 # ---------------------------------------------------------------------- #

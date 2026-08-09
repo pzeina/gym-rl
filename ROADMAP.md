@@ -63,11 +63,16 @@ once the point landed; `runs/fireteam_defend_v13/` is a partial (2.17M/3.5M)
 left on disk, not a result.
 
 **⇒ THE NEXT THING IS TO READ `endex_v1_13`.** `fireteam_defend_v15` and
-`defend_brique_v9` are training the defend family against the loop it now has
-to close (every checkpoint on disk learned under the old rule). The number to
-watch is **`closed_on_root_report_rate`** — v12's checkpoint scores **0.22**
-under the new rule — with success/root-death expected to hold at the v1.12
-levels (fireteam 0.86/0.15, brique 0.97/0.05). Nothing else here is blocked.
+`defend_brique_v9` train the defend family against the loop it now has to close
+(every checkpoint on disk learned under the old rule). The number to watch is
+**`closed_on_root_report_rate`**, against v12's own policy re-scored under the
+new rule: **0.19 at `ckpt_best`, 0.47 at `ckpt_latest`** (N=100, seed 123,
+`runs/fireteam_defend_v12/endex_rescore.json`). The bare **0.22** this block
+and the boards used to quote named no checkpoint and matches neither (refs #24,
+corrected 2026-08-09). Both arms have since landed — 1.00 at final on each,
+success/root-death still to be settled at N=100 by `/publish`. Success/root-death
+were expected to hold at the v1.12 levels (fireteam 0.86/0.15, brique
+0.97/0.05). Nothing else here is blocked.
 
 **Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
 repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
@@ -3024,7 +3029,10 @@ deliberately deferred (`docs/vision.md` §2c).
   so a SEIZE root does not read as "never reported" — that is exactly the
   denominator confusion that made v12's single claim read as a 1.00 failure
   rate, and it is now impossible to repeat in the other direction. v12's
-  checkpoint measures **0.22** under the new rule.
+  checkpoint measures **0.22** under the new rule. *(Corrected 2026-08-09,
+  refs #24: that figure named no checkpoint and no N, and re-scoring v12's own
+  policy at N=100 reproduces neither — 0.19 at `ckpt_best`, 0.47 at
+  `ckpt_latest`. See the entry at the foot of this log.)*
 
   `test_root_opord_claim.py` is rewritten, not deleted: it pins the reversal
   *and* the hazard that outlived it (mask and adjudicator must never drift
@@ -3042,3 +3050,125 @@ deliberately deferred (`docs/vision.md` §2c).
   hold. ENDEX covers it correctly either way, but the taxonomy is worth a
   look: that scenario may want a different root mission rather than a
   different close rule.
+
+- **2026-08-09** — **assurance #24: the boards were reading a family norm as a
+  finding about one run, and quoting a baseline nothing on disk backed.** Two
+  of the three open threads on the program board named a level, not a
+  movement, and both levels turn out to be scenario-typical. Confirmed against
+  this repo's *own* committed evaluations, not only the reviewer's series:
+
+  | family | earlier generations on disk | the run the thread named |
+  |---|---|---|
+  | `fireteam` false-COMPLETE | `v4d` 0.76, `v5b` 0.82, `v6` 0.87, `v5` 0.88 | `v8` **0.84 best → 0.91 final** |
+  | `platoon` false-COMPLETE | `v2` 0.66, `v4` 0.80; `v3` filed **0 claims** in 100 eps and still succeeded | `v5` 3 claims → **0** |
+
+  So "claims completion at nearly every opportunity" and "has gone mute" both
+  described the family. Worse, the first was also wrong on its own terms: 0.91
+  is the share of claims the net *rejects*; `done_claim_rate` says `v8` takes
+  the act at **0.028** of the agent-steps where the mask offers it. The
+  surviving finding in each case is the within-run delta — contact recall
+  0.75 → 0.34 on `v8`, obedience latency 3.9 → 17.0 on `platoon` — and the
+  threads now lead with it.
+
+  **The structural fix, so this is not just a re-write**: `_family()` in
+  `scripts/program_board.py` renders, beside any thread that leads with a
+  level, that metric's spread across the scenario's other generations, read
+  off disk like everything else on the page. It widens by itself as runs land.
+  `tests/test_program_board.py` pins it (7 tests), including that a prefix
+  never reaches into a neighbouring scenario (`fireteam_v` must not eat
+  `fireteam_defend_v*`).
+
+  **The 0.22 baseline is corrected and now has a source.** It was published on
+  two boards and in this log with no checkpoint and no N, for a metric that
+  moves 2.5× between the two checkpoints of that one run. Re-scored under the
+  ENDEX rule, `fireteam_defend_v12` closes **0.19** (`ckpt_best`, n=81 ENDEX)
+  and **0.47** (`ckpt_latest`, n=86), N=100 seed 123 —
+  `runs/fireteam_defend_v12/endex_rescore.json`, committed beside the run, and
+  the board prints both rows with their N. Direction is unchanged: `v15`/`v9`
+  score 1.00, so the retrain still clears the bar at either checkpoint. The
+  reviewer's independent replay (0.115/0.593, seeds 500–529 × 30) agrees on
+  the shape and not the level — different instrument, and neither of us
+  reproduces 0.22.
+
+  **One more they were right about.** "Every arm passes all four behavior
+  gates" is true and reads as a clean bill: no gate bounds commander survival.
+  The option-4 card now carries `human_death_rate` at final as its own panel —
+  fireteam_defend 0.35 → 0.15, defend_brique 0.07 → 0.05 — captioned *no gate
+  covers this*. Improvement, not a clean bill.
+
+  Not changed: no reward default, no space, no scenario semantics. Boards
+  re-rendered and flagged PUBLISH PENDING; publishing is a session action.
+
+- **2026-08-09** — **assurance #23: the blind-claim premise is refuted, the
+  campaign it pre-registers is already dead, and half its discriminator is now
+  in the suite.** The issue pre-registers `fireteam_defend_v13/v14` and
+  `defend_brique_v8` on the `done_false` pricing question. That campaign was
+  killed by v1.13 and is **not** being restarted; what is actionable is the
+  premise check and the instrument, and both are handled here.
+
+  **The premise correction, and it is a miss on this side.** `8c839ef` priced a
+  MISSION COMPLETE against **blind P** — the chance a claim filed at a random
+  admissible step happens to be truthful — and derived break-evens of 0.111 at
+  `done_false=-0.5` and 0.333 at −2.0. Measured against every corpus with a
+  live channel, realised acceptance runs **2–10× blind P** (their measurement,
+  70 pinned corpora, `results/done_channel.json`): `fireteam_defend_v10`
+  **13 claims, 13 accepted** against blind P 0.100; `v9` 0.654 vs 0.099;
+  `squad_screen_v5` 0.500 vs 0.097; `defend_brique_v6`/latest 0.211 vs 0.144.
+  A policy that can *time* the act is not the claimant that arithmetic
+  describes, so the break-evens do not describe the choice any policy on record
+  faced — and the conclusion "−2.0 is backwards, −0.1 is the ready lever"
+  **cannot be settled from that model in either direction**. That entry stated
+  it as settled; it was not. Their endogeneity note compounds it and is
+  accepted too: P is estimated from episode lengths, and a truthful root claim
+  *ends* an episode, so the estimate is shortened exactly where the channel is
+  alive. Any future pricing arithmetic must take P from a fixed reference
+  policy, not from the arm under evaluation.
+
+  **Why the campaign is not restarting.** v1.13 (`16cb2a6`, owner's decision)
+  dissolved the question rather than pricing it: MISSION COMPLETE is masked
+  shut on a continuous posture, the root reports and COMMAND transmits ENDEX.
+  `false_complete_rate` is structurally 0/None on defend scenarios now and was
+  replaced by `closed_on_root_report_rate`; the replacement campaign
+  `endex_v1_13` landed at **1.00 on both arms** against v12's re-scored
+  0.19/0.47. So the pre-registration is unadjudicable rather than refuted:
+  `v14` and `defend_brique_v8` will never run, and `v13` exists only as a
+  2.17M/3.5M partial. Recorded, not scored.
+
+  **One line of it does bear on a live owner option.** Their point 2 is that
+  `fireteam_defend_v10`'s 13-for-13 is an existence proof that the plain-DEFEND
+  completion condition was *already inferable from what the root can see*. If
+  option (c) — make completion observable in the obs, breaking `OBS_DIM` and
+  the whole checkpoint fleet — ever comes back to the table, it needs a
+  justification other than observability. Owner's call; flagged, not taken.
+
+  **Their discriminator, judged on the merits and adopted in part**
+  (`cohort/metrics.py`, +5 tests). Added: `done_claims_per_claiming_episode`
+  and its root-only twin, with `done_reports_root` / `done_rejected_root` /
+  `false_complete_rate_root` and the claiming-episode counts. **Not** added:
+  "realised acceptance" as a named metric — every DONE is adjudicated on the
+  step it is transmitted (DONE_CONFIRM or DONE_REJECT, never neither), so
+  accepted ≡ reports − rejected and realised acceptance ≡
+  `1 - false_complete_rate` at each level. A second name for a number the
+  suite already carries is noise. What was genuinely missing is **volume
+  against the episodes that carried it**, and the root/subordinate split: the
+  root's channel is the one that closes an operation, and `done_admissible_root`
+  has had no numerator since refs #13. Measured today, `ckpt_best`, N=20,
+  seed 123:
+
+  | run | claims / claiming ep | root's | root rejected | episodes claiming |
+  |---|---|---|---|---|
+  | `fireteam_v8` | **14.40** | 11.15 | 0.94 | 20/20 |
+  | `squad_screen_v5` | **3.00** | 2.77 | 0.67 | 14/20 |
+
+  Two policies whose pooled rejection ratios are 0.84 and 0.69 — near enough to
+  read as the same failure — behaving five times apart on the axis that says
+  whether a channel carries reports or spam. That is the issue's point,
+  reproduced on this repo's own instrument. Their method ask is satisfied by
+  the behavior table, which now prints concentration and the root split beside
+  `false_complete_rate`. **Caveat**: metrics are computed at evaluation time,
+  so the committed `behavior.json` fleet does not carry these keys — they
+  appear from the next evaluation onward, and any cross-fleet reading of them
+  needs a re-score.
+
+  Not changed: no reward default, no space, no scenario semantics, and the
+  pricing decision stays closed. Tests 563 → 568, ruff clean.

@@ -10,10 +10,18 @@ board's tokens so the two read as one set.
 
 **Every number on the page is read off disk at render time** — from each run's
 committed ``behavior_final.json`` / ``behavior.json``, from ``economics.json``,
-from git, and from the live job files. Only the *claims* are written here, next
-to the runs that test them, so a retrain updates the evidence without anyone
-retyping it. The narrative lists at the foot carry the ROADMAP date they were
-taken from, because those are the owner's calls and this file does not own them.
+from ``endex_rescore.json`` where a policy had to be re-scored under a rule it
+did not learn under, from git, and from the live job files. Only the *claims*
+are written here, next to the runs that test them, so a retrain updates the
+evidence without anyone retyping it. The narrative lists at the foot carry the
+ROADMAP date they were taken from, because those are the owner's calls and this
+file does not own them.
+
+Two mechanisms exist because the page was caught overstating (refs #24): a
+thread that leads with a *level* renders the same metric's spread across that
+scenario's other generations beside it (``_family``), and a row whose number did
+not come from a run's own behavior file must print either its own N or the word
+"quoted" (``_panel`` references).
 """
 
 from __future__ import annotations
@@ -203,56 +211,101 @@ CAMPAIGNS = [
                     ("defend_brique_v6", "survivor-scaled 0.35", "a"),
                 ],
             },
+            # refs #24: "passes all four gates" is true and reads as a clean bill
+            # of health. No gate bounds commander survival, so the number that
+            # would qualify it goes on the page rather than in a footnote.
+            {
+                "cap": "the root's own death rate · final policy · no gate covers this",
+                "metric": "human_death_rate",
+                "scale": 0.5,
+                "runs": [
+                    ("fireteam_defend_v11", "fireteam_defend · flat", "b"),
+                    ("fireteam_defend_v12", "fireteam_defend · scaled", "a"),
+                    ("defend_brique_v7", "defend_brique · flat", "b"),
+                    ("defend_brique_v6", "defend_brique · scaled", "a"),
+                ],
+            },
         ],
         "verdict": (
             "<b>Confirmed on both defend scenarios; keep 0.35.</b> On fireteam_defend the "
-            "progress-log A/B reads p=0.034 on success and p=0.001 on root deaths "
-            "(0.35 → 0.15); on defend_brique, p=0.027 — and that scenario had to be repaired "
-            "first, because it declared prepared positions and never gave the fire team time "
-            "to occupy them. Every arm above passes all four behavior gates. The "
-            "pre-authorised fallback to option 1 is not indicated."
+            "progress-log A/B reads p=0.034 on success and p=0.001 on root deaths; on "
+            "defend_brique, p=0.027 — and that scenario had to be repaired first, because it "
+            "declared prepared positions and never gave the fire team time to occupy them. "
+            "Every arm above passes all four behavior gates — <b>and no gate covers commander "
+            "survival</b>, which is the panel above: the option-4 arm more than halves the "
+            "root's death rate on fireteam_defend and still buries a commander in about one "
+            "episode in seven. Improvement, not a clean bill (refs #24). The pre-authorised "
+            "fallback to option 1 is not indicated."
         ),
     },
 ]
 
+# A thread's claim has to be about the run it names. Where the number it leads
+# with is a LEVEL, the family band beside it says whether that level is this
+# run's doing or the scenario's — both were being read as findings about one
+# arm until an outside series said otherwise (refs #24).
 THREADS = [
     {
-        "title": "platoon_v5 has gone mute",
+        "title": "platoon_v5 answers slowly and stages orders it never releases",
         "body": (
-            "It scores a perfect success rate and stops talking: MISSION COMPLETE claims fall "
-            "away entirely, obedience latency quadruples, and staged orders are issued and "
-            "then abandoned rather than released. Suspect is exploration, not price — and it "
-            "is refutable: if exploration, reporting recovers at a higher <code>ent_coef</code> "
-            "with <code>done_false</code> unchanged."
+            "It scores a perfect success rate while its command traffic degrades: obedience "
+            "latency multiplies several-fold against <code>platoon_v4</code>, and staged "
+            "orders are issued and then abandoned rather than released. Its <code>MISSION "
+            "COMPLETE</code> silence is <i>not</i> the finding — <code>platoon_v3</code> filed "
+            "none either and still succeeded, and where this family did claim, most claims "
+            "were rejected on the net (band, right). Suspect is exploration, not price, and it "
+            "is refutable: if exploration, the command traffic recovers at a higher "
+            "<code>ent_coef</code> with <code>done_false</code> unchanged."
         ),
         "probes": [
-            ("DONE reports", "platoon_v4", "done_reports", "best", "platoon_v5", "done_reports", "final"),
             ("obedience latency", "platoon_v4", "obedience_latency_mean", "best",
              "platoon_v5", "obedience_latency_mean", "final"),
+            ("DONE reports", "platoon_v4", "done_reports", "best", "platoon_v5", "done_reports", "final"),
         ],
+        "family": {
+            "cap": "claims rejected · earlier platoon generations",
+            "prefix": "platoon_v",
+            "metric": "false_complete_rate",
+            "exclude": ("platoon_v5",),
+        },
     },
     {
         "title": "fireteam_v8 reports worse the longer it trains",
         "body": (
-            "The one arm whose reporting degrades: it claims completion it has not earned at "
-            "nearly every opportunity, and its contact recall falls by more than half between "
-            "the rolling-best checkpoint and the final policy."
+            "The finding is the <b>within-run</b> movement: between the rolling-best "
+            "checkpoint and the final policy its contact recall falls by more than half, and "
+            "the share of its completion claims the net rejects rises. The <i>level</i> is not "
+            "the finding — every earlier fireteam generation on disk sits in the band on the "
+            "right, so a rejected-claim share near 0.9 is what this scenario has always done "
+            "rather than something this run invented. Nor is it claiming at every opportunity: "
+            "it takes the act at a few percent of the agent-steps where the mask offers it. "
+            "(The assurance layer measured the same family level independently, over "
+            "generations this repo does not hold.)"
         ),
         "probes": [
             ("false MISSION COMPLETE", "fireteam_v8", "false_complete_rate", "best",
              "fireteam_v8", "false_complete_rate", "final"),
             ("contact report recall", "fireteam_v8", "report_recall", "best",
              "fireteam_v8", "report_recall", "final"),
+            ("claims / admissible step", "fireteam_v8", "done_claim_rate", "best",
+             "fireteam_v8", "done_claim_rate", "final"),
         ],
+        "family": {
+            "cap": "false-COMPLETE rate · earlier fireteam generations",
+            "prefix": "fireteam_v",
+            "metric": "false_complete_rate",
+            "exclude": ("fireteam_v8",),
+        },
     },
 ]
 
 NEXT = [
-    ("Read <code>endex_v1_13</code> when it lands.",
-     "fireteam_defend_v15 then defend_brique_v9, same seeds and budgets as the arms they "
-     "replace, so the variable is the close rule. The number to watch is "
-     "closed_on_root_report_rate against 0.22, with success and root deaths expected to hold "
-     "at the v1.12 levels."),
+    ("Publish <code>endex_v1_13</code> at N=100.",
+     "Both arms landed and close every operation on the root's own report. What their exit "
+     "evaluations cannot settle is success: they are N=20 against N=100 baselines. The bar "
+     "they are read against is v12's own policy re-scored under the new rule — both "
+     "checkpoints, in runs/fireteam_defend_v12/endex_rescore.json, because one run has two "
+     "and they are 2.5&times; apart."),
     ("Re-publish the fleet at N=100 off FINAL numbers.",
      "README and the v1.9 table are superseded twice over. scripts/publish_audit.py is the "
      "gate — 11 of 18 older published runs fail it."),
@@ -321,19 +374,27 @@ def _plot(m: dict, scale: float, arm: str, bound: float | None) -> str:
 def _panel(panel: dict) -> str:
     rows, arms, breached, quoted = [], set(), False, False
     bound = panel.get("bound")
-    entries = [(run, label, arm, None) for run, label, arm in panel["runs"]]
-    # A reference is a number this repo measured but did not commit — v12's
-    # checkpoint re-scored under the ENDEX rule, say. It earns a place beside
-    # the runs only if the row says on its face that it was quoted, not read.
+    entries = [{"name": run, "note": label, "arm": arm} for run, label, arm in panel["runs"]]
+    # A reference is a number that did not come from a run's own behavior file:
+    # v12's checkpoints re-scored under the ENDEX rule, say. It earns a place
+    # beside the runs only if the row says on its face where it came from —
+    # its own N when it was measured into a committed file (refs #24), and
+    # "quoted" when nothing on disk backs it.
     for ref in panel.get("references", []):
-        entries.append((ref["label"], ref["note"], ref.get("arm", "b"), ref["value"]))
-    for name, label, arm, literal in entries:
-        m = {"value": literal, "ci": None, "text": f"{literal:.2f}", "episodes": None} \
-            if literal is not None else _measure(name, panel["metric"])
+        entries.append({**ref, "name": ref["label"], "arm": ref.get("arm", "b")})
+    for entry in entries:
+        name, label, arm = entry["name"], entry["note"], entry["arm"]
+        literal = entry.get("value")
+        m = (
+            {"value": literal, "ci": None, "text": f"{literal:.2f}",
+             "episodes": entry.get("episodes")}
+            if literal is not None
+            else _measure(name, panel["metric"])
+        )
         if not m:
             continue
         arms.add(arm)
-        quoted = quoted or literal is not None
+        quoted = quoted or (literal is not None and not m["episodes"])
         # a bound is a "max" gate: over it is a breach, and it is said in words —
         # the dashed marker alone is color doing a label's job
         flag = ""
@@ -343,7 +404,7 @@ def _panel(panel: dict) -> str:
         # N belongs on the row, not only in the caption: an N=20 arm sitting
         # beside an N=100 arm is the comparison this project keeps getting wrong
         episodes = f'<span class="ep">N={m["episodes"]}</span>' if m.get("episodes") else ""
-        if literal is not None:
+        if literal is not None and not m["episodes"]:
             episodes = '<span class="ep">quoted</span>'
         rows.append(
             f'<div class="brow" title="{html.escape(name)}">'
@@ -378,9 +439,46 @@ ENDEX_ARMS = [
     ("fireteam_defend_v15", "fireteam_defend", "fireteam_defend_v12"),
     ("defend_brique_v9", "defend_brique", "defend_brique_v6"),
 ]
-# v12's checkpoint re-scored under the ENDEX rule. Measured, but into no run
-# dir — so it is rendered as a quoted reference, never as if it were read.
-ENDEX_BASELINE = 0.22
+#: v12's own checkpoints re-scored under the ENDEX rule, committed beside the
+#: run it describes. This was published for a while as a bare **0.22** naming
+#: no checkpoint (refs #24) — and one run has two, which here read 0.19 and
+#: 0.47 at N=100. A single unlabelled figure lets the same retrain be read as
+#: improvement or as regression on that choice alone, so both rows go on.
+ENDEX_RESCORE = ROOT / "runs" / "fireteam_defend_v12" / "endex_rescore.json"
+
+
+def _endex_baseline() -> list[dict]:
+    """Panel reference rows for the re-scored baseline, weakest checkpoint first.
+
+    Empty when nothing on disk backs it — the card then makes no baseline claim
+    at all, which is the only honest fallback for a number with no source.
+    """
+    data = _json(ENDEX_RESCORE)
+    rows = []
+    for ckpt, m in (data.get("checkpoints") or {}).items():
+        rate = m.get("closed_on_root_report_rate")
+        if rate is None:
+            continue
+        policy = m.get("policy") or ckpt
+        rows.append(
+            {
+                "label": f"fireteam_defend_v12 · {policy}",
+                "policy": policy,
+                "note": "old-rule policy, re-scored",
+                "value": rate,
+                "episodes": m.get("episodes"),
+                "arm": "b",
+            }
+        )
+    return sorted(rows, key=lambda r: r["value"])
+
+
+def _baseline_phrase(baseline: list[dict]) -> str:
+    """"0.19 at the rolling-best checkpoint and 0.47 at the final checkpoint"."""
+    parts = [f"<b>{r['value']:.2f}</b> at the {r['policy']} checkpoint" for r in baseline]
+    if len(parts) < 3:
+        return " and ".join(parts)
+    return ", ".join(parts[:-1]) + f" and {parts[-1]}"
 
 
 def _endex(rows: list[dict]) -> dict:
@@ -393,6 +491,8 @@ def _endex(rows: list[dict]) -> dict:
     by_run = {r["run"]: r for r in rows}
     training = [a for a, _, _ in ENDEX_ARMS if by_run.get(a, {}).get("state") == "RUNNING"]
     scored = [a for a, _, _ in ENDEX_ARMS if _measure(a, "closed_on_root_report_rate")]
+    baseline = _endex_baseline()
+    bar = _baseline_phrase(baseline)
 
     question = (
         '<p class="q">A DEFEND is not a task with an end state its holder may declare — it '
@@ -411,9 +511,13 @@ def _endex(rows: list[dict]) -> dict:
         verdict = (
             "The signal to read is <code>closed_on_root_report_rate</code> — of the "
             "operations COMMAND closed, how many the root's own report closed early. "
-            f"<b>fireteam_defend_v12's checkpoint measures {ENDEX_BASELINE:.2f} under the "
-            "new rule</b>; a policy trained on this loop should beat that while success "
-            "and root deaths hold at the v1.12 levels."
+            + (
+                f"fireteam_defend_v12's old-rule policy re-scores at {bar} under the new "
+                "rule (N=100 each); a policy trained on this loop should beat both, while "
+                "success and root deaths hold at the v1.12 levels."
+                if baseline
+                else "There is no re-scored baseline on disk to beat it against yet."
+            )
         )
         heading = "Under test — v1.13"
         panels = ""
@@ -425,12 +529,7 @@ def _endex(rows: list[dict]) -> dict:
             "metric": "closed_on_root_report_rate",
             "scale": 1.0,
             "runs": [(a, f"{scen} · trained on the new loop", "a") for a, scen, _ in ENDEX_ARMS],
-            "references": [{
-                "label": "fireteam_defend_v12",
-                "note": "old-rule policy, re-scored",
-                "value": ENDEX_BASELINE,
-                "arm": "b",
-            }],
+            "references": baseline,
         }
         success = {
             "cap": "success · final policy · the v1.12 arms these replace",
@@ -445,8 +544,14 @@ def _endex(rows: list[dict]) -> dict:
         panels = _panel(closed) + _panel(success)
         verdict = (
             "<b>The close rule works, and it is not marginal.</b> Both arms close every "
-            f"operation on the root's own report — {ENDEX_BASELINE:.2f} → 1.00 — with zero "
-            "MISSION COMPLETE claims filed and all four behavior gates passing on each. "
+            "operation on the root's own report — 1.00"
+            + (
+                f", against {bar} for the policy that learned under the old rule"
+                if baseline
+                else ""
+            )
+            + " — with zero MISSION COMPLETE claims filed and all four behavior gates "
+            "passing on each. "
             "<b>The success comparison is not settled yet</b>: these are the N=20 "
             "evaluations training writes on exit, set against N=100 numbers, and the "
             "intervals overlap. <code>/publish</code> at N=100 is what decides whether "
@@ -486,6 +591,28 @@ def _campaign(c: dict) -> str:
     )
 
 
+def _family(spec: dict) -> dict:
+    """The spread of one metric across the sibling runs that committed it.
+
+    refs #24. A level every generation of a scenario shows is a property of the
+    family, not a finding about whichever run is being discussed — two threads
+    on this page read as regressions for exactly that reason. The band is read
+    off disk like everything else here, so it widens by itself as runs land,
+    and a thread that leads with a level can be checked against it on sight.
+    """
+    exclude = set(spec.get("exclude", ()))
+    values = {}
+    for run in sorted((ROOT / "runs").glob(f"{spec['prefix']}*")):
+        if not run.is_dir() or run.name in exclude:
+            continue
+        m = _measure(run.name, spec["metric"], "best")
+        if m and m.get("value") is not None:
+            values[run.name] = m["value"]
+    if len(values) < 2:  # one sibling is an anecdote, not a family
+        return {}
+    return {"lo": min(values.values()), "hi": max(values.values()), "n": len(values)}
+
+
 def _thread(t: dict) -> str:
     probes = []
     for label, run_a, key_a, pref_a, run_b, key_b, pref_b in t["probes"]:
@@ -495,6 +622,12 @@ def _thread(t: dict) -> str:
             continue
         probes.append(
             f"<div>{html.escape(label)}<br><b>{a['value']:.3g} → {b['value']:.3g}</b></div>"
+        )
+    band = _family(t["family"]) if t.get("family") else {}
+    if band:
+        probes.append(
+            f'<div>{html.escape(t["family"]["cap"])}<br>'
+            f'<b>{band["lo"]:.3g}&ndash;{band["hi"]:.3g}</b> over {band["n"]} runs</div>'
         )
     return (
         f'<div class="thread"><div><h4>{t["title"]}</h4><p>{t["body"]}</p></div>'
@@ -592,7 +725,10 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
     <p><b>Where these numbers come from.</b> Every figure is read at render time from each
       run's committed <code>behavior_final.json</code> (final policy) or
       <code>behavior.json</code> (rolling-best checkpoint), from
-      <code>economics.json</code>, and from the live job files — not retyped. The p-values
+      <code>economics.json</code>, from <code>endex_rescore.json</code> where a policy was
+      re-scored under a rule it did not learn under, and from the live job files — not
+      retyped. A band beside a thread is that same metric across the scenario's other
+      generations, so a level can be told apart from a finding. The p-values
       are quoted from the ROADMAP progress log, which is where the significance tests were
       run. {len(loadable)} runs load under the current spaces; the full fleet with its
       confidence intervals and behavior gates is on the fleet board.</p>

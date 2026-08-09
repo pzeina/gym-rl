@@ -26,7 +26,15 @@ behaves* while doing so, per evaluation run:
   *opposite directions* by scenario family, so it flatters a policy in one
   and slanders it in another). ``share / availability`` is the selection
   lift, with 1.00 the masked-random floor
-* false-COMPLETE rate    — MISSION COMPLETE claims rejected by the umpire
+* false-COMPLETE rate    — MISSION COMPLETE claims rejected by the umpire,
+  pooled and for the root's own claims (refs issue #23: the root's channel is
+  the one that closes an operation, and a fireteam's riflemen can carry the
+  pooled rate on their own)
+* COMPLETE claims / claiming episode — claims transmitted over the episodes
+  that carried any (refs issue #23: a rejection *ratio* reads 13-accepted-of-13
+  and 27-accepted-of-128 as the same shape of object. 1.00 is a policy filing a
+  report when it believes the end state holds; a large number is one spamming a
+  channel, and the two can share a rejection rate exactly)
 * COMPLETE claim rate    — claims transmitted over the agent-steps at which
   claiming was admissible (refs issue #13: zero DONE reports is either a shut
   channel or a declined opportunity, and only this denominator says which)
@@ -729,17 +737,53 @@ def _vocabulary(trace: dict) -> dict[str, Any]:
     }
 
 
-def _false_complete(trace: dict) -> tuple[int, int]:
-    """(DONE reports transmitted, of which rejected by the superior)."""
-    dones = 0
-    rejected = 0
+def _false_complete(trace: dict) -> dict[str, int]:
+    """MISSION COMPLETE claims: how many, how many rejected, and how concentrated.
+
+    ``false_complete_rate`` is a ratio, and a ratio cannot see the difference
+    between a root that files one claim in each episode where the end state
+    holds and a root that files eight an episode and is right an eighth of the
+    time (refs #23, filed from the assurance layer against the fleet: 13 claims
+    accepted 13 times in 13 episodes, and 128 claims accepted 27 times in 30,
+    are the same shape of object and opposite behaviours). The denominator that
+    separates them is **episodes in which anything was claimed** — one claim per
+    claiming episode is a policy filing a report, eight is a policy spamming the
+    net, and the rejection rate can be identical either way.
+
+    The root's own claims are counted separately because the C2 question is
+    about the root's channel: the root is the agent whose COMPLETE closes the
+    operation, and ``done_admissible_root`` has counted its opportunities since
+    refs #13 with no numerator to divide into. The pooled rate is not a stand-in
+    — a fireteam's riflemen can carry the pooled rate on their own.
+
+    Acceptance is deliberately NOT added as a metric of its own. Every DONE is
+    adjudicated on the step it is transmitted (``cohort_env._done`` answers with
+    DONE_CONFIRM or DONE_REJECT and never with neither), so accepted equals
+    reports minus rejected exactly, and realised acceptance is
+    ``1 - false_complete_rate`` at each level. A second name for a number the
+    suite already carries would be noise, not evidence.
+    """
+    dones = rejected = root_dones = root_rejected = 0
     for step in trace["steps"]:
+        # read per step: after a succession the root is a different callsign,
+        # and the claim that matters is the one made BY whoever held the root
+        roots = {rec["cs"] for rec in step["soldiers"] if rec.get("root")}
         for msg in step["messages"]:
             if msg["kind"] == "done":
                 dones += 1
+                root_dones += msg.get("from") in roots
             elif msg["kind"] == "done_reject":
                 rejected += 1
-    return dones, rejected
+                # the superior sends the rejection; the claimant receives it
+                root_rejected += msg.get("to") in roots
+    return {
+        "done_reports": dones,
+        "done_rejected": rejected,
+        "done_reports_root": root_dones,
+        "done_rejected_root": root_rejected,
+        "done_claim_episode": int(dones > 0),
+        "done_claim_episode_root": int(root_dones > 0),
+    }
 
 
 def _endex_close(trace: dict) -> dict[str, int]:
@@ -1005,7 +1049,6 @@ def _traffic(trace: dict) -> dict[str, Any]:
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
     latencies, censored, obedience_by_task = _obedience(trace)
-    dones, rejected = _false_complete(trace)
     events, recovery, unrecovered = _succession(trace)
     pairs, covered = _coverage(trace)
     return {
@@ -1020,8 +1063,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_doctrine(trace),
         **_retasks(trace),
         **_reports(trace),
-        "done_reports": dones,
-        "done_rejected": rejected,
+        **_false_complete(trace),
         **_done_opportunity(trace),
         **_endex_close(trace),
         "succession_events": events,
@@ -1168,6 +1210,23 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "false_complete_rate": _ratio(total("done_rejected"), total("done_reports")),
         "done_reports": total("done_reports"),
         "done_rejected": total("done_rejected"),
+        # refs #23: the root's own channel, and the concentration the pooled
+        # ratio cannot see. claims-per-claiming-episode near 1.0 is a policy
+        # filing a report; a large one is a policy spamming a channel whose
+        # rejection rate can look identical either way.
+        "done_reports_root": total("done_reports_root"),
+        "done_rejected_root": total("done_rejected_root"),
+        "false_complete_rate_root": _ratio(
+            total("done_rejected_root"), total("done_reports_root")
+        ),
+        "done_claim_episodes": total("done_claim_episode"),
+        "done_claim_episodes_root": total("done_claim_episode_root"),
+        "done_claims_per_claiming_episode": _ratio(
+            total("done_reports"), total("done_claim_episode")
+        ),
+        "done_claims_per_claiming_episode_root": _ratio(
+            total("done_reports_root"), total("done_claim_episode_root")
+        ),
         # refs #13: the opportunity denominator. done_claim_rate is None only
         # when the channel was never open — which is itself the finding.
         "done_admissible": total("done_admissible"),
@@ -1321,6 +1380,7 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("doctrine_preference_rate", "doctrine preference", "{:.2f}"),
     ("doctrine_allowed_rate", "doctrine containment", "{:.2f}"),
     ("false_complete_rate", "false-COMPLETE rate", "{:.2f}"),
+    ("done_claims_per_claiming_episode", "COMPLETE claims / claiming ep", "{:.2f}"),
     ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
     ("closed_on_root_report_rate", "closed on root's report", "{:.2f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
@@ -1492,7 +1552,27 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         "doctrine_allowed_rate": (
             f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"
         ),
-        "false_complete_rate": f"n={agg['done_reports']}",
+        "false_complete_rate": (
+            f"n={agg['done_reports']}"
+            + (
+                f"; root {agg['done_reports_root']} claims, "
+                f"{agg['false_complete_rate_root']:.2f} rejected"
+                if agg.get("false_complete_rate_root") is not None
+                else "; none by the root"
+            )
+        ),
+        # refs #23: volume against the episodes that carried it. 1.00 is one
+        # claim per claiming episode; a large number is spam with the same
+        # rejection rate.
+        "done_claims_per_claiming_episode": (
+            f"{agg['done_claim_episodes']} of {agg['episodes']} episodes claimed"
+            + (
+                f"; root {agg['done_claims_per_claiming_episode_root']:.2f} over "
+                f"{agg['done_claim_episodes_root']}"
+                if agg.get("done_claims_per_claiming_episode_root") is not None
+                else ""
+            )
+        ),
         "closed_on_root_report_rate": f"n={agg['endex_sent']} ENDEX",
         "done_claim_rate": (
             f"{agg.get('done_admissible', 0)} admissible agent-steps "

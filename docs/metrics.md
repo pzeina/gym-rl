@@ -243,8 +243,30 @@ reissues are not re-tasks) and the recorder copies its per-step event log
 
 Rejected DONE / total DONE transmitted. Every MISSION COMPLETE claim is
 answered on the net (`DONE_CONFIRM` / `DONE_REJECT`, issue #4), so the rate
-is exactly the share of claims the umpire judged false. *Edge case*: no DONE
-→ `null`.
+is exactly the share of claims the umpire judged false — and, for the same
+reason, **realised acceptance is exactly `1 - false_complete_rate`** and is
+deliberately not carried under a second name. *Edge case*: no DONE → `null`.
+
+`false_complete_rate_root` is the same ratio over the claims made by whoever
+held the root at the moment of the claim (issue #23). It is not derivable from
+the pooled rate: a fireteam's riflemen can carry the pooled number on their
+own, and the root's channel is the one that closes an operation.
+
+### COMPLETE claims per claiming episode (issue #23)
+
+DONE transmitted / episodes in which anything was claimed —
+`done_claims_per_claiming_episode`, with `done_claims_per_claiming_episode_root`
+over the root's own claims. **1.00 is a policy filing a report**; a large number
+is a policy spamming a channel, and the two can share a rejection rate exactly.
+That is the point: `false_complete_rate` is a ratio, so 13-claims-13-accepted
+and 128-claims-27-accepted are the same shape of object and opposite
+behaviours. Measured (`ckpt_best`, N=20, seed 123): `fireteam_v8` files 14.40
+claims per claiming episode in 20 of 20 episodes; `squad_screen_v5` files 3.00
+in 14 of 20 — a 5× separation on policies whose pooled rejection ratios (0.84,
+0.69) read as the same failure.
+
+The denominator is *claiming* episodes, not episodes: silence in nine episodes
+must not read as restraint in the tenth. *Edge case*: nobody claimed → `null`.
 
 ### COMPLETE claim rate (issue #13)
 
