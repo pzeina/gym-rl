@@ -63,7 +63,8 @@ EXTRA_CSS = """
 .brow .lab{font:12px/1.35 var(--mono);color:var(--muted);white-space:nowrap}
 .brow .lab b{color:var(--ink);font-weight:600;display:block}
 .brow .num{font:13px/1.3 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap;
-  display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+  display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.brow .num .ep{font-size:11px;color:var(--muted)}
 .plot{position:relative;height:12px;background:var(--track);border-radius:2px}
 .plot .fill{position:absolute;left:0;top:0;bottom:0;border-radius:0 4px 4px 0;
   background:var(--accent)}
@@ -318,25 +319,37 @@ def _plot(m: dict, scale: float, arm: str, bound: float | None) -> str:
 
 
 def _panel(panel: dict) -> str:
-    rows, arms, breached = [], set(), False
+    rows, arms, breached, quoted = [], set(), False, False
     bound = panel.get("bound")
-    for run, label, arm in panel["runs"]:
-        m = _measure(run, panel["metric"])
+    entries = [(run, label, arm, None) for run, label, arm in panel["runs"]]
+    # A reference is a number this repo measured but did not commit — v12's
+    # checkpoint re-scored under the ENDEX rule, say. It earns a place beside
+    # the runs only if the row says on its face that it was quoted, not read.
+    for ref in panel.get("references", []):
+        entries.append((ref["label"], ref["note"], ref.get("arm", "b"), ref["value"]))
+    for name, label, arm, literal in entries:
+        m = {"value": literal, "ci": None, "text": f"{literal:.2f}", "episodes": None} \
+            if literal is not None else _measure(name, panel["metric"])
         if not m:
             continue
         arms.add(arm)
-        n = f" · N={m['episodes']}" if m.get("episodes") else ""
+        quoted = quoted or literal is not None
         # a bound is a "max" gate: over it is a breach, and it is said in words —
         # the dashed marker alone is color doing a label's job
         flag = ""
         if bound is not None and m["value"] > bound:
             breached = True
             flag = '<span class="chip bad">✕ gate failed</span>'
+        # N belongs on the row, not only in the caption: an N=20 arm sitting
+        # beside an N=100 arm is the comparison this project keeps getting wrong
+        episodes = f'<span class="ep">N={m["episodes"]}</span>' if m.get("episodes") else ""
+        if literal is not None:
+            episodes = '<span class="ep">quoted</span>'
         rows.append(
-            f'<div class="brow" title="{html.escape(run + n)}">'
-            f'<span class="lab"><b>{html.escape(run)}</b>{html.escape(label)}</span>'
+            f'<div class="brow" title="{html.escape(name)}">'
+            f'<span class="lab"><b>{html.escape(name)}</b>{html.escape(label)}</span>'
             f'{_plot(m, panel["scale"], arm, bound)}'
-            f'<span class="num">{html.escape(str(m["text"]))}{flag}</span></div>'
+            f'<span class="num">{html.escape(str(m["text"]))}{episodes}{flag}</span></div>'
         )
     keys = []
     if "a" in arms:
@@ -352,11 +365,114 @@ def _panel(panel: dict) -> str:
             '<span><i class="dash"></i> gate bound'
             f'{" · breached" if breached else ""}</span>'
         )
+    if quoted:
+        keys.append("<span>“quoted” = measured but not committed to a run dir</span>")
     return (
         f'<div class="panel"><div class="cap">{html.escape(panel["cap"])}</div>'
         f'<div class="rows">{"".join(rows)}</div>'
         f'<div class="keys">{"".join(keys)}</div></div>'
     )
+
+
+ENDEX_ARMS = [
+    ("fireteam_defend_v15", "fireteam_defend", "fireteam_defend_v12"),
+    ("defend_brique_v9", "defend_brique", "defend_brique_v6"),
+]
+# v12's checkpoint re-scored under the ENDEX rule. Measured, but into no run
+# dir — so it is rendered as a quoted reference, never as if it were read.
+ENDEX_BASELINE = 0.22
+
+
+def _endex(rows: list[dict]) -> dict:
+    """The v1.13 card, written from whatever state the campaign is actually in.
+
+    It has three: still training, landed, or not launched. A card that says
+    "under test" after the answer arrived is the exact staleness these boards
+    were rebuilt to stop.
+    """
+    by_run = {r["run"]: r for r in rows}
+    training = [a for a, _, _ in ENDEX_ARMS if by_run.get(a, {}).get("state") == "RUNNING"]
+    scored = [a for a, _, _ in ENDEX_ARMS if _measure(a, "closed_on_root_report_rate")]
+
+    question = (
+        '<p class="q">A DEFEND is not a task with an end state its holder may declare — it '
+        "is held until relieved or re-tasked, so the order that ends it comes down the "
+        "chain. <code>MISSION COMPLETE</code> is now masked shut on a continuous posture: "
+        "the root reports the situation and COMMAND transmits <b>ENDEX</b>. Spaces are "
+        "unchanged, so the whole fleet still loads — but every defend checkpoint on disk "
+        "learned under the old rule.</p>"
+    )
+    chips = ['<span class="chip">16cb2a6</span>', '<span class="chip">masking only</span>']
+
+    if not scored:
+        chips.append(
+            '<span class="chip on">training</span>' if training else '<span class="chip">queued</span>'
+        )
+        verdict = (
+            "The signal to read is <code>closed_on_root_report_rate</code> — of the "
+            "operations COMMAND closed, how many the root's own report closed early. "
+            f"<b>fireteam_defend_v12's checkpoint measures {ENDEX_BASELINE:.2f} under the "
+            "new rule</b>; a policy trained on this loop should beat that while success "
+            "and root deaths hold at the v1.12 levels."
+        )
+        heading = "Under test — v1.13"
+        panels = ""
+    else:
+        chips.append('<span class="chip ok">landed</span>')
+        heading = "Landed — v1.13, reading the ENDEX retrain"
+        closed = {
+            "cap": "operations the root's own report closed early · final policy",
+            "metric": "closed_on_root_report_rate",
+            "scale": 1.0,
+            "runs": [(a, f"{scen} · trained on the new loop", "a") for a, scen, _ in ENDEX_ARMS],
+            "references": [{
+                "label": "fireteam_defend_v12",
+                "note": "old-rule policy, re-scored",
+                "value": ENDEX_BASELINE,
+                "arm": "b",
+            }],
+        }
+        success = {
+            "cap": "success · final policy · the v1.12 arms these replace",
+            "metric": None,
+            "scale": 1.0,
+            "runs": [
+                r
+                for arm, scen, base in ENDEX_ARMS
+                for r in ((base, f"{scen} · old close rule", "b"), (arm, f"{scen} · ENDEX", "a"))
+            ],
+        }
+        panels = _panel(closed) + _panel(success)
+        verdict = (
+            "<b>The close rule works, and it is not marginal.</b> Both arms close every "
+            f"operation on the root's own report — {ENDEX_BASELINE:.2f} → 1.00 — with zero "
+            "MISSION COMPLETE claims filed and all four behavior gates passing on each. "
+            "<b>The success comparison is not settled yet</b>: these are the N=20 "
+            "evaluations training writes on exit, set against N=100 numbers, and the "
+            "intervals overlap. <code>/publish</code> at N=100 is what decides whether "
+            "success held."
+        )
+
+    card = (
+        f'<article class="card"><header><div class="tagrow">{"".join(chips)}</div>'
+        "<h3>COMMAND ends a defense, not the section holding the ground</h3>"
+        f'{question}</header>{panels}<p class="verdict">{verdict}</p></article>'
+    )
+    return {
+        "heading": heading,
+        "card": card,
+        "standfirst": (
+            "Three questions this campaign settled, what each one is resting on, and the "
+            + ("fourth, just landed." if scored else "one now under test.")
+        ),
+        "lede_tail": (
+            "The question just answered is narrower and more doctrinal: "
+            "<b>who is allowed to end a defense.</b>"
+            if scored
+            else "What is under test today is narrower and more doctrinal: "
+            "<b>who is allowed to end a defense.</b>"
+        ),
+    }
 
 
 def _campaign(c: dict) -> str:
@@ -412,6 +528,7 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
             '<div class="note"><div class="note-h"><span>Nothing is training.</span></div>'
             "<p>The board is a snapshot of committed evaluations only.</p></div>"
         )
+    endex = _endex(rows)
 
     return f"""<title>cohort · program board</title>
 <style>{BASE_CSS}{EXTRA_CSS}</style>
@@ -419,8 +536,7 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
   <header class="masthead">
     <div class="eyebrow">cohort — chain of command, multi-agent RL</div>
     <h1>Where the program stands</h1>
-    <p class="standfirst">Three questions this campaign settled, what each one is resting
-      on, and the one now under test.</p>
+    <p class="standfirst">{endex["standfirst"]}</p>
     <div class="specs">
       <span>version <b>{VERSION}</b></span>
       <span>branch <b>{html.escape(branch)}</b></span>
@@ -434,31 +550,14 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
   <p class="lede">A collapse that had haunted this repo since v1.0 turned out to be one
     shared policy free-riding on a terminal its casualties could not collect. Paying the
     fallen dissolved it — and quietly broke the defend family, where there is no fast win
-    to buy. The fix for <i>that</i> is now confirmed on both defend scenarios. What is under
-    test today is narrower and more doctrinal: <b>who is allowed to end a defense.</b></p>
+    to buy. The fix for <i>that</i> is now confirmed on both defend scenarios.
+    {endex["lede_tail"]}</p>
 
   <div class="strip">{"".join(flight)}</div>
 
   <section>
-    <h2 class="sec">Under test — v1.13</h2>
-    <article class="card">
-      <header><div class="tagrow">
-        <span class="chip">16cb2a6</span><span class="chip">masking only</span>
-        <span class="chip on">training</span></div>
-      <h3>COMMAND ends a defense, not the section holding the ground</h3>
-      <p class="q">A DEFEND is not a task with an end state its holder may declare — it is
-        held until relieved or re-tasked, so the order that ends it comes down the chain.
-        <code>MISSION COMPLETE</code> is now masked shut on a continuous posture: the root
-        reports the situation and COMMAND transmits <b>ENDEX</b>. Spaces are unchanged, so
-        the whole fleet still loads — but every defend checkpoint on disk learned under the
-        old rule.</p></header>
-      <p class="verdict">The signal to read is <code>closed_on_root_report_rate</code> — of
-        the operations COMMAND closed, how many the root's own report closed early. It is
-        <code>None</code>, not 0, when no ENDEX was sent, so a SEIZE root does not read as
-        "never reported". <b>fireteam_defend_v12's checkpoint measures 0.22 under the new
-        rule</b>; a policy trained on this loop should beat that while success and root
-        deaths hold at the v1.12 levels (fireteam 0.86 / 0.15, brique 0.97 / 0.05).</p>
-    </article>
+    <h2 class="sec">{endex["heading"]}</h2>
+    {endex["card"]}
   </section>
 
   <section>
