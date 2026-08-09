@@ -12,6 +12,7 @@ scripts/train.sh <run-name> --scenario fireteam --total-steps 1500000   # detach
 scripts/train_queue.sh <jobs-file>                    # a whole campaign, detached
 .venv/bin/python scripts/train_status.py [run]        # cheap check-in
 .venv/bin/python scripts/run_report.py <run> [--vs <baseline>]          # compact digest
+.venv/bin/python scripts/update_boards.py             # re-render both boards (automatic on landing)
 .venv/bin/python -m cohort.training.evaluate runs/<run>/ckpt_best.pt --episodes 20
 .venv/bin/python -m cohort.play --checkpoint runs/<run>/ckpt_best.pt
 ```
@@ -47,6 +48,26 @@ style preferences — they are the cost model.
 - Bounded `grep`/`tail` over a log via Bash is fine for diagnosing a crash.
 - Use the **run-digest** agent (haiku) to sweep several runs; it returns facts only.
 
+**Boards & artifacts.** Two published boards visualise the fleet:
+`runs/fleet_board.html` (every run, CI, gates) and `runs/program_board.html` (the
+settled experiments and what they rest on). **Both refresh themselves when a run
+lands** — `scripts/train.sh` launches through `scripts/train_then_boards.sh`, which
+re-runs `scripts/update_boards.py` after training exits, crash or not. Zero tokens,
+no session involved.
+- The one step a shell cannot do is *publishing* to claude.ai — that needs the
+  Artifact tool, which only exists inside a session. So `update_boards.py` records a
+  content digest of what was last published in `runs/.boards.json`, and
+  `scripts/train_status.py` prints **PUBLISH PENDING** when they diverge. `/boards`
+  closes that gap in one step and stamps `--mark-published`.
+- The digest is over what the boards *say* (results, gates, overrides, run state),
+  not the rendered bytes — a live run's percentage ticking must not mark the
+  artifacts stale, or the signal is worthless.
+- **Never hand-edit the HTML.** It is generated; fix `scripts/fleet_board.py` or
+  `scripts/program_board.py`. Board numbers come from each run's committed
+  `behavior_final.json` (final policy) / `behavior.json` (best checkpoint) — the
+  board states which and at what N, because captioning N=20 rows as N=100 is exactly
+  the overstatement `publish_audit.py` exists to catch.
+
 **Division of labour.** Cheap models move data (launch, extract, summarise). The big
 model does what only it can: reading a digest, judging whether an effect is real
 against the CI, deciding the next experiment. Never invert this.
@@ -55,7 +76,7 @@ against the CI, deciding the next experiment. Never invert this.
 after a launch — context carried across unrelated runs is pure cost, since every run's
 state lives in `runs/<name>/` and is re-readable in ~30 lines at any time.
 
-Slash commands: `/train`, `/train-status`, `/train-report`.
+Slash commands: `/train`, `/train-status`, `/train-report`, `/boards`.
 
 ## Operating guide (established practice — follow unless the owner redirects)
 
