@@ -474,11 +474,11 @@ def _endex_baseline() -> list[dict]:
 
 
 def _baseline_phrase(baseline: list[dict]) -> str:
-    """"0.19 at the rolling-best checkpoint and 0.47 at the final one"."""
+    """"0.19 at the rolling-best checkpoint and 0.47 at the final checkpoint"."""
     parts = [f"<b>{r['value']:.2f}</b> at the {r['policy']} checkpoint" for r in baseline]
-    if len(parts) > 1:
-        parts[-1] = parts[-1].replace(" checkpoint", " one")
-    return " and ".join(parts) if len(parts) < 3 else ", ".join(parts[:-1]) + f" and {parts[-1]}"
+    if len(parts) < 3:
+        return " and ".join(parts)
+    return ", ".join(parts[:-1]) + f" and {parts[-1]}"
 
 
 def _endex(rows: list[dict]) -> dict:
@@ -545,7 +545,11 @@ def _endex(rows: list[dict]) -> dict:
         verdict = (
             "<b>The close rule works, and it is not marginal.</b> Both arms close every "
             "operation on the root's own report — 1.00"
-            + (f", against {bar} for the policy that learned under the old one" if baseline else "")
+            + (
+                f", against {bar} for the policy that learned under the old rule"
+                if baseline
+                else ""
+            )
             + " — with zero MISSION COMPLETE claims filed and all four behavior gates "
             "passing on each. "
             "<b>The success comparison is not settled yet</b>: these are the N=20 "
