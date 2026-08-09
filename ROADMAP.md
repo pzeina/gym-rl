@@ -3475,3 +3475,28 @@ deliberately deferred (`docs/vision.md` §2c).
   vanished checkpoint must never cost an evaluation its results. Tests 588 pass
   (11 new, `tests/test_checkpoint_provenance.py`), ruff clean on the files
   touched. Not changed: no published figure, no README row, no board.
+
+- **2026-08-09** — **the ordered hour is on the header** (refs #30). `config.briefing()`
+  now publishes `defend_horizon`: the step a DEFEND/DENY root is ordered to hold to,
+  or `None` for an indefinite posture. v1.14 made "occupied at every step from H
+  until the ordered hour" the definition of DEFEND success **and** opened the root's
+  MISSION COMPLETE bit precisely when `defend_horizon is not None`, so both the
+  criterion and the claim-admissibility gate turned on a value no outside observer
+  could see — a monitor watching a root transmit MISSION COMPLETE could not classify
+  the claim. A criterion only the environment can evaluate is *measured*; the same
+  criterion with its deadline on the header is *auditable*. Here that cost one
+  dictionary key. Same argument, and the same shape, as `announced_assault_step`
+  (#12): a pure function of the `ScenarioSpec`, identical across episodes, valid
+  before `reset()`, and read-only with respect to the rollout — which is why it was
+  safe to land while `fireteam_defend_v16` / `defend_brique_v11` were training.
+
+  **Deliberately not done:** no hold-until clause in `format_opord`. Changing the
+  transmitted text is *not* rollout-neutral, and landing it mid-campaign would have
+  broken the one property `campaigns/horizon_v1_14.jobs` was built to guarantee —
+  that the close criterion is the only variable. The issue asks for that to be
+  decided on purpose rather than by accident; it is the owner's call once the
+  campaign clears. `cohort/core/language.py` is untouched. What was fixed is the
+  wording of `is_done_admissible`'s comment, which said "the horizon is stated in
+  the OPORD" and read as a claim about the transmitted text when it is true only of
+  the spec the root holds — comment only, no behaviour and no text change.
+  608 tests pass, ruff clean. No published number, README row or board touched.

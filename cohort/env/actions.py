@@ -291,9 +291,13 @@ def is_done_admissible(
     # the *operation* succeeded (see is_root_opord_claim).
     #
     # The type test stays the plain ``COMPLETABLE`` one, not the horizon-aware
-    # predicate: the horizon is stated in the OPORD, so it is the ROOT's order
-    # that carries it. A subordinate tasked DEFEND holds an indefinite posture
-    # that ends when its leader re-tasks it, exactly as in v1.13.
+    # predicate: the horizon belongs to the ROOT's operation order — the one
+    # HQ gives, ``ScenarioSpec.defend_horizon`` — and only the root is ordered
+    # to it. A subordinate tasked DEFEND by its leader holds an indefinite
+    # posture that ends when that leader re-tasks it, exactly as in v1.13.
+    # No clause of the transmitted OPORD *text* names the hour (issue #30);
+    # it is published as briefing header material, not spoken on the net, so
+    # do not read this comment as pointing at a wording in ``language.py``.
     claimable = mission.type in COMPLETABLE or is_root_opord_claim(
         soldier, roster, root_mission, root_objective_id, defend_horizon=defend_horizon
     )
