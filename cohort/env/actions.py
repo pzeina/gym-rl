@@ -242,6 +242,13 @@ def is_root_opord_claim(
         and soldier is roster.root()
         and mission.issuer_id == HQ_ID
         and root_mission is not None
+        # v1.13, owner's decision: a continuous posture has no end state that
+        # its holder may declare. DEFEND/DENY run until a new order arrives,
+        # so the root does not claim them complete — it reports the situation
+        # and COMMAND transmits ENDEX. Without this clause the root could
+        # declare its own DEFEND operation over, which is the one thing the
+        # doctrine table (``COMPLETABLE``) says it must not do.
+        and root_mission in COMPLETABLE
         and mission.type is root_mission
         and mission.objective_id == root_objective_id
     )

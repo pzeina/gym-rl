@@ -233,6 +233,11 @@ class TraceRecorder:
         self.trace["steps"].append(self._step_record(env, initial=False))
         self.trace["length"] = len(self.trace["steps"]) - 1
         self.trace["outcome"] = env.outcome
+        # v1.13: the step the root closed the C2 loop in time to earn
+        # root_done_bonus — a truthful MISSION COMPLETE where one is
+        # admissible, or the root's SITREP on a continuous posture, where it
+        # is not. `None` means COMMAND closed the operation unprompted.
+        self.trace["root_close_step"] = env._root_close_step
         if not env.agents:  # episode over: freeze the per-soldier report sets
             self.trace["reported"] = {
                 s.callsign: sorted(s.reported_enemy_ids) for s in env.roster.soldiers
@@ -737,6 +742,33 @@ def _false_complete(trace: dict) -> tuple[int, int]:
     return dones, rejected
 
 
+def _endex_close(trace: dict) -> dict[str, int]:
+    """Did the root close the C2 loop, or did COMMAND close it unprompted?
+
+    v1.13 replaces ``false_complete_rate`` as the completion signal on a
+    continuous-posture root. There, MISSION COMPLETE is inadmissible — a
+    DEFEND runs until a new order arrives — so the rate is structurally 0 and
+    tells you nothing. What is worth knowing is whether the root reported the
+    situation once the end state held: COMMAND transmits ENDEX either way, but
+    only a timely SITREP closes the window early and earns ``root_done_bonus``.
+
+    Counted only where an ENDEX was actually sent, so success-rate drift does
+    not move the denominator. Zero ENDEX means the scenario has a completable
+    root (SEIZE and friends keep reporting COMPLETE) or the operation never
+    succeeded — neither is a reporting-quality statement, and both stay out.
+    """
+    endex = 0
+    prompted = 0
+    for step in trace["steps"]:
+        for msg in step["messages"]:
+            if msg["kind"] == "endex":
+                endex += 1
+                # the root's SITREP closed the window early: the episode ends
+                # on the report rather than on the grace window expiring
+                prompted += bool(trace.get("root_close_step") is not None)
+    return {"endex_sent": endex, "endex_on_root_report": prompted}
+
+
 def _done_opportunity(trace: dict) -> dict[str, int]:
     """Agent-steps at which MISSION COMPLETE was admissible (all / the root's).
 
@@ -991,6 +1023,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "done_reports": dones,
         "done_rejected": rejected,
         **_done_opportunity(trace),
+        **_endex_close(trace),
         "succession_events": events,
         "succession_recovery": recovery,
         "succession_unrecovered": unrecovered,
@@ -1140,6 +1173,13 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "done_admissible": total("done_admissible"),
         "done_admissible_root": total("done_admissible_root"),
         "done_claim_rate": _ratio(total("done_reports"), total("done_admissible")),
+        # v1.13: the completion signal on a continuous-posture root, where
+        # false_complete_rate is structurally 0 and says nothing. None when no
+        # ENDEX was sent — a completable root, or no successful operation.
+        "endex_sent": total("endex_sent"),
+        "closed_on_root_report_rate": _ratio(
+            total("endex_on_root_report"), total("endex_sent")
+        ),
         "succession_recovery_mean": _mean(recovery),
         "succession_events": total("succession_events"),
         "succession_unrecovered": total("succession_unrecovered"),
@@ -1282,6 +1322,7 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("doctrine_allowed_rate", "doctrine containment", "{:.2f}"),
     ("false_complete_rate", "false-COMPLETE rate", "{:.2f}"),
     ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
+    ("closed_on_root_report_rate", "closed on root's report", "{:.2f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
     ("coverage_time", "subordinate coverage time", "{:.2f}"),
     ("advance_orders_per_episode", "ADVANCE orders / ep", "{:.1f}"),
@@ -1452,6 +1493,7 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"
         ),
         "false_complete_rate": f"n={agg['done_reports']}",
+        "closed_on_root_report_rate": f"n={agg['endex_sent']} ENDEX",
         "done_claim_rate": (
             f"{agg.get('done_admissible', 0)} admissible agent-steps "
             f"({agg.get('done_admissible_root', 0)} the root's)"

@@ -330,6 +330,18 @@ def format_done_reject(claimant_cs: str, leader_cs: str) -> str:
     return f"{claimant_cs}, THIS IS {leader_cs}: NEGATIVE, CONTINUE MISSION. OUT."
 
 
+def format_endex(root_cs: str) -> str:
+    """COMMAND ends the operation.
+
+    The counterpart of ``format_done`` for a mission that cannot be reported
+    complete. A DEFEND/DENY holder occupies its ground until relieved or
+    re-tasked, so nobody below COMMAND is in a position to say the operation
+    is over — the root reports the situation, and the order to end it comes
+    back down the net.
+    """
+    return f"{root_cs}, THIS IS HQ: ENDEX. OUT."
+
+
 def format_support_end(leader_cs: str, sender_cs: str, supported_cs: str) -> str:
     """Supporter reports its SUPPORT mission ended: the supported unit fell."""
     return (
