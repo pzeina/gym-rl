@@ -52,11 +52,16 @@ the fire team time to occupy them), after which `v6`(0.35) beats `v7`(flat)
 0.97 vs 0.89 success (p=0.027) with both arms publishable and all gates
 passing. The pre-authorised option-1 fallback is **not** indicated.
 
-**⇒ THE NEXT THING TO DO IS FALSE DONE.** It is saturated across the whole
-defend family — **0.80** at the final policy in both brique arms, **1.00** in
-both fireteam arms — independent of reward setting and of the spec repair, and
-it is now the largest defect in these scenarios. `--reward done_false=-2.0` is
-one flag and has never been trained. Nothing else here is blocked.
+**⇒ THE NEXT THING IS THE DONE CHANNEL — and `done_false=-2.0` is the WRONG
+lever.** An earlier version of this block named it; the 2026-08-09 diagnosis
+below says it is backwards, and `fireteam_defend_v13/v14` + `defend_brique_v8`
+are training to settle it. **Do not apply it on the strength of the old
+note.** The one number to hold: a claim pays `done_true + root_done_bonus` =
+**+4.0** and costs `done_false` = **−0.5**, so a blind claim breaks even at
+**P = 0.111**, and the grace window is 12 steps of a ~115-step
+`fireteam_defend` success (**P = 0.105**, EV −0.029) versus ~99 steps on
+`defend_brique` (**P = 0.121**, EV +0.045). `-2.0` moves break-even to
+**0.333**, above *both*. Nothing else here is blocked.
 
 **Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
 repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
@@ -2913,3 +2918,60 @@ deliberately deferred (`docs/vision.md` §2c).
   fireteam arms. It is saturated across the whole defend family regardless of
   reward or spec, and it is now the largest thing wrong with these scenarios.
   `--reward done_false=-2.0` is the ready lever and has never been trained.
+
+- **2026-08-09** — **the DONE channel is priced, not unlearnable — and the
+  lever this file named for it is backwards.** Diagnosis first, per the
+  operating guide; no reward changed, nothing shipped on the strength of it.
+
+  `false_complete_rate` is `done_rejected / done_reports`, and yesterday's
+  entry read it as one saturated pathology across the defend family. It is
+  **two opposite pathologies wearing one number**. `fireteam_defend_v12`:
+  **1 DONE report in 100 episodes**, rejected, so the rate reads 1.00 off a
+  denominator of one — 86 successes, **zero** accepted reports, against
+  16,152 root-admissible agent-steps. The channel is not noisy, it is
+  **dead**, and the mask is wide open (161 admissible steps per 163-step
+  episode), so this is a declined act, not a reachability bug — exactly the
+  reading `metrics._done_opportunity`'s docstring was written to enable.
+  `defend_brique_v6`: 4.4 claims/ep, 80% rejected, but **0.89 accepted per
+  episode** — essentially every success does end with a report; the policy
+  simply spams until one lands, inside the existing `done_cooldown=8`.
+
+  **One margin explains both.** A claim pays `done_true + root_done_bonus` =
+  +4.0 inside the grace window and `done_false` = −0.5 outside, so a blind
+  claim breaks even at P = 0.5/4.5 = **0.111**. Grace is 12 steps of a
+  **114.6**-step mean `fireteam_defend` success → P = **0.105**, EV
+  **−0.029** → *never claim is optimal play*. On `defend_brique` it is 12 of
+  **99.1** (v6) and **89.5** (v7) → P = **0.121** / **0.134**, EV **+0.045** /
+  **+0.103** → *claiming pays*. The two scenarios straddle break-even by a
+  hair, and each policy does the arithmetic correctly. Reinforced by
+  observability: plain-DEFEND success is `not living_enemies` — global
+  knowledge the root cannot see (the obs carries `known_enemies`, i.e. what
+  was *spotted*, which reads 0 both before first contact and after the last
+  kill) — while the BRIQUE branch's "scattered with contact broken" is
+  locally observable. The lineage agrees: `fireteam_defend` has never
+  established this channel (v5 0.00, v6 0.90/0 accepted, v8 0.00, v9 1.88/0.62
+  — the peak — v10 1.22/0.40, v11 0.02/0, v12 0.01/0), while the SEIZE-rooted
+  `fireteam` reports 3–14 claims/ep throughout.
+
+  **So `--reward done_false=-2.0` is the wrong lever** — it moves break-even
+  to **0.333**, above *both* scenarios' blind P. It would kill brique's
+  working channel and leave fireteam at zero: it suppresses claiming, it
+  cannot teach correct claiming. This file named it as "the ready lever" and
+  yesterday's session recommended it; both were wrong, and the note in the
+  handoff is corrected rather than quietly dropped.
+
+  Testing rather than asserting (`campaigns/done_channel_v1_13.jobs`, single
+  variable against `v12` / `v6`, `defend_survivor_scale` held at the confirmed
+  0.35): `fireteam_defend_v13` at `done_false=-0.1` (break-even 0.024, well
+  under 0.105) **predicts the channel opens**; `fireteam_defend_v14` at −2.0
+  **predicts no help**; `defend_brique_v8` at −2.0 **predicts it kills a
+  channel that works**. Falsified if v13 does not raise accepted DONE/ep, or
+  if v14/v8 move the way this file used to assume.
+
+  **What is NOT decided here**: if the economics test confirms, the deeper
+  question is still the owner's — repricing buys claiming but not
+  *discrimination*, and on a plain-DEFEND root the completion condition is
+  genuinely not observable. Options are (a) reprice only, (b) align DEFEND
+  success with what a defender can perceive, as the BRIQUE branch already
+  does, (c) make completion observable in the obs — which is a breaking
+  cycle, OBS_DIM and the whole checkpoint fleet. Not autopiloted.
