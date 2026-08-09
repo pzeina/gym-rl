@@ -136,6 +136,44 @@ def test_briefing_carries_the_defend_objective_coordinates():
     assert briefing("fireteam_defend")["objective_cover"] is True
 
 
+def test_briefing_carries_the_ordered_hour_the_defense_holds_to():
+    """Issue #30: since v1.14 the horizon is *both* what DEFEND success means
+    and the gate on the root's MISSION COMPLETE bit, so leaving it unpublished
+    made a claim's admissibility undecidable from outside the environment.
+
+    Header material by the same argument as ``announced_assault_step``: a pure
+    function of the spec, so it is available before ``reset()``, identical in
+    every episode, and it never enters a rollout."""
+    import json
+
+    from cohort.config import briefing, get_scenario
+    from cohort.core.missions import is_completable
+
+    for name, spec in SCENARIOS.items():
+        brief = briefing(name)
+        json.dumps(brief)
+        assert brief["defend_horizon"] == spec.defend_horizon, name
+        # published means an outside monitor can now decide the same question
+        # the mask decides — with nothing but the header
+        assert is_completable(
+            spec.root_mission, defend_horizon=brief["defend_horizon"]
+        ) == is_completable(spec.root_mission, defend_horizon=spec.defend_horizon), name
+
+    # the defended scenarios state an hour; every other posture is indefinite
+    assert briefing("fireteam_defend")["defend_horizon"] == 225
+    assert briefing("defend_brique")["defend_horizon"] == 210
+    assert briefing("fireteam")["defend_horizon"] is None
+
+    # and it is the hour the episode is actually adjudicated against, before
+    # and after reset, from the name alone or from the built env
+    env = make_env("fireteam_defend")
+    assert env.briefing()["defend_horizon"] == get_scenario("fireteam_defend").defend_horizon
+    before = env.briefing()
+    env.reset(seed=7)
+    assert env.briefing() == before
+    assert env.briefing()["defend_horizon"] == env.spec_cfg.defend_horizon
+
+
 def test_sitrep_posture_matches_the_ground_the_sender_stands_on():
     """The self-report must be true: what the soldier says about its cover is
     what `world.cover_at` says (issue #10 — the correlate is only worth

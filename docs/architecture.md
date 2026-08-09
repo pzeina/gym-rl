@@ -235,9 +235,12 @@ friendly side alone (own units + radio traffic).
 
 `env.briefing()` / `cohort.config.briefing(scenario)` returns the **static operations
 overlay** — objective and control-measure coordinates, map size, spawn, root tasking,
-the doctrinal terrain guarantees, the engagement envelope, and the assault step the
+the doctrinal terrain guarantees, the engagement envelope, the assault step the
 OPORD announces (`announced_assault_step`; the step it *actually* arrives at is drawn
-per episode and stays in the oracle as `actual_assault_step`). It is the opposite of
+per episode and stays in the oracle as `actual_assault_step`), and the hour a defense
+is ordered to hold to (`defend_horizon` — since v1.14 both the DEFEND success
+criterion and the gate on the root's MISSION COMPLETE bit, so publishing it is what
+lets an outside monitor classify a completion claim as admissible). It is the opposite of
 the oracle in every respect that matters: a pure function of the `ScenarioSpec`,
 identical across episodes, valid before `reset()`, and therefore legitimate for an
 external monitor to consume — a real one reads it off the overlay before H-hour. There

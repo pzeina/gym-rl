@@ -237,8 +237,19 @@ be expected to be set by H.
 pre-mission overlay as a JSON-ready dict: objective coordinates by name,
 waypoint and phase-line geometry, map size, spawn, the root tasking, the
 doctrinal terrain guarantees (`objective_cover`, `observation_concealment`), the
-engagement envelope (weapon/vision ranges) and the announced assault step
-(`announced_assault_step`, above — `None` where there is no preparation period).
+engagement envelope (weapon/vision ranges), the announced assault step
+(`announced_assault_step`, above — `None` where there is no preparation period)
+and the hour a defense is ordered to hold to (`defend_horizon` — `None` for an
+indefinite posture).
+
+`defend_horizon` is there for a sharper reason than the geometry is (issue #30).
+Since v1.14 it is both halves of what DEFEND means: success is "occupied at
+every step from H until this hour", and the root's MISSION COMPLETE bit is
+admitted only when the scenario states one. Unpublished, an outside monitor
+watching a root transmit MISSION COMPLETE could not tell an admissible claim
+from an inadmissible one, because the deciding input was invisible to it.
+Published, the same traffic is auditable. Note it is **not** in the OPORD text:
+the hour is in the order the root holds, not in the words on the net.
 
 It is a pure function of the `ScenarioSpec`, so it is identical across every
 episode and valid **before `reset()`** — header material for an episode stream,

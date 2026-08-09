@@ -607,6 +607,21 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # outside monitor is meant to characterise from behaviour, and the
         # actual arrival itself stays in env.oracle().
         "announced_assault_step": announced_assault_step(spec),
+        # the hour the root is ordered to hold to (issue #30): the step from
+        # which a DEFEND/DENY root's position no longer has to be occupied,
+        # or None for an indefinite posture. Header material for the same
+        # reason the announced step is — a pure function of the spec, the
+        # same in every episode — but it carries more weight than geometry,
+        # because since v1.14 it is BOTH halves of what DEFEND means: the
+        # success criterion ("occupied at every step from H until this hour")
+        # and the gate that opens the root's MISSION COMPLETE bit
+        # (``missions.is_completable``, admitted only when this is not None).
+        # Unpublished, both were evaluable by the environment alone: a monitor
+        # could see a root claim the operation complete and not be able to say
+        # whether the claim was admissible. Published, the same traffic is
+        # auditable from the outside. Note it is NOT in the OPORD text — the
+        # hour is in the order the root holds, not in the words on the net.
+        "defend_horizon": spec.defend_horizon,
         # doctrinal terrain guarantees — static facts about the map family,
         # unlike the grid itself
         "objective_cover": spec.objective_cover,
