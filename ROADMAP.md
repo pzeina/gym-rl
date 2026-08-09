@@ -3189,11 +3189,33 @@ deliberately deferred (`docs/vision.md` §2c).
   distance 2.39).
 
   **One gain, one cost, both stated.** `human_death_rate` 0.15 → **0.08**,
-  roughly halved, on an axis no gate covers. Against it, contact reporting
-  degraded on both axes: precision 0.562 → **0.465**, recall 0.786 → **0.699**.
-  The closing SITREP became near-universal while contact reporting got worse.
-  Nothing measured here identifies a mechanism for that, so it is logged as an
-  open question, not explained.
+  roughly halved, on an axis no gate covers. Against it, contact reporting —
+  read against **both** of v12's checkpoints, the way the success column already
+  is, because the sign of half of this depends on which one is the reference
+  (amended refs #25; as first written the line quoted the `v12`/final row alone,
+  unlabelled, and called both axes degraded):
+
+  | reference → `v15` final | precision | recall |
+  |---|---|---|
+  | `v12` final (N=100) | 0.562 → **0.465** (−0.097) | 0.786 → **0.699** (−0.086) |
+  | `v12` best (N=20) | 0.702 → **0.465** (−0.237) | 0.628 → **0.699** (**+0.071**) |
+
+  **Precision degrades against either reference; recall improves against one of
+  them.** And `v12`'s own two checkpoints move further than either delta —
+  precision 0.702 → 0.562 (−0.140), recall 0.628 → 0.786 (+0.158) — so the
+  reference moves more than the effect being read off it. The caveat cuts back:
+  `v12`/best is N=20 where everything else here is N=100, so it is the noisier
+  number — which is the point rather than a reason to drop it, since an unstable
+  reference cannot anchor a 0.09 delta. The open question survives on precision
+  only, and no mechanism is identified for that either.
+
+  What does **not** survive is the reading this invited — that the closing
+  SITREP crowds out contact reporting. On the second scenario the same rule
+  change moves it the other way: `defend_brique_v6` (old rule) →
+  `defend_brique_v9` (ENDEX) is precision 0.437 → **0.590** and recall
+  0.834 → **0.841**, both final policy at N=100, same seed 123. `v9` is measured
+  evidence, not a published result — its confirmation seed is still training and
+  it is deliberately not in the README table.
 
   **Two caveats the tooling rounds away.** The stability give-back is **9.82
   points** against a bar of `< 10` — `publish_audit.py` prints `10` at
@@ -3206,4 +3228,63 @@ deliberately deferred (`docs/vision.md` §2c).
   Supersedes `v11`/`v12` as the published `fireteam_defend` policy. Both stay on
   disk: `v12` is the option-4 evidence this file cites *and* the ENDEX baseline,
   and its committed evaluations are untouched. `defend_brique_v9` is still at its
-  N=20 exit evaluation — publishing it completes the pair.
+  N=20 exit evaluation — publishing it completes the pair. *(Written at commit
+  time. `v9` was re-evaluated at N=100 on both checkpoints three minutes later —
+  those are the numbers quoted above — but it is still not published: the
+  confirmation seed `defend_brique_v10` is training.)*
+
+- **2026-08-09** — **assurance #25: a published claim and an outside
+  verification of it, anchored to provably identical weights — and the v15
+  contact-reporting line corrected.** Two results, one of them a first for this
+  repo and one of them a miss on this side.
+
+  **The provenance first.** `runs/fireteam_defend_v15/ckpt_best.pt` hashes to
+  `770aaa59e72a9570ac28ae048c935864e59031bf5a1181a2be68f75d1539b621`, which is
+  exactly the `checkpoint_sha256` the assurance layer's `fireteam_defend_v15_best`
+  corpus carries in its tap header. **Every claim published here about that
+  checkpoint and every independent measurement of it are known to be about the
+  same weights**, rather than argued to be — the first time on this project. The
+  best previously available was behavioural agreement plus an argument that the
+  weights were probably the same, and that argument was explicitly refused as an
+  upgrade for `squad_v6`, whose tap predated their digest and whose RNG stream
+  had since shifted. On these weights the two pipelines agree: `ckpt_best`
+  success 83/100 here against 25/30 there (Fisher p = 1.00), final policy 84/100
+  against 24/30 (p = 0.59), and `closed_on_root_report_rate` 0.99 here against
+  24/24 there. Nothing to change — recorded because provenance of this strength
+  is new, and it is the standard every later publication should be held to.
+
+  **The correction, and the entry above is amended in place.** `2052856` logged
+  contact reporting as an open question reading "precision 0.562 → 0.465, recall
+  0.786 → 0.699" without stating that both v12 numbers came from
+  `behavior_final.json`. Read against `v12`/`ckpt_best` instead, recall
+  **improves** (0.628 → 0.699), and `v12`'s own two checkpoints move further on
+  both axes (−0.140 precision, +0.158 recall) than the v12→v15 delta being
+  claimed. So the sign of half that open question was a function of an unstated
+  and unstable reference. All six figures re-read here from the committed
+  `runs/fireteam_defend_v12/behavior{,_final}.json` and
+  `runs/fireteam_defend_v15/behavior_final.json`; the entry now carries both v12
+  rows in a table, the way its success column already did. **Precision degrading
+  survives the correction; recall degrading does not.**
+
+  **And a second scenario kills the mechanism the line implied.** The v15 entry
+  wrote "the closing SITREP became near-universal while contact reporting got
+  worse", which reads as crowding-out. On `defend_brique` the same rule change
+  moves contact reporting the *other* way: `v6` (old rule) → `v9` (ENDEX) is
+  precision 0.437 → **0.590**, recall 0.834 → **0.841**, both final policy at
+  N=100, seed 123, from those runs' own `behavior_final.json`. One scenario down,
+  one up, same intervention: whatever moved the fireteam numbers, it is not the
+  close rule taking channel away from contact reports. That sentence is gone.
+  `defend_brique_v9` is cited as measured evidence only — its confirmation seed
+  `defend_brique_v10` is still training, it is not published, and it is **not**
+  added to the README table.
+
+  Not changed, deliberately: no code, no reward default, no space, no scenario
+  semantics; the README v1.13 table never carried the contact figures and is
+  untouched; `scripts/program_board.py` does not repeat the claim either — its
+  `THREADS` list quotes `report_recall` only for `fireteam_v8`'s within-run
+  movement and the ENDEX card quotes only `closed_on_root_report_rate` — so the
+  boards were not re-rendered. The issue's §4 caution on `human_death_rate`
+  (0.15 → 0.08 is 15/100 vs 8/100, Fisher p = 0.18, and their n=30 reading moves
+  the same way at p = 0.51) is accepted as read: the entry already calls it a
+  gain on an axis no gate covers rather than a proven effect, so the wording
+  stands and the caution is recorded here instead. Tests 569 pass, ruff clean.
