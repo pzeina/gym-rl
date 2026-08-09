@@ -19,7 +19,10 @@ JOB="$ROOT/runs/$RUN/.job.json"
 [ -f "$JOB" ] || { echo "no job file for run '$RUN' (was it launched with scripts/train.sh?)" >&2; exit 2; }
 PID=$("$PY" -c "import json,sys;print(json.load(open(sys.argv[1]))['pid'])" "$JOB")
 
-while kill -0 "$PID" 2>/dev/null; do
+# Not `kill -0 $PID`: once training exits, the OS can hand that pid to an
+# unrelated process and this loop would sit waiting on a stranger — stalling
+# the campaign queue, which blocks here between jobs.
+while "$PY" "$ROOT/scripts/train_status.py" --is-running "$RUN"; do
   sleep "$POLL"
 done
 

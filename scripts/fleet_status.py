@@ -62,7 +62,7 @@ def _live(run: Path) -> dict:
     from scripts.train_status import alive, job_of, summarize
 
     job = job_of(run)
-    if not (job and alive(job.get("pid", -1))):
+    if not (job and alive(job.get("pid", -1), run.name)):
         return {"state": None, "progress": None, "rolling": None, "eta": ""}
     s = summarize(run)
     return {
