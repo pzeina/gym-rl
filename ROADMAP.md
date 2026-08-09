@@ -3288,3 +3288,52 @@ deliberately deferred (`docs/vision.md` §2c).
   the same way at p = 0.51) is accepted as read: the entry already calls it a
   gain on an axis no gate covers rather than a proven effect, so the wording
   stands and the caution is recorded here instead. Tests 569 pass, ruff clean.
+
+- **2026-08-09** — **ENDEX costs `defend_brique` real success, and the
+  comfortable explanation is wrong.** Published as a priced regression, both
+  seeds, N=100 seed 123 final policy: `defend_brique_v9` (seed 12) **0.91 ±
+  0.06**, `defend_brique_v10` (seed 13) **0.88 ± 0.06**, pooled **179/200 =
+  0.895** (Wilson 0.845–0.930) against `defend_brique_v6`'s **0.97 ± 0.03**
+  under the old close rule. Fisher **p = 0.024**, intervals non-overlapping,
+  and below the `prev − 5` bound of 92. Both seeds pass 4/4 behavior gates and
+  clear the stability bar (give-back 6.72 and 8.13 against 10).
+
+  **v10 was run to settle whether v9's 0.91 was the seed.** It was not: the two
+  ENDEX seeds agree with each other (p = 0.65) and the pair sits exactly on
+  `defend_brique_v7`, the flat-terminal old-rule arm, at **p = 1.00**. So the
+  survivor-scaled terminal's measured gain on this scenario (v7 0.89 → v6 0.97,
+  the v1.12 option-4 result, p = 0.049) **does not survive the close rule**.
+  Option 4 stands on `fireteam_defend`, where v15 held it; its `defend_brique`
+  evidence no longer stands as measured. No reward default changed — that call
+  is the owner's.
+
+  **The hypothesis this entry was expected to confirm is refuted.** The obvious
+  reading was that the old rule let the root bank a win early — 442 MISSION
+  COMPLETE claims per 100 episodes in v6 against 1 and 5 in v9/v10 — and that
+  ENDEX merely stopped the banking. Two facts kill it. First, from the episode
+  records: every failure in every arm is a **timeout at the 420-step cap**,
+  never a defeat, and the arms are *indistinguishable* on episodes closing by
+  step 150 (v6 89/100, ENDEX 178/200, **p = 1.00**). The whole gap accrues
+  after step ~200, where v6 gains 7 successes and the ENDEX pair gains 1.
+  Second, and decisively, from `cohort_env.py`: `_success_step` is set once and
+  never cleared, and `success` fires on `success_locked and (root_reported or
+  grace_window or step >= max_steps or cohort_wiped)`. **`max_steps` is one of
+  the disjuncts** — so once the end state is met the episode is recorded a
+  success whatever the close rule does. The close rule can change when an
+  episode *ends* and who gets `root_done_bonus`; it cannot change whether one
+  succeeds.
+
+  **So the timed-out episodes never met the end state at all**, and the finding
+  is a genuine capability difference concentrated in the slowest, hardest
+  episodes: the ENDEX-trained policy reaches "band neutralised, objective held"
+  in 7 fewer of them. The mechanism is credit assignment during training, not
+  adjudication at evaluation — `root_done_bonus` moved from a claim the root
+  could spam to a SITREP that closes early, and the policy learned from a
+  different signal. Not diagnosed further: *why* that signal produces a weaker
+  late game. That is the open question, and it is the honest one.
+
+  **Left to the owner, unchanged by this**: v1.13 already flagged that
+  `defend_brique`'s success condition — band destroyed, or scattered with
+  contact broken, objective held — is genuinely *completable*, so the scenario
+  may want a different root mission rather than a different close rule. This
+  result is the argument for looking at that now rather than later.
