@@ -3614,3 +3614,118 @@ deliberately deferred (`docs/vision.md` §2c).
   DONE channel reports at 0.71 precision on this family. One retrain and one
   diagnosed adjustment is the standing budget; the retrain is spent and the
   adjustment is a design decision, so it stops here.
+
+- **2026-08-10** — **v1.15: the spam is dead, and the channel died with it.**
+  `root_done_bonus` is now paid only on the episode's **first** root claim, and
+  the first claim spends it **whether or not it is accepted** (`RewardConfig
+  .root_done_bonus_first_claim_only`, default true, settable from `--reward`).
+  This is option (i) from the v1.14 entry above, taken by the owner. The A/B is
+  `defend_brique_v12` vs `defend_brique_v11` and `fireteam_defend_v17` vs
+  `fireteam_defend_v16` — same scenarios, budgets, seed 12 and
+  `defend_survivor_scale=0.35`, one flag apart, confirmed **single-variable** by
+  `run_report.py --vs` (`economics: single-variable A/B`, the one key being the
+  new flag). N=100, seed 123, both checkpoints, all 16 regression gates PASS.
+
+  **The arithmetic checked out before the build and again after.** A true claim
+  pays 4.0 (`done_true` 1.0 + `root_done_bonus` 3.0), a false one −0.5, so
+  probing breaks even at p > 0.111 and v11's realised acceptance of 94/321 =
+  0.293 earned +262.5 per 100 episodes. With the slot spent a further claim is
+  worth 1.0 / −0.5: break-even moves to p > 0.333 and probing at 0.293 turns
+  negative, −0.0707 a claim with `transmission_cost` included.
+
+  **`defend_brique`: the exploit is gone, completely.** `ckpt_latest`, N=100:
+
+  | | v11 (control) | v12 (v1.15) |
+  |---|---|---|
+  | success | 1.00 ± .00 | 1.00 ± .00 |
+  | occupation failures | 0/100 | 0/100 |
+  | root claims filed | **321** | **0** |
+  | ...rejected | 227 | 0 |
+  | root false-complete rate | **0.71** | — (no claims) |
+  | wins closed on the root's report | **94/100** | **0/100** |
+  | human death rate | 0.03 | 0.06 |
+  | cover under threat | 0.981 | 0.923 |
+  | dist from OBJ under threat | 2.23 | 2.19 |
+  | stability (best−final) | 0 pts, converged | 1 pt, converged |
+
+  **This is not a pass.** The brief's own bar was that a policy which simply
+  stops claiming is a failure, because it trades spam for silence and loses the
+  channel v1.14 reopened — and that is exactly what happened. Re-measured at an
+  independent seed (N=200, seed 7) to rule out a seed artifact: v11 files 664
+  claims in 190 of 200 episodes, v12 files **0** across **21,832** admissible
+  root agent-steps.
+
+  **Diagnosed, and measured rather than inferred.** Rolling 40 episodes and
+  reading the root's action distribution at every step where its MISSION
+  COMPLETE is admissible *and would be adjudicated true*:
+
+  | | v11 | v12 |
+  |---|---|---|
+  | P(DONE) when a TRUE claim is available | **0.401** (max 0.999) | **0.000083** (max 0.008) |
+  | P(DONE) at any admissible step | 0.039 | 0.000028 |
+  | episodes declining an available true claim | 2/40 | **40/40** |
+
+  Four orders of magnitude. The channel is not unexercised, it is **dead in the
+  policy**. v12 now rides out the full 12-step grace window every episode (480
+  true-claim-available steps in 40 episodes = exactly `grace_window` per
+  episode, against v11's 2.4).
+
+  **Why, as far as the measurements support.** The rule did what it was designed
+  to do — it made repeat probing negative-EV — but v11's *behaviour* is what the
+  gradient started from, and that behaviour scores 0.99 × 1.0 − 2.39 × 0.5 =
+  **−0.21 per episode** under the new rule. So the gradient points down from the
+  incumbent policy, all the way to zero, while the genuinely optimal policy
+  (one well-timed claim, +4.0, since a true claim is available for 12
+  consecutive steps once success holds) sits on the far side of a region the
+  policy must explore *through* — and each exploratory claim now costs the
+  episode's bonus as well as `done_false`. Probing was the exploration
+  mechanism; removing its profit removed the route to the honest act. This
+  paragraph is the one inference in this entry; everything above it is measured.
+
+  It is the `done_false=-2.0` lesson (see `rewards.py`) in a second instrument:
+  precision that is really muteness. The observation is not the blocker here —
+  `episode_progress` carries the clock and the horizon sits at 0.5 of
+  `max_steps` — which is what makes this different from the RECON/SCREEN case
+  where p was structurally unobservable.
+
+  **`fireteam_defend`: a no-op, provably.** v17's weights are **bit-identical**
+  to v16's at both checkpoints (`max|Δ| = 0.000e+00` over every tensor; only the
+  embedded `reward_config` dict differs, which is why the file sha256 differs).
+  v16 files zero root claims, so no reward value ever changed, so the gradient
+  stream was byte-identical and seed 12 reproduced the run exactly. The control
+  arm is as clean as a control arm can be, and it is also an unplanned
+  end-to-end determinism result for the trainer. `defend_brique_v12`'s
+  `ckpt_best` is likewise bit-identical to v11's — the runs had not yet diverged
+  when best was saved, so the only real contrast in this cycle is
+  `defend_brique` at `ckpt_latest`.
+
+  **The adjustment was deliberately NOT spent.** Honest-DoD allows one retrain
+  plus one diagnosed adjustment. The retrain is spent; the diagnosis points at
+  the *balance* of `root_done_bonus` against `done_true` (the bonus is 75% of a
+  claim's value, and the first-claim rule makes all of it ride on a single
+  decision), and reward structure is the owner's call, not an agent's. Guessing
+  a new balance is the autopilot the operating guide forbids. Options, in the
+  order I would try them: (i) shift value out of the one-shot bonus into
+  `done_true` so the honest claim keeps paying when the bonus is gone — e.g.
+  `root_done_bonus` 3.0 → 1.5 with `done_true` 1.0 → 2.0, which leaves an
+  accepted first claim at 3.5 and a later accepted one at 2.0 instead of 1.0;
+  (ii) keep the rule and restore exploration another way (entropy floor on the
+  DONE action, or an initial grace period of N updates before the rule engages);
+  (iii) accept silence on this family and revert to v1.13's SITREP/ENDEX route,
+  which closed at 0.99 on both scenarios and was never farmable.
+
+  **Stale numbers, flagged not fixed.** `root_done_bonus` pays every completable
+  root, so this flag is fleet-wide by design — `fireteam`, `squad`,
+  `squad_recon`, `squad_screen`, `platoon` and the rest were all measured under
+  the OLD rule and their published claim/false-complete numbers are now stale.
+  They were **not** retrained; that is a separate owner decision. Note also that
+  `evaluate` rebuilds an older checkpoint's config with
+  `RewardConfig(**ckpt["reward_config"])`, and a pre-v1.15 dict has no key for
+  this flag, so re-scoring an old policy today applies the NEW rule at its
+  default — harmless for the behaviour suite (claims filed and rejected are
+  policy, not price) and wrong for any reward comparison against that run's own
+  training curve.
+
+  Commits: mechanism + 10 tests (`727ef60`), campaign (`50f5505`), this entry.
+  618 tests pass, ruff clean. No README row and no artifact — publication is the
+  owner's `/publish`.
