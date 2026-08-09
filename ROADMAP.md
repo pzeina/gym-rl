@@ -3209,13 +3209,30 @@ deliberately deferred (`docs/vision.md` §2c).
   reference cannot anchor a 0.09 delta. The open question survives on precision
   only, and no mechanism is identified for that either.
 
-  What does **not** survive is the reading this invited — that the closing
-  SITREP crowds out contact reporting. On the second scenario the same rule
-  change moves it the other way: `defend_brique_v6` (old rule) →
-  `defend_brique_v9` (ENDEX) is precision 0.437 → **0.590** and recall
-  0.834 → **0.841**, both final policy at N=100, same seed 123. `v9` is measured
-  evidence, not a published result — its confirmation seed is still training and
-  it is deliberately not in the README table.
+  Precision is the half with nothing to qualify. It degrades under **all four**
+  pairings of the two runs' checkpoints — final/final −0.097, `v12`/final →
+  `v15`/best −0.089, best/best −0.229, `v12`/best → `v15`/final −0.237 — and
+  `v15`'s own two checkpoints sit 0.473/0.465, a −0.008 spread. On this scenario
+  it is the *reference* that is unstable and the arm under test that is not.
+
+  **But no mechanism is claimed from it, in either direction** (amended
+  refs #26). The reading this entry first invited — that the closing SITREP
+  crowds out contact reporting — is unsupported. So is the counter-example that
+  was offered to retire it (refs #25: `defend_brique_v6` old rule →
+  `defend_brique_v9` ENDEX, precision 0.437 → **0.590**, recall
+  0.834 → **0.841**, final policy, N=100, seed 123). Those figures are correct,
+  but `v9`'s own two checkpoints are 0.439 → 0.590, so that entire +0.152 is
+  within-run movement and the best/best pairing reads −0.008 (with `v6`/best
+  that run's N=20 exit evaluation, the same caveat as `v12`/best above). Which
+  `v9` checkpoint you read decides the sign — and −0.008 is flat, not the matching
+  decline crowding-out would predict, so `defend_brique` neither refutes the
+  reading nor restores it. **Contact precision is not stable enough across
+  checkpoints in this family to support a between-run mechanism claim in either
+  direction.** Net-side contact *volume* is not an alternative route to one: it
+  disagrees across seeds on this scenario (refs #26 entry below). `v9` was cited
+  here as measured evidence rather than a published result; it has since
+  published in `b4a0d6d` as a priced regression on success and is in the v1.13
+  README table.
 
   **Two caveats the tooling rounds away.** The stability give-back is **9.82
   points** against a bar of `< 10` — `publish_audit.py` prints `10` at
@@ -3266,17 +3283,25 @@ deliberately deferred (`docs/vision.md` §2c).
   rows in a table, the way its success column already did. **Precision degrading
   survives the correction; recall degrading does not.**
 
-  **And a second scenario kills the mechanism the line implied.** The v15 entry
-  wrote "the closing SITREP became near-universal while contact reporting got
-  worse", which reads as crowding-out. On `defend_brique` the same rule change
-  moves contact reporting the *other* way: `v6` (old rule) → `v9` (ENDEX) is
-  precision 0.437 → **0.590**, recall 0.834 → **0.841**, both final policy at
-  N=100, seed 123, from those runs' own `behavior_final.json`. One scenario down,
-  one up, same intervention: whatever moved the fireteam numbers, it is not the
-  close rule taking channel away from contact reports. That sentence is gone.
-  `defend_brique_v9` is cited as measured evidence only — its confirmation seed
-  `defend_brique_v10` is still training, it is not published, and it is **not**
-  added to the README table.
+  **And a second scenario was offered as killing the mechanism the line implied
+  — that half of this entry did not hold** (amended refs #26; the correction is
+  the last entry in this log). The v15 entry wrote "the closing SITREP became
+  near-universal while contact reporting got worse", which reads as
+  crowding-out. This entry answered it with `defend_brique`, where the same rule
+  change moves contact reporting the *other* way: `v6` (old rule) → `v9` (ENDEX)
+  is precision 0.437 → **0.590**, recall 0.834 → **0.841**, both final policy at
+  N=100, seed 123, from those runs' own `behavior_final.json`. Those four figures
+  are right and re-verified. Reading "one scenario down, one up" off them was
+  not: **the pairing is final/final and `v9`'s own two checkpoints are
+  0.439 → 0.590**, so the whole +0.152 is within-run movement and best/best is
+  −0.008. A correction about an unstated reference checkpoint reached for a
+  counter-example with the same defect, in the treatment arm this time. The
+  crowding-out sentence stays gone — it was never supported — but nothing
+  replaces it, and the position is now that no between-run mechanism claim is
+  available here in either direction. `defend_brique_v9` was cited as measured
+  evidence only — its confirmation seed `defend_brique_v10` was still training,
+  and it was not in the README table at the time (it published later, in
+  `b4a0d6d`).
 
   Not changed, deliberately: no code, no reward default, no space, no scenario
   semantics; the README v1.13 table never carried the contact figures and is
@@ -3337,3 +3362,76 @@ deliberately deferred (`docs/vision.md` §2c).
   contact broken, objective held — is genuinely *completable*, so the scenario
   may want a different root mission rather than a different close rule. This
   result is the argument for looking at that now rather than later.
+
+- **2026-08-09** — **assurance #26: the counter-example that retired
+  crowding-out was checkpoint-selected too, so the position is now that no
+  between-run mechanism claim is available here in either direction.** One entry
+  up, refs #25 corrected the v15 contact-reporting line for quoting an unstated
+  reference checkpoint — and then retired the crowding-out reading it had
+  invited by citing a second scenario moving the other way: `defend_brique_v6`
+  (old rule) → `v9` (ENDEX), precision 0.437 → 0.590, final policy, N=100, seed
+  123. Those figures are correct; all eight below were re-read here at full
+  precision from the committed `behavior.json` / `behavior_final.json` of the
+  four runs. Offering them as a clean counter-example was the mistake.
+
+  | `defend_brique` · `report_precision` | `v6` (old rule) | `v9` (ENDEX) |
+  |---|---|---|
+  | `ckpt_best` | 0.4476 *(N=20, n=143)* | 0.4391 *(N=100, n=681)* |
+  | `ckpt_latest` | 0.4373 *(N=100, n=718)* | 0.5896 *(N=100, n=519)* |
+  | within-run best → final | **−0.010** | **+0.151** |
+
+  **Which `v9` checkpoint you read decides the sign.** The two pairings that end
+  at `v9`/final are large and positive — final/final **+0.152** (the published
+  claim), `v6`/best → `v9`/final +0.142. The two that end at `v9`/best are flat
+  — `v6`/final → `v9`/best **+0.002**, best/best **−0.008**. The published +0.152
+  is almost exactly `v9`'s own +0.151 best→final movement, i.e. the between-run
+  "improvement" is one run's internal drift, and the reference arm barely moves
+  at all (−0.010). "One scenario down, one up" is a final/final statement and
+  cannot carry the weight of retiring a mechanism.
+
+  It does not *restore* crowding-out either — −0.008 is flat, not the matching
+  decline that reading predicts. **The honest position, and the one this repo
+  now holds: contact precision is not stable enough across checkpoints in this
+  family to support a between-run mechanism claim in either direction.** That is
+  a stronger statement than either reading and costs nothing to make. The v15
+  entry and the #25 entry are both amended in place to say it.
+
+  **What survives untouched.** `fireteam_defend` precision degrades under
+  *every* pairing of the two runs' four checkpoints: **−0.097** (final/final),
+  **−0.089** (`v12`/final → `v15`/best), **−0.229** (best/best), **−0.237**
+  (`v12`/best → `v15`/final). `v15`'s own checkpoints sit 0.4734/0.4653, a
+  −0.008 spread, so on that scenario the arm under test is the stable one and
+  the reference is not. That is a fact about `fireteam_defend`, it stays stated
+  as one, and it needs no checkpoint caveat — what it does not do, on its own,
+  is identify a mechanism.
+
+  **Where our reading differs from the issue's.** Its −0.011, +0.153 and −0.009
+  are differences of 3dp-rounded figures; at full precision they are **−0.010,
+  +0.152 and −0.008**. Sign, magnitude and the whole argument are unaffected —
+  recorded because this entry re-derives rather than copies. And its caveat that
+  `v6`/best is "N=20 against N=100 elsewhere" understates the situation:
+  `fireteam_defend_v12`/best is N=20 as well (47 reports), and that is the row
+  the surviving −0.229 rests on. Both N=20 rows are the older runs' exit
+  evaluations; both newer runs were re-evaluated at N=100 on both checkpoints.
+
+  **Contact volume is unusable and is written down as such**, so nobody reaches
+  for it later thinking it is clean: on `fireteam_defend` it disagrees across
+  seeds. The assurance layer's seeds 500–529 read 5.50 → 3.07 reports/episode
+  (v12 → v15, final) where our seed 123 reads **4.34 → 4.90** — opposite
+  directions. The pipelines do agree on `defend_brique` (ours 7.18 → 5.19 final
+  and 7.15 → 6.81 best, both down), but agreement on one scenario does not
+  rescue disagreement on the other.
+
+  **The lesson, once, plainly.** Two corrections in a row have turned on an
+  unstated reference checkpoint. Any between-run behavioural delta in this repo
+  should be quoted at both checkpoints or not quoted at all.
+
+  Not changed, deliberately: no code, no reward default, no space, no scenario
+  semantics. The README v1.13 table carries no contact figures and is untouched.
+  `scripts/program_board.py` states no version of this claim — re-checked rather
+  than assumed: its `THREADS` quote `report_recall` only for `fireteam_v8`'s
+  *within-run* movement, the ENDEX card and verdict quote only
+  `closed_on_root_report_rate` and success, and no campaign verdict mentions
+  contact reporting at all — so the boards were not re-rendered. The
+  `defend_brique` priced-regression entry above (`b4a0d6d`) inherited no version
+  of it either. Tests 577 pass, ruff clean.
