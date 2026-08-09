@@ -1,0 +1,25 @@
+# v1.13 — is the DONE channel an economics problem or a learning problem?
+#
+# Diagnosis (2026-08-09, oracle + behavior traces, no reward changed yet):
+# a MISSION COMPLETE claim pays (done_true + root_done_bonus) = +4.0 if it
+# lands inside the grace window and done_false = -0.5 otherwise, so a blind
+# claim breaks even at P = 0.5/4.5 = 0.111. The grace window is 12 steps of a
+# ~115-step fireteam_defend success (P = 0.105, EV -0.029 -> never claim, and
+# the policy claims once in 100 episodes) and 12 of a ~99-step defend_brique
+# success (P = 0.121, EV +0.045 -> claim, and the policy claims 4.4x/ep).
+# Two opposite behaviors, one margin, both rational.
+#
+# The prediction this campaign tests: the channel is priced, not unlearnable.
+#   v13 lowers the price of being wrong  -> break-even 0.024, well under
+#        fireteam's 0.105. PREDICT: the channel opens.
+#   v14 is the lever ROADMAP names       -> break-even 0.333, over fireteam's
+#        0.105. PREDICT: no help, stays at ~0 claims.
+#   v8  is that same lever on the scenario where the channel WORKS ->
+#        break-even 0.333 over brique's 0.121. PREDICT: it kills it.
+#
+# Falsified if v13 does not raise accepted DONE/ep on fireteam_defend, or if
+# v14/v8 move in the direction ROADMAP assumed. Single-variable against v12
+# and v6 respectively: defend_survivor_scale stays at the confirmed 0.35.
+fireteam_defend_v13  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35 --reward done_false=-0.1
+fireteam_defend_v14  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35 --reward done_false=-2.0
+defend_brique_v8     --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35 --reward done_false=-2.0
