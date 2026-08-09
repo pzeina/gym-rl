@@ -3500,3 +3500,117 @@ deliberately deferred (`docs/vision.md` §2c).
   the OPORD" and read as a claim about the transmitted text when it is true only of
   the spec the root holds — comment only, no behaviour and no text change.
   608 tests pass, ruff clean. No published number, README row or board touched.
+
+- **2026-08-09** — **v1.14: DEFEND success is conservation of the position, to a
+  stated hour** (owner's decision; `eccf816`, `6babcd3`, `0e1a452`). A defense
+  succeeds by still being on the ground when the ordered hour comes, not by
+  killing everyone. `ScenarioSpec.defend_horizon` states the hour —
+  `int(0.5 * max_steps)`, so 225 on `fireteam_defend` and 210 on
+  `defend_brique`. From H:
+
+  ```
+  occupied(t)  a living friendly within root_obj.radius + 1 of the objective
+  FAIL         permanently, at the first t >= H with occupied(t) false
+  SUCCESS      at the first t >= H with the threat out of the fight
+               (_band_neutralized — early release) or t >= the horizon
+  ```
+
+  Three clauses are decisions rather than derivations. **Occupation, not
+  safety**: the criterion is the `manned` half of `_objective_held` and never
+  the `clear` half, because an enemy assaulting into contact on the position is
+  the mission arriving, not the mission failing — scoring the strict
+  conjunction costs 29 of 100 episodes on the committed checkpoints, and 26 of
+  the 40 first breaks it counts are exactly "the assault got here". **No
+  retake**: `_success_step` has always latched success, so conservation has to
+  latch the other way (`_defend_lost_step`), checked before the success test in
+  the same step. **A fixed step count, not H + D**: `PolicyNet` is a memoryless
+  MLP whose only clock is the `step / max_steps` tempo feature, so an
+  H-relative deadline would be unperceivable, not merely hard. Casualties stay
+  priced by `defend_survivor_scale` and are never gated — a gate rebuilds the
+  forfeiture asymmetry that caused D4. Termination is deliberately unchanged: a
+  failed defense runs the clock out, so the retrain has one variable, not two.
+
+  `COMPLETABLE` is **refined, not reversed**. v1.13's finding was that a posture
+  with *no stated end* has no end state its holder may declare. A defense
+  ordered to a horizon does have one, so `missions.is_completable(mission,
+  defend_horizon=…)` reopens MISSION COMPLETE to the root — and only the root:
+  the hour is in the OPORD, and a subordinate tasked DEFEND by its leader still
+  holds an indefinite posture. On a horizon scenario the closure route swaps
+  accordingly, from SITREP + ENDEX to an adjudicated MISSION COMPLETE.
+
+  **Acceptance (Phase 2) reproduced an offline reference exactly**, at N=100
+  seed 123 on `ckpt_latest`: `defend_brique_v9` 91 → **88**, `v10` 88 → **99**,
+  `v6` 97 → **99**. The control matters more than the match. The change has two
+  halves — the criterion, which is read-only with respect to the rollout (it
+  moves when an episode *ends*, never which action is sampled), and the mask
+  bit, which renormalises the policy's masked softmax and so perturbs the
+  trajectory. Both arms were measured: with the mask pinned at pre-v1.14 the
+  rollouts are bit-identical to the reference replay and give the table above;
+  shipped, they give 88 / 99 / 98 — exactly one episode in 300 flips
+  (`defend_brique_v6`, seed 142). The perturbation is measured, not assumed.
+
+  **The retrain says the two scenarios are different stories.** N=100, both
+  checkpoints, every regression gate PASS on all four:
+
+  | scenario | policy | old criterion | new criterion |
+  |---|---|---|---|
+  | fireteam_defend | v15 best / final | 0.83 ± .07 / 0.84 ± .07 | 0.97 ± .03 / **1.00 ± .00** |
+  | fireteam_defend | **v16** best / final | — | 0.94 ± .05 / **0.99 ± .02** |
+  | defend_brique | v9 best / final | 0.90 ± .06 / 0.91 ± .06 | 0.99 ± .02 / **0.88 ± .06** |
+  | defend_brique | **v11** best / final | — | 0.98 ± .03 / **1.00 ± .00** |
+
+  On **`fireteam_defend` the criterion changed only the scoring**: read down the
+  new-criterion column and the retrain bought nothing — v16 final 0.99 ± .02
+  against v15 final 1.00 ± .00, indistinguishable and if anything slightly
+  worse. v15 already never left the ground (0/100 occupation failures), so
+  there was nothing for the new clause to teach it.
+
+  On **`defend_brique` the criterion changed what is learned**, and the two
+  claims separate cleanly: v9's final policy scores 0.88 ± .06 under the new
+  criterion — *lower* than its committed 0.91, because it loses the position in
+  12 of 100 episodes at a median of **H+7**, stepping off the ground within
+  seven steps of the band arriving. v11 loses it in **0** of 100 and scores
+  1.00 ± .00, CI-separated from v9. The behavioural signature agrees: cover
+  under threat 0.783 → 0.981, distance from the objective under threat 3.17 →
+  2.23 cells, human death 0.05 → 0.03, mean episode 141 → 99 steps. Both runs
+  converged (best-final gap 1 pt and 0 pts) and both are `[PUBLISHABLE]` by the
+  run-report gate.
+
+  Worth stating because the owner pre-empted it: **the horizon is not the
+  route.** Early release carries 78–87 of every 100 wins; the ordered hour
+  carries 13–22. It is a backstop that fires when the fight is still on at
+  half-time, exactly as designed — but the defend family is now at
+  0.99–1.00 and has no gradient left in it.
+
+  **The miss, undiagnosed at the level of cause, and NOT fixed.** Reopening
+  MISSION COMPLETE retired the ENDEX route (`endex_sent` 0, so
+  `closed_on_root_report_rate` is None by construction — its denominator is the
+  ENDEX count). Measuring the replacement directly, as wins closed on the
+  root's own report: `defend_brique_v11` closes **94/100**, but files **321**
+  root claims to do it and has **227** rejected — a root false-complete rate of
+  **0.71**. `fireteam_defend_v16` closes **0/99**: it files **zero** claims
+  against 13,787 admissible root agent-steps, an open channel declined
+  outright. Under v1.13's SITREP route both scenarios closed at 0.99. So the
+  same prices produced spam on one scenario and silence on the other, and never
+  the single truthful report the channel is for.
+
+  The spam side is arithmetic, not mystery: a true claim pays `done_true` 1.0 +
+  `root_done_bonus` 3.0, a false one costs `done_false` −0.5, and
+  `done_cooldown` 8 rate-limits retries without changing their sign. v11's
+  ledger is 94 × (+4.0) − 227 × (0.5) = **+262 per 100 episodes** — rolling the
+  dice is strongly positive-EV, which is the same shape as the pre-v1.10
+  re-roll exploit the cooldown was built against. The silence side has **no
+  measured cause**: v16's false-DONE rate falls 0.596 → 0.050 across training
+  while v11's *rises* 0.528 → 0.655, two opposite local optima on identical
+  prices, and nothing measured here distinguishes them. Stated as unexplained
+  rather than explained.
+
+  Not repaired, deliberately: the lever is `root_done_bonus` / `done_false` /
+  `done_cooldown`, and reward structure is the owner's call. Three options, in
+  the order I would try them — (i) make the bonus conditional on the claim
+  being the *first* of the episode, which kills the EV of the retry without
+  touching the honest path; (ii) scale `done_false` with the number of prior
+  rejected claims in the episode; (iii) leave the price and accept that the
+  DONE channel reports at 0.71 precision on this family. One retrain and one
+  diagnosed adjustment is the standing budget; the retrain is spent and the
+  adjustment is a design decision, so it stops here.
