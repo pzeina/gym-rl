@@ -12,8 +12,10 @@ a few hundred tokens instead of the ~200k a raw metrics.csv + log tail would.
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -31,12 +33,36 @@ KEY_METRICS = [
 ]
 
 
-def alive(pid: int) -> bool:
+def alive(pid: int, run: str | None = None) -> bool:
+    """Is this pid still OUR training process for ``run``?
+
+    ``kill(pid, 0)`` alone is not enough. Pids get recycled, and every finished
+    run keeps its ``.job.json`` — so the moment the OS hands a stale pid to
+    something unrelated, a run that ended days ago starts reading as RUNNING,
+    then "ends" again when that stranger exits. That produced two spurious
+    "training ended" notifications in one session, and it is not only cosmetic:
+    ``train.sh`` refuses to launch a run whose recorded pid looks alive, so a
+    recycled pid can block a launch outright.
+
+    So when a run name is given, confirm the process is actually carrying
+    ``--run-name <run>``. If ``ps`` cannot be consulted, trust the job file
+    rather than declaring a live run dead.
+    """
     try:
         os.kill(pid, 0)
     except (OSError, TypeError):
         return False
-    return True
+    if run is None:
+        return True
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "command=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True
+    tokens = out.split()
+    return any(b == run for a, b in itertools.pairwise(tokens) if a == "--run-name")
 
 
 def read_rows(run_dir: Path) -> list[dict]:
@@ -87,7 +113,7 @@ def dur(seconds: float) -> str:
 
 def state_of(run_dir: Path, job: dict | None, rows: list[dict], total: int) -> str:
     steps = fnum(rows[-1], "env_steps") if rows else 0
-    if job and alive(job.get("pid", -1)):
+    if job and alive(job.get("pid", -1), run_dir.name):
         return "RUNNING"
     log = Path(job["log"]) if job and job.get("log") else None
     if log and log.exists() and "Traceback" in log.read_text()[-4000:]:
@@ -229,6 +255,16 @@ def detail(name: str) -> int:
 
 
 def main() -> int:
+    # --is-running <run>: exit 0 if that run is genuinely training. The shell
+    # scripts used bare `kill -0` and inherited the recycled-pid bug with it,
+    # so they ask here instead of each keeping their own copy of the check.
+    if "--is-running" in sys.argv[1:]:
+        rest = sys.argv[sys.argv.index("--is-running") + 1:]
+        if not rest:
+            print("usage: train_status.py --is-running <run>", file=sys.stderr)
+            return 2
+        job = job_of(RUNS / rest[0])
+        return 0 if job and alive(job.get("pid", -1), rest[0]) else 1
     args = [a for a in sys.argv[1:] if a != "--all"]
     if args:
         return detail(args[0])

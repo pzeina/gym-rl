@@ -39,13 +39,14 @@ if [ -f "$RUN_DIR/metrics.csv" ] && [ "${FORCE:-0}" != "1" ]; then
   exit 1
 fi
 
-# Already-live job for this run?
-if [ -f "$JOB" ]; then
+# Already-live job for this run? Ask train_status, which checks the pid is
+# actually carrying --run-name "$RUN": pids are recycled, and a bare kill -0 on
+# a months-old job file will refuse a perfectly valid launch once the OS hands
+# that number to something else.
+if [ -f "$JOB" ] && "$PY" "$ROOT/scripts/train_status.py" --is-running "$RUN"; then
   OLD_PID=$("$PY" -c "import json,sys;print(json.load(open(sys.argv[1])).get('pid',''))" "$JOB" 2>/dev/null || true)
-  if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
-    echo "refusing: run '$RUN' is already training (pid $OLD_PID). scripts/train_status.py $RUN" >&2
-    exit 1
-  fi
+  echo "refusing: run '$RUN' is already training (pid $OLD_PID). scripts/train_status.py $RUN" >&2
+  exit 1
 fi
 
 mkdir -p "$RUN_DIR" "$ROOT/logs"
