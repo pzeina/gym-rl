@@ -90,6 +90,13 @@ Slash commands: `/train`, `/train-status`, `/train-report`, `/boards`.
   their nohup trainings run — resume them via SendMessage with the active-polling
   reminder (`until ! ps -p $(cat PIDFILE) ...` in <9-min Bash calls). Training
   *launch/monitor* ops go to the cheap-model workflow below, never general-purpose.
+- **Committing is pre-authorised** (owner's instruction, 2026-08-09): commit
+  finished work on `multi-agent-dev` without asking each time. Conditions, not
+  formalities — full pytest + ruff green, one commit per coherent unit, a message
+  that says what changed and why, and the repo's two trailers. **Pushing is NOT
+  covered and stays a separate, explicit ask**; nor is anything destructive
+  (`reset --hard`, history rewrites, force-anything). Say what was committed in
+  the reply — pre-authorised is not the same as silent.
 - **Shipping** (main session only): review gate (full pytest + ruff + a functional
   spot-check) → push `multi-agent-dev` → merge `main` (fast-forward, re-test) →
   annotated monotonic tag `vX.Y.0` for milestone-sized ships (at v1.9.0).

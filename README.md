@@ -353,14 +353,36 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
 
-### Results (v1.9 — the A5 maneuver-vocabulary cycle, current)
+### Results (v1.13 — the ENDEX close rule, current build)
+
+Spaces `Discrete(228)/Box(220)`. Unlike the v1.9 table below, the `success`
+column is the **FINAL policy** — the one the run ended with — because that is
+the number `scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`,
+quoted beside it as a peak and labelled as one. This table is being filled a
+scenario at a time as the fleet is re-published off final numbers.
+
+| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | closed on root's report | gates |
+|---|---|---|---|---|---|---|
+| fireteam_defend | `fireteam_defend_v15` | **84% ± 7** | 83% ± 7 | ✓ gap 9.8 (bar 10) | **0.99** (v12: 0.47) | 4/4 ✓ |
+
+`closed on root's report` is `closed_on_root_report_rate`: of the operations
+COMMAND closed, how many the root's own report closed early. The v12 figure
+beside it is that policy's own `ckpt_latest` re-scored under the same rule
+(`runs/fireteam_defend_v12/endex_rescore.json`), so the close rule is the only
+difference between the two numbers.
+
+### Results (v1.9 — the A5 maneuver-vocabulary cycle, superseded)
+
+> **Superseded twice over.** Every checkpoint in this table predates the current
+> observation layout and does not load under `Box(220)`; its `success` column is
+> `ckpt_best`, not the final policy. Kept for provenance — read the table above
+> for anything current.
 
 The **A5 breaking cycle** (control measures + ADVANCE, order timing +
 EXECUTE, COLUMN/LINE/WEDGE formations, trinôme voice sync — manual
 pp. 14-15; Discrete 157 → 228, Box 137 → 166) retrained **every scenario
-from scratch** on the new spaces. These are the current published
-checkpoints; the sections below narrate the pre-A5 (B5-era) runs, kept on
-disk and in history for provenance.
+from scratch** on the new spaces. The sections below narrate the pre-A5
+(B5-era) runs, kept on disk and in history for provenance.
 
 > **Read the stability column before quoting any number here.** Every figure in
 > the `success` column is `ckpt_best.pt` — the best rolling WINDOW seen during
