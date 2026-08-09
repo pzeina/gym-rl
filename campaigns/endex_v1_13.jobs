@@ -1,0 +1,18 @@
+# v1.13 — the defend family under the ENDEX close rule (16cb2a6).
+#
+# Every defend checkpoint on disk learned under the old rule, where the root
+# could declare its own DEFEND operation complete. That act is now masked
+# shut: the root reports the situation and COMMAND transmits ENDEX. The
+# fleet still loads (masking-only, spaces frozen) but the policies have never
+# been trained against the loop they now have to close.
+#
+# The number to watch is `closed_on_root_report_rate` — of the operations
+# COMMAND closed, how many the root's own SITREP closed early. Measured on
+# fireteam_defend_v12's checkpoint under the new rule: 0.22. A policy trained
+# on this loop should beat that, and success/root-death should hold at the
+# v1.12 confirmed levels (fireteam 0.86 / 0.15, brique 0.97 / 0.05).
+#
+# defend_survivor_scale stays at 0.35, confirmed 2026-08-08. Same seeds and
+# step budgets as the arms they replace, so the comparison is the close rule.
+fireteam_defend_v15  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35
+defend_brique_v9     --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35
