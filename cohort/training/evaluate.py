@@ -10,11 +10,19 @@ and written to ``behavior.json`` next to the checkpoint. ``--no-behavior``
 skips it. Any regression gates that apply to the run's root mission
 (``cohort.metrics.regression_gates`` — currently the positional gate on
 DEFEND roots, issue #11) are printed under the table and stored alongside it.
+
+The behavior file also records the **sha256 of the weights it scored**
+(``checkpoint_sha256``, issue #28), which is what makes a published number
+anchorable: ``ckpt_latest.pt`` is gitignored fleet-wide, so the final-policy
+column — the headline one — quotes weights an outsider cannot fetch. The
+digest is not the tensors, but it turns "our numbers agree with yours" into
+"our numbers are of the same object".
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from collections import Counter
 from pathlib import Path
@@ -24,6 +32,24 @@ import torch
 
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.rewards import RewardConfig
+
+
+def _file_sha256(path: str | Path, chunk: int = 1 << 20) -> str | None:
+    """sha256 of a file, streamed; ``None`` if it cannot be read.
+
+    Used to stamp an evaluation with the identity of the weights it actually
+    loaded. Provenance is a nice-to-have and a scored evaluation is not: a
+    missing, unreadable or vanished checkpoint degrades to omitting the
+    field, never to losing the numbers.
+    """
+    try:
+        digest = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for block in iter(lambda: fh.read(chunk), b""):
+                digest.update(block)
+        return digest.hexdigest()
+    except OSError:
+        return None
 
 
 def _pick_actions(
@@ -194,8 +220,14 @@ def evaluate(
         if out is None and checkpoint is not None:
             out = str(Path(checkpoint).parent / "behavior.json")
         if out is not None:
-            payload = {
-                "checkpoint": checkpoint,
+            payload: dict = {"checkpoint": checkpoint}
+            # Name the weights, not just the path: `ckpt_best.pt` and
+            # `ckpt_latest.pt` share a directory and only one of them is
+            # committed, so the path alone does not identify what was scored.
+            sha = _file_sha256(checkpoint) if checkpoint is not None else None
+            if sha is not None:
+                payload["checkpoint_sha256"] = sha
+            payload |= {
                 "scenario": scenario,
                 "episodes": episodes,
                 "seed": seed,
@@ -207,6 +239,8 @@ def evaluate(
             }
             Path(out).write_text(json.dumps(payload, indent=1) + "\n")
             print(f"behavior → {out}")
+            if sha is not None:
+                print(f"  scored weights sha256: {sha}")
 
     if gif_path or transcript_path:
         env_r = make_env(scenario, render_mode="rgb_array", reward_config=rewards)

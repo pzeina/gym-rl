@@ -3435,3 +3435,43 @@ deliberately deferred (`docs/vision.md` §2c).
   contact reporting at all — so the boards were not re-rendered. The
   `defend_brique` priced-regression entry above (`b4a0d6d`) inherited no version
   of it either. Tests 577 pass, ruff clean.
+
+- **2026-08-09** — **An evaluation now records the sha256 of the weights it
+  scored** (`checkpoint_sha256` in `behavior.json` / `behavior_final.json`;
+  refs #28). The gap the issue names is structural and ours: 90 published runs
+  commit `ckpt_best.pt`, **zero** commit `ckpt_latest.pt` (gitignored
+  fleet-wide) — while since the publish audit the README's headline column is
+  the *final* policy. The anchored checkpoint was never the quoted one, so an
+  outsider reproducing a headline was reproducing it against weights they
+  cannot obtain, and the weights they can obtain produce the secondary column.
+
+  The issue's framing is the point and is worth repeating: the digest costs
+  nothing to write and converts "our numbers agree with yours" into "our
+  numbers are of the same object". It has already paid off three times in
+  three days on the `ckpt_best` side — the digest the assurance layer quotes
+  for `defend_brique_v9`, `9bfbafa6…2673`, is byte-for-byte the one this
+  backfill computed from our own tree.
+
+  **Be plain about what this is not.** The tensors themselves remain
+  uncommitted for `ckpt_latest`. A digest lets a re-measurement *prove* it
+  scored the same object; it does not let anyone *obtain* that object. This is
+  the cheap 95%, not the whole fix — committing the final weights (~1.2 MB a
+  run) stays the strictly better answer and stays undone.
+
+  Backfilled, without re-running a single evaluation, onto exactly the runs the
+  v1.13 README table quotes — the numbers in those files are published and not
+  one of them moved (each diff is +1 line, −0). Every digest verified against
+  `shasum -a 256` of the file on disk:
+  `fireteam_defend_v15` best `770aaa59…b621` / final `64ca988e…1667`;
+  `defend_brique_v9` best `9bfbafa6…2673` / final `ad81f9ac…7fb3`;
+  `defend_brique_v10` best `683e0dba…acab` / final `9dabb0a5…fbcc`.
+  `runs/fireteam_defend_v12/endex_rescore.json` gets the same treatment
+  (best `d0ffe49b…b293`, final `464d1221…cfbc`) because it already names two
+  checkpoints explicitly and its own note flagged this exact hole — "reproducible
+  only where the run still lives on disk" was the gap, stated a fortnight early.
+
+  Hashing is best-effort by construction: it streams the file, runs once per
+  evaluation, and any `OSError` drops the field rather than the numbers — a
+  vanished checkpoint must never cost an evaluation its results. Tests 588 pass
+  (11 new, `tests/test_checkpoint_provenance.py`), ruff clean on the files
+  touched. Not changed: no published figure, no README row, no board.
