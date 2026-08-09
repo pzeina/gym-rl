@@ -149,7 +149,30 @@ def overview(include_all: bool) -> None:
         print(line(s))
     if cap and len(recent) > cap:
         print(f"  … {len(recent) - cap} more (--all)")
+    print(boards_line())
     print("\ndetail: scripts/train_status.py <run>   |   analysis: scripts/run_report.py <run>")
+
+
+def boards_line() -> str:
+    """One line on the boards — read from the state file, never re-rendered here.
+
+    train.sh refreshes the HTML the moment a run lands, but only a session can
+    push it to claude.ai. This is where that gap becomes visible instead of
+    silently going stale.
+    """
+    state_path = RUNS / ".boards.json"
+    if not state_path.exists():
+        return "\nboards:   never rendered — scripts/update_boards.py"
+    try:
+        state = json.loads(state_path.read_text())
+    except json.JSONDecodeError:
+        return "\nboards:   state file unreadable — scripts/update_boards.py"
+    sha = state.get("data_sha")
+    stale = [n for n, b in state.get("boards", {}).items() if b.get("published_sha") != sha]
+    when = (state.get("rendered_at") or "?").replace("T", " ")
+    if stale:
+        return f"\nboards:   refreshed {when} · PUBLISH PENDING ({', '.join(sorted(stale))}) → /boards"
+    return f"\nboards:   refreshed {when} · published artifacts current"
 
 
 def detail(name: str) -> int:

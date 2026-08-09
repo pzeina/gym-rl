@@ -60,7 +60,11 @@ for a in "$@"; do
   prev=$a
 done
 
-nohup "$PY" -m cohort.training.train --run-name "$RUN" "$@" >"$LOG" 2>&1 &
+# Wrapped, not bare: the wrapper refreshes the fleet/program boards the moment
+# the run lands, so a finished run is never waiting on a session to be visible.
+# The recorded pid is the wrapper's — it outlives training by the few seconds
+# the refresh takes, which is what train_wait.sh should wait for anyway.
+nohup "$ROOT/scripts/train_then_boards.sh" --run-name "$RUN" "$@" >"$LOG" 2>&1 &
 PID=$!
 disown 2>/dev/null || true
 

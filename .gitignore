@@ -192,6 +192,13 @@ legacy/**/__pycache__/
 
 # detached training job files (pid/host specific)
 runs/*/.job.json
+
+# generated boards + the record of what was last published to claude.ai.
+# Derived from the committed behavior*.json, rewritten every time a run lands:
+#   scripts/update_boards.py
+runs/fleet_board.html
+runs/program_board.html
+runs/.boards.json
 logs/
 runs/*/ckpt_best_rolling.pt
 # replayable episode traces (scripts/legacy_trace.py): derived, deterministic

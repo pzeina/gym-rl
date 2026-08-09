@@ -25,14 +25,54 @@ from cohort.env.actions import N_ACTIONS
 from cohort.env.observations import OBS_DIM
 
 
-def _behavior(run: Path) -> dict:
-    path = run / "behavior.json"
+def _json(path: Path) -> dict:
     if not path.is_file():
         return {}
     try:
         return json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def _rate(ci95: str | None) -> float | None:
+    """Parse the rate out of a ``"0.86 ± 0.07"`` headline."""
+    if not ci95:
+        return None
+    try:
+        return float(str(ci95).split("±")[0].strip())
+    except ValueError:
+        return None
+
+
+def _half_width(ci95: str | None) -> float | None:
+    if not ci95 or "±" not in str(ci95):
+        return None
+    try:
+        return float(str(ci95).split("±")[1].strip())
+    except ValueError:
+        return None
+
+
+def _live(run: Path) -> dict:
+    """Training state, but only pay for it when a job is actually alive.
+
+    ``summarize`` parses the whole metrics.csv; doing that for every run on
+    disk would make the board cost what this repo's workflow exists to avoid.
+    """
+    from scripts.train_status import alive, job_of, summarize
+
+    job = job_of(run)
+    if not (job and alive(job.get("pid", -1))):
+        return {"state": None, "progress": None, "rolling": None, "eta": ""}
+    s = summarize(run)
+    return {
+        "state": "RUNNING",
+        "progress": s["pct"],
+        "rolling": s["rolling"],
+        "eta": s["eta"],
+        "steps_done": s["steps"],
+        "steps_total": s["total"],
+    }
 
 
 def collect(runs_dir: Path) -> list[dict]:
@@ -42,39 +82,54 @@ def collect(runs_dir: Path) -> list[dict]:
     for run in sorted(runs_dir.iterdir()) if runs_dir.is_dir() else []:
         if not (run / "metrics.csv").is_file():
             continue
-        cfg = {}
-        cfg_file = run / "config.json"
-        if cfg_file.is_file():
-            try:
-                cfg = json.loads(cfg_file.read_text())
-            except (OSError, json.JSONDecodeError):
-                cfg = {}
-        best = run / "ckpt_best.pt"
-        meta = checkpoint_meta(best) if best.is_file() else {"loadable": False, "reason": "no ckpt_best.pt"}
-        beh = _behavior(run)
-        metrics = beh.get("metrics", {})
-        # behavior.json stores the headline as "0.51 ± 0.10"; keep the string
-        # (the CI is the point) and parse the rate out for sorting/plotting
-        ci = beh.get("success_ci95")
-        rate = None
-        if ci:
-            try:
-                rate = float(str(ci).split("±")[0].strip())
-            except ValueError:
-                rate = None
+        cfg = _json(run / "config.json")
+        best_ckpt = run / "ckpt_best.pt"
+        meta = (
+            checkpoint_meta(best_ckpt)
+            if best_ckpt.is_file()
+            else {"loadable": False, "reason": "no ckpt_best.pt"}
+        )
+        # Two evaluations live in a run dir and they answer different questions:
+        # behavior_final.json is the FINAL policy (what publication quotes),
+        # behavior.json the rolling-best checkpoint. The board must say which
+        # it is showing and at what N — the old board printed one N=100 caption
+        # over rows that were N=20.
+        final, best = _json(run / "behavior_final.json"), _json(run / "behavior.json")
+        head = final or best
+        # ...and read the step count off the checkpoint the headline actually
+        # describes. ckpt_best can be an early save — quoting its step count
+        # beside a final-policy score reads as "trained for 0.28M" when the
+        # policy scored there trained for 3M.
+        latest_ckpt = run / "ckpt_latest.pt"
+        env_steps = meta.get("env_steps")
+        if final and latest_ckpt.is_file():
+            env_steps = checkpoint_meta(latest_ckpt).get("env_steps") or env_steps
+        gates = head.get("gates") or []
+        econ = _json(run / "economics.json")
+        live = _live(run)
         rows.append(
             {
                 "run": run.name,
                 "scenario": cfg.get("scenario"),
-                "success": rate,
-                "success_ci95": ci,
-                "episodes": beh.get("episodes"),
-                "env_steps": meta.get("env_steps"),
+                "success": _rate(head.get("success_ci95")),
+                "success_ci95": head.get("success_ci95"),
+                "success_ci": _half_width(head.get("success_ci95")),
+                "episodes": head.get("episodes"),
+                "policy": ("final" if final else "best") if head else None,
+                "final_ci95": final.get("success_ci95"),
+                "final_episodes": final.get("episodes"),
+                "best_ci95": best.get("success_ci95"),
+                "best_episodes": best.get("episodes"),
+                "gates": gates,
+                "gates_failed": [g["name"] for g in gates if not g.get("passed")],
+                "overrides": econ.get("reward_overrides") or [],
+                "env_steps": env_steps,
                 "obs_dim": meta.get("obs_dim"),
                 "loadable": bool(meta.get("loadable")),
                 "reason": meta.get("reason", ""),
-                "human_death_rate": metrics.get("human_death_rate"),
-                "false_complete_rate": metrics.get("false_complete_rate"),
+                "human_death_rate": head.get("metrics", {}).get("human_death_rate"),
+                "false_complete_rate": head.get("metrics", {}).get("false_complete_rate"),
+                **live,
             }
         )
     return rows
@@ -101,14 +156,19 @@ def main() -> None:
     print(f"build spaces: Discrete({N_ACTIONS})/Box({OBS_DIM})")
     print(f"runs: {len(rows)}   loadable: {live}   stale: {len(rows) - live}")
     print()
-    print(f"{'run':<26}{'scenario':<18}{'success':>16}{'obs':>6}  {'':<1}")
-    print("-" * 70)
+    print(f"{'run':<26}{'scenario':<18}{'success':>16}{'policy':>8}{'N':>5}{'obs':>6}  {'':<1}")
+    print("-" * 82)
     for r in rows:
         succ = r["success_ci95"] or ("—" if r["success"] is None else f"{r['success']:.2f}")
-        flag = "" if r["loadable"] else "  ⚠ stale"
+        flags = "" if r["loadable"] else "  ⚠ stale"
+        if r["gates_failed"]:
+            flags += f"  ✕ {','.join(r['gates_failed'])}"
+        if r["state"] == "RUNNING":
+            flags += f"  ▶ training {r['progress']:.0f}%"
         print(
             f"{r['run']:<26}{(r['scenario'] or '?'):<18}{succ:>16}"
-            f"{(r['obs_dim'] or '—')!s:>6}{flag}"
+            f"{(r['policy'] or '—'):>8}{(r['episodes'] or '—')!s:>5}"
+            f"{(r['obs_dim'] or '—')!s:>6}{flags}"
         )
     if live == 0 and rows:
         print()
