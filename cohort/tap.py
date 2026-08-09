@@ -54,7 +54,15 @@ from cohort.training.evaluate import _pick_actions
 #: All three are additive -- consumers of 1.0.0 corpora see missing keys, not
 #: changed ones -- but the schema is bumped so a corpus states what it can be
 #: asked for rather than leaving the layer to probe.
-TAP_SCHEMA = "1.2.0"
+#:
+#: 1.3.0 (v1.13 era, upstream 16cb2a6): the ``endex`` message kind appears.
+#: COMMAND closes a continuous-posture operation on the net, because a
+#: DEFEND/DENY holder is never the one who declares it over -- and the same
+#: commit masks MISSION COMPLETE shut on those roots, so a defend corpus
+#: recorded from here carries ENDEX where an older one carries a root DONE.
+#: Additive: nothing existing changes shape, and pre-1.3.0 corpora simply
+#: never contain the kind.
+TAP_SCHEMA = "1.3.0"
 
 
 def _open(path: str) -> IO[str]:
@@ -269,6 +277,16 @@ def _payload(m: Message) -> dict:
         # "ALL STATIONS: RFN1 HIT A DEVICE AT GRID 1407. OUT." (BRIQUE)
         s = re.search(r"(?P<cs>[A-Z]+\d+) HIT A DEVICE AT GRID (?P<grid>\d{4})", m.text)
         parsed = {"victim": s.group("cs"), "grid": s.group("grid")} if s else {}
+    elif kind == "endex":
+        # "TL1, THIS IS HQ: ENDEX. OUT." (v1.13) -- COMMAND closes the
+        # operation on a continuous-posture root. Empty payload is the
+        # DELIBERATE answer, not a gap: the text carries no task, objective or
+        # verdict, and the whole content is that HQ transmitted it, to whom,
+        # and when. Those already live on the record (`sender`, `recipient`,
+        # `step`), so inventing a payload field here would be structure the
+        # net does not carry. Named explicitly rather than left to the `else`
+        # so a reader can tell "nothing to parse" from "nobody looked".
+        parsed = {}
     else:
         parsed = {}
     return parsed
