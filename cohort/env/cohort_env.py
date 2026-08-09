@@ -25,6 +25,7 @@ from pettingzoo import ParallelEnv
 from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
 from cohort.core import language as lang
 from cohort.core.missions import (
+    COMPLETABLE,
     IN_POSITION_RADIUS,
     LOS_REQUIRED,
     POSITION_ANCHORED_FIRE,
@@ -137,8 +138,18 @@ class CohortEnv(ParallelEnv):
         self._shots_at: dict[int, int] = {}  # enemy id → friendly shots this step
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
         self._success_step: int | None = None  # T0: success condition first met
-        self._root_done_step: int | None = None  # truthful root-mission DONE step
-        self._root_done_callsign: str | None = None
+        #: the step the root closed the C2 loop on the operation, in time to
+        #: earn ``root_done_bonus``. Two routes, by root mission (v1.13): a
+        #: truthful MISSION COMPLETE where the root may declare one, or — on a
+        #: continuous DEFEND/DENY posture, which nobody below COMMAND may
+        #: declare over — the root's SITREP once the end state holds.
+        self._root_close_step: int | None = None
+        self._root_close_callsign: str | None = None
+        #: last step the root transmitted a SITREP (v1.13: the report COMMAND
+        #: reads before it transmits ENDEX).
+        self._root_sitrep_step: int | None = None
+        #: the step COMMAND transmitted ENDEX, so it is transmitted once.
+        self._endex_step: int | None = None
         #: defend preparation period (v1.10): the step the assault actually
         #: begins, and the nominal H the OPORD announced. Both None when the
         #: scenario has no ``assault_h_hour``.
@@ -261,8 +272,10 @@ class CohortEnv(ParallelEnv):
         self._shots_at = {}
         self._last_net_contact_step = None
         self._success_step = None
-        self._root_done_step = None
-        self._root_done_callsign = None
+        self._root_close_step = None
+        self._root_close_callsign = None
+        self._root_sitrep_step = None
+        self._endex_step = None
         self._h_hour = None
         self._h_hour_nominal = None
         self._draw_h_hour()
@@ -817,21 +830,40 @@ class CohortEnv(ParallelEnv):
 
         # --- terminal conditions ---
         # Success does not terminate on the spot: when the root-mission
-        # condition is first met (T0) a completion-report grace window opens,
-        # giving the root time to transmit MISSION COMPLETE. A truthful root
-        # DONE ends the episode that step (root_done_bonus); otherwise it ends
-        # as success at T0 + grace_window anyway. Success is locked in at T0 —
-        # the speed bonus is computed from T0, so policies that never report
-        # keep their success rate and terminal reward.
+        # condition is first met (T0) a reporting grace window opens, giving
+        # the root time to close the C2 loop. Closing it ends the episode that
+        # step (root_done_bonus); otherwise it ends as success at
+        # T0 + grace_window anyway. Success is locked in at T0 — the speed
+        # bonus is computed from T0, so policies that never report keep their
+        # success rate and terminal reward.
+        #
+        # How the loop is closed depends on the root mission (v1.13, owner's
+        # decision). Where the root may declare an end state, it transmits
+        # MISSION COMPLETE. Where it may not — DEFEND/DENY are held until a
+        # new order arrives, so their holder is never the one who says they
+        # are over — the root reports the situation and COMMAND transmits
+        # ENDEX. Same window, same bonus, opposite direction on the net.
         if self._check_success(root_obj) and self._success_step is None:
             self._success_step = step  # T0: the window opens
         success_locked = self._success_step is not None
         cohort_wiped = not any(s.alive for s in self.roster.soldiers)
         defeat = cohort_wiped and not success_locked
+        continuous_root = self.spec_cfg.root_mission not in COMPLETABLE
+        if (
+            success_locked
+            and continuous_root
+            and self._root_close_step is None
+            and self._root_sitrep_step is not None
+            and self._root_sitrep_step >= self._success_step
+        ):
+            root = self.roster.root()
+            if root is not None:
+                self._root_close_step = self._root_sitrep_step
+                self._root_close_callsign = root.callsign
         root_reported = (
             success_locked
-            and self._root_done_step is not None
-            and self._root_done_step >= self._success_step
+            and self._root_close_step is not None
+            and self._root_close_step >= self._success_step
         )
         success = success_locked and (
             root_reported
@@ -842,6 +874,17 @@ class CohortEnv(ParallelEnv):
         truncated_all = step >= self.spec_cfg.max_steps and not success and not defeat
         if success:
             self._episode_outcome = "success"
+            # COMMAND closes a continuous-posture operation on the net (v1.13).
+            # Transmitted whether or not the root reported in time — the order
+            # to stop defending is COMMAND's to give either way; what the
+            # root's SITREP buys is closing early, and root_done_bonus.
+            if continuous_root and self._endex_step is None:
+                root = self.roster.root()
+                if root is not None:
+                    self._say(
+                        MessageKind.ENDEX, HQ_ID, root.id, lang.format_endex(root.callsign)
+                    )
+                    self._endex_step = step
             speed = cfg.success_speed * max(0.0, 1.0 - self._success_step / self.spec_cfg.max_steps)
             # v1.11: paid to everyone still IN the episode, which now includes
             # the fallen (see `terminations` below). It used to be
@@ -872,8 +915,8 @@ class CohortEnv(ParallelEnv):
             scale = self._defend_terminal_scale()
             for callsign in present:
                 ledger.add(callsign, "terminal", (cfg.success_team + speed) * scale)
-            if root_reported and self._root_done_callsign is not None:
-                ledger.add(self._root_done_callsign, "terminal", cfg.root_done_bonus)
+            if root_reported and self._root_close_callsign is not None:
+                ledger.add(self._root_close_callsign, "terminal", cfg.root_done_bonus)
         elif defeat:
             self._episode_outcome = "defeat"
             for callsign in present:
@@ -990,6 +1033,12 @@ class CohortEnv(ParallelEnv):
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
             self._charge_transmission(soldier, ledger, "report")
             soldier.last_sitrep_step = self._step_count
+            if soldier is self.roster.root():
+                # v1.13: on a continuous-posture root this is the report
+                # COMMAND acts on. Recorded for everyone — the terminal block
+                # decides whether it lands after the end state, and only a
+                # DEFEND/DENY root closes the operation this way.
+                self._root_sitrep_step = self._step_count
             self._say(
                 MessageKind.SITREP,
                 soldier.id,
@@ -1146,8 +1195,8 @@ class CohortEnv(ParallelEnv):
             )
             if is_root_mission_claim:
                 # truthful root-mission COMPLETE: closes the grace window
-                self._root_done_step = self._step_count
-                self._root_done_callsign = soldier.callsign
+                self._root_close_step = self._step_count
+                self._root_close_callsign = soldier.callsign
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
         else:

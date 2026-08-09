@@ -60,7 +60,7 @@ def step(t, soldiers, enemies=(), messages=()):
 
 def trace(
     steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20,
-    ttl=40, root_mission="SEIZE", threat_radius=8.0, max_steps=375,
+    ttl=40, root_mission="SEIZE", threat_radius=8.0, max_steps=375, root_close_step=None,
 ):
     return {
         "scenario": "test",
@@ -68,6 +68,7 @@ def trace(
         "length": steps[-1]["t"],
         "root_mission": root_mission,
         "max_steps": max_steps,
+        "root_close_step": root_close_step,
         "root_objective": list(root_objective) if root_objective else None,
         "ring_radius": 7.0,
         "threat_radius": threat_radius,
@@ -811,3 +812,48 @@ def test_vocabulary_usage_counts():
     assert agg["advance_orders_per_episode"] == 1
     assert agg["stance_share"] == 2 / 5
     assert agg["sync_bounds_per_episode"] == 1
+
+
+# ---------------------------------------------------------------------- #
+# ENDEX: the completion signal on a continuous-posture root (v1.13)
+# ---------------------------------------------------------------------- #
+
+
+def test_closed_on_root_report_rate_separates_a_prompted_close_from_a_silent_one():
+    """`false_complete_rate` is structurally 0 on a DEFEND root, so it stops
+    being a reporting-quality signal. This is what replaces it: COMMAND sends
+    ENDEX either way, and the question worth asking is whether the root's
+    report is what closed the window."""
+    prompted = episode_behavior(
+        trace(
+            [step(0, [sold("TL1")]), step(1, [sold("TL1")], messages=[msg("endex", "HQ", "TL1")])],
+            root_mission="DEFEND",
+            root_close_step=1,
+        )
+    )
+    silent = episode_behavior(
+        trace(
+            [step(0, [sold("TL1")]), step(1, [sold("TL1")], messages=[msg("endex", "HQ", "TL1")])],
+            root_mission="DEFEND",
+            root_close_step=None,
+        )
+    )
+    assert prompted["endex_sent"] == 1 and prompted["endex_on_root_report"] == 1
+    assert silent["endex_sent"] == 1 and silent["endex_on_root_report"] == 0
+
+    agg = aggregate_behavior([prompted, silent])
+    assert agg["endex_sent"] == 2
+    assert agg["closed_on_root_report_rate"] == 0.5
+
+
+def test_a_completable_root_reports_no_endex_denominator_at_all():
+    """No ENDEX means the rate is None, not 0 — a SEIZE root closes its own
+    operation with MISSION COMPLETE, and reading that as "never reported"
+    would be the same denominator confusion `false_complete_rate` fell into
+    on fireteam_defend_v12 (one claim, rate 1.00)."""
+    seize = episode_behavior(
+        trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])], root_mission="SEIZE")
+    )
+    agg = aggregate_behavior([seize])
+    assert agg["endex_sent"] == 0
+    assert agg["closed_on_root_report_rate"] is None

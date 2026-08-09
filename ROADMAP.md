@@ -52,16 +52,22 @@ the fire team time to occupy them), after which `v6`(0.35) beats `v7`(flat)
 0.97 vs 0.89 success (p=0.027) with both arms publishable and all gates
 passing. The pre-authorised option-1 fallback is **not** indicated.
 
-**⇒ THE NEXT THING IS THE DONE CHANNEL — and `done_false=-2.0` is the WRONG
-lever.** An earlier version of this block named it; the 2026-08-09 diagnosis
-below says it is backwards, and `fireteam_defend_v13/v14` + `defend_brique_v8`
-are training to settle it. **Do not apply it on the strength of the old
-note.** The one number to hold: a claim pays `done_true + root_done_bonus` =
-**+4.0** and costs `done_false` = **−0.5**, so a blind claim breaks even at
-**P = 0.111**, and the grace window is 12 steps of a ~115-step
-`fireteam_defend` success (**P = 0.105**, EV −0.029) versus ~99 steps on
-`defend_brique` (**P = 0.121**, EV +0.045). `-2.0` moves break-even to
-**0.333**, above *both*. Nothing else here is blocked.
+**⇒ THE DONE-CHANNEL THREAD IS CLOSED — not by pricing it, by deleting the
+act.** Two earlier versions of this block sent the next session after
+`done_false`, in opposite directions; both were pricing something a DEFEND
+root should never have been offered. **Ignore both.** v1.13 (`16cb2a6`,
+owner's decision): MISSION COMPLETE is masked shut on a continuous posture,
+the root reports the situation, and COMMAND transmits **ENDEX**. The
+`fireteam_defend_v13/v14` + `defend_brique_v8` campaign was killed mid-flight
+once the point landed; `runs/fireteam_defend_v13/` is a partial (2.17M/3.5M)
+left on disk, not a result.
+
+**⇒ THE NEXT THING IS TO READ `endex_v1_13`.** `fireteam_defend_v15` and
+`defend_brique_v9` are training the defend family against the loop it now has
+to close (every checkpoint on disk learned under the old rule). The number to
+watch is **`closed_on_root_report_rate`** — v12's checkpoint scores **0.22**
+under the new rule — with success/root-death expected to hold at the v1.12
+levels (fireteam 0.86/0.15, brique 0.97/0.05). Nothing else here is blocked.
 
 **Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
 repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
@@ -2975,3 +2981,64 @@ deliberately deferred (`docs/vision.md` §2c).
   success with what a defender can perceive, as the BRIQUE branch already
   does, (c) make completion observable in the obs — which is a breaking
   cycle, OBS_DIM and the whole checkpoint fleet. Not autopiloted.
+
+- **2026-08-09** — **v1.13: COMMAND ends a defense, not the section holding
+  the ground.** Owner's decision, and it retires the false-DONE thread by
+  dissolving it rather than pricing it.
+
+  The point: a DEFEND is not a task with an end state its holder may declare.
+  It is held until relieved or re-tasked, so the order that ends it comes
+  DOWN the chain. `cohort/core/missions.py` already said so —`COMPLETABLE`
+  excludes DEFEND/DENY because they "end when a new order arrives" — and the
+  env carved around its own doctrine table: `is_root_opord_claim` (v1.4) let
+  a DEFEND root declare the *operation* complete. That was added to repair a
+  real bug (mask and adjudicator disagreed, the root could never claim,
+  `root_done_bonus` was dead reward), and it opened the wrong door.
+
+  **The same measurement, misread twice, now settled.** `fireteam_defend_v12`
+  filed ONE claim in 100 episodes against 16,152 admissible agent-steps.
+  2026-08-08 called it the family's largest defect; the 2026-08-09 entry
+  above called it a dead channel priced shut. Both were looking at a policy
+  correctly declining an act it should never have been offered. The economics
+  in that entry are still right as arithmetic — and the half-run
+  `fireteam_defend_v13` confirmed them, opening the channel to **89% false
+  DONE** at `done_false=-0.1` before it was killed — but they were the price
+  of the wrong act. Repricing bought spam; it was never going to buy
+  discrimination, because there was nothing legitimate to discriminate.
+
+  **Now**: `is_root_opord_claim` requires the root mission to be in
+  `COMPLETABLE`, so MISSION COMPLETE is masked shut on a continuous posture.
+  The root reports the situation and COMMAND transmits **ENDEX** (new
+  `MessageKind` + formatter, no parser — same shape as every other auto-kind).
+  Same grace window, same `root_done_bonus`, opposite direction on the net: a
+  SITREP once the end state holds closes the operation early and pays, and
+  COMMAND closes it either way. Masking-only on the action space —
+  **Discrete(228)/Box(220) unchanged, the whole fleet still loads**.
+  Spot-checked on v12's own checkpoint: 3/3 success, 0 DONE, and
+  `[t=105] TL1, THIS IS HQ: ENDEX. OUT.` on the transcript.
+
+  **New signal, because the old one goes vacuous.** `false_complete_rate` is
+  structurally 0 on a defend scenario now. Replaced by
+  **`closed_on_root_report_rate`**: of the operations COMMAND closed, how many
+  the root's own report closed early. `None` (not 0) when no ENDEX was sent,
+  so a SEIZE root does not read as "never reported" — that is exactly the
+  denominator confusion that made v12's single claim read as a 1.00 failure
+  rate, and it is now impossible to repeat in the other direction. v12's
+  checkpoint measures **0.22** under the new rule.
+
+  `test_root_opord_claim.py` is rewritten, not deleted: it pins the reversal
+  *and* the hazard that outlived it (mask and adjudicator must never drift
+  apart). Both halves mutation-checked by hand. Tests 538 → 540, ruff clean.
+
+  **Training**: `campaigns/endex_v1_13.jobs` — `fireteam_defend_v15` and
+  `defend_brique_v9`, `defend_survivor_scale` held at 0.35, same seeds and
+  budgets as the arms they replace, so the variable is the close rule. Watch
+  `closed_on_root_report_rate` against 0.22, with success/root-death expected
+  to hold at the v1.12 levels (fireteam 0.86/0.15, brique 0.97/0.05).
+
+  **Left open**: `defend_brique`'s success is "band destroyed, or scattered
+  with contact broken, objective held" — a *neutralize the band* end state,
+  which is genuinely completable. It is rooted DEFEND because it is also a
+  hold. ENDEX covers it correctly either way, but the taxonomy is worth a
+  look: that scenario may want a different root mission rather than a
+  different close rule.

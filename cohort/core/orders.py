@@ -31,6 +31,11 @@ class MessageKind(Enum):
     DONE = "done"                      # mission-complete report (up the chain)
     DONE_CONFIRM = "done_confirm"      # superior confirms a truthful DONE (auto)
     DONE_REJECT = "done_reject"        # superior rejects a false DONE (auto)
+    ENDEX = "endex"                    # COMMAND closes the operation (auto). A
+    #                                    continuous posture (DEFEND/DENY) has no
+    #                                    end state its holder can declare — it
+    #                                    runs until a new order arrives, so the
+    #                                    order to end it comes DOWN the chain.
     SUPPORT_END = "support_end"        # SUPPORT ends: supported unit fell (auto)
     EXECUTE = "execute"                # issuer releases its AT-MY-COMMAND orders (A5-2)
     SYNC_PROPOSE = "sync_propose"      # trinôme bound proposal, by voice (A5-4)
