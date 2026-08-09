@@ -172,9 +172,15 @@ def test_a_deny_root_is_scaled_exactly_like_a_defend_root():
 # ---------------------------------------------------------------------- #
 
 def _defend_env(seed=1):
-    """fireteam_defend with every enemy dead: success is one step away."""
+    """fireteam_defend with every enemy dead: success is one step away.
+
+    ``_h_hour`` is cleared because v1.14 adjudicates the defense only from H —
+    before it, the preparation period is running and nothing is decided. These
+    tests are about the size of the payout, not about when it arrives.
+    """
     env = make_env("fireteam_defend")
     env.reset(seed=seed)
+    env._h_hour = 0
     for e in env.enemies:
         e.alive = False
     return env

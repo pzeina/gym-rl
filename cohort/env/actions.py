@@ -37,6 +37,7 @@ from cohort.core.missions import (
     Formation,
     MissionType,
     allowed_derivations,
+    is_completable,
     is_pending,
     min_hold_authority,
 )
@@ -217,6 +218,8 @@ def is_root_opord_claim(
     roster: Roster,
     root_mission: MissionType | None,
     root_objective_id: int | None,
+    *,
+    defend_horizon: int | None = None,
 ) -> bool:
     """Is this the root reporting the *operation* complete?
 
@@ -248,7 +251,9 @@ def is_root_opord_claim(
         # and COMMAND transmits ENDEX. Without this clause the root could
         # declare its own DEFEND operation over, which is the one thing the
         # doctrine table (``COMPLETABLE``) says it must not do.
-        and root_mission in COMPLETABLE
+        # v1.14 refines it: a defense ordered to a horizon DOES have a
+        # declarable end state (see ``missions.is_completable``).
+        and is_completable(root_mission, defend_horizon=defend_horizon)
         and mission.type is root_mission
         and mission.objective_id == root_objective_id
     )
@@ -262,6 +267,7 @@ def is_done_admissible(
     root_objective_id: int | None,
     step: int,
     done_cooldown: int,
+    defend_horizon: int | None = None,
 ) -> bool:
     """May this agent transmit MISSION COMPLETE *this step*?
 
@@ -283,8 +289,13 @@ def is_done_admissible(
     # Completable-by-type OR the root's own OPORD: a DEFEND/DENY root
     # can never "finish" its posture, but it can and must report that
     # the *operation* succeeded (see is_root_opord_claim).
+    #
+    # The type test stays the plain ``COMPLETABLE`` one, not the horizon-aware
+    # predicate: the horizon is stated in the OPORD, so it is the ROOT's order
+    # that carries it. A subordinate tasked DEFEND holds an indefinite posture
+    # that ends when its leader re-tasks it, exactly as in v1.13.
     claimable = mission.type in COMPLETABLE or is_root_opord_claim(
-        soldier, roster, root_mission, root_objective_id
+        soldier, roster, root_mission, root_objective_id, defend_horizon=defend_horizon
     )
     return bool(
         claimable
@@ -304,6 +315,7 @@ def compute_mask(
     done_cooldown: int = 0,
     root_mission: MissionType | None = None,
     root_objective_id: int | None = None,
+    defend_horizon: int | None = None,
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
@@ -357,6 +369,7 @@ def compute_mask(
                 root_objective_id=root_objective_id,
                 step=step,
                 done_cooldown=done_cooldown,
+                defend_horizon=defend_horizon,
             ):
                 mask[spec.index] = 1
         elif spec.kind == "execute":

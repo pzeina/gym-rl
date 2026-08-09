@@ -169,6 +169,26 @@ class ScenarioSpec:
     #                               exactly, known: a defense must be set early rather
     #                               than timed to the tick. None → no preparation
     #                               period, the shipped behavior.
+    defend_horizon: int | None = None
+    #                               v1.14, owner's decision: a DEFEND / DENY root is
+    #                               ordered to hold UNTIL a stated hour. From H onward
+    #                               the position must stay occupied — a living friendly
+    #                               within the objective's radius + 1 — every step; the
+    #                               first step it is not, the mission has failed, for
+    #                               good (no retake). It succeeds at the first step from
+    #                               H at which the threat is out of the fight
+    #                               (``_band_neutralized`` — early release) or the
+    #                               horizon is reached, whichever comes first. Success
+    #                               is conservation of the position, not annihilation of
+    #                               the enemy; casualties stay priced by
+    #                               ``RewardConfig.defend_survivor_scale``, never gated.
+    #                               A FIXED step count, deliberately, not H + D: the
+    #                               policy is a memoryless MLP whose only clock is the
+    #                               ``step / max_steps`` tempo feature, so an H-relative
+    #                               deadline would be literally unperceivable. None →
+    #                               indefinite defense, exactly the pre-v1.14 behavior
+    #                               (annihilation on an assault root, band-neutralised-
+    #                               and-held on a BRIQUE one, ENDEX-only closure).
     observation_concealment: bool = False  # True → guarantee concealed observation
     #                               positions: small forest patches on the ring at
     #                               observation distance (~6 cells) around the root
@@ -283,6 +303,8 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         # occupying the position the only thing worth doing, and makes leaving
         # it expensive: whoever walks out has to walk back before H.
         assault_h_hour=(55, 75),
+        # hold until H + the ordered horizon: int(0.5 * max_steps) = 225
+        defend_horizon=225,
     ),
     "squad": ScenarioSpec(
         name="squad",
@@ -398,6 +420,8 @@ SCENARIOS: dict[str, ScenarioSpec] = {
         # band infiltrating from the far edges gives less warning than a
         # formed assault, so the defense is entitled to less of it.
         assault_h_hour=(35, 55),
+        # hold until the ordered horizon: int(0.5 * max_steps) = 210
+        defend_horizon=210,
         band=BriqueBandConfig(initial_intent="harass", raid_period=60),
         n_traps=2,
         # BRIQUE terminal semantics: success = band destroyed OR scattered with

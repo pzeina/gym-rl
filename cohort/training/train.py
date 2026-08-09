@@ -523,7 +523,8 @@ def _spec_economics(scenario: str) -> dict:
     spec = get_scenario(scenario)
     keys = (
         "root_mission", "root_objective", "max_steps", "grace_window",
-        "done_cooldown", "order_cooldown", "assault_h_hour", "sitrep_cadence",
+        "done_cooldown", "order_cooldown", "assault_h_hour", "defend_horizon",
+        "sitrep_cadence",
         "ablation", "opfor_mode", "comm_model", "n_enemies",
     )
     return {k: getattr(spec, k, None) for k in keys}
