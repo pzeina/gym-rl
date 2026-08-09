@@ -364,6 +364,17 @@ scenario at a time as the fleet is re-published off final numbers.
 | scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | closed on root's report | gates |
 |---|---|---|---|---|---|---|
 | fireteam_defend | `fireteam_defend_v15` | **84% ± 7** | 83% ± 7 | ✓ gap 9.8 (bar 10) | **0.99** (v12: 0.47) | 4/4 ✓ |
+| defend_brique | `defend_brique_v9` (seed 12) | **91% ± 6** | 90% ± 6 | ✓ gap 6.7 | **0.99** | 4/4 ✓ |
+| defend_brique | `defend_brique_v10` (seed 13) | **88% ± 6** | 91% ± 6 | ✓ gap 8.1 | **1.00** | 4/4 ✓ |
+
+> **`defend_brique` publishes as a priced regression, and both seeds are here on
+> purpose.** Pooled across seeds the ENDEX policy scores **179/200 = 0.895**
+> (Wilson 95% CI 0.845–0.930) against `defend_brique_v6`'s **0.97 ± 0.03** under
+> the old close rule — Fisher **p = 0.024**, non-overlapping, and below this
+> repo's `prev − 5` bound of 92. Quoting the better seed alone would be the
+> exact failure `scripts/publish_audit.py` exists to catch. The cost is real
+> and diagnosed, not an accounting artifact; see the 2026-08-09 progress-log
+> entry for why the obvious "it just banked wins earlier" explanation is wrong.
 
 `closed on root's report` is `closed_on_root_report_rate`: of the operations
 COMMAND closed, how many the root's own report closed early. The v12 figure
