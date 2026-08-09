@@ -159,6 +159,35 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
     }
 )
 
+#: Missions that become completable once the ORDER states an hour to hold to
+#: (``ScenarioSpec.defend_horizon``). v1.14, owner's decision, refining v1.13:
+#: an INDEFINITE defense has no end state its holder may declare — it runs
+#: until a new order arrives, so the root reports the situation and COMMAND
+#: transmits ENDEX. A defense ordered to a stated horizon does have one: at the
+#: horizon the mission genuinely is complete, and the root can perceive both
+#: the clock and the ground, so it may declare — adjudicated against ground
+#: truth like any other claim.
+HORIZON_COMPLETABLE: frozenset[MissionType] = frozenset(
+    {MissionType.DEFEND, MissionType.DENY}
+)
+
+
+def is_completable(
+    mission: MissionType | None, *, defend_horizon: int | None = None
+) -> bool:
+    """May a holder of ``mission`` ever transmit MISSION COMPLETE?
+
+    ``COMPLETABLE`` membership, plus the one case that depends on the order
+    rather than on the mission type: a DEFEND / DENY ordered to a horizon.
+    Pass the scenario's ``defend_horizon``; ``None`` (the default) is an
+    indefinite posture and reads exactly as ``mission in COMPLETABLE``.
+    """
+    if mission is None:
+        return False
+    if mission in COMPLETABLE:
+        return True
+    return defend_horizon is not None and mission in HORIZON_COMPLETABLE
+
 #: Derivation doctrine: own mission → subordinate missions allowed, in
 #: preference order. Rebuilt for the MICAT set from the manual's mission
 #: definitions (docs/missions.md). Note DENY: a section holding INTERDIRE

@@ -25,7 +25,6 @@ from pettingzoo import ParallelEnv
 from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
 from cohort.core import language as lang
 from cohort.core.missions import (
-    COMPLETABLE,
     IN_POSITION_RADIUS,
     LOS_REQUIRED,
     POSITION_ANCHORED_FIRE,
@@ -37,6 +36,7 @@ from cohort.core.missions import (
     compliance,
     derivation_quality,
     in_formation,
+    is_completable,
     is_complete,
     is_pending,
     min_hold_authority,
@@ -138,6 +138,10 @@ class CohortEnv(ParallelEnv):
         self._shots_at: dict[int, int] = {}  # enemy id → friendly shots this step
         self._last_net_contact_step: int | None = None  # last CONTACT on the net
         self._success_step: int | None = None  # T0: success condition first met
+        #: v1.14: a horizon defense that lost the position, permanently. Success
+        #: latches at T0; conservation of the position has to latch the other
+        #: way, or a mission already failed could still be won by a retake.
+        self._defend_lost_step: int | None = None
         #: the step the root closed the C2 loop on the operation, in time to
         #: earn ``root_done_bonus``. Two routes, by root mission (v1.13): a
         #: truthful MISSION COMPLETE where the root may declare one, or — on a
@@ -272,6 +276,7 @@ class CohortEnv(ParallelEnv):
         self._shots_at = {}
         self._last_net_contact_step = None
         self._success_step = None
+        self._defend_lost_step = None
         self._root_close_step = None
         self._root_close_callsign = None
         self._root_sitrep_step = None
@@ -843,12 +848,19 @@ class CohortEnv(ParallelEnv):
         # new order arrives, so their holder is never the one who says they
         # are over — the root reports the situation and COMMAND transmits
         # ENDEX. Same window, same bonus, opposite direction on the net.
+        #
+        # v1.14: on a defense ordered to a horizon, conservation of the
+        # position is adjudicated FIRST and latches permanently — a mission
+        # already failed cannot be won later by walking back onto the ground.
+        self._update_defend_hold(root_obj)
         if self._check_success(root_obj) and self._success_step is None:
             self._success_step = step  # T0: the window opens
         success_locked = self._success_step is not None
         cohort_wiped = not any(s.alive for s in self.roster.soldiers)
         defeat = cohort_wiped and not success_locked
-        continuous_root = self.spec_cfg.root_mission not in COMPLETABLE
+        continuous_root = not is_completable(
+            self.spec_cfg.root_mission, defend_horizon=self.spec_cfg.defend_horizon
+        )
         if (
             success_locked
             and continuous_root
@@ -1154,7 +1166,11 @@ class CohortEnv(ParallelEnv):
         )
         # same predicate the action mask admits on — see is_root_opord_claim
         is_root_mission_claim = is_root_opord_claim(
-            soldier, self.roster, self.spec_cfg.root_mission, self._root_objective_id()
+            soldier,
+            self.roster,
+            self.spec_cfg.root_mission,
+            self._root_objective_id(),
+            defend_horizon=self.spec_cfg.defend_horizon,
         )
         # The root's OPORD claim reports the *operation*: it is judged against
         # the team success condition (e.g. objective clear AND held by anyone),
@@ -1910,6 +1926,7 @@ class CohortEnv(ParallelEnv):
             done_cooldown=self.spec_cfg.done_cooldown,
             root_mission=self.spec_cfg.root_mission,
             root_objective_id=self._root_objective_id(),
+            defend_horizon=self.spec_cfg.defend_horizon,
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,
@@ -2287,6 +2304,51 @@ class CohortEnv(ParallelEnv):
         )
         return clear and manned
 
+    def _position_occupied(self, root_obj: Any) -> bool:
+        """Is the defended position OCCUPIED — a living friendly standing on it?
+
+        The ``manned`` half of :meth:`_objective_held`, and deliberately only
+        that half. Occupation is what a DEFEND conserves; the ``clear`` half —
+        no hostile within the footprint — is a statement about safety, and an
+        enemy assaulting into contact on the position is the mission arriving,
+        not the mission failing. Measured on the committed defend checkpoints,
+        scoring the strict conjunction instead costs 29 of 100 episodes, and 26
+        of the 40 first breaks it counts are exactly "the assault got here".
+        """
+        if root_obj is None:
+            return True
+        return any(
+            dist(s.pos, root_obj.pos) <= root_obj.radius + 1.0 for s in self.roster.living
+        )
+
+    def _horizon_defense(self) -> int | None:
+        """The ordered horizon of this episode's defense, or None.
+
+        None on every scenario that is not a DEFEND / DENY root ordered to a
+        stated hour — those keep the pre-v1.14 criterion exactly.
+        """
+        cfg = self.spec_cfg
+        if cfg.root_mission not in (MissionType.DEFEND, MissionType.DENY):
+            return None
+        return cfg.defend_horizon
+
+    def _update_defend_hold(self, root_obj: Any) -> None:
+        """Latch the permanent loss of a horizon defense (v1.14).
+
+        From H onward the position must be occupied every step. The first step
+        it is not, the mission has failed and stays failed: there is no retake,
+        by decision — a position handed over and walked back onto was not held.
+        Before H nothing is adjudicated; the preparation period exists so the
+        defense can occupy the ground it was ordered to hold.
+        """
+        horizon = self._horizon_defense()
+        if horizon is None or self._defend_lost_step is not None:
+            return
+        if self._step_count < (self._h_hour or 0):
+            return
+        if not self._position_occupied(root_obj):
+            self._defend_lost_step = self._step_count
+
     def _root_objective_id(self) -> int | None:
         """Objective id named by the OPORD, or None when the scenario has none."""
         name = self.spec_cfg.root_objective
@@ -2298,6 +2360,24 @@ class CohortEnv(ParallelEnv):
     def _check_success(self, root_obj: Any) -> bool:
         mission = self.spec_cfg.root_mission
         living_enemies = [e for e in self.enemies if e.alive]
+        horizon = self._horizon_defense()
+        if horizon is not None:
+            # v1.14, owner's decision: DEFEND success is conservation of the
+            # position, with minimum casualties — not annihilation of the
+            # enemy. Failure is permanent and is latched by
+            # ``_update_defend_hold``; from H the operation is won at the first
+            # step the threat is out of the fight (early release) or the
+            # ordered horizon is reached, whichever comes first. Casualties are
+            # priced by ``defend_survivor_scale`` on the terminal, never gated
+            # here — a gate would rebuild the forfeiture asymmetry that caused
+            # the D4 collapse.
+            if self._defend_lost_step is not None:
+                return False
+            if self._step_count < (self._h_hour or 0):
+                return False
+            if not self._position_occupied(root_obj):
+                return False
+            return self._band_neutralized(root_obj) or self._step_count >= horizon
         if (
             self.spec_cfg.opfor_mode == "brique"
             and mission in (MissionType.DEFEND, MissionType.DENY)
