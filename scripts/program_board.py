@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import math
 import subprocess
 import sys
 from datetime import datetime
@@ -437,7 +438,10 @@ def _panel(panel: dict) -> str:
 
 ENDEX_ARMS = [
     ("fireteam_defend_v15", "fireteam_defend", "fireteam_defend_v12"),
-    ("defend_brique_v9", "defend_brique", "defend_brique_v6"),
+    # both defend_brique seeds, because that is how it published: quoting the
+    # better of a pair is the failure publish_audit.py exists to catch
+    ("defend_brique_v9", "defend_brique · seed 12", "defend_brique_v6"),
+    ("defend_brique_v10", "defend_brique · seed 13", "defend_brique_v6"),
 ]
 #: v12's own checkpoints re-scored under the ENDEX rule, committed beside the
 #: run it describes. This was published for a while as a bare **0.22** naming
@@ -479,6 +483,82 @@ def _baseline_phrase(baseline: list[dict]) -> str:
     if len(parts) < 3:
         return " and ".join(parts)
     return ", ".join(parts[:-1]) + f" and {parts[-1]}"
+
+
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Score interval for a pooled rate — the CI a ± figure cannot be added into."""
+    if n == 0:
+        return 0.0, 0.0
+    p = k / n
+    d = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / d
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / d
+    return centre - half, centre + half
+
+
+def _endex_success_verdict() -> str:
+    """Say what the success comparison currently supports — read, not asserted.
+
+    This sentence claimed "not settled yet, these are the N=20 exit
+    evaluations" for three hours after both arms were re-scored at N=100 and
+    `defend_brique` published as a priced regression. A verdict about evidence
+    has to be computed from the evidence, or it goes stale exactly like the
+    board this project spent the day rebuilding.
+    """
+    # Seeds sharing a baseline are POOLED, because that is how the result
+    # published. Judging each seed against the baseline on its own says "held"
+    # for defend_brique — both seeds' intervals graze v6's — while the pooled
+    # comparison is p=0.024 and non-overlapping. A board that contradicts the
+    # README it summarises is worse than no board.
+    groups: dict[str, list[tuple[str, str]]] = {}
+    for arm, scen, base in ENDEX_ARMS:
+        groups.setdefault(base, []).append((arm, scen))
+
+    verdicts = []
+    for base, arms in groups.items():
+        b = _measure(base, None)
+        got = [(scen, _measure(arm, None)) for arm, scen in arms]
+        got = [(scen, m) for scen, m in got if m]
+        if not (b and got):
+            continue
+        family = got[0][0].split(" · ")[0]
+        thin = [f"N={m.get('episodes')}" for _, m in got if (m.get("episodes") or 0) < 100]
+        if thin or (b.get("episodes") or 0) < 100:
+            verdicts.append((family, "unsettled", f"{family} is still on an {', '.join(thin) or 'N<100'} evaluation"))
+            continue
+        wins = sum(round(m["value"] * m["episodes"]) for _, m in got)
+        n = sum(m["episodes"] for _, m in got)
+        lo, hi = _wilson(wins, n)
+        held = hi >= b["value"] - (b["ci"] or 0)
+        seeds = f" pooled over {len(got)} seeds" if len(got) > 1 else ""
+        verdicts.append((
+            family,
+            "held" if held else "below",
+            f"{family} {wins}/{n} = {wins / n:.3f} [{lo:.3f}, {hi:.3f}]{seeds} "
+            f"against {b['text']}",
+        ))
+    if not verdicts:
+        return "No arm has been evaluated yet."
+    if any(v == "unsettled" for _, v, _ in verdicts):
+        pending = "; ".join(t for _, v, t in verdicts if v == "unsettled")
+        return (
+            f"<b>The success comparison is not settled yet</b>: {pending}, set against "
+            "N=100 numbers. <code>/publish</code> at N=100 is what decides it."
+        )
+    held = "; ".join(t for _, v, t in verdicts if v == "held")
+    below = "; ".join(t for _, v, t in verdicts if v == "below")
+    if held and below:
+        return (
+            f"<b>Success held on one scenario and was paid for on the other.</b> {held} — "
+            f"intervals overlap, so a hold. But {below}: intervals do not overlap, and it "
+            "publishes as a priced regression rather than a win."
+        )
+    if below:
+        return (
+            f"<b>Success was paid for.</b> {below} — intervals do not overlap; published "
+            "as a priced regression."
+        )
+    return f"<b>Success held.</b> {held} — intervals overlap, so no difference is established."
 
 
 def _endex(rows: list[dict]) -> dict:
@@ -543,19 +623,11 @@ def _endex(rows: list[dict]) -> dict:
         }
         panels = _panel(closed) + _panel(success)
         verdict = (
-            "<b>The close rule works, and it is not marginal.</b> Both arms close every "
-            "operation on the root's own report — 1.00"
-            + (
-                f", against {bar} for the policy that learned under the old rule"
-                if baseline
-                else ""
-            )
-            + " — with zero MISSION COMPLETE claims filed and all four behavior gates "
-            "passing on each. "
-            "<b>The success comparison is not settled yet</b>: these are the N=20 "
-            "evaluations training writes on exit, set against N=100 numbers, and the "
-            "intervals overlap. <code>/publish</code> at N=100 is what decides whether "
-            "success held."
+            "<b>The close rule works, and it is not marginal.</b> Every arm closes its "
+            "operations on the root's own report"
+            + (f", against {bar} for the policy that learned under the old rule" if baseline else "")
+            + " — with all four behavior gates passing on each. "
+            + _endex_success_verdict()
         )
 
     card = (
