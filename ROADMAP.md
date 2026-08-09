@@ -63,11 +63,16 @@ once the point landed; `runs/fireteam_defend_v13/` is a partial (2.17M/3.5M)
 left on disk, not a result.
 
 **⇒ THE NEXT THING IS TO READ `endex_v1_13`.** `fireteam_defend_v15` and
-`defend_brique_v9` are training the defend family against the loop it now has
-to close (every checkpoint on disk learned under the old rule). The number to
-watch is **`closed_on_root_report_rate`** — v12's checkpoint scores **0.22**
-under the new rule — with success/root-death expected to hold at the v1.12
-levels (fireteam 0.86/0.15, brique 0.97/0.05). Nothing else here is blocked.
+`defend_brique_v9` train the defend family against the loop it now has to close
+(every checkpoint on disk learned under the old rule). The number to watch is
+**`closed_on_root_report_rate`**, against v12's own policy re-scored under the
+new rule: **0.19 at `ckpt_best`, 0.47 at `ckpt_latest`** (N=100, seed 123,
+`runs/fireteam_defend_v12/endex_rescore.json`). The bare **0.22** this block
+and the boards used to quote named no checkpoint and matches neither (refs #24,
+corrected 2026-08-09). Both arms have since landed — 1.00 at final on each,
+success/root-death still to be settled at N=100 by `/publish`. Success/root-death
+were expected to hold at the v1.12 levels (fireteam 0.86/0.15, brique
+0.97/0.05). Nothing else here is blocked.
 
 **Reward weights are on the CLI now** (`b8ed7f1`): `--reward KEY=VALUE`,
 repeatable, typed off the dataclass. This was the mechanical blocker ROADMAP
@@ -3024,7 +3029,10 @@ deliberately deferred (`docs/vision.md` §2c).
   so a SEIZE root does not read as "never reported" — that is exactly the
   denominator confusion that made v12's single claim read as a 1.00 failure
   rate, and it is now impossible to repeat in the other direction. v12's
-  checkpoint measures **0.22** under the new rule.
+  checkpoint measures **0.22** under the new rule. *(Corrected 2026-08-09,
+  refs #24: that figure named no checkpoint and no N, and re-scoring v12's own
+  policy at N=100 reproduces neither — 0.19 at `ckpt_best`, 0.47 at
+  `ckpt_latest`. See the entry at the foot of this log.)*
 
   `test_root_opord_claim.py` is rewritten, not deleted: it pins the reversal
   *and* the hazard that outlived it (mask and adjudicator must never drift
@@ -3042,3 +3050,51 @@ deliberately deferred (`docs/vision.md` §2c).
   hold. ENDEX covers it correctly either way, but the taxonomy is worth a
   look: that scenario may want a different root mission rather than a
   different close rule.
+
+- **2026-08-09** — **assurance #24: the boards were reading a family norm as a
+  finding about one run, and quoting a baseline nothing on disk backed.** Two
+  of the three open threads on the program board named a level, not a
+  movement, and both levels turn out to be scenario-typical. Confirmed against
+  this repo's *own* committed evaluations, not only the reviewer's series:
+
+  | family | earlier generations on disk | the run the thread named |
+  |---|---|---|
+  | `fireteam` false-COMPLETE | `v4d` 0.76, `v5b` 0.82, `v6` 0.87, `v5` 0.88 | `v8` **0.84 best → 0.91 final** |
+  | `platoon` false-COMPLETE | `v2` 0.66, `v4` 0.80; `v3` filed **0 claims** in 100 eps and still succeeded | `v5` 3 claims → **0** |
+
+  So "claims completion at nearly every opportunity" and "has gone mute" both
+  described the family. Worse, the first was also wrong on its own terms: 0.91
+  is the share of claims the net *rejects*; `done_claim_rate` says `v8` takes
+  the act at **0.028** of the agent-steps where the mask offers it. The
+  surviving finding in each case is the within-run delta — contact recall
+  0.75 → 0.34 on `v8`, obedience latency 3.9 → 17.0 on `platoon` — and the
+  threads now lead with it.
+
+  **The structural fix, so this is not just a re-write**: `_family()` in
+  `scripts/program_board.py` renders, beside any thread that leads with a
+  level, that metric's spread across the scenario's other generations, read
+  off disk like everything else on the page. It widens by itself as runs land.
+  `tests/test_program_board.py` pins it (7 tests), including that a prefix
+  never reaches into a neighbouring scenario (`fireteam_v` must not eat
+  `fireteam_defend_v*`).
+
+  **The 0.22 baseline is corrected and now has a source.** It was published on
+  two boards and in this log with no checkpoint and no N, for a metric that
+  moves 2.5× between the two checkpoints of that one run. Re-scored under the
+  ENDEX rule, `fireteam_defend_v12` closes **0.19** (`ckpt_best`, n=81 ENDEX)
+  and **0.47** (`ckpt_latest`, n=86), N=100 seed 123 —
+  `runs/fireteam_defend_v12/endex_rescore.json`, committed beside the run, and
+  the board prints both rows with their N. Direction is unchanged: `v15`/`v9`
+  score 1.00, so the retrain still clears the bar at either checkpoint. The
+  reviewer's independent replay (0.115/0.593, seeds 500–529 × 30) agrees on
+  the shape and not the level — different instrument, and neither of us
+  reproduces 0.22.
+
+  **One more they were right about.** "Every arm passes all four behavior
+  gates" is true and reads as a clean bill: no gate bounds commander survival.
+  The option-4 card now carries `human_death_rate` at final as its own panel —
+  fireteam_defend 0.35 → 0.15, defend_brique 0.07 → 0.05 — captioned *no gate
+  covers this*. Improvement, not a clean bill.
+
+  Not changed: no reward default, no space, no scenario semantics. Boards
+  re-rendered and flagged PUBLISH PENDING; publishing is a session action.
