@@ -138,6 +138,29 @@ def test_one_unoccupied_step_after_h_fails_the_mission_permanently():
     assert env.outcome != "success"
 
 
+def test_ground_given_up_after_the_operation_is_won_fails_nothing():
+    """The latch stops at T0: the grace window is aftermath, not the mission.
+
+    It cannot change a verdict — success locks at T0 either way — but it
+    decides whether ``_defend_lost_step`` means what its name says. Measured
+    on defend_brique_v9 before the guard: 17 latched losses against 12 lost
+    episodes, the 5 extra all after an early release had already won.
+    """
+    env = _env()
+    env._h_hour = 1
+    obj = _root_obj(env)
+    _man(env, obj)
+    for e in env.enemies:
+        e.alive = False
+    _step(env)
+    assert env._success_step is not None
+
+    _abandon(env, obj)
+    _step(env)
+    assert env._defend_lost_step is None
+    assert env.outcome != "defeat"
+
+
 def test_occupation_is_not_required_before_h():
     """The preparation period exists so the ground can be occupied at all."""
     env = _env()
