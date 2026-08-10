@@ -32,8 +32,9 @@ not a price.**
   arithmetic was wrong by 7×: a confirmed claim *ends the episode*, so a probe
   burns the bonus and the first claim really costs `done_false − bonus × P(close
   by claim)` = **−3.50**, a tariff on speaking at all. **Reverted** in v1.16.
-- **v1.16** (in flight) reverts that flag and **decouples ENDEX from
-  completability**. The reason is structural, and it is the most useful thing
+- **v1.16** (**landed 2026-08-10** — `14d8b02`, `8dbb299`, `f5f3b97`; full
+  numbers at the end of the progress log) reverts that flag and **decouples
+  ENDEX from completability**. The reason is structural, and it is the most useful thing
   the assurance layer has contributed: **ENDEX is a protocol act** — COMMAND
   emits it, unpriceable, which is why it announced **103/103** successes across
   four pre-v1.14 corpora — whereas **a root claim is an agent behaviour**,
@@ -48,6 +49,19 @@ against **`v11` / `v16`** — NOT v12/v17, which carry the reverted economics an
 would make it a two-variable comparison. Watch `successes_announced` (bar:
 103/103) and whether ENDEX *suppresses* honest claiming, which would be swapping
 channels rather than holding both.
+
+**⇒ BOTH QUESTIONS ARE ANSWERED.** `successes_announced` is **391/391** at
+N=100, seed 123, both checkpoints on both arms (the v1.13 bar, reconstructed at
+the same N and seed, is 348/348; v1.14 scored 94/391 and v1.15 0/391). ENDEX did
+not suppress claiming and provably could not have: **the arms' weights are
+bit-identical to their controls** (`max|Δ| = 0.000e+00`, all 15 tensors, both
+checkpoints, both scenarios), because ENDEX is emitted on the terminating step
+after the last action is chosen, so it never enters an observation. The open
+thread is unchanged and is a *pricing* question, not an announcement one:
+`defend_brique` still claims at 0.71 false and `fireteam_defend` still does not
+claim at all (P(DONE | a true claim available) = 1e-6, 39/39 episodes
+declining). The two problems are now separable — the announcement no longer
+depends on solving either.
 
 **What the day also established, and is worth not relearning:**
 - **Quote every between-run delta at both checkpoints or not at all.** Three
@@ -3799,4 +3813,162 @@ deliberately deferred (`docs/vision.md` §2c).
 
   Commits: mechanism + 10 tests (`727ef60`), campaign (`50f5505`), this entry.
   618 tests pass, ruff clean. No README row and no artifact — publication is the
+  owner's `/publish`.
+
+- **2026-08-10** — **v1.16: ENDEX restored, and the arms came back bit-identical.**
+  Two owner decisions, both after measurement. (1) `RewardConfig
+  .root_done_bonus_first_claim_only` defaults to **False** again — the mechanism
+  and its tests stay, but it is no longer what the fleet trains under. (2)
+  **ENDEX is decoupled from completability**: COMMAND transmits it whenever it
+  closes a continuous-posture operation, whether or not the root also claimed.
+  Arms `defend_brique_v13` / `fireteam_defend_v18`; controls `v11` / `v16`,
+  which share the reverted economics and differ only in ENDEX.
+
+  **Why the first-claim rule was mispriced.** A confirmed root claim ENDS the
+  episode, so at most one claim per episode is ever confirmed and it is
+  necessarily the last. A probe therefore does not roll cheap dice; it spends
+  the bonus on a claim that cannot collect it. The real price of the first claim
+  is `done_false − root_done_bonus × P(the episode later closes by root claim)`,
+  and on `defend_brique_v11` at N=100 that P was **1.000** across all 63 probed
+  episodes: **−3.50**, not the −0.5 the design assumed — a 7× tariff on opening
+  the channel at all, charged before the claim's truth is used. Rebalancing
+  `done_true` against the bonus was considered and rejected on arithmetic: at
+  `done_true` 2.0 the later-claim break-even falls to p = 0.20 against measured
+  later-claim acceptance of 0.279, so probing returns at +0.198/claim. One knob,
+  both failure modes, opposite directions.
+
+  **Why no reward lever could have restored ENDEX.** ENDEX is a **protocol
+  act** — COMMAND emits it, not optional, not learned, not trainable away. A
+  root claim is an **agent behaviour** — optional, priced, learnable in either
+  direction, as identical prices producing 0.71-false spam on one scenario and
+  total silence on the other already proved. v1.14 changed the channel's
+  *type*, from a guarantee of the protocol to a property of whatever the policy
+  learned. No price restores a guarantee. The gate was
+  `not is_completable(root_mission, defend_horizon=…)`, the same predicate that
+  chooses the closing *route*; giving DEFEND a horizon switched the
+  announcement off as a side effect. The two are now separate predicates
+  (`root_may_declare_the_end`, `command_closes_the_operation`), and a SEIZE root
+  still closes its own operation with no ENDEX.
+
+  **Result 1 — `successes_announced`: 391 of 391, complete.** New metric
+  (`close_announced` per episode): of the operations that SUCCEEDED, how many
+  said so on the net at all — COMMAND's ENDEX or the root's own confirmed claim.
+  It exists because no published number could see this failure:
+  `closed_on_root_report_rate` has ENDEXes-sent for a denominator, so an
+  operation that closes in silence never enters it. All figures N=100, seed 123,
+  both checkpoints; the era rows are reconstructed from each run's committed
+  `per_episode` block, so every cell is the same N and the same seed.
+
+  | era | arms | successes announced |
+  |---|---|---|
+  | v1.13 (ENDEX) | `defend_brique_v9`, `fireteam_defend_v15` | **348/348** = 1.000 |
+  | v1.14 (horizon) | `defend_brique_v11`, `fireteam_defend_v16` | 94/391 = 0.240 |
+  | v1.15 (first claim) | `defend_brique_v12`, `fireteam_defend_v17` | **0/391** = 0.000 |
+  | **v1.16 (this)** | `defend_brique_v13`, `fireteam_defend_v18` | **391/391** = 1.000 |
+
+  Three of the four v1.14 checkpoints announced **zero** successes; all four
+  v1.15 ones did. Per arm, v1.16: `defend_brique_v13` 98/98 and 100/100,
+  `fireteam_defend_v18` 94/94 and 99/99 — every win announced, every one by
+  ENDEX.
+
+  **Result 2 — the arms are BIT-IDENTICAL to their controls.** `max|Δ| =
+  0.000e+00` over all 15 tensors, at both checkpoints, on both scenarios
+  (v13 vs v11, v18 vs v16); only the embedded `reward_config` differs, by the
+  one key now stated explicitly. Two things follow, and both are measured
+  rather than argued:
+
+  * the reverted economics reproduce the v1.14 runs exactly, as they must —
+    v11/v16 predate the flag, so `False` is their own rule;
+  * **the ENDEX change is rollout-neutral in fact**, contrary to the campaign
+    brief's own caution that "it puts a message on the net, and traffic feeds
+    the observation". It does not, because of *when*: ENDEX is emitted inside
+    the terminal branch, on the step the episode ends, after the last action was
+    chosen. It never enters an observation anyone acts on and never moves a
+    reward, so the gradient stream was byte-identical and seed 12 reproduced
+    both runs tensor for tensor. This is a fact about this message's timing, not
+    a general licence — a message emitted mid-episode would not have this
+    property.
+
+  So **ENDEX did not suppress honest claiming**: it could not have, the policy
+  is the same policy. That answers the cycle's second question as strongly as it
+  can be answered — but not in the direction the question hoped for.
+
+  **Result 3 — honest claiming did not return either, and this is the miss.**
+  The revert restores the pre-v1.15 status quo *exactly*, spam included.
+
+  | | `defend_brique_v13` best / final | `fireteam_defend_v18` best / final |
+  |---|---|---|
+  | success | 0.98 ± .03 / **1.00 ± .00** | 0.94 ± .05 / **0.99 ± .02** |
+  | successes announced | 98/98 / 100/100 | 94/94 / 99/99 |
+  | root claims filed | 5 / **321** | 1 / **0** |
+  | ...accepted / rejected | 0 / 5 · 94 / 227 | 0 / 1 · — |
+  | root false-COMPLETE rate | 1.00 / **0.71** | 1.00 / — (no claims) |
+  | closed on the root's report | 0.00 / 0.94 | 0.00 / 0.00 |
+  | occupation failures | 2/100 / **0/100** | 6/100 / 1/100 |
+  | human death rate | 0.06 / 0.03 | 0.05 / 0.10 |
+  | cover under threat | 0.763 / 0.981 | 0.992 / 0.989 |
+  | dist from OBJ under threat | 2.34 / 2.23 | 2.96 / 2.60 |
+  | stability (best−final) | 0 pts, converged | 1 pt, converged |
+  | regression gates | 4/4 PASS both | 4/4 PASS both |
+
+  `defend_brique` files 321 claims at 0.71 false — the v1.14 spam, back
+  unchanged, because it is the v1.14 policy. `fireteam_defend` files none.
+  Re-measured directly on the policy's own distribution, 40 episodes from seed
+  500, at every step where the root's MISSION COMPLETE is admissible **and
+  would be adjudicated true**:
+
+  | | `defend_brique_v13` final | `fireteam_defend_v18` final |
+  |---|---|---|
+  | P(DONE) when a TRUE claim is available | 0.302 (max 0.998, n=134) | **0.000001** (max 0.000, n=468) |
+  | episodes declining an available true claim | 7/39 | **39/39** |
+  | claims taken at a true-claim step | 32, all 32 confirmed | 0 |
+
+  Against v1.15's `defend_brique_v12` (0.000083, 40/40 declining) the channel is
+  alive again on `defend_brique` and dead on `fireteam_defend` — which is where
+  v1.14 left it. **Both channels are now held simultaneously on
+  `defend_brique`**: 94 confirmed root claims AND 100 ENDEXes in 100 episodes,
+  the report and the fact, which is the arrangement this cycle argued for. On
+  `fireteam_defend` only the protocol act is present — and that is precisely why
+  it had to be a protocol act.
+
+  **Measured vs inferred.** Measured: every number above, the bit-identity, the
+  era table, the probe distributions. Inferred: nothing load-bearing. The one
+  claim that is an argument rather than a measurement is *why* ENDEX being
+  terminal-step makes it rollout-neutral — and even that is confirmed
+  downstream by the tensor comparison, which is what a rollout change would have
+  broken.
+
+  **Instrument bug found and fixed** (`scripts/done_probe.py`). It keyed
+  "who was root at this step" by `_step_count` as read *before* `env.step()`,
+  while `_say` stamps messages with the *incremented* counter — so every claim
+  made on an episode's last step was attributed to nobody. Those are exactly the
+  confirmed ones, since a confirmed root claim ends the episode. On
+  `defend_brique_v13`/`ckpt_latest`, 40 episodes from seed 500: **55 root claims
+  and 0 confirmed** before the fix, **87 and 32** after. Any past reading of this
+  script's "…by the root" row undercounts by the accepted claims.
+
+  **Stale numbers, corrected and re-flagged.** The v1.15 entry above flagged
+  `fireteam`, `squad`, `squad_recon`, `squad_screen`, `platoon` and the rest as
+  stale because the then-new default re-scored them under a price they never
+  trained under. **That staleness is undone by this revert** — the default is
+  their own era's rule again, and `test_checkpoints_from_either_era_reconstruct
+  _as_the_rule_they_trained_under` pins both directions (a v1.15 dict carries the
+  key explicitly and keeps its rule). What is newly stale is narrower and
+  cosmetic: on horizon-DEFEND runs measured before today, `endex_sent` was 0 and
+  `closed_on_root_report_rate` was `None`; both would move if re-scored. No
+  behaviour number would, because the change is rollout-neutral — so re-scoring
+  buys a metric that did not exist, not a corrected result. Not retrained; not
+  published.
+
+  **Honest-DoD.** One retrain, spent, on both arms. The diagnosed adjustment was
+  **not** spent: the miss is that `fireteam_defend`'s DONE channel is still dead
+  (P = 1e-6, 39/39 declining) and `defend_brique`'s is still 0.71 false, and the
+  lever for both is `root_done_bonus` / `done_true` / `done_cooldown` — reward
+  structure, the owner's call. What this cycle *does* establish is that the two
+  problems are separable: the announcement no longer depends on solving either.
+
+  Commits: revert (`14d8b02`), ENDEX + metric + tests (`8dbb299`), this entry
+  and the probe fix. 623 tests pass, ruff clean. Spaces frozen at
+  `Discrete(228)`/`Box(220)`, verified across all 12 scenarios; all 186
+  checkpoints on disk load. No README row and no artifact — publication is the
   owner's `/publish`.

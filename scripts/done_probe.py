@@ -133,6 +133,15 @@ def probe(checkpoint, scenario, episodes, first_seed, greedy, regime, naive_rate
         # succession moves the root mid-episode, so "who was root" is a
         # function of the step — resolving it once at reset misattributes a
         # promoted rifleman's earlier claims to the root.
+        #
+        # Keyed by the step the messages will be STAMPED with, not by the
+        # counter's value when the actions are chosen: ``CohortEnv.step``
+        # increments ``_step_count`` first and ``_say`` stamps the incremented
+        # value. Keying it pre-increment silently dropped every claim made on
+        # an episode's LAST step — which is exactly the confirmed ones, since a
+        # confirmed root claim ends the episode. Measured on defend_brique_v13
+        # /ckpt_latest, 40 episodes from seed 500: 55 root claims and 0
+        # confirmed under the old keying, 87 and 32 under this one.
         root_id_at_step: dict[int, int | None] = {}
 
         while env.agents:
@@ -140,7 +149,7 @@ def probe(checkpoint, scenario, episodes, first_seed, greedy, regime, naive_rate
             t0_open = env._success_step is not None
             root_now = env.roster.root()
             root_cs = root_now.callsign if root_now else None
-            root_id_at_step[env._step_count] = root_now.id if root_now else None
+            root_id_at_step[env._step_count + 1] = root_now.id if root_now else None
             for cs in list(actions):
                 soldier = by_cs.get(cs)
                 if soldier is None or not soldier.alive:
