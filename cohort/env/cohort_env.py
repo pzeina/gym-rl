@@ -858,6 +858,7 @@ class CohortEnv(ParallelEnv):
         # new order arrives, so their holder is never the one who says they
         # are over — the root reports the situation and COMMAND transmits
         # ENDEX. Same window, same bonus, opposite direction on the net.
+        # (v1.16 separates the ENDEX from that choice of route: see below.)
         #
         # v1.14: on a defense ordered to a horizon, conservation of the
         # position is adjudicated FIRST and latches permanently — a mission
@@ -868,12 +869,34 @@ class CohortEnv(ParallelEnv):
         success_locked = self._success_step is not None
         cohort_wiped = not any(s.alive for s in self.roster.soldiers)
         defeat = cohort_wiped and not success_locked
-        continuous_root = not is_completable(
+        #
+        # v1.16: WHO CLOSES THE WINDOW and WHO ANNOUNCES THE CLOSE are two
+        # questions, and v1.14 answered both with one predicate (refs #31).
+        #
+        # The window is closed by whichever act the OPORD leaves open to the
+        # root: a defense ordered to a horizon is declarable, so its root closes
+        # with MISSION COMPLETE; an indefinite one is not, so its root reports
+        # the situation and the SITREP closes the window instead.
+        root_may_declare_the_end = is_completable(
             self.spec_cfg.root_mission, defend_horizon=self.spec_cfg.defend_horizon
         )
+        # The ANNOUNCEMENT is a different question with a different answer. On a
+        # continuous posture — DEFEND / DENY, held until a new order arrives —
+        # the order to stop is COMMAND's to give, so COMMAND transmits ENDEX
+        # whether or not the root also reported the mission complete. A
+        # confirmed claim and an ENDEX are not redundant: the claim is the
+        # root's REPORT, the ENDEX is the FACT.
+        #
+        # This is the pre-v1.14 gate, restored deliberately. v1.14 gave DEFEND a
+        # horizon, which made it completable, which switched the announcement
+        # off through the one predicate that gated it — measured at 0 of 57
+        # successes announced on fireteam_defend, against 103 of 103 across the
+        # four corpora before it. Nobody decided that; it fell out of reusing
+        # one function for two purposes.
+        command_closes_the_operation = not is_completable(self.spec_cfg.root_mission)
         if (
             success_locked
-            and continuous_root
+            and not root_may_declare_the_end
             and self._root_close_step is None
             and self._root_sitrep_step is not None
             and self._root_sitrep_step >= self._success_step
@@ -896,11 +919,13 @@ class CohortEnv(ParallelEnv):
         truncated_all = step >= self.spec_cfg.max_steps and not success and not defeat
         if success:
             self._episode_outcome = "success"
-            # COMMAND closes a continuous-posture operation on the net (v1.13).
-            # Transmitted whether or not the root reported in time — the order
-            # to stop defending is COMMAND's to give either way; what the
-            # root's SITREP buys is closing early, and root_done_bonus.
-            if continuous_root and self._endex_step is None:
+            # COMMAND closes a continuous-posture operation on the net (v1.13,
+            # decoupled from completability in v1.16). Transmitted whether or
+            # not the root reported in time and whether or not it claimed the
+            # mission complete — the order to stop defending is COMMAND's to
+            # give either way; what the root's report buys is closing early,
+            # and root_done_bonus. Once per episode, guarded by _endex_step.
+            if command_closes_the_operation and self._endex_step is None:
                 root = self.roster.root()
                 if root is not None:
                     self._say(

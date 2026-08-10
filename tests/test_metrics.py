@@ -947,3 +947,56 @@ def test_a_completable_root_reports_no_endex_denominator_at_all():
     agg = aggregate_behavior([seize])
     assert agg["endex_sent"] == 0
     assert agg["closed_on_root_report_rate"] is None
+
+
+def test_successes_announced_counts_the_wins_that_said_so_on_the_net():
+    """v1.16, the number #31 asked for and no existing metric could give.
+
+    `closed_on_root_report_rate` has ENDEXes-sent for a denominator, so an
+    operation that closed in total silence does not appear in it at all — which
+    is how v1.14 could announce 0 of 57 successes on fireteam_defend without a
+    single published figure moving. This one counts successes, and asks of each
+    whether ANYTHING went out: COMMAND's ENDEX or the root's own confirmed
+    claim (on a SEIZE root the claim is the announcement, and there is no ENDEX
+    to want).
+    """
+    endex_only = episode_behavior(
+        trace(
+            [step(0, [sold("TL1")]), step(1, [sold("TL1")], messages=[msg("endex", "HQ", "TL1")])],
+            root_mission="DEFEND",
+            root_close_step=None,
+        )
+    )
+    claim_only = episode_behavior(
+        trace(
+            [step(0, [sold("TL1")]), step(1, [sold("TL1")])],
+            root_mission="SEIZE",
+            root_close_step=1,
+        )
+    )
+    silent = episode_behavior(
+        trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])], root_mission="DEFEND")
+    )
+    lost = episode_behavior(
+        trace([step(0, [sold("TL1")]), step(1, [sold("TL1")])],
+              root_mission="DEFEND", outcome="timeout")
+    )
+
+    assert endex_only["close_announced"] == 1
+    assert claim_only["close_announced"] == 1
+    assert silent["close_announced"] == 0
+
+    agg = aggregate_behavior([endex_only, claim_only, silent, lost])
+    assert agg["successes"] == 3, "a failed operation is not a win to announce"
+    assert agg["successes_announced"] == 2
+    assert agg["successes_announced_rate"] == 2 / 3
+
+
+def test_successes_announced_rate_is_none_when_nothing_succeeded():
+    """No wins, no denominator — 0.00 would read as a reporting failure."""
+    lost = episode_behavior(
+        trace([step(0, [sold("TL1")])], root_mission="DEFEND", outcome="timeout")
+    )
+    agg = aggregate_behavior([lost])
+    assert agg["successes"] == 0
+    assert agg["successes_announced_rate"] is None

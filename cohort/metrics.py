@@ -801,6 +801,17 @@ def _endex_close(trace: dict) -> dict[str, int]:
     not move the denominator. Zero ENDEX means the scenario has a completable
     root (SEIZE and friends keep reporting COMPLETE) or the operation never
     succeeded — neither is a reporting-quality statement, and both stay out.
+
+    Since v1.16 a horizon defense sends BOTH — the root's MISSION COMPLETE and
+    COMMAND's ENDEX — so on that family ``root_close_step`` is set by the claim
+    rather than by a SITREP. The question the rate asks is unchanged (did the
+    root's report close the window, or did the window simply expire); the act
+    the report consists of is the one the OPORD left open to it.
+
+    ``close_announced`` is the other half, and the one v1.14 lost: did anything
+    at all go out on the net saying this operation is over — COMMAND's ENDEX or
+    the root's own confirmed claim. It is deliberately either/or, because on a
+    SEIZE root the claim IS the announcement and there is no ENDEX to want.
     """
     endex = 0
     prompted = 0
@@ -808,10 +819,14 @@ def _endex_close(trace: dict) -> dict[str, int]:
         for msg in step["messages"]:
             if msg["kind"] == "endex":
                 endex += 1
-                # the root's SITREP closed the window early: the episode ends
+                # the root's report closed the window early: the episode ends
                 # on the report rather than on the grace window expiring
                 prompted += bool(trace.get("root_close_step") is not None)
-    return {"endex_sent": endex, "endex_on_root_report": prompted}
+    return {
+        "endex_sent": endex,
+        "endex_on_root_report": prompted,
+        "close_announced": int(endex > 0 or trace.get("root_close_step") is not None),
+    }
 
 
 def _done_opportunity(trace: dict) -> dict[str, int]:
@@ -1156,14 +1171,14 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
     roots = {ep.get("root_mission") for ep in episodes} - {None}
+    successes = [ep for ep in episodes if ep["outcome"] == "success"]
+    n_successes = len(successes)
     return {
         "episodes": n_eps,
         # the run's root mission when the pooled episodes agree on one; the
         # regression gates key off it (a mixed pool gates on nothing)
         "root_mission": roots.pop() if len(roots) == 1 else None,
-        "success_rate": _ratio(
-            sum(ep["outcome"] == "success" for ep in episodes), n_eps
-        ),
+        "success_rate": _ratio(n_successes, n_eps),
         "obedience_latency_mean": _mean(latencies),
         "obedience_orders": len(latencies) + total("obedience_censored"),
         "obedience_censored": total("obedience_censored"),
@@ -1239,6 +1254,17 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "endex_sent": total("endex_sent"),
         "closed_on_root_report_rate": _ratio(
             total("endex_on_root_report"), total("endex_sent")
+        ),
+        # v1.16, the question #31 raised: of the operations that SUCCEEDED, how
+        # many said so on the net at all? Separate from
+        # closed_on_root_report_rate, whose denominator is ENDEXes sent and
+        # which therefore cannot see an operation that closed in silence — the
+        # exact blind spot that let v1.14 announce 0 of 57 successes on
+        # fireteam_defend without any published number moving.
+        "successes": n_successes,
+        "successes_announced": sum(ep.get("close_announced", 0) for ep in successes),
+        "successes_announced_rate": _ratio(
+            sum(ep.get("close_announced", 0) for ep in successes), n_successes
         ),
         "succession_recovery_mean": _mean(recovery),
         "succession_events": total("succession_events"),
@@ -1384,6 +1410,7 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("done_claims_per_claiming_episode", "COMPLETE claims / claiming ep", "{:.2f}"),
     ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
     ("closed_on_root_report_rate", "closed on root's report", "{:.2f}"),
+    ("successes_announced_rate", "successes announced on the net", "{:.2f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
     ("coverage_time", "subordinate coverage time", "{:.2f}"),
     ("advance_orders_per_episode", "ADVANCE orders / ep", "{:.1f}"),
@@ -1575,6 +1602,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             )
         ),
         "closed_on_root_report_rate": f"n={agg['endex_sent']} ENDEX",
+        "successes_announced_rate": (
+            f"{agg['successes_announced']} of {agg['successes']} wins, "
+            f"{agg['endex_sent']} by ENDEX"
+        ),
         "done_claim_rate": (
             f"{agg.get('done_admissible', 0)} admissible agent-steps "
             f"({agg.get('done_admissible_root', 0)} the root's)"
