@@ -61,7 +61,18 @@
 # for the other again rather than holding both. Both arms carry the v1.15
 # first-claim rule, so the claim economics are the ones already measured.
 #
-# Control arms are defend_brique_v12 / fireteam_defend_v17 (v1.15, ENDEX still
-# off). Same seeds and budgets, so the variable is the ENDEX restoration alone.
-defend_brique_v13    --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35
-fireteam_defend_v18  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35
+# ── controls: v11 / v16, NOT v12 / v17 ──────────────────────────────────────
+# Corrected before launch. The v1.15 first-claim rule is REVERTED as of this
+# cycle (owner's decision: it priced the first probe at -3.50 and bought total
+# silence — 321 root claims -> 0, and P(DONE | a true claim is available) fell
+# 0.401 -> 0.000083). So these arms run the PRE-v1.15 claim economics.
+#
+# That makes defend_brique_v11 / fireteam_defend_v16 the right controls: same
+# reward economics, ENDEX off. Against v12 / v17 this would be a two-variable
+# comparison — ENDEX restored AND the bonus rule reverted — which is exactly the
+# confound the sequencing was built to avoid.
+#
+# The flag is stated explicitly even though it is now the default, so
+# economics.json records it and the arm is self-documenting.
+defend_brique_v13    --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=false
+fireteam_defend_v18  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=false
