@@ -539,10 +539,11 @@ def get_scenario(name: str) -> ScenarioSpec:
 def announced_assault_step(scenario: str | ScenarioSpec) -> int | None:
     """The step at which HQ *announces* the assault, or None (refs issue #12).
 
-    This is the "H PLUS <n>" the OPORD says on the net: the midpoint of the
-    scenario's arrival band (``ScenarioSpec.assault_h_hour``), i.e. the nominal
-    hour the cohort plans against. It is a pure function of the scenario, so
-    it is announced identically in every episode and known before ``reset()``.
+    This is the "EXPECT ASSAULT AT STEP <n>" the OPORD says on the net: the
+    midpoint of the scenario's arrival band (``ScenarioSpec.assault_h_hour``),
+    i.e. the nominal hour the cohort plans against. It is a pure function of
+    the scenario, so it is announced identically in every episode and known
+    before ``reset()``.
 
     The step the assault *actually* arrives at is drawn per episode from the
     band and is never said out loud — it stays in ``env.oracle()``
@@ -598,8 +599,8 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         "root_objective": spec.root_objective,
         "max_steps": spec.max_steps,
         # the OPORD's forward-looking clause (issue #12): the step HQ names on
-        # the net as when to expect the assault ("EXPECT ASSAULT AT H PLUS
-        # 65"), or None for a scenario with no preparation period. Announced,
+        # the net as when to expect the assault ("EXPECT ASSAULT AT STEP 65"),
+        # or None for a scenario with no preparation period. Announced,
         # therefore header material — a monitor holds the deadline even for a
         # corpus that predates the clause, or a listener that never heard it.
         # The arrival band it is drawn from is deliberately NOT published: the
@@ -621,6 +622,11 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # v1.17 removed that half (owner's decision — see
         # ``missions.is_completable``), so the horizon is now purely an
         # adjudication clause and opens no action to anybody.
+        # v1.18 also puts it on the net — "HOLD UNTIL STEP 210" in the OPORD
+        # (refs #30) — so the two routes now agree: this key and
+        # ``language.parse_opord``'s carry the same number under the same
+        # name. The header still matters, for the same reason it does for the
+        # announced step: it holds for a corpus that predates the clause.
         "defend_horizon": spec.defend_horizon,
         # doctrinal terrain guarantees — static facts about the map family,
         # unlike the grid itself

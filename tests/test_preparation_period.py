@@ -53,7 +53,7 @@ def test_the_band_actually_varies_the_arrival():
 def test_the_opord_announces_the_nominal_h_on_the_net():
     env, _ = _defend()
     opord = env.transcript.messages[0]
-    assert "EXPECT ASSAULT AT H PLUS 65" in opord.text
+    assert "EXPECT ASSAULT AT STEP 65" in opord.text
     # ...and the task statement still parses: the warning is not the order
     from cohort.core import language as lang
     from cohort.core.missions import MissionType
@@ -229,7 +229,7 @@ def test_occupancy_is_absent_without_a_preparation_period():
 # ---------------------------------------------------------------------- #
 # the announcement on the observable surface (issue #12)
 #
-# The OPORD's "EXPECT ASSAULT AT H PLUS 65" is the first forward-looking
+# The OPORD's "EXPECT ASSAULT AT STEP 65" is the first forward-looking
 # content the net has ever carried, and it was reaching an outside monitor
 # nowhere: said once, then dropped at the boundary. Two routes now carry it —
 # language.parse_opord (read it back off the transcript) and briefing()
@@ -242,10 +242,14 @@ ANNOUNCED = (BAND[0] + BAND[1]) // 2  # the OPORD says the band's midpoint
 
 
 def _announced_steps_in(transcript):
-    """Every "H PLUS <n>" said on the net, as a set of ints."""
+    """Every assault step said on the net, as a set of ints."""
     import re
 
-    return {int(n) for m in transcript.messages for n in re.findall(r"H PLUS (\d+)", m.text)}
+    return {
+        int(n)
+        for m in transcript.messages
+        for n in re.findall(r"EXPECT ASSAULT AT STEP (\d+)", m.text)
+    }
 
 
 def test_the_announced_step_round_trips_out_of_the_opord_text():
@@ -260,11 +264,30 @@ def test_the_announced_step_round_trips_out_of_the_opord_text():
             "mission": "DEFEND",
             "objective": "ALPHA",
             "announced_assault_step": step,
+            "defend_horizon": None,
         }
     # an OPORD with no preparation period parses too, with the clause absent
     plain = lang.format_opord("SL1", MissionType.SEIZE, "ALPHA")
     assert lang.parse_opord(plain)["announced_assault_step"] is None
     assert lang.parse_opord(plain)["mission"] == "SEIZE"
+
+
+def test_the_pre_v118_h_plus_wording_still_reads():
+    """v1.18 renamed the clause; the committed corpus was not rewritten.
+
+    Every `runs/*/eval_transcript.txt` from v1.10 to v1.17 says "AT H PLUS
+    <n>", and it always meant the absolute step. A monitor pointed at that
+    corpus must get the announcement, not None — silently losing it is the
+    exact failure `parse_opord` was written for (issue #12). Read-only: the
+    formatter never emits this form again.
+    """
+    from cohort.core import language as lang
+    from cohort.core.missions import MissionType
+
+    legacy = "TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS 65. OUT."
+    assert lang.parse_opord(legacy)["announced_assault_step"] == 65
+    assert lang.parse_opord(legacy)["defend_horizon"] is None
+    assert "H PLUS" not in lang.format_opord("TL1", MissionType.DEFEND, "ALPHA", 65)
 
 
 def test_the_announced_step_is_recoverable_from_the_episode_transcript():

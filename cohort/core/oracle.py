@@ -294,8 +294,8 @@ def observe(env) -> dict:
         "outcome": env.outcome if hasattr(env, "outcome") else env._episode_outcome,
         # the preparation period (issue #12), both None outside defend
         # scenarios with an ``assault_h_hour`` band:
-        #   announced — the step HQ named on the net ("EXPECT ASSAULT AT H
-        #     PLUS 65"), repeated here only so a consumer can compare the two
+        #   announced — the step HQ named on the net ("EXPECT ASSAULT AT STEP
+        #     65"), repeated here only so a consumer can compare the two
         #     without re-reading the transcript; it is public, and also in
         #     env.briefing().
         #   actual — the step the assault really begins at, drawn per episode

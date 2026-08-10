@@ -29,7 +29,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from cohort.core.missions import NEEDS_CONTROL, NEEDS_OBJECTIVE, Formation, MissionType
+from cohort.core.missions import (
+    HOLDS_GROUND,
+    NEEDS_CONTROL,
+    NEEDS_OBJECTIVE,
+    Formation,
+    MissionType,
+)
 
 #: Objective slot names, addressed as "OBJ ALPHA" etc. (NATO phonetic).
 OBJECTIVE_NAMES: tuple[str, ...] = ("ALPHA", "BRAVO", "CHARLIE", "DELTA")
@@ -225,25 +231,46 @@ def format_opord(
     mission: MissionType,
     target: str | None,
     announced_assault_step: int | None = None,
+    defend_horizon: int | None = None,
 ) -> str:
     """Initial operations order from higher HQ to the senior agent.
 
-    ``announced_assault_step`` (v1.10) appends the enemy-arrival estimate for
-    scenarios with a preparation period — "H-hour" in doctrine, hence the
-    spoken form "AT H PLUS <n>". It is an ESTIMATE — the assault arrives
-    somewhere in the scenario's band — so the wording is "EXPECT", not a
-    timetable. The clause sits after the task statement, where ``parse_order``
-    ignores it: the task the OPORD assigns is unchanged by when the enemy is
-    due. :func:`parse_opord` reads the whole line back, clause included.
+    Two optional time clauses follow the task statement, both stated as
+    ABSOLUTE step references — the same clock ``max_steps`` is counted on, so
+    a listener holding one line needs no further arithmetic and no H-hour:
+
+    ``announced_assault_step`` (v1.10) is the enemy-arrival ESTIMATE for a
+    scenario with a preparation period: the assault arrives somewhere in the
+    scenario's band, so the wording is "EXPECT", not a timetable. It was
+    spoken as "AT H PLUS <n>" until v1.18, which reads as *n steps after
+    H-hour* while the value was always the absolute step — tolerable while it
+    was the only time-bearing clause, and not once a second sits beside it.
+
+    ``defend_horizon`` (v1.18, refs #30) is the hour the root is ordered to
+    hold to. It is an ORDER, not intelligence, so it does not borrow EXPECT's
+    hedge: "HOLD UNTIL STEP <n>" is tasking. It is spoken only for a mission
+    in :data:`~cohort.core.missions.HOLDS_GROUND` — exactly the missions whose
+    horizon the environment adjudicates — because an hour said on the net that
+    nothing scores would be worse than silence.
+
+    Both clauses sit after the task statement, where ``parse_order`` ignores
+    them: the task the OPORD assigns is unchanged by when the enemy is due or
+    when the defense ends. :func:`parse_opord` reads the whole line back,
+    clauses included.
     """
     warning = (
-        f" EXPECT ASSAULT AT H PLUS {announced_assault_step}."
+        f" EXPECT ASSAULT AT STEP {announced_assault_step}."
         if announced_assault_step is not None
+        else ""
+    )
+    horizon = (
+        f" HOLD UNTIL STEP {defend_horizon}."
+        if defend_horizon is not None and mission in HOLDS_GROUND
         else ""
     )
     return (
         f"{recipient_cs}, THIS IS HQ: OPORD — {mission_phrase(mission, target)}."
-        f"{warning} OUT."
+        f"{warning}{horizon} OUT."
     )
 
 
@@ -380,10 +407,18 @@ def format_assuming_position(new_cs: str, of_cs: str) -> str:
 
 
 #: Machine-readable shape of an OPORD (issue #12): the task statement is read
-#: by ``_ORDER_RE`` below, these two pick out what is specific to an OPORD —
-#: that it IS one, and the announced assault step ("H-hour") if it carries one.
+#: by ``_ORDER_RE`` below, these pick out what is specific to an OPORD — that
+#: it IS one, plus each of its two time clauses if the line carries them.
 _OPORD_RE = re.compile(r"\bOPORD\b", re.IGNORECASE)
-_ANNOUNCED_ASSAULT_RE = re.compile(r"\bEXPECT\s+ASSAULT\s+AT\s+H\s+PLUS\s+(?P<step>\d+)", re.I)
+#: The assault estimate. ``H PLUS`` is the pre-v1.18 spoken form of the same
+#: absolute step, accepted on the way IN only: every committed
+#: ``runs/*/eval_transcript.txt`` says it that way, and a monitor pointed at
+#: that corpus must not silently lose the announcement. Nothing emits it.
+_ANNOUNCED_ASSAULT_RE = re.compile(
+    r"\bEXPECT\s+ASSAULT\s+AT\s+(?:STEP|H\s+PLUS)\s+(?P<step>\d+)", re.I
+)
+#: The ordered horizon (v1.18, refs #30).
+_DEFEND_HORIZON_RE = re.compile(r"\bHOLD\s+UNTIL\s+STEP\s+(?P<step>\d+)", re.I)
 
 _ORDER_RE = re.compile(
     r"^\s*(?:(?P<issuer>[A-Za-z]{2,3}\d+)\s*(?:,|:)\s*)?"    # optional issuer prefix (ignored)
@@ -496,9 +531,12 @@ def parse_opord(text: str) -> dict | None:
     """Read an OPORD back into its fields, or None if the line is not one.
 
     Inverse of :func:`format_opord` over exactly the fields it formats:
-    ``{"recipient", "mission", "objective", "announced_assault_step"}``. The
-    last is the "AT H PLUS <n>" clause — the step HQ says to expect the
-    assault at — and is None when the OPORD carries no such estimate.
+    ``{"recipient", "mission", "objective", "announced_assault_step",
+    "defend_horizon"}``. The last two are the time clauses — the step HQ says
+    to expect the assault at, and the step it orders the position held until —
+    each None when the OPORD does not carry it. Both are absolute steps, and
+    the keys are the briefing's, so a monitor reading the net and a monitor
+    reading the header get the same two names for the same two numbers.
 
     It exists because the announcement is otherwise lost at the boundary: it
     is said on the net and then nowhere else, so a monitor reading a corpus
@@ -520,9 +558,11 @@ def parse_opord(text: str) -> dict | None:
     except OrderParseError:
         return None
     announced = _ANNOUNCED_ASSAULT_RE.search(text)
+    horizon = _DEFEND_HORIZON_RE.search(text)
     return {
         "recipient": order.recipient_callsign,
         "mission": order.mission.name if order.mission is not None else None,
         "objective": order.objective_name,
         "announced_assault_step": int(announced.group("step")) if announced else None,
+        "defend_horizon": int(horizon.group("step")) if horizon else None,
     }

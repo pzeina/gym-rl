@@ -27,6 +27,11 @@ answer:
 Scenarios with no ``defend_horizon`` are the pre-v1.14 object and keep the
 pre-v1.14 criterion exactly; that is pinned here too, because "we only changed
 the defend scenarios" is the kind of claim that quietly stops being true.
+
+v1.18 (refs #30) puts the hour on the net — ``HOLD UNTIL STEP 210`` in the
+OPORD — so the cohort is no longer adjudicated against an hour HQ never spoke.
+The last section here pins that the spoken clause and the scored horizon are
+the same number, gated by the same predicate.
 """
 
 from __future__ import annotations
@@ -289,11 +294,107 @@ def test_a_seize_root_is_not_touched_even_if_a_horizon_is_set():
     env = make_env(spec)
     env.reset(seed=2)
     assert env._horizon_defense() is None
+    # ...including on the net: HQ does not order a hold it will not score
+    assert "HOLD UNTIL" not in env.transcript.messages[0].text
     env._h_hour = 0
     obj = _root_obj(env)
     _abandon(env, obj)
     _step(env)
     assert env._defend_lost_step is None
+
+
+# ---------------------------------------------------------------------- #
+# the ordered hour is SAID (v1.18, refs #30)
+#
+# Until v1.18 the horizon was the success criterion and was nowhere on the
+# net: the cohort was adjudicated against an hour HQ never spoke, and a
+# monitor holding only the transcript could not state the standard the
+# episode was being judged by. The clause closes that. It is transcript
+# completeness, not capability — PolicyNet is a memoryless MLP whose only
+# clock is step/max_steps, so it cannot use a spoken deadline; the
+# beneficiary is the human commander and the transcript-only monitor.
+# ---------------------------------------------------------------------- #
+
+def test_the_opord_orders_the_hour_it_will_be_judged_by():
+    from cohort.core import language as lang
+
+    for name in DEFEND_SCENARIOS:
+        env = _env(name)
+        opord = env.transcript.messages[0]
+        horizon = env.spec_cfg.defend_horizon
+        assert f"HOLD UNTIL STEP {horizon}." in opord.text, name
+        # what is said is what is scored
+        assert lang.parse_opord(opord.text)["defend_horizon"] == env._horizon_defense(), name
+        # and it agrees with the header route (issue #30's first half)
+        assert env.briefing()["defend_horizon"] == horizon, name
+
+
+def test_the_horizon_clause_is_an_order_and_the_assault_clause_an_estimate():
+    """Different moods, on purpose: HOLD UNTIL tasks, EXPECT hedges.
+
+    Both are absolute step references — the v1.18 half of the change that is
+    not the new clause at all. "AT H PLUS 65" read as *65 steps after H-hour*
+    while always meaning step 65, which was survivable only while it was the
+    one time-bearing clause on the line.
+    """
+    env = _env("defend_brique")
+    text = env.transcript.messages[0].text
+    assert "EXPECT ASSAULT AT STEP 45." in text
+    assert "HOLD UNTIL STEP 210." in text
+    assert "EXPECT" not in text.split("HOLD UNTIL")[1], "the order must not hedge"
+    assert "H PLUS" not in text
+
+
+def test_an_indefinite_defend_orders_no_hour():
+    """No horizon, no clause: HQ cannot name an hour the spec does not set."""
+    env = _env("fireteam_defend", horizon=None)
+    text = env.transcript.messages[0].text
+    assert env._horizon_defense() is None
+    assert "HOLD UNTIL" not in text
+    assert "EXPECT ASSAULT AT STEP 65." in text, "the other clause is untouched"
+
+
+def test_the_clauses_do_not_change_the_tasking():
+    """`parse_order` reads the task; neither time clause perturbs it."""
+    from cohort.core import language as lang
+
+    for name in DEFEND_SCENARIOS:
+        env = _env(name)
+        parsed = lang.parse_order(env.transcript.messages[0].text)
+        assert parsed.mission is MissionType.DEFEND, name
+        assert parsed.objective_name == env.spec_cfg.root_objective, name
+        assert parsed.delay is None and parsed.at_my_command is False, name
+
+
+def test_the_horizon_round_trips_through_the_opord_line():
+    """Formatter and parser stay inverses over the new clause too."""
+    from cohort.core import language as lang
+
+    for horizon in (0, 12, 210, 4321):
+        text = lang.format_opord("TL1", MissionType.DEFEND, "ALPHA", 45, horizon)
+        assert lang.parse_opord(text) == {
+            "recipient": "TL1",
+            "mission": "DEFEND",
+            "objective": "ALPHA",
+            "announced_assault_step": 45,
+            "defend_horizon": horizon,
+        }
+    # a DENY root holds ground too, and is ordered to an hour the same way
+    deny = lang.format_opord("SL1", MissionType.DENY, "BRAVO", None, 99)
+    assert lang.parse_opord(deny)["defend_horizon"] == 99
+    assert lang.parse_opord(deny)["announced_assault_step"] is None
+
+
+def test_a_mission_that_does_not_hold_ground_is_never_ordered_to_an_hour():
+    """The clause is gated on HOLDS_GROUND, not on the caller's discipline."""
+    from cohort.core import language as lang
+    from cohort.core.missions import HOLDS_GROUND
+
+    for mission in (MissionType.SEIZE, MissionType.RECON, MissionType.SCREEN):
+        assert mission not in HOLDS_GROUND
+        text = lang.format_opord("SL1", mission, "ALPHA", None, 210)
+        assert "HOLD UNTIL" not in text, mission.name
+        assert lang.parse_opord(text)["defend_horizon"] is None, mission.name
 
 
 # ---------------------------------------------------------------------- #
