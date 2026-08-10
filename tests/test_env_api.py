@@ -137,9 +137,12 @@ def test_briefing_carries_the_defend_objective_coordinates():
 
 
 def test_briefing_carries_the_ordered_hour_the_defense_holds_to():
-    """Issue #30: since v1.14 the horizon is *both* what DEFEND success means
-    and the gate on the root's MISSION COMPLETE bit, so leaving it unpublished
-    made a claim's admissibility undecidable from outside the environment.
+    """Issue #30: the horizon IS what DEFEND success means, so leaving it
+    unpublished made the adjudication undecidable from outside the environment.
+
+    v1.14 also made it the gate on the root's MISSION COMPLETE bit; v1.17
+    withdrew that, so the header now carries one meaning rather than two —
+    and the claim question below is answerable from the root mission alone.
 
     Header material by the same argument as ``announced_assault_step``: a pure
     function of the spec, so it is available before ``reset()``, identical in
@@ -147,17 +150,19 @@ def test_briefing_carries_the_ordered_hour_the_defense_holds_to():
     import json
 
     from cohort.config import briefing, get_scenario
-    from cohort.core.missions import is_completable
+    from cohort.core.missions import MissionType, is_completable
 
     for name, spec in SCENARIOS.items():
         brief = briefing(name)
         json.dumps(brief)
         assert brief["defend_horizon"] == spec.defend_horizon, name
         # published means an outside monitor can now decide the same question
-        # the mask decides — with nothing but the header
-        assert is_completable(
-            spec.root_mission, defend_horizon=brief["defend_horizon"]
-        ) == is_completable(spec.root_mission, defend_horizon=spec.defend_horizon), name
+        # the mask decides — with nothing but the header. Since v1.17 the
+        # horizon is not an input to that question at all: a stated hour on a
+        # DEFEND root buys no permission, so a monitor that reads one must not
+        # expect a root claim to follow.
+        if spec.root_mission in (MissionType.DEFEND, MissionType.DENY):
+            assert is_completable(spec.root_mission) is False, name
 
     # the defended scenarios state an hour; every other posture is indefinite
     assert briefing("fireteam_defend")["defend_horizon"] == 225

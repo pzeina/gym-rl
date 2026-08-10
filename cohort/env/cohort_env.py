@@ -872,14 +872,18 @@ class CohortEnv(ParallelEnv):
         #
         # v1.16: WHO CLOSES THE WINDOW and WHO ANNOUNCES THE CLOSE are two
         # questions, and v1.14 answered both with one predicate (refs #31).
+        # They are still two questions, and the two names below stay separate
+        # even now that they evaluate alike: re-merging them is exactly how the
+        # v1.13 mask change silently took the ENDEX with it.
         #
         # The window is closed by whichever act the OPORD leaves open to the
-        # root: a defense ordered to a horizon is declarable, so its root closes
-        # with MISSION COMPLETE; an indefinite one is not, so its root reports
-        # the situation and the SITREP closes the window instead.
-        root_may_declare_the_end = is_completable(
-            self.spec_cfg.root_mission, defend_horizon=self.spec_cfg.defend_horizon
-        )
+        # root. Since v1.17 a DEFEND/DENY root may never declare its operation
+        # over — with or without a stated horizon — so its route is the v1.13
+        # one: the root reports the situation and its SITREP closes the window.
+        # That is deliberate and is what keeps ``root_done_bonus`` reachable on
+        # a defense; masking the claim without it would make the bonus dead
+        # reward, the v1.4 failure in v1.13 clothes.
+        root_may_declare_the_end = is_completable(self.spec_cfg.root_mission)
         # The ANNOUNCEMENT is a different question with a different answer. On a
         # continuous posture — DEFEND / DENY, held until a new order arrives —
         # the order to stop is COMMAND's to give, so COMMAND transmits ENDEX
@@ -1212,7 +1216,6 @@ class CohortEnv(ParallelEnv):
             self.roster,
             self.spec_cfg.root_mission,
             self._root_objective_id(),
-            defend_horizon=self.spec_cfg.defend_horizon,
         )
         # The root's OPORD claim reports the *operation*: it is judged against
         # the team success condition (e.g. objective clear AND held by anyone),
@@ -1981,7 +1984,6 @@ class CohortEnv(ParallelEnv):
             done_cooldown=self.spec_cfg.done_cooldown,
             root_mission=self.spec_cfg.root_mission,
             root_objective_id=self._root_objective_id(),
-            defend_horizon=self.spec_cfg.defend_horizon,
             step=self._step_count,
             net_contact_step=self._last_net_contact_step,
             ablation=self.spec_cfg.ablation,

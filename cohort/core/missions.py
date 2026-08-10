@@ -159,34 +159,40 @@ COMPLETABLE: frozenset[MissionType] = frozenset(
     }
 )
 
-#: Missions that become completable once the ORDER states an hour to hold to
-#: (``ScenarioSpec.defend_horizon``). v1.14, owner's decision, refining v1.13:
-#: an INDEFINITE defense has no end state its holder may declare — it runs
-#: until a new order arrives, so the root reports the situation and COMMAND
-#: transmits ENDEX. A defense ordered to a stated horizon does have one: at the
-#: horizon the mission genuinely is complete, and the root can perceive both
-#: the clock and the ground, so it may declare — adjudicated against ground
-#: truth like any other claim.
-HORIZON_COMPLETABLE: frozenset[MissionType] = frozenset(
-    {MissionType.DEFEND, MissionType.DENY}
-)
-
-
-def is_completable(
-    mission: MissionType | None, *, defend_horizon: int | None = None
-) -> bool:
+def is_completable(mission: MissionType | None) -> bool:
     """May a holder of ``mission`` ever transmit MISSION COMPLETE?
 
-    ``COMPLETABLE`` membership, plus the one case that depends on the order
-    rather than on the mission type: a DEFEND / DENY ordered to a horizon.
-    Pass the scenario's ``defend_horizon``; ``None`` (the default) is an
-    indefinite posture and reads exactly as ``mission in COMPLETABLE``.
+    Plain ``COMPLETABLE`` membership, with ``None`` (no mission) reading False.
+
+    **v1.14 to v1.17, a round trip worth not repeating.** v1.14 added a second
+    clause — a DEFEND / DENY ordered to a stated hour (``defend_horizon``) was
+    held to have a declarable end state, so ``HORIZON_COMPLETABLE`` re-opened
+    the root's MISSION COMPLETE bit. v1.17 removes it again, on the owner's
+    decision, because the reopened claim was measured and bought nothing:
+
+    * early close is bounded at ``grace_window`` = 12 steps by construction,
+      and the terminal speed bonus keys on ``_success_step``, not on the close
+      step, so closing early pays no speed bonus at all — at N=100 the measured
+      difference between claim+ENDEX and ENDEX-only episodes is p = 0.9942;
+    * its informational value came out negative: ``defend_brique`` filed 321
+      root claims at 0.71 false;
+    * no price fixes that. Three experiments, three scenarios, two root types
+      (``done_false`` -2.0 -> silence; first-claim-only -> silence;
+      ``done_false`` -0.5 -> spam at 0.44 to 0.71 false): every price moved
+      claim *volume* without moving claim *informedness*;
+    * and the announcement is free and guaranteed since v1.16 — COMMAND's ENDEX
+      announced 391/391 successes — so masking the claim costs no observability.
+
+    Note this predicate answers only "which act may close the operation". Since
+    v1.16 it is NOT the gate on the announcement — see ``CohortEnv._step`` where
+    ``root_may_declare_the_end`` and ``command_closes_the_operation`` are two
+    named booleans on purpose. They must not be re-merged: v1.13 masked the
+    claim shut and silently lost the ENDEX with it, precisely because one
+    predicate was serving both questions.
     """
     if mission is None:
         return False
-    if mission in COMPLETABLE:
-        return True
-    return defend_horizon is not None and mission in HORIZON_COMPLETABLE
+    return mission in COMPLETABLE
 
 #: Derivation doctrine: own mission → subordinate missions allowed, in
 #: preference order. Rebuilt for the MICAT set from the manual's mission

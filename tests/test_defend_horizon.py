@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from cohort import get_scenario, make_env
 from cohort.core.missions import COMPLETABLE, MissionType, is_completable
 
@@ -295,16 +297,27 @@ def test_a_seize_root_is_not_touched_even_if_a_horizon_is_set():
 
 
 # ---------------------------------------------------------------------- #
-# COMPLETABLE, refined
+# COMPLETABLE, refined and then un-refined
 # ---------------------------------------------------------------------- #
 
-def test_a_horizon_defend_is_completable_and_an_indefinite_one_is_not():
+def test_the_horizon_adjudicates_success_and_grants_no_permission():
+    """v1.17 (owner's decision) withdraws v1.14's second clause.
+
+    v1.14 gave the horizon two jobs — the success criterion, and opening the
+    root's MISSION COMPLETE bit. The second was measured over three cycles and
+    bought nothing (early close pays no speed bonus and is capped at
+    ``grace_window``; ``defend_brique`` claimed at 0.71 false; three prices
+    moved volume without moving informedness), so it is gone and
+    ``is_completable`` no longer takes a horizon at all. The FIRST job is
+    untouched, which is what the rest of this file measures.
+    """
     assert MissionType.DEFEND not in COMPLETABLE
     assert is_completable(MissionType.DEFEND) is False
-    assert is_completable(MissionType.DEFEND, defend_horizon=210) is True
-    assert is_completable(MissionType.DENY, defend_horizon=210) is True
-    # the horizon cannot make a non-posture claimable that was not already,
-    # nor un-make one that was
-    assert is_completable(MissionType.SEIZE, defend_horizon=210) is True
-    assert is_completable(MissionType.HOLD, defend_horizon=210) is False
-    assert is_completable(None, defend_horizon=210) is False
+    assert is_completable(MissionType.DENY) is False
+    assert is_completable(MissionType.SEIZE) is True
+    assert is_completable(MissionType.HOLD) is False
+    assert is_completable(None) is False
+    # the knob is removed rather than left doing nothing: a caller that still
+    # passes a horizon gets an error, not a silently ignored argument
+    with pytest.raises(TypeError):
+        is_completable(MissionType.DEFEND, defend_horizon=210)

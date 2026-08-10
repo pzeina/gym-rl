@@ -1,0 +1,64 @@
+# v1.17 — mask the root's MISSION COMPLETE shut on DEFEND/DENY roots.
+#
+# Owner's decision, 2026-08-10. DEFEND/DENY roots stop being COMPLETABLE: the
+# horizon no longer opens the root's DONE bit. ENDEX is untouched and keeps
+# firing on every success — that combination is the whole point, and it is only
+# available because v1.16 split `root_may_declare_the_end` (which act closes the
+# window) from `command_closes_the_operation` (who announces it). v1.13 masked
+# the claim shut and lost the announcement with it, because they were ONE
+# predicate.
+#
+# ── why the claim goes ───────────────────────────────────────────────────────
+# The claim buys nothing operationally. Early close is bounded at
+# `grace_window` = 12 steps by construction, and the terminal speed bonus keys
+# on `_success_step` rather than on the close step, so closing early pays no
+# speed bonus at all. At N=100 the measured difference between claim+ENDEX and
+# ENDEX-only episodes is p = 0.9942 (defend_brique_v13/final, Mann-Whitney,
+# refs #33 §3).
+#
+# Its informational value is negative in practice: `defend_brique` files 321
+# root claims at 0.71 false.
+#
+# And pricing cannot fix it. Three independent experiments, three scenarios,
+# two root types:
+#
+#   lever                       run                  effect
+#   done_false -2.0             squad_v9             266 claims -> 0 (silence)
+#   root_done_bonus first-only  defend_brique_v12    321 claims -> 0 (silence)
+#   done_false -0.5             defend_brique_v11/13 spam at 0.44-0.71 false
+#
+# Every price moves claim VOLUME without moving claim INFORMEDNESS. The
+# announcement, meanwhile, is free and guaranteed — 391/391 under v1.16 — so
+# masking the claim costs no observability.
+#
+# ── the change ───────────────────────────────────────────────────────────────
+# `missions.is_completable` reverts to plain COMPLETABLE membership;
+# HORIZON_COMPLETABLE and the `defend_horizon` parameter are deleted rather than
+# left as a knob that does nothing. `ScenarioSpec.defend_horizon` is unchanged
+# and still adjudicates DEFEND success — it is an adjudication clause only now.
+#
+# NOT rollout-neutral, and by more than the mask: `root_may_declare_the_end` is
+# defined by the same predicate, so v1.13's SITREP early-close route reactivates
+# with it. A root SITREP at or after T0 now closes the grace window and collects
+# `root_done_bonus`, which is what keeps that reward from becoming dead on a
+# defense (the v1.4 failure). Measured perturbation on the incumbent policies is
+# recorded in the ROADMAP entry for this cycle.
+#
+# Spaces FROZEN: Discrete(228)/Box(220) — masking only. The whole fleet loads.
+#
+# ── controls: v13 / v18 ─────────────────────────────────────────────────────
+# `defend_brique_v13` and `fireteam_defend_v18` are the controls: same budgets,
+# same seed, same reward overrides, claim OPEN. One variable.
+#
+# ── what to watch ────────────────────────────────────────────────────────────
+# `successes_announced` — the bar is complete, 391/391 at N=100 seed 123 under
+# v1.16. Anything short of complete is the finding, because it would mean the
+# split predicate did not hold and masking the claim took the announcement with
+# it a second time.
+#
+# Then: root claims are 0 BY CONSTRUCTION (assert `done_admissible_root` is 0
+# too, or the silence is unattributable); `closed_on_root_report_rate` should be
+# carried by SITREPs rather than claims; and no reward path may silently vanish
+# — `root_done_bonus` must still be collected on the episodes that close early.
+defend_brique_v14    --scenario defend_brique   --total-steps 3000000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=false
+fireteam_defend_v19  --scenario fireteam_defend --total-steps 3500000 --seed 12 --reward defend_survivor_scale=0.35 --reward root_done_bonus_first_claim_only=false

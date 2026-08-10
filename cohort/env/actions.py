@@ -218,8 +218,6 @@ def is_root_opord_claim(
     roster: Roster,
     root_mission: MissionType | None,
     root_objective_id: int | None,
-    *,
-    defend_horizon: int | None = None,
 ) -> bool:
     """Is this the root reporting the *operation* complete?
 
@@ -251,9 +249,12 @@ def is_root_opord_claim(
         # and COMMAND transmits ENDEX. Without this clause the root could
         # declare its own DEFEND operation over, which is the one thing the
         # doctrine table (``COMPLETABLE``) says it must not do.
-        # v1.14 refines it: a defense ordered to a horizon DOES have a
-        # declarable end state (see ``missions.is_completable``).
-        and is_completable(root_mission, defend_horizon=defend_horizon)
+        # v1.14 carved out a horizon exception here; v1.17 removes it again on
+        # the owner's decision — the reopened claim measured at 0.71 false, and
+        # no price moved its informedness (see ``missions.is_completable``).
+        # This is a MASK change and nothing else: COMMAND's ENDEX is gated
+        # separately since v1.16 and keeps firing on every success.
+        and is_completable(root_mission)
         and mission.type is root_mission
         and mission.objective_id == root_objective_id
     )
@@ -267,7 +268,6 @@ def is_done_admissible(
     root_objective_id: int | None,
     step: int,
     done_cooldown: int,
-    defend_horizon: int | None = None,
 ) -> bool:
     """May this agent transmit MISSION COMPLETE *this step*?
 
@@ -290,16 +290,14 @@ def is_done_admissible(
     # can never "finish" its posture, but it can and must report that
     # the *operation* succeeded (see is_root_opord_claim).
     #
-    # The type test stays the plain ``COMPLETABLE`` one, not the horizon-aware
-    # predicate: the horizon belongs to the ROOT's operation order — the one
-    # HQ gives, ``ScenarioSpec.defend_horizon`` — and only the root is ordered
-    # to it. A subordinate tasked DEFEND by its leader holds an indefinite
-    # posture that ends when that leader re-tasks it, exactly as in v1.13.
-    # No clause of the transmitted OPORD *text* names the hour (issue #30);
-    # it is published as briefing header material, not spoken on the net, so
-    # do not read this comment as pointing at a wording in ``language.py``.
+    # Both halves are the plain ``COMPLETABLE`` test as of v1.17: the horizon
+    # no longer opens anyone's DONE bit, root or subordinate. So on a
+    # DEFEND/DENY-rooted scenario this branch is False for every agent at every
+    # step, by construction — which is the intended state, not a dead channel.
+    # ``done_ok`` in the trace records exactly that, so a run's DONE silence
+    # stays attributable to the mask rather than to the policy (refs #13).
     claimable = mission.type in COMPLETABLE or is_root_opord_claim(
-        soldier, roster, root_mission, root_objective_id, defend_horizon=defend_horizon
+        soldier, roster, root_mission, root_objective_id
     )
     return bool(
         claimable
@@ -319,7 +317,6 @@ def compute_mask(
     done_cooldown: int = 0,
     root_mission: MissionType | None = None,
     root_objective_id: int | None = None,
-    defend_horizon: int | None = None,
     step: int = 0,
     net_contact_step: int | None = None,
     ablation: str = "full",
@@ -373,7 +370,6 @@ def compute_mask(
                 root_objective_id=root_objective_id,
                 step=step,
                 done_cooldown=done_cooldown,
-                defend_horizon=defend_horizon,
             ):
                 mask[spec.index] = 1
         elif spec.kind == "execute":
