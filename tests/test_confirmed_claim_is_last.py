@@ -1,0 +1,257 @@
+"""A confirmed root claim is the LAST root claim of its episode.
+
+The assurance layer's standing negative control (issue #33): across 86 corpora
+tapped from the net alone, the confirmed root claim is always the last claim of
+its episode — 0 violations. It holds structurally rather than statistically. A
+truthful root-mission COMPLETE sets ``_root_close_step`` inside
+``_report_done``, and the terminal check later in the same ``step`` reads that
+as ``root_reported`` and ends the episode. Nothing can follow it, so a corpus
+showing two confirmed root claims in one episode — or any root claim after a
+confirmed one — is a broken measurement, not a strange policy.
+
+That makes it worth asserting rather than merely believing, because it is
+exactly the property our own ``scripts/done_probe.py`` reported violating. The
+probe keyed "who held the root at this step" by ``_step_count`` as read
+*before* ``CohortEnv.step`` increments it, while ``_say`` stamps the
+incremented value, so every claim made on an episode's LAST step fell out of
+the root's count — and the last step is precisely where the confirmed ones
+live. Measured on ``defend_brique_v13``/latest, 40 episodes from seed 500: 55
+root claims / 0 confirmed under the old keying against 87 / 32 under the fixed
+one. The assurance layer's independent net-only tap read 87 / 32 and its
+``root_rejects`` of 55 = 87 - 32 pinned the defect's scope from the outside —
+the bug removed the confirmed claims and nothing else.
+
+**Honest scope note, because it changes what this file is worth.** The ratio
+form of the invariant would NOT have caught that particular bug from the
+probe's own output: dropping a whole final step removes the claim, its
+confirmation and nothing else, so 55 - 55 = 0 confirmed still satisfies
+"at most one". What catches a *keying* defect is a coverage guard — every
+adjudicated message's step must be attributable to some root — and that guard
+now lives inline in ``done_probe.py`` beside this invariant. The invariant here
+catches the other half of the class: mis-attribution that invents a claim after
+the close, and any future change to the terminal branch that lets an episode
+run on past a confirmed claim.
+
+Two forms, both cheap:
+
+* **env-level** — drive an episode to a confirmed root claim and assert nothing
+  root-claimed follows it, in this or any later step;
+* **data-level** — over every committed evaluation carrying the root-split
+  fields, ``done_reports_root - done_rejected_root`` is 0 or 1 per episode.
+  That difference IS the confirmed count: ``cohort_env._report_done`` answers
+  every DONE with a CONFIRM or a REJECT and never with neither.
+
+Scoped to the ROOT's claims throughout. A subordinate's COMPLETE closes its own
+task and not the operation, so several may be confirmed in one episode; only
+the root's ends it.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from cohort import make_env
+from cohort.core.orders import MessageKind
+from cohort.env.actions import CATALOG
+
+ROOT = Path(__file__).resolve().parents[1]
+
+STAY = 0
+DONE = next(spec.index for spec in CATALOG if spec.kind == "done")
+
+# One per root-mission shape: SEIZE, a horizon DEFEND, a BRIQUE DEFEND and a
+# team-adjudicated RECON. The invariant is about the close, which every shape
+# reaches by its own route.
+SCENARIOS = ["fireteam", "fireteam_defend", "defend_brique", "squad_recon"]
+
+
+def _win_now(env) -> None:
+    """Put the world into the root-mission end state, whatever that state is.
+
+    Blunt on purpose: the band is destroyed, the latched defend failure is
+    cleared and everyone stands on the objective. Which of those the scenario's
+    ``_check_success`` actually consults is its business — this only has to make
+    the answer true.
+    """
+    for enemy in env.enemies:
+        enemy.alive = False
+    env._defend_lost_step = None
+    if env.spec_cfg.root_objective:
+        obj = env.world.objective_by_name(env.spec_cfg.root_objective)
+        for soldier in env.roster.living:
+            soldier.pos = obj.pos
+
+
+def _claim_whenever_admissible(scenario: str, seed: int, win_after_rejections: int | None):
+    """Run one episode claiming COMPLETE on every step the mask allows it.
+
+    Returns the root's claim ledger as ``(kind, step)`` pairs in transcript
+    order, plus the step count. The root is resolved BEFORE each ``env.step``
+    and the traffic is read as the slice that step appended, so attribution
+    never goes through a step number at all — the one way to key it that the
+    probe's bug cannot reach.
+
+    ``win_after_rejections`` engineers the end state once the root has been
+    turned down that many times, which reproduces the shape the fleet actually
+    files (``defend_brique_v13`` episode 0: three root claims, two rejected).
+    ``None`` never wins, which is the ENDEX-only arm.
+    """
+    env = make_env(scenario)
+    obs, _ = env.reset(seed=seed)
+    env._h_hour = 0  # the preparation period is over; the criterion is live
+    ledger: list[tuple[str, int]] = []
+    steps = 0
+    rejections = 0
+    won = False
+
+    while env.agents:
+        if not won and win_after_rejections is not None and rejections >= win_after_rejections:
+            _win_now(env)
+            won = True
+        root = env.roster.root()
+        root_id = root.id if root is not None else None
+        before = len(env.transcript.messages)
+        actions = {
+            cs: (DONE if obs[cs]["action_mask"][DONE] else STAY) for cs in env.agents
+        }
+        obs, _, _, _, _ = env.step(actions)
+        steps += 1
+        for msg in env.transcript.messages[before:]:
+            if msg.kind is MessageKind.DONE and msg.sender_id == root_id:
+                ledger.append(("claim", steps))
+            elif msg.kind is MessageKind.DONE_CONFIRM and msg.recipient_id == root_id:
+                ledger.append(("confirm", steps))
+            elif msg.kind is MessageKind.DONE_REJECT and msg.recipient_id == root_id:
+                ledger.append(("reject", steps))
+                rejections += 1
+
+    return env, ledger, steps
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+def test_a_confirmed_root_claim_ends_the_episode_in_the_same_step(scenario):
+    """The structural reason the invariant holds, asserted where it is made.
+
+    Confirmation closes the grace window; the terminal check reads the closed
+    window as success in that same step. So the confirmed claim lands on the
+    episode's final step and there is no later step for a second one to occupy.
+    """
+    env, ledger, steps = _claim_whenever_admissible(scenario, seed=1, win_after_rejections=2)
+    kinds = [kind for kind, _ in ledger]
+
+    assert kinds.count("confirm") == 1, f"expected exactly one confirmed root claim: {ledger}"
+    assert ledger[-1][0] == "confirm", f"something root-claimed after the close: {ledger}"
+    assert ledger[-1][1] == steps, "the confirmed claim was not on the episode's last step"
+    assert not env.agents, "the episode ran on past a confirmed root claim"
+    assert env.outcome == "success"
+
+    # ...and the transcript agrees, read forwards rather than through the ledger
+    last_confirm = max(
+        i for i, m in enumerate(env.transcript.messages) if m.kind is MessageKind.DONE_CONFIRM
+    )
+    root_id = env.roster.root().id
+    after = env.transcript.messages[last_confirm + 1:]
+    assert not [m for m in after if m.kind is MessageKind.DONE and m.sender_id == root_id]
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+def test_an_operation_that_is_never_won_files_rejections_and_never_a_confirm(scenario):
+    """The other arm: claim on every admissible step, win nothing, confirm nothing.
+
+    This is the arm that makes the ledger form meaningful — a policy CAN file
+    an unbounded number of root claims in one episode. What it cannot do is get
+    two of them confirmed, or file one after the confirmation.
+    """
+    _, ledger, _ = _claim_whenever_admissible(scenario, seed=1, win_after_rejections=None)
+    kinds = [kind for kind, _ in ledger]
+
+    assert "confirm" not in kinds, "a claim was confirmed in an operation nobody won"
+    assert kinds.count("claim") == kinds.count("reject"), "a claim went unadjudicated"
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS)
+@pytest.mark.parametrize("win_after_rejections", [None, 0, 2])
+def test_root_claims_minus_rejections_is_zero_or_one(scenario, win_after_rejections):
+    """The ledger form, in the arithmetic the behavior suite records it in.
+
+    ``done_reports_root - done_rejected_root`` is what a corpus exposes, and it
+    must never exceed 1 however hard the root spams the channel.
+    """
+    _, ledger, _ = _claim_whenever_admissible(scenario, seed=3, win_after_rejections=win_after_rejections)
+    kinds = [kind for kind, _ in ledger]
+    confirmed = kinds.count("claim") - kinds.count("reject")
+
+    assert confirmed in (0, 1), f"{confirmed} confirmed root claims in one episode: {ledger}"
+    assert confirmed == kinds.count("confirm"), "claims minus rejections is not the confirmed count"
+
+
+def _behavior_corpora():
+    """Committed evaluations carrying the root-split fields, newest era first.
+
+    Runs predating the split (refs #13) are skipped rather than failed — they
+    have no numerator to check. A file that will not parse is skipped too: a
+    training run writing its evaluation while the suite runs is not a
+    regression, and the count assertion below keeps that from hollowing the
+    test out.
+    """
+    for path in sorted((ROOT / "runs").glob("*/behavior*.json")):
+        try:
+            payload = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        episodes = payload.get("per_episode")
+        if not isinstance(episodes, list) or not episodes:
+            continue
+        if "done_reports_root" not in episodes[0]:
+            continue
+        yield path, episodes
+
+
+def test_committed_evaluations_carry_at_most_one_confirmed_root_claim_per_episode():
+    """The data-level form, over every corpus in this working copy.
+
+    Verified at 0 violations over 1800 episodes in 18 files at the time of
+    writing, ``defend_brique_v13``/final among them (100 episodes, 321 root
+    claims, 94 confirmed). This keeps it holding — and would fail loudly on any
+    future evaluation whose root attribution drops or duplicates a claim.
+    """
+    corpora = list(_behavior_corpora())
+    if not corpora:
+        pytest.skip("no committed evaluation in this working copy carries the root split")
+
+    violations = [
+        (str(path.relative_to(ROOT)), i, ep["done_reports_root"], ep["done_rejected_root"])
+        for path, episodes in corpora
+        for i, ep in enumerate(episodes)
+        if ep["done_reports_root"] - ep["done_rejected_root"] not in (0, 1)
+    ]
+    assert not violations, f"episodes with a second confirmed root claim: {violations[:10]}"
+
+    checked = sum(len(episodes) for _, episodes in corpora)
+    assert checked >= 100, f"only {checked} episodes checked — the corpora went missing"
+
+
+def test_the_anchor_corpus_still_shows_the_split_the_early_close_reading_rests_on():
+    """``defend_brique_v13``/final is the run issue #33's §3 was answered from.
+
+    94 successes carrying a confirmed root claim, 6 closed by ENDEX alone, all
+    100 announced. Pinned because the early-close verdict in ROADMAP quotes
+    those group sizes — if the file is ever re-scored, the reading has to be
+    re-derived rather than silently inherited.
+    """
+    path = ROOT / "runs" / "defend_brique_v13" / "behavior_final.json"
+    if not path.is_file():
+        pytest.skip("defend_brique_v13/behavior_final.json not present in this working copy")
+    episodes = json.loads(path.read_text())["per_episode"]
+
+    successes = [ep for ep in episodes if ep["outcome"] == "success"]
+    confirmed = [
+        ep for ep in successes if ep["done_reports_root"] - ep["done_rejected_root"] == 1
+    ]
+    assert len(successes) == 100
+    assert len(confirmed) == 94
+    assert len(successes) - len(confirmed) == 6
+    assert sum(ep["close_announced"] for ep in episodes) == 100, "an operation closed unannounced"

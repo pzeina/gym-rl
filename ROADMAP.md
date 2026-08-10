@@ -4005,3 +4005,91 @@ deliberately deferred (`docs/vision.md` §2c).
   the first claim. What v1.16 bought is that this no longer costs the record — the
   claim is a report, the ENDEX is the fact, and only the first is unreliable.
 
+- **2026-08-10** — **What is early close worth? Nothing we can measure — so
+  `done_true` must not be repriced as if it were the announcement** (refs #33).
+  The assurance layer's reframing is the right one and is adopted: before v1.16
+  the root's claim WAS the announcement, so pricing the claim priced that; after
+  v1.16 ENDEX announces unconditionally, so the claim's residual value is only
+  **early close** plus the root's own assessment. Repricing it as an announcement
+  would pay twice for something now free.
+
+  **The measurement, at our N.** `defend_brique_v13`/`ckpt_latest`, N=100, seed
+  123, from the committed `per_episode` block — all 100 episodes succeeded and
+  all 100 were announced; 94 carry a confirmed root claim, 6 close on ENDEX
+  alone.
+
+  | group | n | median length | mean |
+  |---|---|---|---|
+  | claim + ENDEX | 94 | 82.5 | 99.5 |
+  | ENDEX only | 6 | 80.5 | 83.7 |
+
+  **Mann-Whitney two-sided p = 0.9942** (U = 283). Early close "saves" **−2.0**
+  steps at the median and **−15.8** at the mean: the episodes carrying a
+  confirmed claim are if anything *longer*. Nothing is detectable at N=100.
+
+  **Why that split cannot be read causally, in either direction.** The two groups
+  are not randomised — they differ in when T0 was reached, not only in how the
+  operation closed. Conditional on T0 the arithmetic is exact and one-sided: an
+  ENDEX-only episode ends at `T0 + grace_window`, a confirmed claim ends at the
+  claim step, which lies in `[T0, T0 + grace_window]`. So **early close can
+  advance the close by at most `grace_window` = 12 steps** — ≤15% of a median
+  82-step episode — and never by more, whatever it is priced at. The observed
+  −2.0/−15.8 is T0 selection swamping a real but small effect, not evidence
+  against it. And in reward terms the ceiling is lower still: the terminal speed
+  bonus is keyed on `_success_step`, not on the close step
+  (`cohort_env.py`), so closing early buys **no** speed payout — only
+  `root_done_bonus` and the per-step costs of the ≤12 steps avoided.
+
+  **Verdict**: under v1.16 the claim has **no measurable operational value**, and
+  a structural ceiling far below what the pre-v1.16 price was buying. Its
+  residual value is informational — the root's own assessment — and on this
+  scenario that assessment is wrong **71%** of the time (321 root claims, 94
+  confirmed, 227 rejected = 0.707, re-derived from the same file). **Caveat,
+  stated rather than buried**: the ENDEX-only cell is n=6, so power is low. What
+  is established is that no early-close benefit is *detectable* at our N, not
+  that none exists.
+
+  **No reward default was changed.** #33's §4 is right that chasing the 0.71
+  false rate with a price is the wrong move before the type question is settled,
+  and every price this fleet has tried moved claim *volume* without moving claim
+  *informedness*. The lever is what the root can observe, not what the claim
+  costs — and that is the owner's decision, not this entry's.
+
+  **Their two confirmations, on the record.** (1) Bit-identity reproduced
+  independently from the weights: `max|Δ| = 0.000e+00` over all 15 tensors, `v13`
+  vs `v11` and `v18` vs `v16`, at both checkpoints on both arms, with all four
+  published `checkpoint_sha256` matching the bytes on disk. Their replays of
+  `v11`/`v16` under v1.16 give event and truth bodies byte-identical to the
+  retrains, so training against the restored channel changes nothing at all —
+  ENDEX is emitted after the last action is chosen and was never in the
+  optimisation problem. (2) Our `done_probe.py` fix confirmed net-only, no env
+  and no ground truth: **87 claims / 32 confirmed** at our exact cut
+  (`defend_brique_v13`/latest, 40 episodes from seed 500), and their
+  `root_rejects` of **55 = 87 − 32** pins the bug's scope from outside to exactly
+  the confirmed claims and nothing else.
+
+  **Built: their negative control, as a regression-hazard test.** *The confirmed
+  root claim is always the LAST claim of its episode* — 0 violations across their
+  86 corpora, and the property our probe's keying violated. Now asserted in three
+  places (`tests/test_confirmed_claim_is_last.py`, 22 tests): env-level, that a
+  confirmed root claim ends the episode in the same step and nothing root-claims
+  after it, on a SEIZE root, a horizon DEFEND, a BRIQUE DEFEND and a RECON;
+  data-level, that `done_reports_root − done_rejected_root ∈ {0,1}` for every
+  episode of every committed evaluation carrying the split (**0 violations over
+  1800 episodes in 18 files**); and inline in `scripts/done_probe.py`, which now
+  raises instead of counting an episode it cannot attribute soundly.
+
+  **One honest correction to the suggestion.** The ratio form alone would *not*
+  have caught our keying bug: dropping an episode's last step removes the claim
+  and its confirmation together, so 55 − 55 = 0 confirmed still satisfies "at
+  most one". What catches that class is a **coverage** guard — every adjudicated
+  message's step must be attributable to some root — so `_audit_root_claims`
+  carries both, and reverting the keying to its pre-fix form now aborts the probe
+  on the first episode instead of reporting 55/0. The invariant still earns its
+  place: it catches the other half of the class, mis-attribution that invents a
+  claim after the close, and any future terminal-branch change that lets an
+  episode run on past a confirmed claim.
+
+  Test suite 645 pass, ruff clean. No reward default, README row or artifact
+  touched; the issue is left open for the assurance layer's re-measurement.
+
