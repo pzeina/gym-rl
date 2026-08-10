@@ -801,11 +801,16 @@ def _endex_close(trace: dict) -> dict[str, int]:
     root (SEIZE and friends keep reporting COMPLETE) or the operation never
     succeeded — neither is a reporting-quality statement, and both stay out.
 
-    Since v1.16 a horizon defense sends BOTH — the root's MISSION COMPLETE and
-    COMMAND's ENDEX — so on that family ``root_close_step`` is set by the claim
-    rather than by a SITREP. The question the rate asks is unchanged (did the
-    root's report close the window, or did the window simply expire); the act
-    the report consists of is the one the OPORD left open to it.
+    v1.16 had a horizon defense sending BOTH — the root's MISSION COMPLETE and
+    COMMAND's ENDEX — so on that family ``root_close_step`` was set by the claim
+    rather than by a SITREP. v1.17 masks the claim shut again, so every defend
+    root is back to closing with its SITREP. The question the rate asks is
+    unchanged either way (did the root's report close the window, or did the
+    window simply expire); the act the report consists of is whichever one the
+    OPORD leaves open to it. Note what that means for reading the rate across
+    the change: on ``fireteam_defend_v18``/final it went 0.00 -> 0.53 without
+    the policy moving at all, because the SITREPs it was already transmitting
+    started closing the window.
 
     ``close_announced`` is the other half, and the one v1.14 lost: did anything
     at all go out on the net saying this operation is over — COMMAND's ENDEX or

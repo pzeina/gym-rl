@@ -4124,3 +4124,108 @@ deliberately deferred (`docs/vision.md` §2c).
   `squad_v8`'s committed evaluations are untouched; its N=100 figures above were
   measured to a scratch path.
 
+
+- **2026-08-10** — **v1.17: the root's MISSION COMPLETE is masked shut on
+  DEFEND/DENY roots, and the ENDEX keeps firing.** Owner's decision, closing the
+  DONE-channel trilogy. DEFEND/DENY stop being `COMPLETABLE`; the horizon no
+  longer opens the root's DONE bit at any step, true claim or false.
+  `HORIZON_COMPLETABLE` and the `defend_horizon` parameter are **deleted** rather
+  than left as a knob that does nothing, and the parameter's pass-throughs go
+  with them (`is_root_opord_claim`, `is_done_admissible`, `compute_mask`).
+  `ScenarioSpec.defend_horizon` is untouched and still adjudicates DEFEND
+  success — it is an adjudication clause only now, and `config.briefing()`
+  (#30) says so. Commit `09913d0`; 661 tests, ruff clean; spaces frozen
+  Discrete(228)/Box(220), all 193 committed checkpoints load.
+
+  **Why (the owner's reasoning, and the record of it).**
+  - *The claim buys nothing operationally.* Early close is bounded at
+    `grace_window` = 12 steps **by construction**, and the terminal speed bonus
+    keys on `_success_step` rather than on the close step, so closing early pays
+    **no speed bonus at all**. At N=100 the difference between claim+ENDEX and
+    ENDEX-only episodes is **p = 0.9942** (`defend_brique_v13`/final, refs #33
+    §3).
+  - *Its informational value is negative in practice.* `defend_brique` files
+    **321 root claims at 0.71 false**.
+  - *Pricing cannot fix it.* Three independent experiments, three scenarios, two
+    root types: `done_false` −2.0 → silence (`squad_v9`, 266 → 0);
+    first-claim-only → silence (`defend_brique_v12`, 321 → 0); `done_false` −0.5
+    → spam at 0.44–0.71 false. Every price moves claim **volume** without moving
+    claim **informedness**.
+  - *The announcement is now free and guaranteed* — **391/391** under v1.16 — so
+    masking the claim costs no observability.
+
+  **What made this possible, and must not be undone.** v1.16 split
+  `root_may_declare_the_end` (which act closes the window) from
+  `command_closes_the_operation` (who announces it). v1.13 masked the claim shut
+  and **lost the announcement with it, because they were one predicate**. The two
+  names stay separate in `CohortEnv._step` even now that they evaluate alike, and
+  the comment there says why.
+
+  **⚑ FLAGGED FOR THE OWNER — the predicted dead-reward consequence does NOT
+  occur, and the reason matters.** The brief for this cycle expected
+  `root_done_bonus` to become unreachable on defend roots (the v1.4 dead-reward
+  condition), and asked for one of three options to be recommended. **Measured,
+  not inferred: it stays reachable, and option (ii) arrives with the revert
+  rather than as a separate decision.** `root_may_declare_the_end` is *defined by
+  the same* `is_completable`, so reverting it also reactivates v1.13's SITREP
+  early-close route — a root SITREP at or after T0 closes the grace window, sets
+  `_root_close_callsign`, and collects the bonus. In the re-score below the bonus
+  is collected on **58 / 79 / 28 / 52** episodes per 100 across the four cells,
+  where under v1.16 it was collected on **0 / 94 / 0 / 0**.
+  `tests/test_first_claim_bonus.py::test_a_defense_still_pays_its_endex_close_at_either_horizon`
+  now runs on the shipped horizon scenario as well as the indefinite one and
+  asserts the root's terminal gap equals `root_done_bonus` exactly.
+
+  So the live options are not the three in the brief. They are: **(a) accept
+  option (ii) as implemented** — the claim is masked, the SITREP closes, the
+  bonus survives; or **(b)** re-add a horizon-aware special case *to the close
+  route only*, which would make the bonus genuinely dead on defend and reinstate
+  the knob this cycle removed. **Recommendation: (a).** Three reasons. It is the
+  coherent v1.13 object rather than a new hybrid — "the root reports the
+  situation and COMMAND transmits ENDEX" was always the replacement loop, and
+  `test_command_transmits_endex_and_the_root_sitrep_closes_the_window` has
+  guarded it since v1.13 as the thing that keeps the bonus from dying twice.
+  It prices the report the root *can* honestly make (a SITREP is adjudicated
+  against nothing and cannot be false in the way a claim can), which is exactly
+  the "move informedness, not volume" property three price experiments failed to
+  buy. And (b) reintroduces a second horizon-conditional predicate — the shape
+  that produced the v1.14 side effect in the first place. **Nothing was decided
+  here beyond following the brief's stated preference for the plain revert; if
+  the owner wants (b), it is a one-line special case and a re-run.**
+
+  **Measured before retraining — this is a bigger rollout perturbation than the
+  ~1-in-300 the mask-only class predicts.** Both incumbent checkpoints re-scored
+  under the new mask at N=100 seed 123, to scratch paths outside the repo; no
+  committed `behavior*.json` overwritten; `checkpoint_sha256` verified equal.
+
+  | cell | success (v1.16 → v1.17) | announced | root claims | admissible-root steps | episodes bit-identical | mean length Δ |
+  |---|---|---|---|---|---|---|
+  | `defend_brique_v13` best | 0.98 → **0.98** | 98/98 → **98/98** | 5 → **0** | 10943 → **0** | 50/100 | −3.51 |
+  | `defend_brique_v13` final | 1.00 → **1.00** | 100/100 → **100/100** | 321 → **0** | 8037 → **0** | 6/100 | +1.70 |
+  | `fireteam_defend_v18` best | 0.94 → **0.94** | 94/94 → **94/94** | 1 → **0** | 15301 → **0** | 74/100 | −1.63 |
+  | `fireteam_defend_v18` final | 0.99 → **0.99** | 99/99 → **99/99** | 0 → **0** | 13787 → **0** | 51/100 | −3.57 |
+
+  Read it in three parts. **Nothing that matters moved**: success is identical in
+  all four cells, **every one of the 400 episodes kept its outcome**, and
+  `successes_announced` is **391/391 → 391/391** — the v1.16 bar preserved
+  exactly, which is the one thing this change had to not break. **The claim
+  channel closed by construction**: `done_admissible_root` goes to 0 in all four
+  cells, so the silence is attributable to the mask and not to a policy that
+  declined — the distinction `done_ok` exists to make (#13), and the reason
+  `false_complete_rate_root` correctly reports `None` rather than 0.00. **But
+  trajectories moved a lot**: 26 to 94 episodes in 100 change length, against the
+  ~1 in 300 the v1.14 agent measured for a pure mask renormalisation. The
+  dominant driver is not the mask — it is the SITREP close reactivating.
+  `closed_on_root_report_rate` goes 0.00 → 0.30/0.53/0.59 on the three cells that
+  had no route to an early close, so SITREPs the policy was *already
+  transmitting* now terminate the episode. On `defend_brique_v13`/final it goes
+  the other way, 0.94 → 0.79, because a SITREP close is less reliable than the
+  confirmed claim it replaces.
+
+  **What that means for the retrain** (`campaigns/mask_defend_claim_v1_17.jobs`,
+  `defend_brique_v14` / `fireteam_defend_v19`, controls `v13` / `v18`, same
+  budgets, seed and overrides): the arms differ from their controls in the reward
+  *flow* as well as the action set — `root_done_bonus` is newly collectible on
+  scenarios where the incumbent collected it 0 times in 100 episodes. That is the
+  change, not a confound, but any success delta must be read against it rather
+  than attributed to the mask alone.
