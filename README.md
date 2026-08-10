@@ -361,11 +361,46 @@ the number `scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`,
 quoted beside it as a peak and labelled as one. This table is being filled a
 scenario at a time as the fleet is re-published off final numbers.
 
-| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | successes announced | gates |
-|---|---|---|---|---|---|---|
-| fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | **98/98 · 96/96** | 4/4 ✓ |
-| defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | **100/100 · 97/97** | 4/4 ✓ |
+| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | human death | timeout | announced | gates |
+|---|---|---|---|---|---|---|---|---|
+| fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | 0.10 | 0.02 | **98/98 · 96/96** | 4/4 ✓ |
+| defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | 0.01 | 0.00 | **100/100 · 97/97** | 4/4 ✓ |
+| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | — | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | — | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | — | 2/2 ✓ |
+| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | — | 2/2 ✓ |
+| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | — | 2/2 ✓ |
+| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | — | 2/2 ✓ |
+| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | — | 2/2 ✓ |
 
+> **`fireteam_v8` does not clear the publishing bar and is printed anyway.** Its
+> give-back is **12.0 points** against a bar of 10, so by this repo's own standard
+> it is not a publishable result. It is here rather than omitted because the
+> alternative is a missing row, and a missing row invites someone to quote its
+> superseded **90% ± 13** — which was an **N=20** number. At N=100 the same
+> checkpoint scores **80% ± 8** with **20% timeouts**. That ten-point gap between
+> N=20 and N=100 on one run is the clearest argument in this table for why the
+> standard is N=100 on both checkpoints.
+>
+> **The other six moved barely at all** on re-scoring from N=20 to N=100, which is
+> the reassuring half of the same exercise.
+>
+> **`human death` and `timeout` are printed beside success on every row** (refs
+> #34) because each covers the other's blind spot: a policy that never fights
+> buries no commanders, and one that wins can still bury them. Several of these
+> numbers are being published for the first time — `squad_v8` at **0.23** is the
+> highest in the fleet and no gate covers it.
+
+> **The `—` in `announced` is not a gap in the data, it is a gap in the fleet.**
+> ENDEX is COMMAND's act on a *continuous* posture, so it fires only on DEFEND /
+> DENY roots. Everywhere else the operation is announced by the root's own
+> MISSION COMPLETE — an agent behaviour, optional and learnable, exactly the
+> thing v1.14–v1.17 spent four cycles establishing cannot be relied on. Their
+> false-complete rates at final say the same: `squad_screen_fallen_v2` 0.27,
+> `squad_recon_v7` 0.36, `squad_v8` 0.44, `platoon_v5` 0.74, `fireteam_v8` 0.89.
+> **The announcement guarantee currently exists on two scenarios out of nine.**
+> That is the next thread, and it is stated here rather than discovered later.
+>
 > **Read `successes announced` as the headline, not the success rate.** It is
 > `successes_announced`: of the operations that succeeded, how many said so on
 > the net. Both checkpoints of both scenarios are complete — **391/391 across
