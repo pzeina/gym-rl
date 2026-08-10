@@ -203,21 +203,46 @@ or `None` for traffic that is not a SITREP — so a monitor never hand-rolls a
 regex over the transcript. Formatter and parser are inverses over exactly the
 fields formatted (round-trip test).
 
-## The OPORD's assault estimate (issue #12)
+## The OPORD's time clauses (issues #12, #30)
 
-In a scenario with a preparation period the OPORD adds a forward-looking clause —
-the only one in the language, and the only traffic that announces something that
-has not happened yet:
+The OPORD is the only traffic in the language that talks about what has not
+happened yet. It carries up to two forward-looking clauses, both **absolute step
+references** on the same clock `max_steps` counts:
 
 ```
-TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS 65. OUT.
+TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT STEP 65. HOLD UNTIL STEP 225. OUT.
 ```
+
+`EXPECT ASSAULT AT STEP <n>` appears in a scenario with a preparation period
+(`ScenarioSpec.assault_h_hour`). `HOLD UNTIL STEP <n>` appears when the root is
+ordered to a stated hour (`ScenarioSpec.defend_horizon`) on a mission that holds
+ground — DEFEND or DENY, `missions.HOLDS_GROUND`, exactly the missions whose
+horizon the environment adjudicates. HQ says what is scored and nothing else.
+
+The two moods are deliberately different. The assault clause is an **estimate**,
+drawn from a band, so it hedges: EXPECT. The horizon clause is an **order**, so
+it does not: HOLD UNTIL is tasking, not intelligence.
+
+Until v1.18 the assault clause was spoken as `AT H PLUS 65`, which reads as *65
+steps after H-hour* while the value was always the absolute step 65 — it said one
+thing and meant another. That was survivable while it was the only time-bearing
+clause and stopped being survivable the moment a second sat next to it.
+`parse_opord` still **reads** the old form, because every `runs/*/eval_transcript.txt`
+committed before v1.18 says it that way and a monitor pointed at that corpus must
+not silently lose the announcement; nothing emits it.
 
 `language.parse_opord(text)` reads the line back — `{recipient, mission,
-objective, announced_assault_step}`, or `None` for traffic that is not an OPORD
-— so the deadline survives the trip out to a monitor instead of being said once
-and dropped. The clause sits after the task statement, so `parse_order` still
-returns the same tasking with or without it.
+objective, announced_assault_step, defend_horizon}`, or `None` for traffic that is
+not an OPORD — so the deadlines survive the trip out to a monitor instead of being
+said once and dropped. The last two keys are the briefing's keys, so the net and
+the header name the same numbers the same way. Both clauses sit after the task
+statement, so `parse_order` returns the same tasking with or without them: the
+task is unchanged by when the enemy is due or when the defense ends.
+
+Neither clause is perceivable to a policy. `PolicyNet` is a memoryless MLP whose
+only clock is the `step / max_steps` tempo feature (plus `time_to_contact`, which
+is derived from the announced step, not from the words). The beneficiary of the
+spoken form is the human commander and any monitor reading the transcript alone.
 
 The announced step is the **nominal** hour: the midpoint of the scenario's
 arrival band (`cohort.config.announced_assault_step`, the one definition the

@@ -140,6 +140,14 @@ NEEDS_OBJECTIVE: frozenset[MissionType] = frozenset(
 #: Missions whose order names a friendly element instead of an objective.
 UNIT_TARGETED: frozenset[MissionType] = frozenset({MissionType.SUPPORT})
 
+#: Missions that hold ground, and so may be ordered to a stated hour.
+#: ``ScenarioSpec.defend_horizon`` is adjudicated for these and only these
+#: (``CohortEnv._horizon_defense``), and HQ speaks the HOLD UNTIL clause for
+#: these and only these (``language.format_opord``). One predicate, two
+#: readers, deliberately: an order said on the net that the environment does
+#: not adjudicate would be HQ tasking a horizon nobody scores.
+HOLDS_GROUND: frozenset[MissionType] = frozenset({MissionType.DEFEND, MissionType.DENY})
+
 #: Missions that target a named control measure (waypoint or phase line) —
 #: the A5 vocabulary that puts route geometry on the net.
 NEEDS_CONTROL: frozenset[MissionType] = frozenset({MissionType.ADVANCE})

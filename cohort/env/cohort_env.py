@@ -25,6 +25,7 @@ from pettingzoo import ParallelEnv
 from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
 from cohort.core import language as lang
 from cohort.core.missions import (
+    HOLDS_GROUND,
     IN_POSITION_RADIUS,
     LOS_REQUIRED,
     POSITION_ANCHORED_FIRE,
@@ -323,7 +324,15 @@ class CohortEnv(ParallelEnv):
             HQ_ID,
             root.id,
             lang.format_opord(
-                root.callsign, cfg.root_mission, cfg.root_objective, self._h_hour_nominal
+                root.callsign,
+                cfg.root_mission,
+                cfg.root_objective,
+                self._h_hour_nominal,
+                # the ordered hour goes on the net (v1.18, refs #30): HQ says
+                # what it adjudicates. ``format_opord`` speaks it only for a
+                # HOLDS_GROUND mission, the same predicate as
+                # :meth:`_horizon_defense`, so the two cannot drift.
+                cfg.defend_horizon,
             ),
         )
         if cfg.ablation == "flat":
@@ -2383,9 +2392,12 @@ class CohortEnv(ParallelEnv):
 
         None on every scenario that is not a DEFEND / DENY root ordered to a
         stated hour — those keep the pre-v1.14 criterion exactly.
+
+        ``HOLDS_GROUND`` is the same predicate ``language.format_opord`` gates
+        the spoken HOLD UNTIL clause on: HQ says exactly what is scored.
         """
         cfg = self.spec_cfg
-        if cfg.root_mission not in (MissionType.DEFEND, MissionType.DENY):
+        if cfg.root_mission not in HOLDS_GROUND:
             return None
         return cfg.defend_horizon
 

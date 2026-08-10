@@ -61,6 +61,7 @@ def step(t, soldiers, enemies=(), messages=()):
 def trace(
     steps, *, human=None, root_objective=None, reported=None, outcome="success", refresh_age=20,
     ttl=40, root_mission="SEIZE", threat_radius=8.0, max_steps=375, root_close_step=None,
+    sitrep_interval=25, sitrep_clock_start=None,
 ):
     return {
         "scenario": "test",
@@ -69,6 +70,8 @@ def trace(
         "root_mission": root_mission,
         "max_steps": max_steps,
         "root_close_step": root_close_step,
+        "sitrep_interval": sitrep_interval,
+        "sitrep_clock_start": sitrep_clock_start,
         "root_objective": list(root_objective) if root_objective else None,
         "ring_radius": 7.0,
         "threat_radius": threat_radius,
@@ -1000,3 +1003,218 @@ def test_successes_announced_rate_is_none_when_nothing_succeeded():
     agg = aggregate_behavior([lost])
     assert agg["successes"] == 0
     assert agg["successes_announced_rate"] is None
+
+
+# ---------------------------------------------------------------------- #
+# the close route: timing vs volume (issue #35)
+# ---------------------------------------------------------------------- #
+
+
+def _sitrep_close_episode(
+    sitrep_steps, *, close_step, interval=25, clock_start=None, endex=True
+):
+    """A DEFEND episode whose root SITREPs at ``sitrep_steps``.
+
+    ``close_step`` is the step the root's report closed the window on, where
+    COMMAND transmits ENDEX — the environment does both in the same tick.
+    """
+    root = {**sold("TL1"), "root": True}
+    sitrep_steps = list(sitrep_steps)
+    last = max([*sitrep_steps, close_step or 0, 1])
+    steps = [step(0, [root])]
+    for t in range(1, last + 1):
+        messages = [msg("sitrep", "TL1", "HQ")] if t in sitrep_steps else []
+        if endex and t == last:
+            messages = [*messages, msg("endex", "HQ", "TL1")]
+        steps.append(step(t, [root], messages=messages))
+    return episode_behavior(
+        trace(
+            steps,
+            root_mission="DEFEND",
+            root_close_step=close_step,
+            sitrep_interval=interval,
+            sitrep_clock_start=clock_start,
+        )
+    )
+
+
+def test_the_close_rate_saturates_and_the_new_denominator_separates_it():
+    """refs #35: `closed_on_root_report_rate` reads 1.00 for two opposite
+    policies — one that timed a single report to the closing moment, and one
+    that transmitted ten and was closed by whichever landed last. The rate
+    cannot separate timing from volume; these three can."""
+    timed = aggregate_behavior([_sitrep_close_episode([30], close_step=30)])
+    bought = aggregate_behavior([_sitrep_close_episode(range(3, 31, 3), close_step=30)])
+
+    # the saturating reading: identical, and it is the one both sides publish
+    assert timed["closed_on_root_report_rate"] == 1.0
+    assert bought["closed_on_root_report_rate"] == 1.0
+
+    assert timed["root_sitreps"] == 1 and bought["root_sitreps"] == 10
+    assert timed["root_sitreps_per_episode"] == 1.0
+    assert bought["root_sitreps_per_episode"] == 10.0
+    # closes per report emitted: one buys one, ten buy the same one
+    assert timed["closes_per_root_sitrep"] == 1.0
+    assert bought["closes_per_root_sitrep"] == 0.1
+    # and the close itself: a report the cadence would have produced anyway,
+    # against one bought three steps after the last
+    assert timed["closed_on_cadence_report_rate"] == 1.0
+    assert bought["closed_on_cadence_report_rate"] == 0.0
+    assert timed["root_sitrep_off_cadence_share"] == 0.0
+    assert bought["root_sitrep_off_cadence_share"] == 0.9  # only the first was fresh
+
+
+def test_cadence_compliance_is_the_environment_s_own_freshness_rule():
+    """A report at exactly ``sitrep_interval`` is what the environment pays
+    `sitrep_fresh` for; one step earlier is `sitrep_spam`. The metric must cut
+    in the same place, or "off cadence" means something the reward does not."""
+    on_cadence = aggregate_behavior([_sitrep_close_episode([1, 26], close_step=26)])
+    off_cadence = aggregate_behavior([_sitrep_close_episode([1, 25], close_step=25)])
+
+    assert on_cadence["closed_on_cadence_report_rate"] == 1.0
+    assert on_cadence["root_sitreps_off_cadence"] == 0
+    assert off_cadence["closed_on_cadence_report_rate"] == 0.0
+    assert off_cadence["root_sitreps_off_cadence"] == 1
+    assert off_cadence["root_sitrep_off_cadence_share"] == 0.5
+    assert on_cadence["sitrep_interval"] == off_cadence["sitrep_interval"] == 25
+
+
+def test_the_reporting_doctrine_starts_the_freshness_clock_at_zero():
+    """Where `ScenarioSpec.sitrep_cadence` is on, the first report is *owed*
+    within one interval, so an early one is off cadence. Where it is off, the
+    first report of an episode is fresh whenever it comes — the two differ
+    only in the clock the trace records, so the metric must read it."""
+    doctrine = aggregate_behavior([_sitrep_close_episode([10], close_step=10, clock_start=0)])
+    free = aggregate_behavior([_sitrep_close_episode([10], close_step=10)])
+
+    assert doctrine["closed_on_cadence_report_rate"] == 0.0
+    assert doctrine["root_sitreps_off_cadence"] == 1
+    assert free["closed_on_cadence_report_rate"] == 1.0
+    assert free["root_sitreps_off_cadence"] == 0
+
+
+def test_a_subordinate_s_sitreps_are_not_the_root_s_volume():
+    """The denominator is the root's channel. A rifleman transmitting every
+    step must not make the root's one timed report read as spam — the
+    environment's freshness clock is per soldier, and so is this."""
+    root = {**sold("TL1"), "root": True}
+    rifleman = {**sold("RFN1"), "root": False}
+    steps = [step(0, [root, rifleman])]
+    for t in range(1, 31):
+        messages = [msg("sitrep", "RFN1", "TL1")]
+        if t == 30:
+            messages += [msg("sitrep", "TL1", "HQ"), msg("endex", "HQ", "TL1")]
+        steps.append(step(t, [root, rifleman], messages=messages))
+    agg = aggregate_behavior(
+        [
+            episode_behavior(
+                trace(steps, root_mission="DEFEND", root_close_step=30)
+            )
+        ]
+    )
+
+    assert agg["root_sitreps"] == 1
+    assert agg["closes_per_root_sitrep"] == 1.0
+    assert agg["closed_on_cadence_report_rate"] == 1.0
+
+
+def test_a_successor_s_sitrep_closes_the_operation_on_its_own_clock():
+    """Succession moves the root, so the closing report is whoever holds it —
+    and the freshness clock follows the *soldier*, exactly as the environment
+    keeps it, so the successor's first report is fresh however loud its
+    predecessor was."""
+    before = [{**sold("TL1"), "root": True}, {**sold("SGT2"), "root": False}]
+    after = [{**sold("TL1", alive=False), "root": False}, {**sold("SGT2"), "root": True}]
+    steps = [step(0, before)]
+    for t in range(1, 6):
+        steps.append(step(t, before, messages=[msg("sitrep", "TL1", "HQ")]))
+    steps.append(step(6, after))
+    steps.append(
+        step(7, after, messages=[msg("sitrep", "SGT2", "HQ"), msg("endex", "HQ", "SGT2")])
+    )
+    agg = aggregate_behavior(
+        [episode_behavior(trace(steps, root_mission="DEFEND", root_close_step=7))]
+    )
+
+    assert agg["root_sitreps"] == 6
+    assert agg["root_sitreps_off_cadence"] == 4  # TL1's 2nd-5th, at one-step gaps
+    assert agg["closed_on_cadence_report_rate"] == 1.0
+    assert agg["closes_per_root_sitrep"] == 1 / 6
+
+
+def test_a_root_that_never_reported_leaves_the_ratio_undefined_not_zero():
+    """The v1.13 denominator lesson: a rate with no events reads None. Zero
+    closes per zero reports is not "the root bought nothing" — it is a
+    question nobody asked."""
+    silent = aggregate_behavior([_sitrep_close_episode([], close_step=None)])
+
+    assert silent["root_sitreps"] == 0
+    assert silent["root_sitreps_per_episode"] == 0.0  # a count, and it is real
+    assert silent["closes_per_root_sitrep"] is None
+    assert silent["root_sitrep_off_cadence_share"] is None
+    assert silent["closed_on_cadence_report_rate"] == 0.0  # an ENDEX went out
+    assert silent["closed_on_root_report_rate"] == 0.0
+
+
+def test_a_completable_root_has_no_cadence_denominator_either():
+    """No ENDEX, no operations COMMAND closed — the same None
+    `closed_on_root_report_rate` reports on a SEIZE root, for the same
+    reason. The volume count is still measured, because it is a count."""
+    steps = [step(0, [{**sold("TL1"), "root": True}])]
+    for t in (1, 2):
+        steps.append(step(t, [{**sold("TL1"), "root": True}],
+                          messages=[msg("sitrep", "TL1", "HQ")]))
+    agg = aggregate_behavior([episode_behavior(trace(steps, root_mission="SEIZE"))])
+
+    assert agg["endex_sent"] == 0
+    assert agg["closed_on_cadence_report_rate"] is None
+    assert agg["closed_on_root_report_rate"] is None
+    assert agg["root_sitreps"] == 2 and agg["closes_per_root_sitrep"] == 0.0
+
+
+def test_a_claim_route_close_counts_in_the_denominator_and_not_the_numerator():
+    """v1.16's horizon defense closed on a confirmed MISSION COMPLETE while
+    COMMAND still sent ENDEX. That close did not use the SITREP channel, so it
+    cannot count as evidence the channel is timed — and it must not vanish
+    from the denominator either, or the rate would flatter the policy."""
+    root = {**sold("TL1"), "root": True}
+    steps = [
+        step(0, [root]),
+        step(1, [root], messages=[msg("done", "TL1", "HQ"), msg("done_confirm", "HQ", "TL1")]),
+        step(2, [root], messages=[msg("endex", "HQ", "TL1")]),
+    ]
+    agg = aggregate_behavior(
+        [episode_behavior(trace(steps, root_mission="DEFEND", root_close_step=1))]
+    )
+
+    assert agg["endex_sent"] == 1
+    assert agg["closed_on_root_report_rate"] == 1.0
+    assert agg["closed_on_cadence_report_rate"] == 0.0
+    assert agg["closes_per_root_sitrep"] is None  # no SITREP was ever sent
+
+
+def test_the_table_prints_the_density_beside_the_rate():
+    """The density has to sit next to the rate rather than be inferable from
+    it: 1.00 with 30 reports an episode and 1.00 with one are the finding."""
+    agg = aggregate_behavior([_sitrep_close_episode(range(3, 31, 3), close_step=30)])
+    table = format_behavior_table(agg)
+
+    assert "root SITREPs / ep" in table and "closes / root SITREP" in table
+    assert "90% off cadence" in table and "interval 25" in table
+
+
+def test_recorder_records_the_freshness_interval_it_was_played_under():
+    """Off-cadence is not a statement the trace can support without the
+    interval the environment priced the reports at — the same reason the
+    contact refresh age and the step ceiling are recorded."""
+    env = make_env("fireteam_defend")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=5, rng=np.random.default_rng(5), recorder=rec)
+
+    expected = env.spec_cfg.sitrep_cadence or env.rewards_cfg.sitrep_interval
+    assert rec.trace["sitrep_interval"] == expected
+    agg = aggregate_behavior([episode_behavior(rec.trace)])
+    assert agg["sitrep_interval"] == expected
+    assert agg["root_sitreps"] >= 0
+    # every root SITREP is either on cadence or off it, and never both
+    assert agg["root_sitreps_off_cadence"] <= agg["root_sitreps"]

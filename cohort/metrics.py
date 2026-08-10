@@ -63,6 +63,14 @@ behaves* while doing so, per evaluation run:
   charged transmissions only, so it read 0.029 ("the radio went quiet")
   through a message flood. Every channel had a counter; the net had no
   denominator
+* the close route: timing vs volume (refs issue #35) — on a continuous-posture
+  root the operation is closed by the root's SITREP, and
+  `closed_on_root_report_rate` says how often that happened. It saturates:
+  a root that transmits every third step is certain to have reported at or
+  after the success step, so the close is its by default. `root_sitreps_per_
+  episode`, `closes_per_root_sitrep` and `closed_on_cadence_report_rate` are
+  the denominator and the conditioning that separate a policy which learned
+  *when* to report from one that bought the close with volume
 * success axis (refs issue #21) — a floor on `success_rate`, gated only once
   `timeout_rate` clears its own ceiling. Issue #21 pre-registered and
   CONFIRMED a premise ("no defend scenario ever collapsed" reads as the D4
@@ -107,6 +115,7 @@ from cohort.core.missions import (
 )
 from cohort.core.units import CombatParams
 from cohort.env.actions import is_done_admissible, order_options
+from cohort.env.rewards import RewardConfig
 
 if TYPE_CHECKING:
     from cohort.env.cohort_env import CohortEnv
@@ -163,6 +172,22 @@ TIMEOUT_RATE_CEILING: float = 0.5
 #: (timeout_rate fails) or WIPED (success_rate fails), never both, which is
 #: the point — the two shapes want opposite fixes.
 SUCCESS_RATE_FLOOR: float = 0.5
+
+#: SITREP freshness interval for a trace recorded before the scenario's own
+#: was written into it (refs issue #35). Read off ``RewardConfig`` rather than
+#: restated, because it is the live price: a report at least this many steps
+#: after the sender's last one is paid ``sitrep_fresh``, a closer one
+#: ``sitrep_spam``. Scenarios that switch the reporting doctrine on override
+#: it per-scenario (``ScenarioSpec.sitrep_cadence``) and the recorder writes
+#: that value into the trace; the whole defend family runs on this default.
+DEFAULT_SITREP_INTERVAL: int = RewardConfig().sitrep_interval
+
+#: Freshness-clock origin for a trace that did not record one: far enough back
+#: that the episode's first SITREP is on cadence, mirroring
+#: ``Soldier.last_sitrep_step``'s own default. Under the reporting doctrine
+#: the environment instead starts the clock at 0 — the first report is *owed*
+#: within one interval — and a trace recorded under it carries that 0.
+UNSET_SITREP_CLOCK: int = -10_000
 
 #: Message kinds that carry command state — the learned acts of command an
 #: agent pays airtime for. The OPORD is excluded: it is HQ's, once, and no
@@ -224,6 +249,16 @@ class TraceRecorder:
             # combat model instead of a hard-coded constant.
             "threat_radius": float(env.combat.weapon_range),
             "contact_refresh_age": env.rewards_cfg.contact_refresh_age,
+            # issue #35: the interval that prices a SITREP fresh rather than
+            # spam, and where the freshness clock starts — the scenario's own
+            # cadence when the reporting doctrine is on, the reward config's
+            # otherwise. Recorded for the same reason the refresh age is:
+            # without it, "the root reported off cadence" is not a statement
+            # the trace can support.
+            "sitrep_interval": int(cfg.sitrep_cadence or env.rewards_cfg.sitrep_interval),
+            "sitrep_clock_start": min(
+                (s.last_sitrep_step for s in env.roster.soldiers), default=UNSET_SITREP_CLOCK
+            ),
             "knowledge_ttl": _knowledge_ttl(),
             "human": human,
             "reported": {},
@@ -833,6 +868,81 @@ def _endex_close(trace: dict) -> dict[str, int]:
     }
 
 
+def _root_sitreps(trace: dict) -> dict[str, int]:
+    """The root's SITREP volume, and the cadence the close was bought at (#35).
+
+    ``closed_on_root_report_rate`` above has ENDEXes-sent for a denominator,
+    and it **saturates**. Once the root transmits a SITREP every third step it
+    is near-certain to have reported at or after the success step, so the
+    close is its by default — the rate reads 1.00 for a policy that learned
+    *when* to report and for one that simply never stops reporting. Measured
+    on the first two policies trained with the root's MISSION COMPLETE masked
+    shut: the rate went 0.79 -> 1.00 and 0.50 -> 1.00 while root SITREPs per
+    episode went 6.1 -> 30.3 and 8.8 -> 32.8, against a ``sitrep_interval`` of
+    25. One behavioural change, two readings, and the rate alone cannot say
+    which of the two it is.
+
+    These are the counts that separate them:
+
+    * ``root_sitreps`` — every SITREP transmitted by whoever held the root at
+      that step. Read per step, like the root's DONE claims, because
+      succession moves the root mid-episode. Closes divided by this is
+      ``closes_per_root_sitrep``: high means the reports were timed, low means
+      the close was bought with volume.
+    * ``root_sitreps_off_cadence`` — those transmitted sooner than
+      ``sitrep_interval`` after the sender's previous SITREP, i.e. exactly the
+      ones the environment prices ``sitrep_spam`` instead of ``sitrep_fresh``.
+      Freshness is recomputed with the environment's own rule
+      (``CohortEnv._apply_action``) over EVERY SITREP a soldier sent, root or
+      not, because the environment's clock is per soldier and not per role.
+    * ``endex_on_cadence_report`` — was the report that *actually closed the
+      window* one the cadence would have produced anyway? This is the
+      numerator of ``closed_on_cadence_report_rate``, and it is the cell that
+      answers "is the policy timing anything at all", because it excludes the
+      reports bought as lottery tickets on a +3.0 ``root_done_bonus``.
+
+    An operation closed by a confirmed MISSION COMPLETE rather than by a
+    SITREP counts in that rate's denominator and not in its numerator, which
+    is correct: the question is whether the SITREP channel is timing anything,
+    and a claim-route close did not use it. On the v1.17 defend family the
+    claim route is masked shut, so every close there is a SITREP.
+    """
+    interval = int(trace.get("sitrep_interval") or DEFAULT_SITREP_INTERVAL)
+    clock_start = trace.get("sitrep_clock_start")
+    start = UNSET_SITREP_CLOCK if clock_start is None else int(clock_start)
+    close_step = trace.get("root_close_step")
+    last_sitrep: dict[str, int] = {}
+    sitreps = off_cadence = endex = 0
+    closed_on_cadence = False
+    for step in trace["steps"]:
+        t = step["t"]
+        roots = {rec["cs"] for rec in step["soldiers"] if rec.get("root")}
+        for msg in step["messages"]:
+            if msg["kind"] == "endex":
+                endex += 1
+                continue
+            if msg["kind"] != "sitrep":
+                continue
+            sender = msg.get("from")
+            fresh = t - last_sitrep.get(sender, start) >= interval
+            last_sitrep[sender] = t
+            if sender not in roots:
+                continue
+            sitreps += 1
+            off_cadence += not fresh
+            if close_step is not None and t == close_step:
+                closed_on_cadence = fresh
+    return {
+        "root_sitreps": sitreps,
+        "root_sitreps_off_cadence": off_cadence,
+        # gated on an ENDEX for the same reason `endex_on_root_report` is: the
+        # denominator is operations COMMAND closed, so the numerator cannot
+        # count a close on an operation COMMAND never announced
+        "endex_on_cadence_report": endex * int(closed_on_cadence),
+        "sitrep_interval": interval,
+    }
+
+
 def _done_opportunity(trace: dict) -> dict[str, int]:
     """Agent-steps at which MISSION COMPLETE was admissible (all / the root's).
 
@@ -1086,6 +1196,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_false_complete(trace),
         **_done_opportunity(trace),
         **_endex_close(trace),
+        **_root_sitreps(trace),
         "succession_events": events,
         "succession_recovery": recovery,
         "succession_unrecovered": unrecovered,
@@ -1175,6 +1286,10 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
     roots = {ep.get("root_mission") for ep in episodes} - {None}
+    # refs #35: the freshness interval the off-cadence count was scored
+    # against, carried so the density reads against its own bound the way
+    # episode length reads against max_steps. None on a mixed pool.
+    intervals = {ep.get("sitrep_interval") for ep in episodes} - {None}
     successes = [ep for ep in episodes if ep["outcome"] == "success"]
     n_successes = len(successes)
     return {
@@ -1259,6 +1374,26 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "closed_on_root_report_rate": _ratio(
             total("endex_on_root_report"), total("endex_sent")
         ),
+        # refs #35: the denominator that rate never had. It reads 1.00 both
+        # for a root that timed one report to the closing moment and for a
+        # root that transmitted 30 of them; these three separate the two.
+        # `closes_per_root_sitrep` is the closes bought per report emitted —
+        # high is timed, low is bought with volume.
+        # `closed_on_cadence_report_rate` asks the same question the rate
+        # above asks, of the same denominator (operations COMMAND closed), but
+        # counts only closes made by a report the cadence would have produced
+        # anyway. The gap between the two rates is the volume-bought share.
+        "root_sitreps": total("root_sitreps"),
+        "root_sitreps_off_cadence": total("root_sitreps_off_cadence"),
+        "root_sitreps_per_episode": _ratio(total("root_sitreps"), n_eps),
+        "root_sitrep_off_cadence_share": _ratio(
+            total("root_sitreps_off_cadence"), total("root_sitreps")
+        ),
+        "closes_per_root_sitrep": _ratio(total("endex_on_root_report"), total("root_sitreps")),
+        "closed_on_cadence_report_rate": _ratio(
+            total("endex_on_cadence_report"), total("endex_sent")
+        ),
+        "sitrep_interval": intervals.pop() if len(intervals) == 1 else None,
         # v1.16, the question #31 raised: of the operations that SUCCEEDED, how
         # many said so on the net at all? Separate from
         # closed_on_root_report_rate, whose denominator is ENDEXes sent and
@@ -1414,6 +1549,9 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("done_claims_per_claiming_episode", "COMPLETE claims / claiming ep", "{:.2f}"),
     ("done_claim_rate", "COMPLETE claim rate", "{:.4f}"),
     ("closed_on_root_report_rate", "closed on root's report", "{:.2f}"),
+    ("closed_on_cadence_report_rate", "  ... on a cadence report", "{:.2f}"),
+    ("root_sitreps_per_episode", "root SITREPs / ep", "{:.1f}"),
+    ("closes_per_root_sitrep", "closes / root SITREP", "{:.3f}"),
     ("successes_announced_rate", "successes announced on the net", "{:.2f}"),
     ("succession_recovery_mean", "succession recovery (steps)", "{:.1f}"),
     ("coverage_time", "subordinate coverage time", "{:.2f}"),
@@ -1606,6 +1744,17 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             )
         ),
         "closed_on_root_report_rate": f"n={agg['endex_sent']} ENDEX",
+        # refs #35: the density beside the rate, not inferable from it
+        "root_sitreps_per_episode": (
+            f"{agg.get('root_sitreps', 0)} total"
+            + (
+                f", {agg['root_sitrep_off_cadence_share']:.0%} off cadence"
+                if agg.get("root_sitrep_off_cadence_share") is not None
+                else ""
+            )
+            + (f" (interval {agg['sitrep_interval']})" if agg.get("sitrep_interval") else "")
+        ),
+        "closes_per_root_sitrep": f"n={agg.get('root_sitreps', 0)} root SITREPs",
         "successes_announced_rate": (
             f"{agg['successes_announced']} of {agg['successes']} wins, "
             f"{agg['endex_sent']} by ENDEX"

@@ -73,13 +73,18 @@ depends on solving either.
   (p = 0.61). Evidence: `runs/defend_brique_v6/equal_footing_n100.json` and
   `seed_robustness_n100.json`.
 - Evaluations now record `checkpoint_sha256` (refs #28), and `config.briefing()`
-  publishes `defend_horizon` (refs #30). The OPORD hold-until clause is
-  **deliberately deferred** — it is not rollout-neutral.
+  publishes `defend_horizon` (refs #30). ~~The OPORD hold-until clause is
+  **deliberately deferred** — it is not rollout-neutral.~~ **Corrected
+  2026-08-11**: it *is* rollout-neutral, and shipped in `9dd4edf` — measured,
+  not asserted, at mechanism and outcome level (see the last progress-log
+  entry). The deferral rested on an assertion nobody had run.
 - Boards regenerate themselves when a run lands (`scripts/train_then_boards.sh`);
   only publishing needs a session (`/boards`).
 
-**Next, in order**: read v1.16's report → decide the OPORD hold-until clause
-(#30) → re-publish the defend family off FINAL numbers at both checkpoints →
+**Next, in order**: read v1.16's report → ~~decide the OPORD hold-until clause
+(#30)~~ **done 2026-08-11, `9dd4edf`** → re-publish the defend family off FINAL
+numbers at both checkpoints (the numbers are unchanged by v1.18 — verified
+field-by-field, so the re-publish is a table edit, not a re-score) →
 the fleet-wide staleness left by the v1.15 flag (other scenarios' claim numbers
 were measured under a rule that no longer exists; not retrained, owner's call).
 
@@ -4417,3 +4422,211 @@ deliberately deferred (`docs/vision.md` §2c).
   genuinely dead on defend with a horizon-aware special case on the close route.
   The retrain above is the *former*; if the owner picks the latter, `v14`/`v19`
   are the wrong arms and it is a one-line change plus a re-run.
+
+- **2026-08-11** — **#35: the announcement bar held on policies *trained* under
+  the mask, and the close route it left behind is bought with volume, not
+  timing.** The assurance layer verified v1.17 at its own protocol against our
+  controls at the same cut: gates clean on all four new corpora (110,220 replay
+  checks / 0 violations, 1,377 orders / 0 doctrine violations, no adapter
+  change), and all four published `checkpoint_sha256` matched before tapping —
+  **finals included**, so a final figure now traces to a digest even with
+  `ckpt_latest` gitignored. Their cells:
+
+  | cell | success | root deaths | root claims | announced | `closed_on_root_report_rate` | root SITREPs/ep |
+  |---|---|---|---|---|---|---|
+  | `defend_brique_v13`@v1.17 *(control)* | 100/100 | 3/100 | 0 | **100/100** | 0.79 | 6.1 |
+  | `defend_brique_v14` / best | 97/100 | 13/100 | 0 | **97/97** | 0.99 | 29.9 |
+  | `defend_brique_v14` / final | 100/100 | 1/100 | 0 | **100/100** | 1.00 | 30.3 |
+  | `fireteam_defend_v18`@v1.17 *(control)* | 30/30 | 0/30 | 0 | **30/30** | 0.50 | 8.8 |
+  | `fireteam_defend_v19` / final | 28/30 | 3/30 | 0 | **28/28** | 1.00 | 32.8 |
+
+  **The bar held in the case that actually tests it — the part worth keeping.**
+  `v13`/`v18` were trained with the claim open and only *replayed* into the
+  mask, so they never had the opportunity to unlearn announcing. `v14`/`v19`
+  are the first policies **trained** with the claim bit dead (3.0M and 3.5M
+  steps), and every success is still announced. ENDEX is COMMAND's act, so
+  there was no gradient against it to follow: a protocol act cannot be trained
+  away, an agent behaviour can. That is the strongest available form of the
+  v1.16 argument, and it is now tested rather than assumed.
+
+  **The finding to act on: the reactivated close route is bought with volume,
+  not timing.** `closed_on_root_report_rate` goes 0.79 → 1.00 and 0.50 → 1.00,
+  which read alone says the root learned to *time* its report to the closing
+  moment. It didn't — root SITREPs per episode went **6.1 → 30.3 and 8.8 →
+  32.8**, one every ~3.2 steps against a `sitrep_interval` of 25. At that
+  density the root is essentially certain to have reported at or after the
+  success step, so the close is its by default. The rate saturates, and the
+  metric — theirs and ours — could not separate the two readings.
+
+  **So we built the denominator** (`cohort/metrics.py`, `docs/metrics.md`,
+  tests): `closes_per_root_sitrep` (closes bought per report emitted — high is
+  timed, low is bought), `closed_on_cadence_report_rate` (of the operations
+  COMMAND closed, the share closed by a report that was itself at least
+  `sitrep_interval` steps after the sender's last one — exactly the report the
+  environment pays `sitrep_fresh` for rather than `sitrep_spam`), and
+  `root_sitreps_per_episode` with its off-cadence count and share, so density
+  reads beside the rate instead of being inferable from it. Freshness is
+  recomputed with the environment's own rule and tracked per soldier; the
+  recorder now writes `sitrep_interval` and the clock origin into the trace,
+  the way it already writes `contact_refresh_age` and `max_steps`. They said
+  they would not add it on their side until there was a shape we would use;
+  this is the shape. Re-scored at N=100, seed 123, at HEAD (`ckpt_latest`):
+
+  | cell | closed on root's report | closes / root SITREP | closed on a cadence report | root SITREPs/ep (off-cadence) |
+  |---|---|---|---|---|
+  | `defend_brique_v13` *(control)* | 0.79 | 0.130 | **0.38** | 6.07 (69%) |
+  | `defend_brique_v14` | **1.00** | 0.033 | **0.00** | 30.30 (97%) |
+  | `fireteam_defend_v18` *(control)* | 0.53 | 0.063 | **0.28** | 8.22 (73%) |
+  | `fireteam_defend_v19` | **1.00** | 0.032 | **0.08** | 30.60 (96%) |
+
+  (`v14`/best: 0.99, 0.032, 0.05, 29.86 at 96%. Our control cells reproduce
+  their protocol closely — 0.79 vs 0.79 and 6.07 vs 6.1 on `defend_brique`,
+  0.53 vs 0.50 and 8.22 vs 8.8 on `fireteam_defend` at their N=30.)
+
+  **The new cells return a sharper verdict than the issue asked for.** The arms
+  do not merely fail to improve their timing: they close on a cadence-compliant
+  report **less often than their controls did** — 0.38 → 0.00 and 0.28 → 0.08 —
+  while the published rate goes to 1.00. One behavioural change, an improvement
+  on one number and a regression on the other, and only the pair says which.
+
+  **Their arithmetic, re-derived from `RewardConfig` and our own counts —
+  agreement in shape, disagreement in the number.** Their account: ~0.53 of
+  `sitrep_spam` buys a +3.0 `root_done_bonus`, **5.7:1**, converged on
+  independently by two scenarios at different seeds; explicitly filed as the
+  account to beat rather than the established one, since profitability is not
+  proof of motive. Three corrections, none of which overturns the finding:
+  - **On their own terms it is 5.1:1, not 5.7:1.** They derived off-cadence
+    reports as volume minus *cadence slots* (episode length / 25 ≈ 3.9–4.9 per
+    episode). The reports actually priced fresh are far fewer — **1.00/ep on
+    `v14`, 1.10 on `v19`** — because a report only resets the clock when it
+    lands and these cluster. Measured off-cadence: 29.3 and 29.5/ep, so the
+    spam bill is 0.586 and 0.590, not 0.53 and 0.56.
+  - **It omits airtime.** Every SITREP is also charged `transmission_cost`
+    −0.01 into the same `report` component, fresh or spam
+    (`CohortEnv._charge_transmission`). At the true −0.03 marginal price the
+    channel costs **0.839 and 0.841 per episode**, and the gross ratio is
+    **3.6:1**.
+  - **The decision-relevant ratio is marginal, not gross, and on one scenario
+    it is a loss.** Against its own control `v14` spends **0.788/ep more** on
+    reports to move the bonus from 0.79×3.0 to 1.00×3.0, i.e. **+0.630** —
+    **0.80:1**. `v19` spends 0.749 more for +1.424 — 1.90:1. So the trade pays
+    on `fireteam_defend` and **does not pay on `defend_brique`**, which is the
+    scenario whose independent convergence was part of the argument. Both
+    figures are floors on the cost: a step spent transmitting is a step not
+    earning compliance credit, and closing early shortens the episode (96.5 vs
+    100.2 steps, 123.5 vs 134.3) and forgoes the rest of it, while the speed
+    bonus keys on `_success_step` and is untouched. Caveat ours: two
+    independently trained policies differ in more than one channel, so this is
+    a decomposition of two ledger components, not a controlled experiment.
+  - **What that means for the price question.** It weakens "this is exactly
+    what the reward specifies" — on `defend_brique` the reward as written is
+    marginally *against* the extra 24 reports/ep by about −0.16/ep, and the run
+    converged there anyway. That is the same shape as the claim channel's three
+    price experiments: **the volume moves where the economics say it should
+    not.** Which is an argument against a fourth price experiment, not for one.
+    Recommendation to the owner: **do not reprice `sitrep_spam`** (the
+    assurance layer does not recommend it either); if anything is ever done
+    here, the honest lever is structural — what the close route *is* — not its
+    tariff. Owner's call; nothing was changed.
+
+  **A qualification of our own framing, which we owe.** We said masking the
+  claim "costs no observability". That is true of the **announcement** and
+  false of **traffic composition**. v1.17 removed a root channel filing **321
+  claims per 100 episodes at 0.71 false** and replaced it with a root channel
+  emitting **~30 SITREPs per episode of which ~97% are off cadence** (their
+  ~87% by the slot method; ours by the priced one). Both are noise on the C2
+  net, and the replacement is roughly **five times the volume** — messages per
+  episode 120 → 145 on `defend_brique` and 78 → 221 on `fireteam_defend` — with
+  no gate on either side watching it. Removing the claim remains well justified
+  (three price experiments, no informedness at any price) and the announcement
+  is strictly better, at 391/391. But the sentence needed the qualifier, and
+  now the metric exists to state it with.
+
+  **Root deaths, reported without the word we withdrew.** `defend_brique_v14`
+  /best is **13/100 against the control's 3/100** (p = 0.0165) while its own
+  final is **1/100** (p = 0.62 vs control) — a 13× within-run difference at
+  p = 0.0013. Per our own correction on #34 this is **not** a gate failure: it
+  is a measured between-checkpoint difference, with **final the headline and
+  the better policy on that axis**. `fireteam_defend_v19` moves 0/30 → 3/30 at
+  final (p = 0.24, not significant at N=30).
+
+  **Left alone, deliberately**: no reward repriced, no gate added, no README
+  row, no artifacts published, `scripts/update_boards.py` not run, no training
+  launched, nothing closed or commented on the issue. The new keys are computed
+  from the trace, so every future evaluation carries them, but they are
+  **absent from every already-committed `behavior*.json`** — the four cells
+  above were re-scored to a scratch path rather than over the published
+  artifacts, and the fleet was not re-scored.
+
+- **2026-08-11** — **v1.18: the OPORD says the hour it will be judged by, and
+  the deferral that guarded it was measured wrong.** Commit `9dd4edf` (refs #30)
+  adds the horizon clause and rewords its neighbour:
+
+  ```
+  before  TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS 45. OUT.
+  after   TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT STEP 45. HOLD UNTIL STEP 210. OUT.
+  ```
+
+  (`fireteam_defend`: STEP 65 / STEP 225. Those two scenarios are the *only*
+  ones with either an `assault_h_hour` or a `defend_horizon`, so they are the
+  only transcripts that change — checked against `SCENARIOS`, not assumed from
+  the two we had in hand.)
+
+  **Both clauses are now absolute step references.** The neighbour had to move
+  with the new one: `announced_assault_step` was always the absolute step — the
+  band's midpoint — but was spoken `AT H PLUS 65`, which reads as *65 steps
+  after H-hour*. It said one thing and meant another, which was survivable
+  while it was the only time-bearing clause on the line and stopped being
+  survivable the moment a second sat beside it. The moods stay different on
+  purpose: `EXPECT` is an estimate drawn from a band, `HOLD UNTIL` is tasking
+  and does not borrow the hedge.
+
+  The clause is gated on `missions.HOLDS_GROUND` (DEFEND/DENY) — now one named
+  predicate read by both `format_opord` and `CohortEnv._horizon_defense`
+  instead of an inline tuple in the env plus a caller's discipline in the
+  language. **HQ says exactly what is adjudicated**: a SEIZE root handed a
+  horizon gets no clause, because nothing would score it. `parse_opord`
+  round-trips both clauses (new key `defend_horizon`, the briefing's key for
+  the same number) and still *reads* `AT H PLUS n`, because every
+  `runs/*/eval_transcript.txt` committed before today says it that way and a
+  monitor pointed at that corpus must not silently lose the announcement.
+  Nothing emits it.
+
+  **The handoff said this clause "is not rollout-neutral". That was an
+  assertion, and it was wrong.** It is the third neutrality assertion in two
+  days (after ENDEX and the ~1-in-300 mask estimate) and the third to be
+  measured other than as stated — so this one was measured before it was
+  believed, at two levels, with the code isolated from concurrent work by
+  running `git archive` of the parent and the child commit into scratch trees
+  outside the repo:
+
+  - **Mechanism.** Same seed, same fixed action sequence, before-code vs
+    after-code, 6 cells (both defend scenarios × seeds 123/7/41, 120 steps):
+    every observation vector, every action mask, every per-agent reward, the
+    message count, the drawn H-hour, and the sha of the whole transcript *after*
+    the OPORD line are identical. The one difference in the episode is the OPORD
+    string itself. Message length feeds nothing — no airtime, no arbitration, no
+    RNG.
+  - **Outcome.** `defend_brique_v14` and `fireteam_defend_v19` re-scored at
+    N=100 seed 123 on **both** checkpoints, to scratch paths, and compared field
+    by field against the committed `behavior.json` / `behavior_final.json`: all
+    four payloads **identical in every field** — 73 aggregate metrics, the CI
+    string, all 4 gates, and all 100 per-episode records per cell. A control run
+    at the parent commit is also identical, so "identical" is a property of the
+    change and not of a re-scorer that reproduces nothing. Headline, unmoved:
+    best 0.97 ± 0.03 / final 1.00 ± 0.00 (`v14`), best 0.96 ± 0.04 / final
+    0.98 ± 0.03 (`v19`).
+
+  **So no retrain. The published defend policies stay valid and only the
+  transcript gains a clause.** Which is the honest scope of the change: this is
+  transcript completeness, not capability. `PolicyNet` is a memoryless MLP whose
+  only clock is `step / max_steps`, so it cannot use a spoken deadline; the
+  beneficiary is the human commander and any monitor reading the transcript
+  alone. The audit-side half of #30 — a monitor holding the *header* — was
+  already delivered by the `defend_horizon` briefing key.
+
+  687 tests green (670 + 7 new; a further 10 landed concurrently from the
+  metrics side), ruff clean, spaces unchanged at `Discrete(228)/Box(220)`, and
+  the fleet-load map is byte-identical before and after: 44 of 98 committed
+  `ckpt_best.pt` load into current-era spaces, the other 54 being the same
+  pre-existing 131/137/166-dim obs eras as before this commit.
