@@ -292,6 +292,62 @@ them:
 *Edge case*: no admissible step → `null`, never `0.0` — an undefined rate and
 a declined opportunity are the distinction the metric exists to preserve.
 
+### Closing a continuous-posture operation: timing vs volume (issue #35)
+
+A DEFEND/DENY root may never declare its own operation over, so COMMAND ends
+it with ENDEX and what the root's report buys is closing the window *early*,
+plus `root_done_bonus` (+3.0). Four numbers describe that route, and the first
+one alone is a trap.
+
+* **`closed_on_root_report_rate`** = `endex_on_root_report` / `endex_sent` —
+  of the operations COMMAND closed, the share closed by the root's own report
+  rather than by the grace window expiring. *Edge case*: no ENDEX → `null`
+  (a completable root closes with MISSION COMPLETE, and reading that as
+  "never reported" is the denominator confusion `false_complete_rate` fell
+  into on `fireteam_defend_v12`).
+* **`root_sitreps_per_episode`** — SITREPs transmitted by whoever held the
+  root at that step (read per step, because succession moves the root).
+* **`closes_per_root_sitrep`** = `endex_on_root_report` / `root_sitreps` —
+  closes bought per report emitted. **High means the reports were timed; low
+  means the close was bought with volume.**
+* **`closed_on_cadence_report_rate`** = `endex_on_cadence_report` /
+  `endex_sent` — same denominator as the first rate, but the numerator counts
+  only closes made by a report that was itself **cadence-compliant**: at least
+  `sitrep_interval` steps after that soldier's previous SITREP, i.e. exactly
+  the report the environment pays `sitrep_fresh` for instead of `sitrep_spam`.
+  This is the cell that answers *is the policy timing anything at all*,
+  because it excludes reports bought as lottery tickets on the bonus.
+  *Edge case*: no ENDEX → `null`. A close made by a confirmed MISSION COMPLETE
+  instead of a SITREP counts in the denominator and not the numerator — the
+  question is about the SITREP channel, and a claim-route close did not use it.
+
+`root_sitreps_off_cadence` and `root_sitrep_off_cadence_share` carry the
+density beside the rate, scored against the `sitrep_interval` the episode was
+actually played under (`ScenarioSpec.sitrep_cadence` where the reporting
+doctrine is on, `RewardConfig.sitrep_interval` otherwise; the recorder writes
+it into the trace, with the clock origin, so freshness is recomputed exactly
+as `CohortEnv._apply_action` prices it). Freshness is tracked per *soldier*,
+over every SITREP it sent — the environment's clock is per soldier, not per
+role, so a successor's first report is fresh however loud its predecessor was.
+
+**Why the first rate needed the other three** (issue #35, measured N=100 seed
+123 at the v1.17 cut, `ckpt_latest`): the two policies trained with the root's
+claim masked shut close on their own report essentially always, and read as a
+large improvement in reporting discipline. They are not.
+
+| cell | closed on root's report | closes / root SITREP | closed on a cadence report | root SITREPs / ep (off-cadence) |
+|---|---|---|---|---|
+| `defend_brique_v13` (control) | 0.79 | 0.130 | **0.38** | 6.07 (69%) |
+| `defend_brique_v14` | **1.00** | 0.033 | **0.00** | 30.30 (97%) |
+| `fireteam_defend_v18` (control) | 0.53 | 0.063 | **0.28** | 8.22 (73%) |
+| `fireteam_defend_v19` | **1.00** | 0.032 | **0.08** | 30.60 (96%) |
+
+One report every ~3.2 steps against an interval of 25 makes a close near
+certain, so the headline rate saturates at 1.00 while the share of closes that
+a cadence-compliant report accounts for *falls* — 0.38 → 0.00 and 0.28 → 0.08.
+The same behavioural change reads as an improvement on one number and a
+regression on the other, and only the pair says which it was.
+
 ### Succession recovery time
 
 A *leader death* is the death of an agent with living direct subordinates.
