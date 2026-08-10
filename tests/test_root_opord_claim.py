@@ -41,12 +41,30 @@ prices bought spam on one scenario and silence on the other). So the two are
 decoupled: COMMAND transmits ENDEX whenever it closes the operation, whether or
 not the root also claimed. The claim is the REPORT, the ENDEX is the FACT.
 
-So the invariant these tests hold has flipped, but the *hazard* has not: the
-mask and the adjudicator must never disagree about who may say what, because
+**v1.17 (owner's decision).** v1.14's refinement is withdrawn: DEFEND / DENY
+roots are not completable at any horizon, so the root's MISSION COMPLETE is
+masked shut on every defend scenario again. What makes this different from v1.13
+— and what makes it available at all — is that v1.16 split the predicate. The
+ENDEX is gated on ``command_closes_the_operation`` and keeps firing exactly as
+it did; only ``root_may_declare_the_end`` moves. v1.13 could not do that,
+because one predicate served both questions, and masking the claim took the
+announcement with it.
+
+Why withdraw it: the reopened claim was measured and bought nothing. Early close
+is bounded at ``grace_window`` = 12 steps and pays no speed bonus (the terminal
+speed term keys on ``_success_step``), so claim+ENDEX and ENDEX-only episodes
+are indistinguishable at N=100 (p = 0.9942); its informational value is negative
+in practice (``defend_brique`` filed 321 root claims at 0.71 false); and three
+pricing experiments over three scenarios moved claim volume without ever moving
+claim informedness. The announcement is free and guaranteed (391/391 under
+v1.16), so the mask costs no observability.
+
+So the invariant these tests hold has flipped twice, but the *hazard* has not:
+the mask and the adjudicator must never disagree about who may say what, because
 when they did the result was silence that looked like learned behaviour. What
-follows pins both halves — that a continuous root cannot declare itself done,
-and that the C2 loop it does close is reachable and pays — plus, since v1.16,
-that the announcement is not conditional on either.
+follows pins all three halves — that a continuous root cannot declare itself
+done at any horizon, that the C2 loop it does close (its SITREP) stays reachable
+and still pays, and that the announcement is conditional on neither.
 """
 
 from dataclasses import replace
@@ -54,9 +72,9 @@ from dataclasses import replace
 import pytest
 
 from cohort import get_scenario, make_env
-from cohort.core.missions import COMPLETABLE, Mission, MissionType
+from cohort.core.missions import COMPLETABLE, Mission, MissionType, is_completable
 from cohort.core.orders import HQ_ID, MessageKind
-from cohort.env.actions import CATALOG, is_root_opord_claim
+from cohort.env.actions import CATALOG, is_done_admissible, is_root_opord_claim
 
 STAY = 0
 DONE = next(s.index for s in CATALOG if s.kind == "done")
@@ -64,7 +82,13 @@ SITREP = next(s.index for s in CATALOG if s.kind == "sitrep")
 
 
 def _defend_env(seed=12):
-    """The shipped scenario: a defense ordered to a horizon (v1.14)."""
+    """The shipped scenario: a defense ordered to a horizon (v1.14).
+
+    Since v1.17 the horizon is an adjudication clause only — it decides when the
+    defense has succeeded, not who may say so — so this env and the indefinite
+    one below must agree on every claim question. Both factories are kept
+    precisely so that agreement is asserted rather than assumed.
+    """
     env = make_env("fireteam_defend")
     env.reset(seed=seed)
     return env
@@ -114,49 +138,90 @@ def test_a_continuous_root_cannot_declare_its_own_operation_over():
     assert env._mask_for(root)[DONE] == 0, "a DEFEND root may not claim COMPLETE"
 
 
-def test_a_horizon_defense_reopens_the_channel_to_the_root():
-    """v1.14: a stated end makes the operation declarable — by the root only.
+def test_a_horizon_defense_does_not_reopen_the_channel_to_the_root():
+    """v1.17 withdraws v1.14: the stated hour opens no act to anybody.
 
     The predicate is the same one the mask admits on, so this is also the
-    guard against the two drifting apart a third time.
+    guard against the two drifting apart a fourth time. Asserted on the state
+    where the claim would be TRUE — the operation is won — because a mask that
+    only shuts on false claims would be pricing, not masking.
     """
     env = _defend_env()
     assert env.spec_cfg.defend_horizon is not None
     _win(env)
     root = env.roster.root()
-    assert is_root_opord_claim(
-        root,
-        env.roster,
-        env.spec_cfg.root_mission,
-        env._root_objective_id(),
-        defend_horizon=env.spec_cfg.defend_horizon,
+    assert not is_root_opord_claim(
+        root, env.roster, env.spec_cfg.root_mission, env._root_objective_id()
     )
-    assert env._mask_for(root)[DONE] == 1, "the horizon root was never offered the act"
+    assert env._mask_for(root)[DONE] == 0, "the horizon root was offered the act"
 
 
-def test_the_horizon_root_closes_with_mission_complete_and_command_still_announces():
-    """The ROUTE swaps with the object; the ANNOUNCEMENT does not (v1.16).
+@pytest.mark.parametrize("scenario", ["fireteam_defend", "defend_brique"])
+def test_a_horizon_defend_root_is_masked_shut_on_every_step_of_an_episode(scenario):
+    """The mask, not the outcome — at every step, including once it is TRUE.
 
-    Where the OPORD stated the hour, the root reports COMPLETE and the claim is
-    adjudicated — so the grace window closes on the report, and
-    ``root_done_bonus`` stays reachable by the route that fits the order. And
-    COMMAND still transmits ENDEX in the same step, because the two messages
-    are not redundant: the claim is the root's REPORT, the ENDEX is the FACT
-    that the operation is over. Until v1.16 this asserted the opposite, and
-    that assertion was the horizon change's unintended consequence written down.
+    "No claims were filed" is compatible with a policy that simply declined an
+    open channel; that ambiguity is what ``done_ok`` exists to resolve and is
+    the exact failure mode of v1.4 (silence read as behaviour). So this asserts
+    the DONE bit itself, at every step of a whole episode that reaches the
+    success condition, and cross-checks it against the trace predicate the
+    metrics record — three readings of the same fact from three call sites,
+    which is what stopped the mask and the adjudicator drifting apart before.
+    """
+    env = make_env(scenario)
+    obs, _ = env.reset(seed=7)
+    env._h_hour = 0  # the preparation period is over; the criterion is live
+    assert env.spec_cfg.defend_horizon is not None
+
+    steps = 0
+    won_at = 3  # early release: the band is destroyed, so success is genuine
+    while env.agents:
+        root = env.roster.root()
+        if root is not None and root.alive:
+            assert env._mask_for(root)[DONE] == 0, f"root DONE admitted at step {steps}"
+            assert obs[root.callsign]["action_mask"][DONE] == 0, "the policy saw an open bit"
+            assert not is_done_admissible(
+                root,
+                env.roster,
+                root_mission=env.spec_cfg.root_mission,
+                root_objective_id=env._root_objective_id(),
+                step=env._step_count,
+                done_cooldown=env.spec_cfg.done_cooldown,
+            )
+        if steps == won_at:
+            _win(env)  # a true claim is available from here on, and still masked
+        obs, _, _, _, _ = _step(env)
+        steps += 1
+
+    assert steps > won_at, "the episode ended before the claim could be true"
+    assert env._success_step is not None, "the success condition was never met"
+    assert env.outcome == "success"
+    assert not any(m.kind is MessageKind.DONE for m in env.transcript.messages)
+
+
+def test_the_horizon_root_closes_with_a_sitrep_and_command_still_announces():
+    """v1.17: the ROUTE reverts to v1.13's; the ANNOUNCEMENT never moved.
+
+    With the claim masked shut the root's C2 loop is the one v1.13 built — it
+    reports the situation, the SITREP closes the grace window, and COMMAND
+    transmits ENDEX. That is what keeps ``root_done_bonus`` reachable on a
+    defense: masking the claim WITHOUT this route would make the bonus dead
+    reward, which is the v1.4 failure in v1.13 clothes. And the ENDEX fires
+    here whether or not anything was reported, because since v1.16 it is gated
+    on ``command_closes_the_operation`` and not on the closing route.
     """
     env = _defend_env()
     env._h_hour = 0  # the preparation period is over; the criterion is live
     root, _ = _win(env)
     before = len(env.transcript.messages)
-    _step(env, {root.callsign: DONE})
+    _step(env, {root.callsign: SITREP})
     new = env.transcript.messages[before:]
     kinds = [m.kind for m in new]
 
-    assert MessageKind.DONE in kinds, "the root never claimed"
-    assert MessageKind.DONE_CONFIRM in kinds, "a true claim was rejected"
+    assert MessageKind.SITREP in kinds, "the root's report never went out"
     assert MessageKind.ENDEX in kinds, "COMMAND stopped announcing the close"
-    assert env._root_close_step is not None
+    assert MessageKind.DONE not in kinds, "the horizon root claimed after all"
+    assert env._root_close_step is not None, "grace window never closed"
     assert env._root_close_callsign == root.callsign
 
     endex = next(m for m in new if m.kind is MessageKind.ENDEX)
@@ -188,39 +253,46 @@ def test_a_horizon_defense_that_never_claims_is_announced_anyway_and_once():
     assert env._root_close_step is None, "nobody reported; no early close, no bonus"
 
 
-def test_a_confirmed_claim_and_an_endex_coexist_in_one_episode_exactly_once():
+def test_an_early_close_and_an_endex_coexist_in_one_episode_exactly_once():
     """Both channels, over the whole episode rather than one step of it.
 
-    The once-per-episode guard (``_endex_step``) has to survive the claim path
-    too: a confirmed claim ends the episode on the spot, so a second ENDEX here
+    The once-per-episode guard (``_endex_step``) has to survive the early-close
+    path: the SITREP close ends the episode on the spot, so a second ENDEX here
     would mean the guard was never consulted on this route at all.
     """
     env = _defend_env()
     env._h_hour = 0
     root, _ = _win(env)
-    _step(env, {root.callsign: DONE})
-    while env.agents:  # nothing left to do if the claim already terminated it
+    _step(env, {root.callsign: SITREP})
+    while env.agents:  # nothing left to do if the close already terminated it
         _step(env)
 
     kinds = [m.kind for m in env.transcript.messages]
     assert env.outcome == "success"
-    assert kinds.count(MessageKind.DONE_CONFIRM) == 1, "the claim was not confirmed"
+    assert env._root_close_step is not None, "the SITREP did not close the window"
     assert kinds.count(MessageKind.ENDEX) == 1, "one operation, one ENDEX"
     assert env._endex_step is not None
 
 
-def test_a_false_horizon_claim_is_rejected_like_any_other():
-    """Adjudicated against ground truth: the band is alive, the hour is not up."""
+def test_the_horizon_root_is_masked_shut_on_a_false_claim_too():
+    """Not pricing, masking: the act is unavailable whatever the ground truth.
+
+    v1.14 adjudicated a premature horizon claim and rejected it. v1.17 never
+    offers it, which is the whole point of the owner's decision — three
+    experiments showed prices move claim volume without moving informedness.
+    """
     env = _defend_env()
     env._h_hour = 0
     root = env.roster.root()
     obj = env.world.objective_by_name(env.spec_cfg.root_objective)
     root.pos = obj.pos  # occupied, but neither released nor at the horizon
     before = len(env.transcript.messages)
-    _step(env, {root.callsign: DONE})
+    assert env._mask_for(root)[DONE] == 0
+    _step(env, {root.callsign: DONE})  # illegal: substituted, not adjudicated
     kinds = [m.kind for m in env.transcript.messages[before:]]
 
-    assert MessageKind.DONE_REJECT in kinds, "a premature claim was confirmed"
+    assert MessageKind.DONE not in kinds, "a masked act reached the net"
+    assert MessageKind.DONE_REJECT not in kinds, "the claim was adjudicated, not masked"
     assert env._root_close_step is None
 
 
@@ -268,12 +340,12 @@ def test_endex_closes_a_silent_defense_too_but_only_once():
 
 @pytest.mark.parametrize("factory", [_defend_env, _indefinite_defend_env])
 def test_mask_and_adjudicator_agree_on_every_step(factory):
-    """The hazard that outlived both revisions: the two must not drift apart.
+    """The hazard that outlived all three revisions: the two must not drift.
 
-    Wherever the mask admits a DONE, the predicate must agree it is claimable
-    — on the indefinite scenario that means it is never admitted for the root
-    at all, and on the horizon one that it always is. Either way the two halves
-    are read from the same function.
+    Wherever the mask admits a DONE, the predicate must agree it is claimable.
+    Since v1.17 that means never, for the root, on either factory — the horizon
+    scenario and the indefinite one have to answer alike, because the horizon is
+    an adjudication clause and no longer a permission.
     """
     env = factory()
     root_id = env._root_objective_id()
@@ -281,13 +353,11 @@ def test_mask_and_adjudicator_agree_on_every_step(factory):
         root = env.roster.root()
         if root is None or not root.alive:
             break
-        claimable = is_root_opord_claim(
-            root,
-            env.roster,
-            env.spec_cfg.root_mission,
-            root_id,
-            defend_horizon=env.spec_cfg.defend_horizon,
-        ) or root.mission.type in COMPLETABLE
+        claimable = (
+            is_root_opord_claim(root, env.roster, env.spec_cfg.root_mission, root_id)
+            or root.mission.type in COMPLETABLE
+        )
+        assert claimable is False, "a continuous root became claimable"
         assert bool(env._mask_for(root)[DONE]) == claimable
         if not _step(env)[2]:
             continue
@@ -319,6 +389,37 @@ def test_predicate_rejects_a_non_root_and_a_non_hq_mission():
     if root.mission is not None:
         root.mission.issuer_id = root.id  # no longer the HQ OPORD
         assert not is_root_opord_claim(root, env.roster, spec_mission, root_id)
+
+
+@pytest.mark.parametrize(
+    "mission",
+    [
+        MissionType.SEIZE,
+        MissionType.RECON,
+        MissionType.CLEAR,
+        MissionType.RALLY,
+        MissionType.ADVANCE,
+        MissionType.SCREEN,
+    ],
+)
+def test_the_task_missions_keep_their_claim_at_every_horizon(mission):
+    """v1.17 is scoped to continuous postures, and nothing else moves.
+
+    ``is_completable`` lost its ``defend_horizon`` parameter outright rather
+    than keeping a knob that does nothing, so the guard here is that the answer
+    for a task mission was never horizon-dependent in the first place — the
+    scenario field still exists and still adjudicates DEFEND success.
+    """
+    assert is_completable(mission) is True
+
+
+@pytest.mark.parametrize(
+    "mission",
+    [MissionType.DEFEND, MissionType.DENY, MissionType.HOLD, MissionType.OBSERVE,
+     MissionType.SUPPORT, MissionType.COVER, None],
+)
+def test_the_continuous_postures_are_uniformly_undeclarable(mission):
+    assert is_completable(mission) is False
 
 
 def test_seize_rooted_scenario_keeps_mission_complete():

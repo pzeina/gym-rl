@@ -67,6 +67,15 @@ DONE = next(spec.index for spec in CATALOG if spec.kind == "done")
 # reaches by its own route.
 SCENARIOS = ["fireteam", "fireteam_defend", "defend_brique", "squad_recon"]
 
+#: Roots that may declare an end state, so a confirmed claim is reachable.
+CLAIMING = ["fireteam", "squad_recon"]
+#: DEFEND roots. Since v1.17 (owner's decision) their MISSION COMPLETE is masked
+#: shut at any ``defend_horizon``, so the invariant holds VACUOUSLY on them —
+#: which is worth asserting as its own statement rather than letting the shared
+#: parametrization quietly stop testing anything. Their close is the SITREP,
+#: and their announcement is COMMAND's ENDEX.
+CONTINUOUS = ["fireteam_defend", "defend_brique"]
+
 
 def _win_now(env) -> None:
     """Put the world into the root-mission end state, whatever that state is.
@@ -131,13 +140,17 @@ def _claim_whenever_admissible(scenario: str, seed: int, win_after_rejections: i
     return env, ledger, steps
 
 
-@pytest.mark.parametrize("scenario", SCENARIOS)
+@pytest.mark.parametrize("scenario", CLAIMING)
 def test_a_confirmed_root_claim_ends_the_episode_in_the_same_step(scenario):
     """The structural reason the invariant holds, asserted where it is made.
 
     Confirmation closes the grace window; the terminal check reads the closed
     window as success in that same step. So the confirmed claim lands on the
     episode's final step and there is no later step for a second one to occupy.
+
+    Scoped to claiming roots since v1.17 — the defend arm of this assertion
+    moved to ``test_a_defend_root_files_no_claim_at_all_and_is_announced_anyway``
+    below, because on those scenarios the mask now makes it unreachable.
     """
     env, ledger, steps = _claim_whenever_admissible(scenario, seed=1, win_after_rejections=2)
     kinds = [kind for kind, _ in ledger]
@@ -155,6 +168,25 @@ def test_a_confirmed_root_claim_ends_the_episode_in_the_same_step(scenario):
     root_id = env.roster.root().id
     after = env.transcript.messages[last_confirm + 1:]
     assert not [m for m in after if m.kind is MessageKind.DONE and m.sender_id == root_id]
+
+
+@pytest.mark.parametrize("scenario", CONTINUOUS)
+def test_a_defend_root_files_no_claim_at_all_and_is_announced_anyway(scenario):
+    """v1.17: the invariant is vacuous on a defend root, and says so out loud.
+
+    Claim on every step the mask allows and the ledger comes back empty — not
+    because the policy declined, but because the bit was never set. What must
+    NOT go with it is the announcement: COMMAND's ENDEX is gated on
+    ``command_closes_the_operation``, which v1.16 split off from completability
+    precisely so this change could be made without repeating v1.13's silent
+    loss of the whole channel.
+    """
+    env, ledger, _ = _claim_whenever_admissible(scenario, seed=1, win_after_rejections=0)
+
+    assert ledger == [], f"a defend root reached the DONE channel: {ledger}"
+    assert env.outcome == "success"
+    endexes = [m for m in env.transcript.messages if m.kind is MessageKind.ENDEX]
+    assert len(endexes) == 1, f"expected exactly one ENDEX, got {len(endexes)}"
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)

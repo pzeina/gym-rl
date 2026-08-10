@@ -305,7 +305,6 @@ class TraceRecorder:
                         root_objective_id=env._root_objective_id(),
                         step=env._step_count,
                         done_cooldown=env.spec_cfg.done_cooldown,
-                        defend_horizon=env.spec_cfg.defend_horizon,
                     ),
                     # which orders the mask offered this agent at this state,
                     # by ordered task — the opportunity denominator of the

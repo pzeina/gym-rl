@@ -249,36 +249,41 @@ def _horizon_defend_env(reward_config=None, seed=12):
     return env, root
 
 
-def test_the_horizon_defend_probe_pays_for_itself_only_once():
-    """The fleet-wide rule, exercised where the exploit was actually measured."""
+def test_the_rule_no_longer_reaches_a_defend_root_because_the_probe_is_masked():
+    """v1.17 closes the exploit at the mask instead of at the price.
+
+    This test used to drive the exact state ``defend_brique_v11`` filed 227
+    rejected claims from and check that the second probe cost the bonus. The
+    owner's v1.17 decision removes the act: a DEFEND root cannot file a probe,
+    true or false, so the first-claim rule has nothing to price here. Pinned
+    because "no claims were filed" must stay attributable to the mask — the
+    mechanism itself is untouched and is still exercised on the SEIZE root
+    above, which is where it now applies.
+    """
     env, root = _horizon_defend_env(reward_config=FIRST_CLAIM_RULE)
-    _step_all(env, {root.callsign: DONE})  # band alive, hour not up: rejected
-    assert MessageKind.DONE_REJECT in [m.kind for m in env.transcript.messages]
+    assert env._mask_for(root)[DONE] == 0, "the defend root was offered a probe"
+    _step_all(env, {root.callsign: DONE})  # masked: substituted, never adjudicated
+    kinds = [m.kind for m in env.transcript.messages]
+    assert MessageKind.DONE not in kinds and MessageKind.DONE_REJECT not in kinds
     assert env.outcome is None
-    assert env._root_claim_filed
-
-    for e in env.enemies:  # the position is now released; the claim becomes true
-        e.alive = False
-    _wait_out_cooldown(env)
-    other = next(s.callsign for s in env.roster.living if s is not root)
-    *_, infos = _step_all(env, {root.callsign: DONE})
-
-    assert env.outcome == "success", "the true claim must still close the defense"
-    assert env.rewards_cfg.done_true == pytest.approx(1.0)
-    gap = (
-        infos[root.callsign]["components"]["terminal"]
-        - infos[other]["components"]["terminal"]
-    )
-    assert gap == pytest.approx(0.0), "the spent slot did not stay spent"
+    assert not env._root_claim_filed, "a masked act filed a claim"
 
 
-def test_an_indefinite_defense_still_pays_its_endex_close():
+@pytest.mark.parametrize("horizon", [..., None], ids=["horizon", "indefinite"])
+def test_a_defense_still_pays_its_endex_close_at_either_horizon(horizon):
     """The v1.13 route files no claim at all, so it cannot spend a slot. Pinned
-    because losing the ENDEX bonus to this change would be silent: the root's
-    SITREP closes the window and the payout is the only thing that says so."""
-    spec = replace(get_scenario("fireteam_defend"), defend_horizon=None)
+    because losing the ENDEX bonus would be silent: the root's SITREP closes the
+    window and the payout is the only thing that says so.
+
+    Parametrized over both objects since v1.17: the shipped horizon scenario now
+    closes by this route too, and the bonus staying reachable on it is the thing
+    that keeps masking the claim from recreating v1.4's dead reward."""
+    spec = get_scenario("fireteam_defend")
+    if horizon is None:
+        spec = replace(spec, defend_horizon=None)
     env = make_env(spec)
     env.reset(seed=12)
+    env._h_hour = 0
     for e in env.enemies:
         e.alive = False
     root = env.roster.root()
