@@ -353,7 +353,7 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
 
-### Results (v1.16 — ENDEX restored, current build)
+### Results (v1.17 — ENDEX restored, root claim masked on defend, current build)
 
 Spaces `Discrete(228)/Box(220)`. Unlike the v1.9 table below, the `success`
 column is the **FINAL policy** — the one the run ended with — because that is
@@ -363,8 +363,8 @@ scenario at a time as the fleet is re-published off final numbers.
 
 | scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | successes announced | gates |
 |---|---|---|---|---|---|---|
-| fireteam_defend | `fireteam_defend_v18` | **99% ± 2** | 94% ± 5 | ✓ gap 0.7 (bar 10) | **99/99 · 94/94** | 4/4 ✓ |
-| defend_brique | `defend_brique_v13` | **100% ± 0** | 98% ± 3 | ✓ gap 0.4 | **100/100 · 98/98** | 4/4 ✓ |
+| fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | **98/98 · 96/96** | 4/4 ✓ |
+| defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | **100/100 · 97/97** | 4/4 ✓ |
 
 > **Read `successes announced` as the headline, not the success rate.** It is
 > `successes_announced`: of the operations that succeeded, how many said so on
@@ -387,14 +387,28 @@ scenario at a time as the fleet is re-published off final numbers.
 > against `fireteam_defend_v15` and `defend_brique_v9/v10`, which this table
 > previously carried.
 >
-> **What is still wrong, stated here rather than in a footnote.** Claim honesty
-> is unsolved: `defend_brique` files 321 root claims at **0.71 false**, and
-> `fireteam_defend` files none at all against 13,787 admissible root steps.
-> Reopening the claim channel (v1.14) produced spam on one scenario and silence
-> on the other under identical prices, and pricing it (v1.15) bought total
-> silence at a measured **−3.50** on the first claim. The announcement is safe
-> from that because it no longer depends on it — but a root's *report* is still
-> not something this fleet does well.
+> **The root's MISSION COMPLETE is masked shut on DEFEND/DENY roots (v1.17).**
+> `done_admissible_root` is **0** on every cell, so the zero claims above are a
+> property of the mask rather than a policy that learned to decline — the
+> distinction that made v1.15's silence a failure and makes this one a design
+> choice. Success paid nothing for it (p = 0.52–1.00 across the four cells) and
+> the announcement is untouched, which is the whole reason it is now possible:
+> v1.13 masked the same act and lost the announcement with it, because closing
+> and announcing were one predicate. v1.16 split them.
+>
+> **Why the claim went rather than being repriced.** It bought nothing
+> operationally — early close is bounded at `grace_window` = 12 steps by
+> construction, the terminal speed bonus keys on `_success_step` rather than the
+> close step so it pays no speed bonus at all, and the measured difference
+> between claim-closed and ENDEX-only episodes was **p = 0.9942**. Against that,
+> it was wrong **71%** of the time. And it could not be priced right: three
+> experiments across two root types gave silence (`done_false` −2.0), silence
+> (first-claim-only) and spam (`done_false` −0.5) — while a root as informed as
+> `squad_v8`'s would have been profitable under the price that silenced it, by
+> 2.3×. The volume moves where the economics say it should not.
+>
+> The root still closes an operation early by SITREP, which is v1.13's route and
+> cannot be false the way a claim can.
 
 Superseded rows are kept in the progress log rather than here. `defend_brique`'s
 priced-regression result against the old close rule stands on its own terms and
