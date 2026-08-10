@@ -353,7 +353,7 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
 
-### Results (v1.13 — the ENDEX close rule, current build)
+### Results (v1.16 — ENDEX restored, current build)
 
 Spaces `Discrete(228)/Box(220)`. Unlike the v1.9 table below, the `success`
 column is the **FINAL policy** — the one the run ended with — because that is
@@ -361,22 +361,48 @@ the number `scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`,
 quoted beside it as a peak and labelled as one. This table is being filled a
 scenario at a time as the fleet is re-published off final numbers.
 
-| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | closed on root's report | gates |
+| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | successes announced | gates |
 |---|---|---|---|---|---|---|
-| fireteam_defend | `fireteam_defend_v15` | **84% ± 7** | 83% ± 7 | ✓ gap 9.8 (bar 10) | **0.99** (v12: 0.47) | 4/4 ✓ |
-| defend_brique | `defend_brique_v9` (seed 12) | **91% ± 6** | 90% ± 6 | ✓ gap 6.7 | **0.99** | 4/4 ✓ |
-| defend_brique | `defend_brique_v10` (seed 13) | **88% ± 6** | 91% ± 6 | ✓ gap 8.1 | **1.00** | 4/4 ✓ |
+| fireteam_defend | `fireteam_defend_v18` | **99% ± 2** | 94% ± 5 | ✓ gap 0.7 (bar 10) | **99/99 · 94/94** | 4/4 ✓ |
+| defend_brique | `defend_brique_v13` | **100% ± 0** | 98% ± 3 | ✓ gap 0.4 | **100/100 · 98/98** | 4/4 ✓ |
 
-> **`defend_brique` publishes as a priced regression, and both seeds are here on
-> purpose.** Pooled across seeds the ENDEX policy scores **179/200 = 0.895**
-> (Wilson 95% CI 0.845–0.930) against `defend_brique_v6`'s **0.97 ± 0.03** under
-> the old close rule — Fisher **p = 0.024**, non-overlapping, and below this
-> repo's `prev − 5` bound of 92. Quoting the better seed alone would be the
-> exact failure `scripts/publish_audit.py` exists to catch. The cost is real
-> and diagnosed, not an accounting artifact; see the 2026-08-09 progress-log
-> entry for why the obvious "it just banked wins earlier" explanation is wrong.
+> **Read `successes announced` as the headline, not the success rate.** It is
+> `successes_announced`: of the operations that succeeded, how many said so on
+> the net. Both checkpoints of both scenarios are complete — **391/391 across
+> the family**. That is the property v1.16 exists to restore, and it is a
+> property of the *protocol*: COMMAND transmits ENDEX when it closes an
+> operation, so it cannot be trained away. The four eras at the same N and
+> seed: v1.13 **348/348** → v1.14 94/391 → v1.15 **0/391** → v1.16 **391/391**.
+>
+> **These policies are bit-identical to their v1.14 predecessors** — `v18` to
+> `v16` and `v13` to `v11`, `max|Δ| = 0.000e+00` over every tensor at both
+> checkpoints. ENDEX is emitted in the terminal branch after the last action is
+> chosen, so it never enters an observation or a reward. Nothing here is a new
+> capability; what changed is that the operations are now announced.
+>
+> **Do not compare these numbers to any pre-v1.14 defend row.** v1.14 redefined
+> DEFEND success as *occupation of the position maintained continuously from
+> H-hour*, with early release when the band is neutralised and a horizon at
+> `int(0.5·max_steps)`. A cross-era success comparison is meaningless, including
+> against `fireteam_defend_v15` and `defend_brique_v9/v10`, which this table
+> previously carried.
+>
+> **What is still wrong, stated here rather than in a footnote.** Claim honesty
+> is unsolved: `defend_brique` files 321 root claims at **0.71 false**, and
+> `fireteam_defend` files none at all against 13,787 admissible root steps.
+> Reopening the claim channel (v1.14) produced spam on one scenario and silence
+> on the other under identical prices, and pricing it (v1.15) bought total
+> silence at a measured **−3.50** on the first claim. The announcement is safe
+> from that because it no longer depends on it — but a root's *report* is still
+> not something this fleet does well.
 
-`closed on root's report` is `closed_on_root_report_rate`: of the operations
+Superseded rows are kept in the progress log rather than here. `defend_brique`'s
+priced-regression result against the old close rule stands on its own terms and
+is recorded with its equal-footing grid in `runs/defend_brique_v6/` — it is not
+comparable to the rows above, for the reason stated in the note.
+
+The paragraph below described the v1.13 table and is retained for provenance:
+`closed on root's report` was `closed_on_root_report_rate`: of the operations
 COMMAND closed, how many the root's own report closed early. The v12 figure
 beside it is that policy's own `ckpt_latest` re-scored under the same rule
 (`runs/fireteam_defend_v12/endex_rescore.json`), so the close rule is the only
