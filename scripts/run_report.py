@@ -4,8 +4,9 @@
 A run's metrics.csv is ~3000 rows x 20 columns. Feeding that to Opus/Fable at
 150k context is what makes a training campaign expensive. This collapses it to
 ~30 lines: config, learning curve by decile, reward-component drift, the
-behavioral suite, and (optionally) deltas against a baseline run — including
-whether the two runs are actually a single-variable A/B (refs #20).
+behavioral suite, and (optionally) a comparison against a baseline run — the
+success / root-survival / clock triple at each side's N (refs #34), the full
+delta, and whether the two runs are actually a single-variable A/B (refs #20).
 
     scripts/run_report.py <run>
     scripts/run_report.py <run> --vs <baseline-run>
@@ -98,6 +99,46 @@ _BEHAVIOR_ROWS: tuple[tuple[str, str, str], ...] = (
     ("timeout_rate", "ran the clock out", "{:.2f}"),
     ("messages_per_episode", "messages / episode", "{:.0f}"),
     ("command_traffic_share", "of which command", "{:.3f}"),
+)
+
+
+#: The three cells every A/B comparison prints, in display order (refs #34).
+#:
+#: They travel together because each one alone can be read to flatter a policy
+#: the other two would convict. Success says nothing about what the success
+#: cost — a cohort can win every episode over its commander's body. Root
+#: survival on its own is gameable in the opposite direction, since a policy
+#: that never closes with the enemy buries nobody and achieves nothing, which
+#: is exactly what ``timeout_rate`` catches: it separates "kept everyone alive
+#: by holding the ground" from "kept everyone alive by riding the clock out".
+#:
+#: The prompting case is the `squad_v8` → `squad_v9` A/B (`done_false` -0.5 ->
+#: -2.0), first published with success and DONE volume alone. Its survival cell
+#: is a **null** — p = 1.00 pooled over 200 episodes an arm — and the null is
+#: the result, because an earlier `done_false` change had once been *associated*
+#: with root deaths moving 4/30 → 12/30 while success held. A reader cannot
+#: infer a null from a column that is not there, so the pair is printed by the
+#: instrument rather than by whoever remembers to.
+_COMPARISON_ROWS: tuple[tuple[str, str, str], ...] = (
+    ("success", "success", "{:.3f}"),
+    ("human_death_rate", "root death rate", "{:.3f}"),
+    ("timeout_rate", "ran the clock out", "{:.3f}"),
+)
+
+#: (summary prefix, heading) of the checkpoints a comparison covers. Both, for
+#: the same reason ``report`` prints both: on `squad_screen_v4` the two evaluate
+#: 30/30 and 0/30 on the same seeds, so an A/B stated at one checkpoint is an
+#: A/B between two unstated policies.
+_COMPARISON_CHECKPOINTS: tuple[tuple[str, str], ...] = (
+    ("beh_", "ckpt_best"),
+    ("final_", "FINAL policy"),
+)
+
+#: Summary keys that are sample sizes rather than measurements. They belong in
+#: the comparison header, where an N is read as an N, and not in the delta dump,
+#: where "100.000 → 20.000  (-80.000)" reads as a metric that moved.
+_EPISODE_COUNT_KEYS: frozenset[str] = frozenset(
+    f"{prefix}episodes" for prefix, _ in _COMPARISON_CHECKPOINTS
 )
 
 
@@ -220,6 +261,9 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
         if staging := format_staging(m):
             print(f"    {'A5-2 staging':<20} {staging}")
     summary[f"{prefix}success"] = m.get("success_rate")
+    # How many episodes these numbers are made of, so `--vs` can say whether the
+    # two sides of a comparison were measured at the same N (refs #34)
+    summary[f"{prefix}episodes"] = b.get("episodes")
     for g in b.get("gates", []):
         mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
         print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
@@ -299,6 +343,63 @@ def report(run: str, show_components: bool) -> dict:
     return summary
 
 
+def _cell(value: float | None, fmt: str) -> str:
+    """One right-aligned number, or an em dash where the run never measured it."""
+    return f"{fmt.format(value):>8}" if value is not None else f"{'—':>8}"
+
+
+def _sample_sizes(run: str, baseline: str, n_run: int | None, n_base: int | None) -> str:
+    """``N`` for both sides, and — loudly — whether they are the same N.
+
+    A delta between a 20-episode arm and a 100-episode arm is not an effect
+    size, and the difference is invisible once both are printed to three
+    decimals. This is not hypothetical: the `squad_v8` comparator committed in
+    this repository is an N=20 artifact and `squad_v9` publishes at N=100, so
+    the A/B a reader can reconstruct from the repo is 5x mismatched while
+    looking exactly like a matched one.
+    """
+    shown = f"N: {baseline} {n_base if n_base is not None else '?'} · {run} {n_run if n_run is not None else '?'}"
+    if n_run is None or n_base is None:
+        return f"{shown}   [N UNKNOWN on one side — matching unverified]"
+    if n_run != n_base:
+        return (f"{shown}   [MISMATCHED N — {n_base} vs {n_run}; the deltas below are "
+                "NOT an effect size]")
+    return f"{shown}   [matched]"
+
+
+def comparison(run: str, baseline: str, a: dict, b: dict) -> None:
+    """Success, root survival and the clock, side by side, with each side's N.
+
+    This is the block an A/B verdict gets written against, so the pair that
+    #34 asks for is printed here — by the instrument, on every comparison —
+    rather than left to whoever writes the next ROADMAP table. See
+    ``_COMPARISON_ROWS`` for why the three cells are inseparable.
+
+    Everything degrades to an em dash and a named absence: a run that predates a
+    metric, or was evaluated without ``--behavior``, prints "not measured on
+    <run>" instead of a number, a zero, or a traceback. An unmeasured axis is
+    not a passed one, and the comparison is still worth printing for the axes
+    that were measured.
+    """
+    print(f"\n== A/B: {run} vs {baseline} ==")
+    print("  success + root survival + the clock, together: a policy that never fights "
+          "buries no\n  commanders, and one that wins can still bury them (refs #34)")
+    for prefix, header in _COMPARISON_CHECKPOINTS:
+        keys = [f"{prefix}{key}" for key, _, _ in _COMPARISON_ROWS]
+        if all(a.get(k) is None and b.get(k) is None for k in keys):
+            continue  # neither side evaluated this checkpoint; nothing to compare
+        sizes = _sample_sizes(run, baseline, a.get(f"{prefix}episodes"), b.get(f"{prefix}episodes"))
+        print(f"  {header}   {sizes}")
+        for key, label, fmt in _COMPARISON_ROWS:
+            va, vb = a.get(f"{prefix}{key}"), b.get(f"{prefix}{key}")
+            line = f"    {label:<20} {_cell(vb, fmt)} → {_cell(va, fmt)}"
+            if va is None or vb is None:
+                absent = " and ".join(n for v, n in ((vb, baseline), (va, run)) if v is None)
+                print(f"{line}   [not measured on {absent}]")
+            else:
+                print(f"{line}  ({va - vb:+.3f})")
+
+
 def economics_diff(run: str, baseline: str) -> None:
     """Which reward/scenario prices actually differ between two runs.
 
@@ -359,8 +460,11 @@ def main() -> int:
     if baseline:
         print()
         b = report(baseline, show_components)
+        comparison(run, baseline, a, b)
         print(f"\n== delta: {run} - {baseline} ==")
         for key in sorted(set(a) & set(b)):
+            if key in _EPISODE_COUNT_KEYS:
+                continue  # a sample size, reported as one in the A/B block above
             va, vb = a.get(key), b.get(key)
             if isinstance(va, (int, float)) and isinstance(vb, (int, float)):
                 mark = "  <-- " if abs(va - vb) > max(0.05 * abs(vb or 1), 0.02) else "      "

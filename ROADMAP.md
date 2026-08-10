@@ -4247,3 +4247,96 @@ deliberately deferred (`docs/vision.md` §2c).
   scenarios where the incumbent collected it 0 times in 100 episodes. That is the
   change, not a confound, but any success delta must be read against it rather
   than attributed to the mask alone.
+
+
+- **2026-08-10** — **The survival cell is now the instrument's job, not the
+  author's** (refs #34, standing half). The one-off was done first: the
+  `squad_v9` A/B table above prints `human_death_rate` and `timeout_rate` at
+  matched N=100 with the nulls and the provenance limits (`c93b400`). That fixes
+  one table and nothing else, so the pair now comes out of
+  **`scripts/run_report.py --vs`** — this repo's A/B instrument — instead of
+  depending on whoever writes the next entry remembering.
+
+  **Built.** A new `== A/B: <run> vs <baseline> ==` block, printed before the
+  raw delta dump, carrying success · root death rate · ran-the-clock-out at
+  **both** checkpoints, with **each side's N in the header** and an explicit
+  verdict on it: `[matched]`, `[MISMATCHED N — 20 vs 100; the deltas below are
+  NOT an effect size]`, or `[N UNKNOWN on one side]`. A metric one arm never
+  measured prints an em dash and `[not measured on <run>]` rather than a zero, a
+  dropped row or a traceback — an unmeasured axis is not a passed one. Episode
+  counts are kept **out** of the delta dump, where `100.000 → 20.000` reads as
+  an axis that moved. `tests/test_run_report_comparison.py` (9 tests) drives the
+  real `--vs` CLI path: the pair present at both checkpoints, matched N stated,
+  mismatched N labelled, unknown N not silently called matched, each of the
+  three metrics droppable, and a run with no behavior suite at all survivable.
+  670 tests, ruff clean. No gate, reward default or price touched.
+
+  It pays for itself on the first real invocation. `run_report.py squad_v9 --vs
+  squad_v8` — the exact comparison this issue is about — now leads with
+  **`MISMATCHED N — 20 vs 100`** on both checkpoints, because the `squad_v8`
+  comparator committed in the repository is the old N=20 artifact. The A/B a
+  reader can rebuild from the repo was 5x mismatched while looking exactly like
+  a matched one once both sides were printed to three decimals.
+
+  **Their verification of the single-variable claim is stronger than ours.**
+  `squad_v8`/`ckpt_best` tapped against a worktree pinned at `792b16a` and
+  against head gives **byte-identical observable *and* truth bodies** — not
+  economics-equal, identical — plus branch-by-branch inspection that every
+  v1.14–v1.16 addition is gated off on a SEIZE root (`_defend_terminal_scale()`
+  returns 1.0, `command_closes_the_operation` false so ENDEX never fires,
+  `_horizon_defense()` None, `root_done_bonus_first_claim_only` default False).
+  Their stated limit, which we adopt: byte-identity is measured on **inference**,
+  so the training-side reward rests on the inspection alone.
+
+  **Their gate observation, reported against their own interest, and what we
+  found when we checked it.** `squad_v9`/best sits at **7/30 root deaths at seed
+  500**, outside the **1–4/30** band named in #9, and fails that composite gate
+  of theirs. Not significantly worse than `v8`'s 4/30 (p = 0.51), and its own
+  `latest` is 2/30. Recorded as an observation. The question it raises is
+  whether *our* gate set should carry that bound at all — `squad` runs pass 2/2
+  gates (`timeout_rate`, `success_rate`) and none of them bounds survival.
+  **Checked, and the answer is no.**
+  - It was never a bound here. `regression_gates` has never gated
+    `human_death_rate`, and `scripts/program_board.py` says so out loud (refs
+    #24: "no gate covers commander survival"), printing the number on the page
+    instead — which is the same remedy #34 asks for, generalised.
+  - As a ceiling it fails half the fleet. Over the **104 committed
+    `behavior*.json` cells** carrying `human_death_rate`, **50 sit above 4/30**
+    (0.133) — DEFEND 11, SEIZE 9, SCREEN 7, RECON 3, plus 20 cells predating
+    `root_mission`. Among them are healthy, published, gate-passing runs:
+    `defend_brique_v5`/final 0.48, `fireteam_defend_v11`/final 0.35. In the
+    `squad` family specifically, **only `squad_v8`/best (0.05 at N=20) is inside
+    the band**; every other squad cell on record is ≥ 0.133, and `squad_v9`/best
+    at 0.19 sits near that family's median (range 0.05–0.45).
+  - At N=30 it cannot function as a threshold. Clopper-Pearson on 4/30 is
+    **[0.038, 0.307]** — up to 9.2/30, an interval that *covers* the 9/30
+    outlier the band was drawn to contrast with; 9/30 vs 4/30 alone is p = 0.21.
+    #9's finding survives because it pooled its four contrast runs (9/30 vs
+    12/120, **p = 0.015**), and against that pooled band their 7/30 reads
+    **p = 0.065**. The band is a description of four v1.4-era N=30 runs, not a
+    bound.
+  - So: **no gate added.** If one is ever wanted the honest form is a
+    per-scenario-family band read against that family's own distribution — the
+    #24 pattern — not a fleet-wide constant. Printing the cell in every A/B is
+    the cheaper half of the same idea and is what shipped.
+
+  **Their refutation of their own model, disclosed unprompted.** Their
+  blind-claim margin model predicted `squad_v9`'s silence correctly
+  out-of-sample (EV −1.16 / −1.14), and then fails on `squad_v8`/best *outside
+  its own confidence band* — blind_p 0.1354 against a 0.1111 break-even, margin
+  0.0243 past their pre-registered 0.02, predicting a claim where the root files
+  none in 30 episodes. They retire their "makes no confident error" claim.
+
+  **The sharpening that matters most, and it is theirs.** Under `done_false`
+  −2.0 the root break-even is **0.333**, and `squad_v8`/latest's root
+  demonstrably runs at **0.765** realised precision (34 claims, 26 taken; a
+  claim ends the episode, so the root forfeits no compliance pay). A root as
+  informed as v8's would therefore be **profitable under v9's price by 2.3×**.
+  The silence is *not* the priced-rational response. That upgrades "every price
+  moves claim volume without moving claim informedness" into something sharper:
+  **the volume moves even where the economics say it should not.** Which is the
+  strongest argument yet that pricing was never the lever on this channel — the
+  premise v1.17 acted on by masking the claim rather than repricing it again.
+
+  Issue left open for the assurance layer's re-measurement; nothing closed,
+  commented or labelled.
