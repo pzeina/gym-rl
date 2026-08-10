@@ -26,6 +26,17 @@ DONEs — which never earned this bonus — are not in scope. The ``done_false=-
 episode in ``rewards.py`` is the standing warning: a price that buys silence
 instead of precision loses the channel, and a policy that simply stops claiming
 has not passed this test.
+
+**v1.16: the default is REVERTED to False (owner's decision), and that warning
+is why.** A confirmed root claim ends the episode, so at most one claim per
+episode is ever confirmed and it is necessarily the last — which prices the
+first probe at ``done_false - root_done_bonus x P(a later claim closes)``, and
+that P measured 1.000 on ``defend_brique_v11``. -3.50, not -0.5. The measured
+result was ``defend_brique_v12``: 321 root claims -> 0, and P(DONE | a true
+claim is available) 0.401 -> 0.000083. So these tests now run the mechanism
+under an EXPLICIT ``FIRST_CLAIM_RULE`` config, and the shipped default is
+pinned separately as the pre-v1.15 rule. Nothing about the mechanism is
+deleted: it is a measured price with a known effect, kept ready to revisit.
 """
 
 from __future__ import annotations
@@ -42,7 +53,8 @@ from cohort.env.rewards import RewardConfig
 STAY = 0
 DONE = next(s.index for s in CATALOG if s.kind == "done")
 
-OLD_RULE = RewardConfig(root_done_bonus_first_claim_only=False)
+#: The v1.15 mechanism, switched on explicitly — it is no longer the default.
+FIRST_CLAIM_RULE = RewardConfig(root_done_bonus_first_claim_only=True)
 
 
 def _step_all(env, overrides=None):
@@ -96,9 +108,11 @@ def _bonus_paid(infos, env, root="TL1", other="RFN1"):
 # --------------------------------------------------------------------- #
 
 
-def test_an_accepted_first_claim_is_paid_in_full():
-    """The honest act is untouched: claim once, truthfully, collect 4.0."""
-    env = _seize_env()
+@pytest.mark.parametrize("cfg", [None, FIRST_CLAIM_RULE], ids=["default", "first_claim"])
+def test_an_accepted_first_claim_is_paid_in_full(cfg):
+    """The honest act is untouched by the rule, in either position of the flag:
+    claim once, truthfully, collect 4.0."""
+    env = _seize_env(reward_config=cfg)
     infos = _claim_true(env)
     assert env.outcome == "success"
     cfg = env.rewards_cfg
@@ -116,7 +130,7 @@ def test_a_rejected_first_claim_burns_the_bonus_for_the_episode():
     rejection cost -0.5, the eventual acceptance would repay 4.0, and spamming
     the channel would be worth +0.81 a claim exactly as it was in v11.
     """
-    env = _seize_env()
+    env = _seize_env(reward_config=FIRST_CLAIM_RULE)
     *_, infos = _step_all(env, {"TL1": DONE})  # ALPHA unoccupied: rejected
     cfg = env.rewards_cfg
     assert env.outcome is None
@@ -141,7 +155,7 @@ def test_a_rejected_first_claim_burns_the_bonus_for_the_episode():
 
 def test_the_second_claim_is_no_better_off_than_the_third():
     """Two probes, then the truth: the slot is spent once, not per claim."""
-    env = _seize_env()
+    env = _seize_env(reward_config=FIRST_CLAIM_RULE)
     for _ in range(2):
         _step_all(env, {"TL1": DONE})
         assert env.outcome is None
@@ -170,7 +184,7 @@ def test_a_root_that_never_claims_is_unaffected():
 def test_a_subordinate_claim_does_not_spend_the_root_slot():
     """Scope: the ROOT's channel. A rifleman's DONE never earned this bonus and
     must not consume it — otherwise a subordinate could burn its commander's."""
-    env = _seize_env()
+    env = _seize_env(reward_config=FIRST_CLAIM_RULE)
     env.inject_order("RFN1, seize obj alpha", issuer="TL1")
     rfn = env.roster.by_callsign["RFN1"]
     assert rfn.mission is not None
@@ -188,31 +202,35 @@ def test_a_subordinate_claim_does_not_spend_the_root_slot():
 # --------------------------------------------------------------------- #
 
 
-def test_the_flag_off_restores_the_old_rule_exactly():
-    """The A/B's other arm. Same script as the burns-the-bonus test, one flag
-    apart — and under the old rule the probe is repaid in full."""
-    env = _seize_env(reward_config=OLD_RULE)
+def test_the_shipped_default_is_the_pre_v115_rule():
+    """v1.16: the same script as the burns-the-bonus test, run on what the fleet
+    actually trains under — and there the probe is repaid in full.
+
+    This is the assertion that would have failed silently if the revert had
+    touched only the flag's documentation: an arm that says "old economics" in
+    ``economics.json`` and prices the first claim at -3.50 anyway."""
+    env = _seize_env()
     _step_all(env, {"TL1": DONE})
     assert env.outcome is None
     _wait_out_cooldown(env)
     infos = _claim_true(env)
     assert env.outcome == "success"
-    assert _bonus_paid(infos, env), "flag off must reproduce pre-v1.15 behaviour"
+    assert _bonus_paid(infos, env), "the default must be pre-v1.15 behaviour"
 
 
-def test_the_flag_is_on_by_default_and_settable_from_the_cli():
-    """The A/B has to be reproducible and reversible from ``--reward``, and
+def test_the_flag_is_off_by_default_and_settable_from_the_cli():
+    """The rule has to stay reproducible from ``--reward``, and
     ``economics.json`` (an ``asdict`` of this config) has to record which arm
     a run was — a bool read by truthiness would silently train the other one."""
-    assert RewardConfig().root_done_bonus_first_claim_only is True
-    off = RewardConfig.from_overrides(["root_done_bonus_first_claim_only=false"])
-    assert off.root_done_bonus_first_claim_only is False
-    assert asdict(off)["root_done_bonus_first_claim_only"] is False
+    assert RewardConfig().root_done_bonus_first_claim_only is False
+    on = RewardConfig.from_overrides(["root_done_bonus_first_claim_only=true"])
+    assert on.root_done_bonus_first_claim_only is True
+    assert asdict(on)["root_done_bonus_first_claim_only"] is True
     baseline = asdict(RewardConfig())
-    changed = {k: v for k, v in asdict(off).items() if baseline[k] != v}
-    assert changed == {"root_done_bonus_first_claim_only": False}
-    env = make_env("fireteam", reward_config=off)
-    assert env.rewards_cfg.root_done_bonus_first_claim_only is False
+    changed = {k: v for k, v in asdict(on).items() if baseline[k] != v}
+    assert changed == {"root_done_bonus_first_claim_only": True}
+    env = make_env("fireteam", reward_config=on)
+    assert env.rewards_cfg.root_done_bonus_first_claim_only is True
 
 
 # --------------------------------------------------------------------- #
@@ -233,7 +251,7 @@ def _horizon_defend_env(reward_config=None, seed=12):
 
 def test_the_horizon_defend_probe_pays_for_itself_only_once():
     """The fleet-wide rule, exercised where the exploit was actually measured."""
-    env, root = _horizon_defend_env()
+    env, root = _horizon_defend_env(reward_config=FIRST_CLAIM_RULE)
     _step_all(env, {root.callsign: DONE})  # band alive, hour not up: rejected
     assert MessageKind.DONE_REJECT in [m.kind for m in env.transcript.messages]
     assert env.outcome is None
@@ -278,20 +296,28 @@ def test_an_indefinite_defense_still_pays_its_endex_close():
     assert gap == pytest.approx(env.rewards_cfg.root_done_bonus)
 
 
-def test_a_pre_v115_checkpoint_reconstructs_under_the_new_rule():
-    """A reward-only cycle, so every checkpoint on disk still loads — but say
-    plainly what it loads AS. ``evaluate`` rebuilds the config with
-    ``RewardConfig(**ckpt["reward_config"])``, and a v1.14 dict has no key for
-    this flag, so an older policy is re-scored under the NEW rule at its
-    default. Harmless for the behaviour suite (claims filed and rejected are
-    policy, not price) and wrong for any reward comparison against the run's
-    own training curve — which is why the published pre-v1.15 numbers are stale
-    rather than merely old.
+def test_checkpoints_from_either_era_reconstruct_as_the_rule_they_trained_under():
+    """``evaluate`` rebuilds the config with ``RewardConfig(**ckpt[
+    "reward_config"])``, so what an old checkpoint loads AS is decided by this
+    default. Both directions matter, and v1.16 makes them agree:
+
+    * a **v1.14** dict has no key for this flag, so it falls to the default —
+      which is once again False, i.e. the rule that run actually trained under.
+      The v1.15 default silently re-scored those runs under a price they had
+      never seen; that is why their published claim numbers went stale.
+    * a **v1.15** dict carries the key explicitly (it was written by ``asdict``
+      of a config with the flag on), so it keeps its own rule through the
+      revert. An arm of a landed A/B must not change era underneath it.
     """
     v114 = {k: v for k, v in asdict(RewardConfig()).items()
             if k != "root_done_bonus_first_claim_only"}
     restored = RewardConfig(**v114)
-    assert restored.root_done_bonus_first_claim_only is True, (
-        "an old checkpoint must still load — under the new default, knowingly"
+    assert restored.root_done_bonus_first_claim_only is False, (
+        "a pre-v1.15 checkpoint must reconstruct under its own era's rule"
     )
     assert asdict(restored) == asdict(RewardConfig())
+
+    v115 = asdict(FIRST_CLAIM_RULE)
+    assert RewardConfig(**v115).root_done_bonus_first_claim_only is True, (
+        "a v1.15 arm must keep the rule it trained with"
+    )

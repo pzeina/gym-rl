@@ -1,6 +1,77 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-08, v1.12 A/B resolved)
+## ⟳ Session handoff — resume here (2026-08-10, the DONE-channel trilogy)
+
+**Everything in the 2026-08-08 block below is superseded.** It is kept because
+its D4 and option-4 reasoning is still the best account of those decisions, but
+its state, its numbers and its next-steps list are three cycles stale.
+
+**State**: `multi-agent-dev`, ~37 commits ahead of `origin/multi-agent-dev`,
+**nothing pushed**; tag still v1.9.0; **618+ tests green, ruff clean**; spaces
+**Discrete(228)/Box(220)** frozen throughout — the whole fleet still loads.
+Boards are **PUBLISH PENDING** and the README has deliberately gained no defend
+row since v15: the family has been superseded twice in a day and publishing
+mid-flight would have shipped a policy we already knew we were replacing.
+
+**⚑ THE ONE THING TO UNDERSTAND: three cycles, one problem, and the answer was
+not a price.**
+
+- **v1.14** (`eccf816`) made DEFEND success *conservation of the position to a
+  stated hour* — occupation required continuously from H, no retake, early
+  release when the band is neutralised, horizon `int(0.5·max_steps)`. Owner's
+  call, and it was right: on `defend_brique` it changed what is *learned*
+  (`v9` loses the position in 12/100 episodes at a median of H+7; `v11` 0/100).
+  On `fireteam_defend` it only re-scored — `v15` already held its ground.
+  It also made DEFEND `COMPLETABLE`, which reopened the root's MISSION COMPLETE
+  **and silently switched ENDEX off**, because `continuous_root` was the only
+  gate on it. That was a side effect, not a decision.
+- **v1.15** (`727ef60`) tried to price the reopened channel honest: pay
+  `root_done_bonus` only on the episode's first claim. **It bought silence.**
+  Root claims 321 → 0, and P(DONE | a true claim is available) fell
+  **0.401 → 0.000083**, 40/40 episodes declining an available true claim. The
+  arithmetic was wrong by 7×: a confirmed claim *ends the episode*, so a probe
+  burns the bonus and the first claim really costs `done_false − bonus × P(close
+  by claim)` = **−3.50**, a tariff on speaking at all. **Reverted** in v1.16.
+- **v1.16** (in flight) reverts that flag and **decouples ENDEX from
+  completability**. The reason is structural, and it is the most useful thing
+  the assurance layer has contributed: **ENDEX is a protocol act** — COMMAND
+  emits it, unpriceable, which is why it announced **103/103** successes across
+  four pre-v1.14 corpora — whereas **a root claim is an agent behaviour**,
+  optional and learnable in either direction. Identical prices bought 0.71-false
+  spam on one scenario and total silence on the other. v1.14 changed the
+  channel's *type*, from a guarantee to whatever the policy happened to learn.
+  **No price restores a guarantee, only an average.** Keep both: the claim is a
+  report, the ENDEX is the fact.
+
+**Arms and controls.** v1.16 = `defend_brique_v13` / `fireteam_defend_v18`
+against **`v11` / `v16`** — NOT v12/v17, which carry the reverted economics and
+would make it a two-variable comparison. Watch `successes_announced` (bar:
+103/103) and whether ENDEX *suppresses* honest claiming, which would be swapping
+channels rather than holding both.
+
+**What the day also established, and is worth not relearning:**
+- **Quote every between-run delta at both checkpoints or not at all.** Three
+  separate published claims turned on an unstated reference checkpoint
+  (refs #24, #25, #26).
+- The `defend_brique` priced regression survives equal footing on the FINAL
+  policy (v6 0.950 vs ENDEX 0.890, p = 0.0153 over two seed sets) and **reverses
+  at best/best** (0.865 vs 0.905). Across all four cells the arms are the same
+  (p = 0.61). Evidence: `runs/defend_brique_v6/equal_footing_n100.json` and
+  `seed_robustness_n100.json`.
+- Evaluations now record `checkpoint_sha256` (refs #28), and `config.briefing()`
+  publishes `defend_horizon` (refs #30). The OPORD hold-until clause is
+  **deliberately deferred** — it is not rollout-neutral.
+- Boards regenerate themselves when a run lands (`scripts/train_then_boards.sh`);
+  only publishing needs a session (`/boards`).
+
+**Next, in order**: read v1.16's report → decide the OPORD hold-until clause
+(#30) → re-publish the defend family off FINAL numbers at both checkpoints →
+the fleet-wide staleness left by the v1.15 flag (other scenarios' claim numbers
+were measured under a rule that no longer exists; not retrained, owner's call).
+
+---
+
+## ⟳ Session handoff — 2026-08-08, v1.12 A/B resolved (SUPERSEDED, see above)
 
 **State**: `multi-agent-dev`, **82 commits ahead of `origin/main`**; latest tag
 v1.9.0; **538 tests green, ruff clean**; **nothing training**. Spaces

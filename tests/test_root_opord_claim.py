@@ -30,11 +30,23 @@ against ground truth like any other. An INDEFINITE defense keeps v1.13's
 ENDEX-only closure exactly. The tests below therefore run the v1.13 assertions
 on an indefinite variant of the scenario, and pin the horizon case beside them.
 
+**v1.16 (owner's decision).** v1.14 had a side effect nobody chose: the ENDEX
+was gated on ``not is_completable(...)``, the same predicate that decides the
+closing route, so giving DEFEND a horizon switched the announcement off. It cost
+the whole channel — 0 of 57 successes announced on ``fireteam_defend``, against
+103 of 103 across the four corpora before it. ENDEX is a PROTOCOL ACT (COMMAND
+emits it; not optional, not learned, not trainable away) while a root claim is an
+AGENT BEHAVIOUR (optional, priced, learnable in either direction — identical
+prices bought spam on one scenario and silence on the other). So the two are
+decoupled: COMMAND transmits ENDEX whenever it closes the operation, whether or
+not the root also claimed. The claim is the REPORT, the ENDEX is the FACT.
+
 So the invariant these tests hold has flipped, but the *hazard* has not: the
 mask and the adjudicator must never disagree about who may say what, because
 when they did the result was silence that looked like learned behaviour. What
 follows pins both halves — that a continuous root cannot declare itself done,
-and that the C2 loop it does close is reachable and pays.
+and that the C2 loop it does close is reachable and pays — plus, since v1.16,
+that the announcement is not conditional on either.
 """
 
 from dataclasses import replace
@@ -122,26 +134,79 @@ def test_a_horizon_defense_reopens_the_channel_to_the_root():
     assert env._mask_for(root)[DONE] == 1, "the horizon root was never offered the act"
 
 
-def test_the_horizon_root_closes_with_mission_complete_not_endex():
-    """The route swaps with the object: a declarable end is declared.
+def test_the_horizon_root_closes_with_mission_complete_and_command_still_announces():
+    """The ROUTE swaps with the object; the ANNOUNCEMENT does not (v1.16).
 
-    ENDEX is COMMAND ending an open-ended defense. Where the OPORD stated the
-    hour, the root reports COMPLETE and the claim is adjudicated — so the
-    grace window closes on the report, and ``root_done_bonus`` stays reachable
-    by the route that fits the order.
+    Where the OPORD stated the hour, the root reports COMPLETE and the claim is
+    adjudicated — so the grace window closes on the report, and
+    ``root_done_bonus`` stays reachable by the route that fits the order. And
+    COMMAND still transmits ENDEX in the same step, because the two messages
+    are not redundant: the claim is the root's REPORT, the ENDEX is the FACT
+    that the operation is over. Until v1.16 this asserted the opposite, and
+    that assertion was the horizon change's unintended consequence written down.
     """
     env = _defend_env()
     env._h_hour = 0  # the preparation period is over; the criterion is live
     root, _ = _win(env)
     before = len(env.transcript.messages)
     _step(env, {root.callsign: DONE})
-    kinds = [m.kind for m in env.transcript.messages[before:]]
+    new = env.transcript.messages[before:]
+    kinds = [m.kind for m in new]
 
     assert MessageKind.DONE in kinds, "the root never claimed"
     assert MessageKind.DONE_CONFIRM in kinds, "a true claim was rejected"
-    assert MessageKind.ENDEX not in kinds, "a declarable end needs no ENDEX"
+    assert MessageKind.ENDEX in kinds, "COMMAND stopped announcing the close"
     assert env._root_close_step is not None
     assert env._root_close_callsign == root.callsign
+
+    endex = next(m for m in new if m.kind is MessageKind.ENDEX)
+    assert endex.sender_id == HQ_ID, "ENDEX must come from COMMAND, not the root"
+    assert endex.recipient_id == root.id
+
+
+def test_a_horizon_defense_that_never_claims_is_announced_anyway_and_once():
+    """The protocol act is not conditional on the agent behaviour.
+
+    This is the case v1.14 lost: the root says nothing, the grace window
+    expires, the operation succeeds — and on ``fireteam_defend`` that was 30
+    successes in 30 episodes with not one word on the net. Pinned as: exactly
+    one ENDEX, no claim, and no early close (so no ``root_done_bonus``, which is
+    what silence should cost and all it should cost).
+    """
+    env = _defend_env()
+    env._h_hour = 0
+    _win(env)
+    for _ in range(env.spec_cfg.grace_window + 2):
+        _, _, term, trunc, _ = _step(env)
+        if all(term.values()) or all(trunc.values()):
+            break
+
+    assert env.outcome == "success"
+    endexes = [m for m in env.transcript.messages if m.kind is MessageKind.ENDEX]
+    assert len(endexes) == 1, f"expected exactly one ENDEX, got {len(endexes)}"
+    assert not any(m.kind is MessageKind.DONE for m in env.transcript.messages)
+    assert env._root_close_step is None, "nobody reported; no early close, no bonus"
+
+
+def test_a_confirmed_claim_and_an_endex_coexist_in_one_episode_exactly_once():
+    """Both channels, over the whole episode rather than one step of it.
+
+    The once-per-episode guard (``_endex_step``) has to survive the claim path
+    too: a confirmed claim ends the episode on the spot, so a second ENDEX here
+    would mean the guard was never consulted on this route at all.
+    """
+    env = _defend_env()
+    env._h_hour = 0
+    root, _ = _win(env)
+    _step(env, {root.callsign: DONE})
+    while env.agents:  # nothing left to do if the claim already terminated it
+        _step(env)
+
+    kinds = [m.kind for m in env.transcript.messages]
+    assert env.outcome == "success"
+    assert kinds.count(MessageKind.DONE_CONFIRM) == 1, "the claim was not confirmed"
+    assert kinds.count(MessageKind.ENDEX) == 1, "one operation, one ENDEX"
+    assert env._endex_step is not None
 
 
 def test_a_false_horizon_claim_is_rejected_like_any_other():
