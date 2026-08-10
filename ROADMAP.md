@@ -4093,3 +4093,34 @@ deliberately deferred (`docs/vision.md` §2c).
   Test suite 645 pass, ruff clean. No reward default, README row or artifact
   touched; the issue is left open for the assurance layer's re-measurement.
 
+- **2026-08-10** — **The v1.11 confound is closed: the D4 fix carries it, the
+  price did not.** `squad_v9` is `squad_v8` with one flag — `done_false` −0.5 →
+  **−2.0**, same seed 3, same 3M budget, the D4 fix present in both — which is
+  the single-variable run this file has been asking for since v1.11. N=100,
+  seed 123, both checkpoints:
+
+  | | success | DONE reports | false-DONE |
+  |---|---|---|---|
+  | `squad_v8` best / final | 0.97 ± 0.03 / **0.98 ± 0.03** | 41 / 266 | 0.63 / 0.44 |
+  | `squad_v9` best / final | 0.94 ± 0.05 / **0.97 ± 0.03** | 1 / **0** | 0.00 / — |
+
+  best/best **p = 0.50**, final/final **p = 1.00**. No difference on success at
+  either checkpoint. So the collapse being gone across `squad`, `squad_recon`,
+  `platoon`, `fireteam_defend` and `patrol_brique` is **established** as the D4
+  fix generalising, not an artefact of the `done_false` revert that rode along in
+  `d44ee8d`. The v1.11 attribution caveat comes off the list.
+
+  **A second finding, not asked for, that lands on the DONE-channel argument.**
+  `done_false` −2.0 collapses the claim channel outright: **266 reports → 0**.
+  That is the same silence v1.15's first-claim rule produced on `defend_brique`,
+  reached by a different lever, on a different scenario, with a SEIZE root. Three
+  independent price experiments now agree — `done_false` −2.0 → silence,
+  first-claim-only → silence, `done_false` −0.5 → spam at 0.44–0.71 false. **Every
+  price tried moves claim volume without moving claim informedness**, which is the
+  assurance layer's ρ = −0.702 result (§12.84) reproduced from this side. Note also
+  that `squad_v8` loses its entire DONE channel in `v9` with no cost to success:
+  the channel contributes nothing to task performance here either.
+
+  `squad_v8`'s committed evaluations are untouched; its N=100 figures above were
+  measured to a scratch path.
+
