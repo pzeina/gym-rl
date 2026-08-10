@@ -62,7 +62,19 @@ from cohort.training.evaluate import _pick_actions
 #: recorded from here carries ENDEX where an older one carries a root DONE.
 #: Additive: nothing existing changes shape, and pre-1.3.0 corpora simply
 #: never contain the kind.
-TAP_SCHEMA = "1.3.0"
+#:
+#: 1.4.0 (v1.18 era, upstream 9dd4edf): OPORD payloads gain ``defend_horizon``
+#: -- the hour HQ ORDERS the position held to, spoken as "HOLD UNTIL STEP n"
+#: on missions in ``HOLDS_GROUND``. It is the standard the episode is
+#: adjudicated by, and until v1.18 it was reachable only from the header's
+#: briefing overlay: a monitor holding the transcript alone could not state
+#: what the run was being judged against. Additive on the same terms as
+#: 1.1.0's ``announced_assault_step`` -- whose SPOKEN form changes in the same
+#: upstream commit from "AT H PLUS n" to "AT STEP n". Both always meant the
+#: absolute step, upstream's ``_ANNOUNCED_ASSAULT_RE`` accepts either on the
+#: way in, and every pinned corpus stores the PARSED value rather than the
+#: words, so no corpus recorded before this bump loses its announcement.
+TAP_SCHEMA = "1.4.0"
 
 
 def _open(path: str) -> IO[str]:
@@ -208,11 +220,20 @@ def _payload(m: Message) -> dict:
         # It is the net's first FORWARD-LOOKING content: not a report of what
         # happened but an announced expectation, which is what makes
         # time-bounded readiness properties expressible at all.
+        # v1.18 (upstream 9dd4edf) adds the second time clause: the ordered
+        # horizon, "HOLD UNTIL STEP n". Where the assault step is an ESTIMATE
+        # HQ shares, this is the STANDARD HQ will adjudicate against -- so a
+        # monitor holding only the transcript can now state what the episode
+        # is being judged by, which it could not before. Both are read through
+        # upstream's own parser rather than a local regex, so the wording
+        # change in the same commit ("AT H PLUS n" -> "AT STEP n") costs us
+        # nothing: parse_opord accepts either form on the way in.
         if kind == "opord":
             spoken = parse_opord(m.text)
-            step = spoken.get("announced_assault_step") if spoken else None
-            if step is not None:
-                parsed = {**parsed, "announced_assault_step": step}
+            for field in ("announced_assault_step", "defend_horizon"):
+                value = spoken.get(field) if spoken else None
+                if value is not None:
+                    parsed = {**parsed, field: value}
         # A5-2 timing qualifiers. An AT MY COMMAND order is STAGED: the
         # mission is assigned at emission but pending until the issuer's
         # EXECUTE, so the interval in between is not disobedience. Without
