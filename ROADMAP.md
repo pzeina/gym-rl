@@ -4099,10 +4099,28 @@ deliberately deferred (`docs/vision.md` §2c).
   the single-variable run this file has been asking for since v1.11. N=100,
   seed 123, both checkpoints:
 
-  | | success | DONE reports | false-DONE |
-  |---|---|---|---|
-  | `squad_v8` best / final | 0.97 ± 0.03 / **0.98 ± 0.03** | 41 / 266 | 0.63 / 0.44 |
-  | `squad_v9` best / final | 0.94 ± 0.05 / **0.97 ± 0.03** | 1 / **0** | 0.00 / — |
+  | | success | human death | timeout | DONE reports | false-DONE |
+  |---|---|---|---|---|---|
+  | `squad_v8` best / final | 0.97 ± 0.03 / **0.98 ± 0.03** | 0.15 / 0.23 | 0.00 / 0.00 | 41 / 266 | 0.63 / 0.44 |
+  | `squad_v9` best / final | 0.94 ± 0.05 / **0.97 ± 0.03** | 0.19 / 0.18 | 0.01 / 0.00 | 1 / **0** | 0.00 / — |
+
+  **The survival cell is printed because it is a null, and the null is the
+  result** (refs #34). `human_death_rate` moves nowhere: p = 0.58 best/best,
+  p = 0.49 final/final, **p = 1.00 pooled** (38/200 vs 37/200). It is here beside
+  `timeout_rate` because each covers the other's blind spot — a policy that never
+  fights loses no commanders — and because an earlier `done_false` change was
+  once *associated* with root deaths moving 4/30 → 12/30 on `squad_screen` while
+  success held. This is the manipulation that reattributes that to the D4
+  collapse rather than to the price: with D4 fixed, the price does nothing to
+  survival in either direction. A reader should not have to infer that from an
+  omitted column.
+
+  **Provenance, so a later reader does not try**: `squad_v8`'s row was measured
+  to a scratch path to avoid overwriting its committed N=20 evaluation, so the
+  baseline arm of this A/B is **not reproducible from the repository** as it
+  stands. `ckpt_latest` is gitignored for both runs, so every `final` figure here
+  traces to a file rather than a commit; `ckpt_best` is committed and its
+  `checkpoint_sha256` is recorded (refs #28).
 
   best/best **p = 0.50**, final/final **p = 1.00**. No difference on success at
   either checkpoint. So the collapse being gone across `squad`, `squad_recon`,
