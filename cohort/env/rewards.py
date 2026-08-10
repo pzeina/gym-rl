@@ -297,6 +297,33 @@ class RewardConfig:
     # would survive untouched: spam until one lands, collect on "the first
     # ACCEPTED claim".
     #
+    # ⚑ v1.16 (owner's decision): DEFAULT REVERTED TO FALSE. The mechanism and
+    # its tests stay — it may be revisited — but it is no longer what the fleet
+    # trains under, because what it actually priced was not what it was designed
+    # to price.
+    #
+    # A CONFIRMED ROOT CLAIM ENDS THE EPISODE. So at most one claim per episode
+    # is ever confirmed, and it is necessarily the LAST one — which makes a
+    # probe not a cheap roll of the dice but a decision to spend the bonus on a
+    # claim that cannot collect it. The first claim's real price is
+    # `done_false - root_done_bonus x P(the episode later closes by root claim)`,
+    # and on `defend_brique_v11` at N=100 that P measured **1.000** across all 63
+    # probed episodes. So the first probe costs **-3.50**, not the -0.5 the
+    # design assumed: a 7x tariff on opening the channel at all, paid before any
+    # information about the claim's truth is used.
+    #
+    # Measured consequence (`defend_brique_v12` against `v11`, one flag apart):
+    # root claims 321 -> 0, and P(DONE | a true claim is available) 0.401 ->
+    # 0.000083 with 40/40 episodes declining an available true claim. The spam
+    # went and honest claiming went with it — the `done_false=-2.0` lesson
+    # above, in a second instrument.
+    #
+    # REBALANCING `done_true` AGAINST THE BONUS WAS CONSIDERED AND REJECTED, on
+    # arithmetic: at `done_true` 2.0 the break-even for a further claim falls to
+    # p = 0.20 while measured later-claim acceptance is 0.279, so probing returns
+    # to +0.198/claim. One knob controls both failure modes, in opposite
+    # directions; it cannot be set to avoid both.
+    #
     # WHAT IT PRICES. v1.14 reopened MISSION COMPLETE to horizon-DEFEND roots
     # and defend_brique_v11/ckpt_latest immediately filed 321 root claims in 100
     # episodes, 227 of them rejected — a false-complete rate of 0.71. It is not
@@ -324,8 +351,10 @@ class RewardConfig:
     # casualty inherits a spent slot too. The opportunity belongs to the
     # operation, not to whoever happens to be holding it.
     #
-    # False → the pre-v1.15 rule exactly (every accepted root claim can pay).
-    root_done_bonus_first_claim_only: bool = True
+    # False (the default since v1.16) → the pre-v1.15 rule exactly: every
+    # accepted root claim can pay. True → the first-claim rule described above,
+    # kept settable so the measurement can be reproduced or the rule revisited.
+    root_done_bonus_first_claim_only: bool = False
 
     defeat: float = -2.0              # whole cohort wiped out
 
