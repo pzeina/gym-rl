@@ -32,8 +32,9 @@ not a price.**
   arithmetic was wrong by 7×: a confirmed claim *ends the episode*, so a probe
   burns the bonus and the first claim really costs `done_false − bonus × P(close
   by claim)` = **−3.50**, a tariff on speaking at all. **Reverted** in v1.16.
-- **v1.16** (in flight) reverts that flag and **decouples ENDEX from
-  completability**. The reason is structural, and it is the most useful thing
+- **v1.16** (**landed 2026-08-10** — `14d8b02`, `8dbb299`, `f5f3b97`; full
+  numbers at the end of the progress log) reverts that flag and **decouples
+  ENDEX from completability**. The reason is structural, and it is the most useful thing
   the assurance layer has contributed: **ENDEX is a protocol act** — COMMAND
   emits it, unpriceable, which is why it announced **103/103** successes across
   four pre-v1.14 corpora — whereas **a root claim is an agent behaviour**,
@@ -48,6 +49,19 @@ against **`v11` / `v16`** — NOT v12/v17, which carry the reverted economics an
 would make it a two-variable comparison. Watch `successes_announced` (bar:
 103/103) and whether ENDEX *suppresses* honest claiming, which would be swapping
 channels rather than holding both.
+
+**⇒ BOTH QUESTIONS ARE ANSWERED.** `successes_announced` is **391/391** at
+N=100, seed 123, both checkpoints on both arms (the v1.13 bar, reconstructed at
+the same N and seed, is 348/348; v1.14 scored 94/391 and v1.15 0/391). ENDEX did
+not suppress claiming and provably could not have: **the arms' weights are
+bit-identical to their controls** (`max|Δ| = 0.000e+00`, all 15 tensors, both
+checkpoints, both scenarios), because ENDEX is emitted on the terminating step
+after the last action is chosen, so it never enters an observation. The open
+thread is unchanged and is a *pricing* question, not an announcement one:
+`defend_brique` still claims at 0.71 false and `fireteam_defend` still does not
+claim at all (P(DONE | a true claim available) = 1e-6, 39/39 episodes
+declining). The two problems are now separable — the announcement no longer
+depends on solving either.
 
 **What the day also established, and is worth not relearning:**
 - **Quote every between-run delta at both checkpoints or not at all.** Three
