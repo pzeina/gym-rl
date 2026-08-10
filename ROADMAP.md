@@ -3972,3 +3972,36 @@ deliberately deferred (`docs/vision.md` §2c).
   `Discrete(228)`/`Box(220)`, verified across all 12 scenarios; all 186
   checkpoints on disk load. No README row and no artifact — publication is the
   owner's `/publish`.
+
+- **2026-08-10** — **The defend family publishes on v1.16: 391/391 operations
+  announced.** First defend rows since v15. `fireteam_defend_v18` **0.99 ± 0.02**
+  final / 0.94 ± 0.05 peak; `defend_brique_v13` **1.00 ± 0.00** / 0.98 ± 0.03.
+  All N=100 seed 123, 4/4 gates on every cell, stability give-back 0.7 and 0.4
+  against a bar of 10 — the most stable arms this repo has published.
+
+  **The headline is the announcement, not the success rate.** `successes_announced`
+  is complete on both checkpoints of both scenarios. Across eras at the same N and
+  seed: v1.13 **348/348** → v1.14 94/391 → v1.15 **0/391** → v1.16 **391/391**.
+
+  **Nothing here is new capability, and the README says so.** `v18`'s weights are
+  bit-identical to `v16`'s and `v13`'s to `v11`'s — `max|Δ| = 0.000e+00` over every
+  tensor at both checkpoints. ENDEX is emitted in the terminal branch after the last
+  action is chosen, so it enters no observation and moves no reward. **My own
+  campaign brief asserted this change was "NOT rollout-neutral" and sequenced two
+  cycles around that; it is measured false.** The caution was reasonable before
+  measuring and wrong after, and it cost a retrain that reproduced its control
+  exactly — which is also what proved it.
+
+  **Cross-era comparison is retired, not hidden.** v1.14 redefined DEFEND success as
+  occupation maintained continuously from H-hour, so `v18`/`v13` cannot be set
+  against `v15`/`v9`/`v10`; those rows are gone from the table rather than left to
+  invite the comparison. `defend_brique`'s priced regression against the old close
+  rule keeps its equal-footing grid in `runs/defend_brique_v6/`.
+
+  **Published with the defect on the page.** Claim honesty is unsolved:
+  `defend_brique` files 321 root claims at 0.71 false, `fireteam_defend` files none
+  against 13,787 admissible root steps. Identical prices bought spam on one scenario
+  and silence on the other; pricing it bought total silence at a measured −3.50 on
+  the first claim. What v1.16 bought is that this no longer costs the record — the
+  claim is a report, the ENDEX is the fact, and only the first is unreliable.
+
