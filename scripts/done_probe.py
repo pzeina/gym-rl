@@ -32,6 +32,16 @@ Three regimes over one seeded episode block:
 Read-only: no training, no checkpoint is written. Prints facts and exits; it
 does not interpret or recommend — that is the caller's job.
 
+**Self-audited.** This script has already been wrong once, in a way that looked
+like a finding: it keyed "who held the root at this step" one step early and
+lost every claim made on an episode's last step, which is exactly where the
+confirmed ones live (55 claims / 0 confirmed, against 87 / 32 once fixed). So
+each episode's traffic is now checked against two guards before it is counted —
+see ``_audit_root_claims`` — and the probe raises rather than reporting a number
+it cannot stand behind. The invariant half of that is the assurance layer's
+standing negative control from issue #33, pinned in
+``tests/test_confirmed_claim_is_last.py``.
+
     scripts/done_probe.py runs/<run>/ckpt_best.pt --episodes 30 --seed 500
 """
 
@@ -80,6 +90,62 @@ def _would_be_truthful(env, soldier, root_obj) -> bool:
         return bool(env._check_success(root_obj))
     ctx = env._compliance_ctx(soldier, None, env._make_view(soldier))
     return bool(is_complete(mission, ctx))
+
+
+class RootClaimAuditError(Exception):
+    """The probe's root attribution disagrees with the env's own structure."""
+
+
+def _audit_root_claims(new, root_id_at_step: dict[int, int | None]) -> int:
+    """Count this episode's ROOT claims, refusing to count them unsoundly.
+
+    Two guards, because they catch different failures and this script has met
+    one of them:
+
+    * **coverage** — every adjudicated message must fall on a step whose root
+      is known. A missing key silently turns a claim into a non-claim, which is
+      how the pre-fix keying erased 32 confirmations without changing any
+      number that looked wrong. A ratio check cannot see this: dropping a step
+      removes the claim AND its confirmation together.
+    * **the invariant** — a confirmed root claim is the last root claim of its
+      episode (assurance layer, issue #33: 0 violations across 86 corpora). It
+      holds structurally, because confirmation closes the grace window and the
+      terminal check ends the episode in the same step. So at most one root
+      claim per episode is confirmed, and nothing root-claims after it.
+
+    Raising is deliberate. A probe that reports an impossible corpus is worse
+    than one that stops: the impossible corpus gets quoted.
+    """
+    adjudicated = (MessageKind.DONE, MessageKind.DONE_CONFIRM, MessageKind.DONE_REJECT)
+    claims = confirms = rejects = 0
+    closed = False
+    for msg in new:
+        if msg.kind not in adjudicated:
+            continue
+        if msg.step not in root_id_at_step:
+            raise RootClaimAuditError(
+                f"step {msg.step} carries a {msg.kind.name} but no root was recorded for it — "
+                "the step keying and the message stamping have drifted apart again"
+            )
+        root_id = root_id_at_step[msg.step]
+        if msg.kind is MessageKind.DONE and msg.sender_id == root_id:
+            if closed:
+                raise RootClaimAuditError(
+                    f"root claimed at step {msg.step}, after a confirmed claim had closed the "
+                    "operation — attribution is wrong, or the terminal branch no longer ends it"
+                )
+            claims += 1
+        elif msg.kind is MessageKind.DONE_CONFIRM and msg.recipient_id == root_id:
+            confirms += 1
+            closed = True
+        elif msg.kind is MessageKind.DONE_REJECT and msg.recipient_id == root_id:
+            rejects += 1
+    if claims - rejects != confirms or confirms not in (0, 1):
+        raise RootClaimAuditError(
+            f"{claims} root claims, {rejects} rejected, {confirms} confirmed — every DONE is "
+            "answered exactly once, and at most one root claim per episode is confirmed"
+        )
+    return claims
 
 
 class Accum:
@@ -142,6 +208,8 @@ def probe(checkpoint, scenario, episodes, first_seed, greedy, regime, naive_rate
         # confirmed root claim ends the episode. Measured on defend_brique_v13
         # /ckpt_latest, 40 episodes from seed 500: 55 root claims and 0
         # confirmed under the old keying, 87 and 32 under this one.
+        # ``_audit_root_claims`` now refuses to count an episode whose keys do
+        # not cover its traffic, so the same slip fails instead of measuring.
         root_id_at_step: dict[int, int | None] = {}
 
         while env.agents:
@@ -188,10 +256,7 @@ def probe(checkpoint, scenario, episodes, first_seed, greedy, regime, naive_rate
         acc.claims += claims
         acc.confirms += confirms
         acc.rejects += rejects
-        acc.root_claims += sum(
-            1 for m in new
-            if m.kind is MessageKind.DONE and m.sender_id == root_id_at_step.get(m.step)
-        )
+        acc.root_claims += _audit_root_claims(new, root_id_at_step)
         if ep_golden:
             acc.eps_with_golden += 1
         if confirms:
