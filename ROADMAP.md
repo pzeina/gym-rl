@@ -73,13 +73,18 @@ depends on solving either.
   (p = 0.61). Evidence: `runs/defend_brique_v6/equal_footing_n100.json` and
   `seed_robustness_n100.json`.
 - Evaluations now record `checkpoint_sha256` (refs #28), and `config.briefing()`
-  publishes `defend_horizon` (refs #30). The OPORD hold-until clause is
-  **deliberately deferred** — it is not rollout-neutral.
+  publishes `defend_horizon` (refs #30). ~~The OPORD hold-until clause is
+  **deliberately deferred** — it is not rollout-neutral.~~ **Corrected
+  2026-08-11**: it *is* rollout-neutral, and shipped in `9dd4edf` — measured,
+  not asserted, at mechanism and outcome level (see the last progress-log
+  entry). The deferral rested on an assertion nobody had run.
 - Boards regenerate themselves when a run lands (`scripts/train_then_boards.sh`);
   only publishing needs a session (`/boards`).
 
-**Next, in order**: read v1.16's report → decide the OPORD hold-until clause
-(#30) → re-publish the defend family off FINAL numbers at both checkpoints →
+**Next, in order**: read v1.16's report → ~~decide the OPORD hold-until clause
+(#30)~~ **done 2026-08-11, `9dd4edf`** → re-publish the defend family off FINAL
+numbers at both checkpoints (the numbers are unchanged by v1.18 — verified
+field-by-field, so the re-publish is a table edit, not a re-score) →
 the fleet-wide staleness left by the v1.15 flag (other scenarios' claim numbers
 were measured under a rule that no longer exists; not retrained, owner's call).
 
@@ -4552,3 +4557,76 @@ deliberately deferred (`docs/vision.md` §2c).
   **absent from every already-committed `behavior*.json`** — the four cells
   above were re-scored to a scratch path rather than over the published
   artifacts, and the fleet was not re-scored.
+
+- **2026-08-11** — **v1.18: the OPORD says the hour it will be judged by, and
+  the deferral that guarded it was measured wrong.** Commit `9dd4edf` (refs #30)
+  adds the horizon clause and rewords its neighbour:
+
+  ```
+  before  TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT H PLUS 45. OUT.
+  after   TL1, THIS IS HQ: OPORD — DEFEND OBJ ALPHA. EXPECT ASSAULT AT STEP 45. HOLD UNTIL STEP 210. OUT.
+  ```
+
+  (`fireteam_defend`: STEP 65 / STEP 225. Those two scenarios are the *only*
+  ones with either an `assault_h_hour` or a `defend_horizon`, so they are the
+  only transcripts that change — checked against `SCENARIOS`, not assumed from
+  the two we had in hand.)
+
+  **Both clauses are now absolute step references.** The neighbour had to move
+  with the new one: `announced_assault_step` was always the absolute step — the
+  band's midpoint — but was spoken `AT H PLUS 65`, which reads as *65 steps
+  after H-hour*. It said one thing and meant another, which was survivable
+  while it was the only time-bearing clause on the line and stopped being
+  survivable the moment a second sat beside it. The moods stay different on
+  purpose: `EXPECT` is an estimate drawn from a band, `HOLD UNTIL` is tasking
+  and does not borrow the hedge.
+
+  The clause is gated on `missions.HOLDS_GROUND` (DEFEND/DENY) — now one named
+  predicate read by both `format_opord` and `CohortEnv._horizon_defense`
+  instead of an inline tuple in the env plus a caller's discipline in the
+  language. **HQ says exactly what is adjudicated**: a SEIZE root handed a
+  horizon gets no clause, because nothing would score it. `parse_opord`
+  round-trips both clauses (new key `defend_horizon`, the briefing's key for
+  the same number) and still *reads* `AT H PLUS n`, because every
+  `runs/*/eval_transcript.txt` committed before today says it that way and a
+  monitor pointed at that corpus must not silently lose the announcement.
+  Nothing emits it.
+
+  **The handoff said this clause "is not rollout-neutral". That was an
+  assertion, and it was wrong.** It is the third neutrality assertion in two
+  days (after ENDEX and the ~1-in-300 mask estimate) and the third to be
+  measured other than as stated — so this one was measured before it was
+  believed, at two levels, with the code isolated from concurrent work by
+  running `git archive` of the parent and the child commit into scratch trees
+  outside the repo:
+
+  - **Mechanism.** Same seed, same fixed action sequence, before-code vs
+    after-code, 6 cells (both defend scenarios × seeds 123/7/41, 120 steps):
+    every observation vector, every action mask, every per-agent reward, the
+    message count, the drawn H-hour, and the sha of the whole transcript *after*
+    the OPORD line are identical. The one difference in the episode is the OPORD
+    string itself. Message length feeds nothing — no airtime, no arbitration, no
+    RNG.
+  - **Outcome.** `defend_brique_v14` and `fireteam_defend_v19` re-scored at
+    N=100 seed 123 on **both** checkpoints, to scratch paths, and compared field
+    by field against the committed `behavior.json` / `behavior_final.json`: all
+    four payloads **identical in every field** — 73 aggregate metrics, the CI
+    string, all 4 gates, and all 100 per-episode records per cell. A control run
+    at the parent commit is also identical, so "identical" is a property of the
+    change and not of a re-scorer that reproduces nothing. Headline, unmoved:
+    best 0.97 ± 0.03 / final 1.00 ± 0.00 (`v14`), best 0.96 ± 0.04 / final
+    0.98 ± 0.03 (`v19`).
+
+  **So no retrain. The published defend policies stay valid and only the
+  transcript gains a clause.** Which is the honest scope of the change: this is
+  transcript completeness, not capability. `PolicyNet` is a memoryless MLP whose
+  only clock is `step / max_steps`, so it cannot use a spoken deadline; the
+  beneficiary is the human commander and any monitor reading the transcript
+  alone. The audit-side half of #30 — a monitor holding the *header* — was
+  already delivered by the `defend_horizon` briefing key.
+
+  687 tests green (670 + 7 new; a further 10 landed concurrently from the
+  metrics side), ruff clean, spaces unchanged at `Discrete(228)/Box(220)`, and
+  the fleet-load map is byte-identical before and after: 44 of 98 committed
+  `ckpt_best.pt` load into current-era spaces, the other 54 being the same
+  pre-existing 131/137/166-dim obs eras as before this commit.
