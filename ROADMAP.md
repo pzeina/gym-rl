@@ -4340,3 +4340,80 @@ deliberately deferred (`docs/vision.md` §2c).
 
   Issue left open for the assurance layer's re-measurement; nothing closed,
   commented or labelled.
+
+- **2026-08-10** — **v1.17 retrained and scored: the claim is gone, the
+  announcement is complete, and nothing paid for it.** Campaign
+  `campaigns/mask_defend_claim_v1_17.jobs` — `defend_brique_v14` (3.0M, seed 12)
+  and `fireteam_defend_v19` (3.5M, seed 12), same overrides as their controls
+  `v13` / `v18`, claim open on the controls and masked on the arms. One variable.
+  N=100, seed 123, **both checkpoints quoted, per the standing rule**.
+
+  | cell | success (control → arm) | p | announced | root claims | claim-admissible steps |
+  |---|---|---|---|---|---|
+  | `defend_brique` best | 0.98 ± 0.03 → **0.97 ± 0.03** | 0.65 | 98/98 → **97/97** | 5 → **0** | 10943 → **0** |
+  | `defend_brique` final | 1.00 ± 0.00 → **1.00 ± 0.00** | 1.00 | 100/100 → **100/100** | 321 → **0** | 8037 → **0** |
+  | `fireteam_defend` best | 0.94 ± 0.05 → **0.96 ± 0.04** | 0.52 | 94/94 → **96/96** | 1 → **0** | 15301 → **0** |
+  | `fireteam_defend` final | 0.99 ± 0.02 → **0.98 ± 0.03** | 0.56 | 99/99 → **98/98** | 0 → **0** | 13787 → **0** |
+
+  **The headline: `successes_announced` is 391/391.** Both eras happen to total
+  391 successes across the four cells, and both announce every one of them, so
+  the bar is met at the bar's own number. The v1.16 split predicate held — the
+  ENDEX is a protocol act and masking the claim did not touch it, which is
+  precisely what v1.13 could not do.
+
+  **Root claims are 0 by construction, not by preference.**
+  `done_admissible_root` is **0 in all four cells** (from 8k–15k admissible
+  agent-steps), so the silence is attributable to the mask and not to a policy
+  declining an open channel — the `done_ok` distinction (#13) that made v1.4's
+  dead channel invisible for a training generation. `false_complete_rate_root`
+  correctly reports **None** (no denominator) rather than 0.00.
+
+  **No success cost at any checkpoint**: two-proportion p = 0.65 / 1.00 / 0.52 /
+  0.56, all four indistinguishable. All 16 regression gates PASS. Both arms
+  `[converged]` / `[PUBLISHABLE]` with a 1-point best–final gap.
+
+  **No reward path silently vanished — measured directly, not inferred.** Reading
+  the terminal ledger on 40 episodes per cell, the closing root's terminal
+  component exceeds a teammate's by **exactly +3.000 = `root_done_bonus`**, on
+  every early close, min = max = mean. Early closes: `v14` **40/40**, `v19`
+  **39/40** (`v13` 32/40 and `v18` 23/40 under the same v1.17 rules). Across the
+  N=100 evaluations the bonus is collected on **96 / 100 / 96 / 98** episodes
+  against **0 / 94 / 0 / 0** on the controls as they were scored under v1.16.
+  The arms learned to close with the SITREP essentially always:
+  `closed_on_root_report_rate` **0.99 / 1.00 / 1.00 / 1.00**.
+
+  **Occupation failures** (`_defend_lost_step` latched — the direct count, which
+  no aggregate metric carries): `defend_brique` **2 → 3** (best), **0 → 0**
+  (final); `fireteam_defend` **6 → 4** (best), **1 → 2** (final). Noise at N=100.
+
+  **Honest counts against the arms**, none of them gates, all of them stated:
+  - `fireteam_defend_v19` turns some clock-outs into wipes: outcomes go
+    `{success 94, timeout 6}` → `{success 96, defeat 3, timeout 1}` at best and
+    `{99, timeout 1}` → `{98, defeat 2}` at final. The arm's episodes are **26 and
+    14 steps shorter** (the SITREP close firing), so an episode that would have
+    idled out now ends one way or the other. Root death 0.05 → 0.11 at best,
+    unchanged 0.10 at final.
+  - `defend_brique_v14`/best is the weakest cell: root death 0.06 → 0.13, cover
+    under threat 0.76 → 0.54, coverage time 0.81 → 0.72, succession unrecovered
+    2 → 11. **Its own final checkpoint reverses all of it** (0.03 → 0.01, 0.98 →
+    0.996, and 3 → 1), so this reads as best-checkpoint selection noise — the
+    best checkpoint is picked on rolling success and can be an early snapshot —
+    rather than as a learned regression. Quoted because the standing rule is both
+    checkpoints or neither.
+  - Obedience latency rises on three cells (1.53 → 2.05, 0.36 → 3.75, 2.80 →
+    6.22) and falls on one (10.44 → 8.42). Doctrine containment stays 1.000 and
+    `orders_violating` / `orders_underivable` stay 0 everywhere, so this is order
+    *mix* moving (`v14`/final issues 3.06 orders/ep against `v13`'s different
+    ADVANCE/OBSERVE split), not a compliance regression. Not diagnosed further —
+    flagged as the one number a follow-up should explain.
+  - Report precision/recall improve on three of four cells and drop slightly on
+    `fireteam_defend`/best.
+
+  **Honest-DoD**: one retrain, no adjustment needed — the arms met the bar on the
+  first pass, so the diagnosed-adjustment budget is unspent. **Not published**: no
+  README row, no artifact, boards left PUBLISH PENDING. What is still open is the
+  owner's call flagged in the previous entry — accept the SITREP early-close
+  route that arrived with the revert (recommended), or make `root_done_bonus`
+  genuinely dead on defend with a horizon-aware special case on the close route.
+  The retrain above is the *former*; if the owner picks the latter, `v14`/`v19`
+  are the wrong arms and it is a one-line change plus a re-run.
