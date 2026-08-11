@@ -19,5 +19,11 @@ Analyse the finished run(s): $ARGUMENTS
    change, or investigate a specific hypothesis. Say which run is the baseline
    for the next comparison.
 
-If a follow-up retrain is warranted, propose the exact `scripts/train.sh` line
-but do not launch it until I say go.
+If a follow-up retrain is warranted, **launch it** — `scripts/train.sh`,
+detached, next free version suffix — and say in one line what you launched and
+what result would change the verdict. Do not ask first: a run costs wall-clock
+and zero model tokens, it is reversible (nothing is published until it is
+judged), and the round-trip to ask costs more than the run does.
+
+The exception is a run that would *replace* something already published, or a
+campaign that retrains the sealed fleet — say what you intend and why, then go.
