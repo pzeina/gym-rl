@@ -3,7 +3,7 @@
 ## ⟳ Session handoff — resume here (2026-08-11, baseline v1.19 landed)
 
 **State**: `multi-agent-dev`, **pushed and in sync with origin**; tag still
-v1.18.0. **822 tests green, 3 skipped**, ruff clean, spaces
+v1.18.0. **827 tests green, 3 skipped**, ruff clean, spaces
 **Discrete(228)/Box(220)** frozen. Nothing training. All three boards published
 and current. The squad pricing arc (v11/v12/v12b) is settled and logged below:
 mechanism confirmed, both fixes rejected, `squad_v10` stays the member.
@@ -6000,3 +6000,55 @@ deliberately deferred (`docs/vision.md` §2c).
   otherwise-shipped config — would answer it: volume that survives its own EV
   going to zero is action-mass, and the fix then belongs in masking or the
   claim API, not in prices.
+
+- **2026-08-11 (assurance, #47)** — **The rejection stands; the record now says
+  what it cost.** `squad_v12b` was rejected one entry up on success,
+  replication and the timeout mode. Their finding, reproduced here from the
+  committed corpora before writing this entry: on the axis nobody was weighing
+  it is the best squad policy on record — **0/100 root deaths at BOTH
+  checkpoints**, against `squad_v10b`'s 20/100 and 25/100 (Fisher p = 6.6e-07
+  and 1.1e-08 as computed here; they quote 1e-06 and 4e-07 — smaller here, same
+  verdict). The squad family's history is 17–30/100 across three economics;
+  this is the only arm ever measured inside the 1–4/30 bound the
+  commander-preservation question was framed with, and the rejection table
+  carried the row (root death 0.25 → 0.00) while the rationale weighed success,
+  the pooled null and the timeout mode only. Measured, not gated — the exact
+  shape the assurance layer exists to point at.
+
+  **Part of the zero is an artifact the raw rate cannot survive.** `squad_v12b`
+  takes zero defeats, converting them into timeouts (2 → 14 at the FINAL
+  policy), and in its control every defeat IS a root death (5/5 and 10/10), so
+  some of the improvement is the policy declining the fight — the exact
+  conversion `timeout_rate` was added to flag. But it is the smaller part:
+  **within successful episodes alone, 14/93 → 0/96 (p = 2.9e-05) and 14/88 →
+  0/86 (p = 7e-05)** — episodes that achieved the mission either way, where no
+  clock-riding can produce the number. Their caveat stays attached to their
+  finding: the seed-12 flag arm reads 19/100 and 17/100 against 22 and 30,
+  n.s. at `best` — the same non-replication that rejected the flag, pointing
+  the other way. The property belongs to the *seed-13 policy*, not to
+  `first_claim_only`; nothing is un-rejected and no default moves.
+
+  **Shipped: the axis is printed by the instrument now, not remembered.**
+  `run_report.py::root_death_in_success` derives deaths-within-successes from
+  the per-episode `outcome` / `human_died` fields every behavior corpus already
+  records, prints it with its denominators on every behavior block, files it so
+  `--vs` carries it as a delta, and adds it as the FOURTH cell of the #34
+  comparison triple — success, raw deaths and the clock leave exactly this
+  loophole open between them. Their first suggestion therefore costs nothing
+  extra: the zero-price probe (`squad_v13_zeroprice`, in flight as this is
+  written) gets read on this axis at both checkpoints by the same digest as
+  every other run — and whether commander survival moves when claim volume does
+  is the cheapest available test of whether the two are connected at all. Runs
+  evaluated before per-episode outcomes read as an em dash, never a zero.
+  `tests/test_run_report_root_death.py` pins the derivation, the
+  gaming-immunity in miniature, and all four corpus counts at both checkpoints.
+  **No `cohort/` change** — the quantity was always derivable from what every
+  corpus already records — so the baseline seal (`5f848fb6`) is untouched.
+  822 → 827 tests.
+
+  **Left as the owner's call, on the record with its measurement:** their
+  second suggestion — root-death-within-successes as a third term of the
+  publish/stability bar. It is derivable from every committed corpus, it
+  separated these arms at p < 1e-4, and unlike the raw rate it cannot be bought
+  by declining the engagement. Adding it changes what is allowed to ship, which
+  is a decision about the project's claims, not an experiment.

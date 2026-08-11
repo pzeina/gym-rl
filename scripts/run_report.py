@@ -5,8 +5,9 @@ A run's metrics.csv is ~3000 rows x 20 columns. Feeding that to Opus/Fable at
 150k context is what makes a training campaign expensive. This collapses it to
 ~30 lines: config, learning curve by decile, reward-component drift, the
 behavioral suite, and (optionally) a comparison against a baseline run — the
-success / root-survival / clock triple at each side's N (refs #34), the full
-delta, and whether the two runs are actually a single-variable A/B (refs #20).
+success / root-survival / clock triple at each side's N (refs #34) plus root
+deaths within successes (refs #47), the full delta, and whether the two runs
+are actually a single-variable A/B (refs #20).
 
     scripts/run_report.py <run>
     scripts/run_report.py <run> --vs <baseline-run>
@@ -132,10 +133,22 @@ _BEHAVIOR_ROWS: tuple[tuple[str, str, str], ...] = (
 #: with root deaths moving 4/30 → 12/30 while success held. A reader cannot
 #: infer a null from a column that is not there, so the pair is printed by the
 #: instrument rather than by whoever remembers to.
+#: The fourth cell closes the loophole the first three leave open between them
+#: (refs #47): a policy can zero the RAW death rate by the exact conversion
+#: ``timeout_rate`` flags — `squad_v12b` reads 0/100 root deaths while turning
+#: every defeat into a timeout, and in that corpus defeat and root death are the
+#: same event, so part of its 0 is declining the fight. Deaths counted over
+#: successful episodes alone cannot be moved that way: those episodes achieved
+#: the mission either way, and the cell drops only when commanders stop dying
+#: inside wins (on that axis `squad_v12b` is 0/96 and 0/86 against its
+#: control's 14/93 and 14/88, p < 1e-4 — real, and invisible in the raw rate
+#: next to the timeout column that discounts it). Runs evaluated before
+#: per-episode outcomes read as an em dash, never as a zero.
 _COMPARISON_ROWS: tuple[tuple[str, str, str], ...] = (
     ("success", "success", "{:.3f}"),
     ("human_death_rate", "root death rate", "{:.3f}"),
     ("timeout_rate", "ran the clock out", "{:.3f}"),
+    ("root_death_in_success", "root death in success", "{:.3f}"),
 )
 
 #: (summary prefix, heading) of the checkpoints a comparison covers. Both, for
@@ -301,6 +314,41 @@ def root_claim_ordinal(per_episode: list[dict]) -> dict | None:
     }
 
 
+def root_death_in_success(per_episode: list[dict]) -> tuple[int, int] | None:
+    """``(root deaths, episodes)`` counted over successful episodes only (refs #47).
+
+    **Why the raw rate is not enough.** ``human_death_rate`` divides by every
+    episode, so it improves when a policy converts defeats — where the commander
+    dies — into timeouts, where nobody does. That is not hypothetical:
+    `squad_v12b` is 0/100 root deaths at both checkpoints, and part of that zero
+    is taking zero defeats and riding the clock instead (its control's defeats
+    are root deaths 5/5 and 10/10). A success achieved the mission either way,
+    so a death rate conditioned on success cannot be bought by declining the
+    engagement — and on `squad_v12b` it still separates the arms (0/96 and 0/86
+    against 14/93 and 14/88, p < 1e-4): the reduction inside wins is real, it
+    was measured on every run, and the rejection that ignored it is why this is
+    now printed by the instrument rather than by whoever remembers to look.
+
+    Derivable from what every behavior corpus already records — ``outcome`` and
+    ``human_died`` per episode — so no ``cohort/`` change and no re-evaluation.
+    Returns ``None`` for an artifact predating those fields, because an absent
+    measurement is not a zero.
+    """
+    deaths = successes = 0
+    measured = False
+    for ep in per_episode:
+        outcome, died = ep.get("outcome"), ep.get("human_died")
+        if outcome is None or died is None:
+            return None
+        measured = True
+        if outcome == "success":
+            successes += 1
+            deaths += 1 if died else 0
+    if not measured:
+        return None
+    return deaths, successes
+
+
 def format_claim_ordinal(o: dict) -> tuple[str, str | None]:
     """The ordinal split as digest lines: the claim line, and the burn line or None."""
     parts = [str(o["claims"])]
@@ -349,6 +397,17 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
         if (v := m.get(key)) is not None:
             print(f"    {label:<20} {fmt.format(v)}")
             summary[f"{prefix}{key}"] = v
+    # refs #47: the death rate above, conditioned on success — the raw rate is
+    # gameable by converting defeats into timeouts (which is where squad_v12b's
+    # 0/100 partly comes from); this one only moves when commanders stop dying
+    # inside wins. Filed so `--vs` carries it at both checkpoints.
+    if (in_success := root_death_in_success(b.get("per_episode", []))) is not None:
+        deaths, successes = in_success
+        if successes:
+            print(f"    {'root death in success':<20} {deaths}/{successes} = {deaths / successes:.3f}")
+            summary[f"{prefix}root_death_in_success"] = deaths / successes
+        else:  # an undefined rate is a named absence, never a 0.000
+            print(f"    {'root death in success':<20} —/0 (no successful episodes)")
     # refs #46: the ordinal split, because the rule being priced is ordinal and
     # `false_complete_rate` above is a pool. Filed into the summary so `--vs`
     # prints it as a delta — reading squad_v12 against squad_v10 on a pooled
