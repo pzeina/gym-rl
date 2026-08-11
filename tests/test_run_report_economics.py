@@ -31,10 +31,13 @@ SQUAD_V8_REWARDS = {"done_false": -0.5, "contact_redundant": -0.25, "contact_new
 SPEC = {"root_mission": "MissionType.SEIZE", "max_steps": 450}
 
 
-def _write_economics(tmp_path, name: str, rewards: dict) -> None:
+def _write_economics(tmp_path, name: str, rewards: dict, commit: str | None = None) -> None:
     run_dir = tmp_path / name
     run_dir.mkdir()
-    (run_dir / "economics.json").write_text(json.dumps({"rewards": rewards, "spec": SPEC}))
+    payload = {"rewards": rewards, "spec": SPEC}
+    if commit is not None:
+        payload["git_commit"] = commit
+    (run_dir / "economics.json").write_text(json.dumps(payload))
 
 
 def test_squad_v6_to_v8_is_confounded_by_two_keys(tmp_path, monkeypatch, capsys):
@@ -47,15 +50,28 @@ def test_squad_v6_to_v8_is_confounded_by_two_keys(tmp_path, monkeypatch, capsys)
     out = capsys.readouterr().out
 
     assert "CONFOUNDED" in out
-    assert "2 keys differ" in out
+    assert "2 prices differ" in out
     assert "rewards.done_false" in out
     assert "rewards.contact_redundant" in out
     # contact_new is unchanged across the pair and must not be reported as a diff
     assert "contact_new" not in out
 
 
-def test_squad_v7_to_v8_is_a_single_variable_ab(tmp_path, monkeypatch, capsys):
-    """The pair ROADMAP's own audit used: one key, done_false, and nothing else."""
+def test_squad_v7_to_v8_is_one_price_and_an_unknown_amount_of_code(tmp_path, monkeypatch,
+                                                                  capsys):
+    """This test used to assert the pair was a single-variable A/B. It is not.
+
+    ROADMAP published the `squad_v7` -> `squad_v8` move as attributable to
+    `done_false`, this file agreed, and both were wrong in the same way: nothing
+    had compared the CODE. `squad_v8` is the first squad run carrying `d44ee8d`
+    ("The fallen now share in the win they died taking") — 17 commits touching
+    ``cohort/`` separate the pair. The price diff is real and it is the smaller
+    of two variables.
+
+    These fixtures carry no ``git_commit`` at all (the runs they model predate
+    the field being consulted), so the honest verdict is UNCHECKABLE. That is
+    the point worth pinning: an unchecked axis must not read as an agreeing one.
+    """
     _write_economics(tmp_path, "squad_v7", SQUAD_V7_REWARDS)
     _write_economics(tmp_path, "squad_v8", SQUAD_V8_REWARDS)
     monkeypatch.setattr(run_report, "RUNS", tmp_path)
@@ -63,23 +79,48 @@ def test_squad_v7_to_v8_is_a_single_variable_ab(tmp_path, monkeypatch, capsys):
     economics_diff("squad_v8", "squad_v7")
     out = capsys.readouterr().out
 
-    assert "single-variable A/B" in out
-    assert "CONFOUNDED" not in out
+    assert "one price differs" in out
     assert "rewards.done_false" in out
     assert "contact_redundant" not in out
+    assert "UNCHECKABLE" in out
+    assert "single-variable A/B" not in out
 
 
-def test_clean_pair_reports_clean(tmp_path, monkeypatch, capsys):
-    """squad_screen_v9 -> fallen_v1: the D4 A/B, identical rewards on both sides."""
-    _write_economics(tmp_path, "squad_screen_v9", SQUAD_V8_REWARDS)
-    _write_economics(tmp_path, "fallen_v1", SQUAD_V8_REWARDS)
+def test_identical_prices_at_one_commit_are_the_same_setup(tmp_path, monkeypatch, capsys):
+    """The claim a baseline fleet makes about its own members."""
+    _write_economics(tmp_path, "squad_v10", SQUAD_V8_REWARDS, commit="a" * 40)
+    _write_economics(tmp_path, "squad_v11", SQUAD_V8_REWARDS, commit="a" * 40)
     monkeypatch.setattr(run_report, "RUNS", tmp_path)
+
+    economics_diff("squad_v11", "squad_v10")
+    out = capsys.readouterr().out
+
+    assert "prices identical" in out
+    assert "IDENTICAL SETUP" in out
+    assert "CONFOUNDED" not in out
+
+
+def test_identical_prices_across_commits_are_not_clean(tmp_path, monkeypatch, capsys):
+    """squad_screen_v9 -> fallen_v1: identical rewards, and a different environment.
+
+    The pair this file previously called "clean". Its two runs differ by exactly
+    the code change the D4 A/B was testing — reporting it as clean described the
+    one axis that did not move and stayed silent about the one that did.
+    """
+    _write_economics(tmp_path, "squad_screen_v9", SQUAD_V8_REWARDS, commit="0" * 40)
+    _write_economics(tmp_path, "fallen_v1", SQUAD_V8_REWARDS, commit="1" * 40)
+    monkeypatch.setattr(run_report, "RUNS", tmp_path)
+    monkeypatch.setattr(
+        run_report, "_git",
+        lambda argv: "3\n" if argv[0] == "rev-list" else "d44ee8d The fallen share the win\n",
+    )
 
     economics_diff("fallen_v1", "squad_screen_v9")
     out = capsys.readouterr().out
 
-    assert "CLEAN" in out
-    assert "CONFOUNDED" not in out
+    assert "prices identical" in out
+    assert "CONFOUNDED" in out
+    assert "d44ee8d" in out
 
 
 def test_missing_economics_json_is_uncheckable_not_a_crash(tmp_path, monkeypatch, capsys):

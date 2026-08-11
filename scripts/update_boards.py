@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -80,8 +81,21 @@ def read_state() -> dict:
 
 
 def write_state(state: dict) -> None:
+    """Atomically, because several runs can land at once.
+
+    Every training job refreshes the boards as it exits (``train_then_boards.sh``),
+    and a baseline campaign runs several queues in parallel — so two refreshes
+    landing in the same second is normal, not exotic. A plain ``write_text``
+    truncates first, and a reader arriving mid-write gets a half-file; the
+    ``except json.JSONDecodeError`` in ``read_state`` would then silently reset
+    the publish state to ``{}`` and every board would read as never-published.
+    ``os.replace`` is atomic on POSIX, so a reader sees the old file or the new
+    one and never a partial one.
+    """
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state, indent=2) + "\n")
+    tmp = STATE.with_suffix(f".json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    os.replace(tmp, STATE)
 
 
 def pending(state: dict) -> list[str]:
