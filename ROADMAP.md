@@ -5765,3 +5765,45 @@ deliberately deferred (`docs/vision.md` §2c).
   0.97-0.98 with the claim volume collapsed, the price is the mechanism and the
   DEFAULT should move as part of v1.20. If it lands at 0.92 with claims gone,
   the claiming was a symptom and the regression is elsewhere.
+
+- **2026-08-11 — the price A/B: mechanism CONFIRMED, fix REJECTED.** `squad_v11`
+  (`done_false=-2.0`, single-variable against `squad_v10` — same tree, seed,
+  steps, one price), N=100 final policy:
+
+      axis                          squad_v10 (-0.5)   squad_v11 (-2.0)
+      success, final                     0.92 ± 0.05        0.96 ± 0.04
+      best -> final give-back                  -7 pt              +2 pt
+      root claims (rejected)                178 (101)               0 (0)
+      messages / episode                        101.2               77.5
+      orders / episode                          17.38               7.85
+      dist from OBJ under threat                11.21               9.53
+      root death                                 0.30               0.20
+      ROOT CLOSED ITS OWN OPERATION              0.84               0.00
+
+  **Pre-registered before the run landed** (previous entry): recovery to
+  0.97-0.98 with claims collapsed, AND a smaller give-back. The second was met
+  cleanly and with its sign reversed — the drift *is* the give-back, and removing
+  the incentive removed both. Every corroborating axis moved as predicted,
+  including the cohort standing 1.7 cells closer to the objective under threat.
+  **The mechanism is established**: the price drives the claiming, the chatter
+  and the decay.
+
+  **The first prediction only half held, and the half that failed is the
+  interesting one.** Success 0.92 → 0.96 is **not significant** (Fisher
+  p = 0.373; pooled against both −0.5 seeds, 180/200 vs 96/100, p = 0.076).
+  Called as suggestive and underpowered, not as a win.
+
+  **−2.0 is rejected on behaviour, not on the p-value.** It takes root-closed
+  from 0.84 to **0.00**: the root never reports at all. That is `rewards.py`'s
+  own warning — *over-pricing a speech act suppresses the HONEST one too* —
+  reproduced exactly. Both runs announce 100% of wins, but only because v1.19's
+  ENDEX guarantees it; the agent behaviour underneath is gone. Trading the thing
+  v1.19 was built to measure for an unestablished 4 points is a bad deal.
+
+  **`squad_v12` launched**: `root_done_bonus_first_claim_only=true` at the
+  shipped `done_false=-0.5`. At `squad_v10`'s own claim precision (77/178 =
+  0.433) the flag leaves the FIRST truthful claim at EV **+1.014** and drops the
+  second and later to **−0.284** — spam stops paying, the honest report does not.
+  Tested on the defend family and reverted; never tested on squad, which is
+  where the spam lives. Baseline for the read: `squad_v10`. The result wanted is
+  `squad_v11`'s stability with `squad_v10`'s 84% reporting kept.
