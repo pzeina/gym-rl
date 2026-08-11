@@ -1,0 +1,24 @@
+# B3 ablation at v1.19 — does the chain of command earn its keep?
+#
+# The project's headline scientific claim rested on runs from the Box(137)
+# observation era: they no longer load, cannot be re-evaluated, and cannot be
+# compared with anything current. The claim was true and its evidence had gone
+# out of date.
+#
+# Only two runs are needed, because the CONTROL ARM IS ALREADY IN THE BASELINE:
+# `squad_v10` is the `squad` scenario at 3M steps, seed 12, shipped defaults, on
+# this cohort/ tree. These two arms are the same thing with one field changed
+# (`ScenarioSpec.ablation`, verified as the ONLY difference against the squad
+# spec), at the same steps and the same seed. Single-variable by construction
+# rather than by audit.
+#
+#   full    squad_v10          orders + doctrine masks   (the baseline member)
+#   nomask  squad_nomask_v1    orders, masks removed
+#   flat    squad_flat_v1      no orders at all
+#
+# These are NOT baseline members and never will be: two of the three exist to be
+# worse, and shipping a deliberately crippled cohort as part of a fleet would be
+# advertising the ablation as a product. They are listed in
+# scripts/baseline.py::NOT_BASELINE with that reason.
+squad_nomask_v1   --scenario squad_nomask --total-steps 3000000 --seed 12
+squad_flat_v1     --scenario squad_flat --total-steps 3000000 --seed 12
