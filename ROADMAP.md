@@ -4783,3 +4783,36 @@ deliberately deferred (`docs/vision.md` §2c).
   defect was mine, in the publication, and it is the second time this cycle that
   a claim went out ahead of the measurement that was already available.
 
+- **2026-08-11 (autocycle, reopened)** — **`fireteam_v7` recovered, and it
+  overturns the previous entry's caveat.** The monitor surfaced `fireteam_v7`
+  as FAILED — the canonical artifact-loss case, the one `CLAUDE.md`'s own
+  autocycle text names. It was still missing `behavior_final.json`, `eval.gif`
+  and `eval_transcript.txt`. Recovered, touching only what was absent
+  (`--no-behavior` on the transcript pass so the surviving **N=100, 0.95 ± 0.04**
+  `behavior.json` could not be overwritten — the mistake logged three entries
+  above, not repeated). `economics.json` is **not** reconstructible: it records
+  the prices actually in use at training time and inventing one would be a
+  fabricated provenance record, so it stays missing.
+
+  **The recovered number is the largest overstatement in the fleet.**
+  `fireteam_v7`: best **0.95 ± 0.04**, final **0.78 ± 0.08**, signed
+  **+17pt**, give-back **67.8**. Nothing else on record comes close.
+
+  **Which means the sample that validated the gate was biased by the very defect
+  this cycle was fixing.** The entry above concluded "|best − final| never
+  exceeds 5 points across the fleet, so what the FINAL-policy standard removes is
+  real but small". That was measured over 18 runs — and it excluded `fireteam_v7`
+  **precisely because its final-policy evaluation had been lost to the crash**.
+  The run with the worst overstatement was invisible to the audit of
+  overstatement. With it restored, n = 19 and the relationship sharpens from
+  **r = 0.564, p = 0.015** to **r = 0.889, p < 0.001**.
+
+  So the correction runs the other way from the one before it: the gate is not
+  merely valid, it is strongly predictive, and the FINAL-policy standard removes
+  an exposure that reaches **17 points** on a real published run. Retract
+  "real but small".
+
+  **The general hazard, stated once:** a missing artifact is not neutral in an
+  audit built from artifacts. It removes the run from the statistic, and the runs
+  whose artifacts crash are not a random sample of runs.
+
