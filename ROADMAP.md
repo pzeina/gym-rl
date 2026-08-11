@@ -4630,3 +4630,40 @@ deliberately deferred (`docs/vision.md` §2c).
   the fleet-load map is byte-identical before and after: 44 of 98 committed
   `ckpt_best.pt` load into current-era spaces, the other 54 being the same
   pre-existing 131/137/166-dim obs eras as before this commit.
+
+- **2026-08-11 (autocycle)** — **`squad_v7`'s lost artifacts recovered; the
+  original failure is not reproducible, and the recovery contradicts the gate
+  that flagged it.** `train_status` classifies `squad_v7` FAILED — a v1.11-era
+  run that reached 100% of its steps and then lost `behavior_final.json`,
+  `eval.gif` and `eval_transcript.txt` to a post-training artifact crash.
+
+  **Mechanism: not identified, and that is the result.** Re-running the failing
+  stage on the same checkpoint under current code succeeds cleanly — gif,
+  transcript and behavior file all produced. The cause lived in code that has
+  since moved, and inventing a story for it would be worse than recording that
+  it is gone. Artifacts regenerated instead; both checkpoints now carry
+  `checkpoint_sha256` (refs #28), which the originals never had.
+
+  **A near-miss of my own, logged because it was one keystroke from a quiet
+  downgrade.** The recovery initially overwrote `behavior.json`, which was
+  *present, not lost*, replacing a committed **N=100, 0.92 ± 0.05** evaluation
+  with a fresh **N=20, 0.85 ± 0.16**. Fewer episodes, triple the interval, and
+  no announcement that a published number had moved — exactly the failure mode
+  `publish_audit.py` exists to catch, arriving through the repair rather than
+  the publication. Caught by diffing before committing, restored with
+  `git checkout --`, and the recovered final-policy eval was then matched to
+  N=100 so both checkpoints agree. **Recovery must touch only what is missing.**
+
+  **The finding the recovery exposed.** With `behavior_final.json` in place,
+  `squad_v7` audits at peak 0.99, final-decile **0.596**, give-back **39.4
+  points** — the worst in the fleet by a wide margin. Its FINAL POLICY scores
+  **0.91 ± 0.06** at N=100, against its peak checkpoint's **0.92 ± 0.05**. A
+  one-point difference behind a thirty-nine-point gate reading. So for this run
+  the give-back statistic — computed from the rolling training curve — does not
+  describe the divergence it is meant to stand in for. Compare `fireteam_v8`,
+  where a *smaller* gap of 12.0 sat over a genuine final-policy drop to 0.80.
+  The gate is not thereby wrong; it is a curve statistic being read as a
+  checkpoint statement, and the two came apart here. **Next item: measure
+  give-back against measured best-vs-final divergence across every run that now
+  has both, and say whether the gate predicts what it is used to predict.**
+
