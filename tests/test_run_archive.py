@@ -127,18 +127,38 @@ def test_every_reader_goes_through_the_resolver():
     direct use — ``runs/.boards.json``, which is fleet state rather than a run —
     so the check is for the run-name pattern specifically.
     """
-    root = Path(__file__).resolve().parents[1] / "scripts"
+    repo = Path(__file__).resolve().parents[1]
     offenders = []
-    for path in sorted(root.glob("*.py")):
-        if path.name in {"fleet_status.py", "run_report.py"}:
-            continue  # where the resolvers themselves live
+    # tests/ as well as scripts/. Six data-level invariants in
+    # test_checkpoint_provenance.py and one in test_confirmed_claim_is_last.py
+    # SKIPPED the moment 96 runs were filed away, because they resolved
+    # `runs/<name>` directly — and a skip is not a pass. The guard scanning only
+    # scripts/ is exactly why nobody noticed until the archive happened.
+    sources = sorted(repo.glob("scripts/*.py")) + sorted(repo.glob("tests/*.py"))
+    for path in sources:
+        if path.name in {"fleet_status.py", "run_report.py", "test_run_archive.py"}:
+            continue  # where the resolvers themselves live, and this guard
         for i, line in enumerate(path.read_text().splitlines(), 1):
             stripped = line.strip()
             if stripped.startswith("#") or "find_run(" in stripped:
                 continue  # a fallback INSIDE a resolver is the resolver
             if "not-archive-aware:" in stripped:
                 continue  # deliberate, and the line has to say why
-            if "RUNS / run" in stripped or "RUNS / name" in stripped or "RUNS / a[" in stripped:
+            # Two shapes of the hazard, and only two. `RUNS / <var>` is the
+            # module-level constant indexed by a run name. `ROOT / "runs" /` is
+            # the repo's real runs directory reached by hand — as opposed to
+            # `tmp_path / "runs"`, which is a fixture and reads nothing real.
+            # Fleet state (.boards.json, BASELINE.json) is not a run and is
+            # allowed to be addressed directly.
+            # Not runs: fleet state, and the boards' own output files.
+            fleet_state = ('.boards.json', 'BASELINE.json', '.html',
+                           '_no_such_run_for_tests')
+            hazard = (
+                any(h in stripped for h in ('RUNS / run', 'RUNS / name', 'RUNS / a['))
+                or ('ROOT / "runs" /' in stripped
+                    and not any(f in stripped for f in fleet_state))
+            )
+            if hazard:
                 offenders.append(f"{path.name}:{i}: {stripped}")
     assert not offenders, (
         "these read a run directory without the archive-aware resolver:\n  "

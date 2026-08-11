@@ -333,10 +333,35 @@ def _git(*args: str) -> str:
         return ""
 
 
+def _find(run: str):
+    from scripts.fleet_status import find_run
+
+    return find_run(run, ROOT / "runs")
+
+
+def _rescore_path(run: str):
+    d = _find(run)
+    # The miss branch names a path that cannot exist, so a re-score we do not
+    # hold reads as absent rather than raising.
+    if d is None:
+        return ROOT / "runs" / f"{run}__absent.json"  # not-archive-aware: see above
+    return d / "endex_rescore.json"
+
+
 def _behavior(run: str, prefer: str) -> dict:
-    """``prefer`` is "final" or "best"; fall back to the other rather than lie."""
-    final = _json(ROOT / "runs" / run / "behavior_final.json")
-    best = _json(ROOT / "runs" / run / "behavior.json")
+    """``prefer`` is "final" or "best"; fall back to the other rather than lie.
+
+    Resolved through ``find_run``, because this board's whole job is citing
+    superseded runs — defend_brique_v11, fireteam_defend_v12, the D4 pair — and
+    every one of them is in ``runs/archive/`` now. Hard-pathing ``runs/<name>``
+    here would not error; it would quietly render every settled campaign's
+    numbers as em dashes.
+    """
+    from scripts.fleet_status import find_run
+
+    d = find_run(run, ROOT / "runs") or (ROOT / "runs" / run)
+    final = _json(d / "behavior_final.json")
+    best = _json(d / "behavior.json")
     first, second = (final, best) if prefer == "final" else (best, final)
     return first or second
 
@@ -449,7 +474,9 @@ ENDEX_ARMS = [
 #: no checkpoint (refs #24) — and one run has two, which here read 0.19 and
 #: 0.47 at N=100. A single unlabelled figure lets the same retrain be read as
 #: improvement or as regression on that choice alone, so both rows go on.
-ENDEX_RESCORE = ROOT / "runs" / "fireteam_defend_v12" / "endex_rescore.json"
+#: v12's checkpoints re-scored under the ENDEX rule. Resolved, because that run
+#: is archived now.
+ENDEX_RESCORE = _rescore_path("fireteam_defend_v12")
 
 
 def _endex_baseline() -> list[dict]:
