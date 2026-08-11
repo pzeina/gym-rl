@@ -46,6 +46,15 @@ BOARDS = {
         "url": "https://claude.ai/code/artifact/1713413b-62c6-4576-8e25-db280a798cd8",
         "title": "cohort · program board",
     },
+    # The third board answers the question the other two cannot: what does a
+    # chain of command sound like. It is one evaluated episode per scenario,
+    # read off the net, and it is the only one of the three where the artifact
+    # IS the claim rather than a summary of it.
+    "gallery": {
+        "path": "runs/scenario_gallery.html",
+        "url": "https://claude.ai/code/artifact/e92bdf13-14a5-4905-be81-dca29ad51de4",
+        "title": "cohort · the eight scenarios",
+    },
 }
 
 # Fields that change what a board SAYS about the FLEET. Deliberately excludes
@@ -115,9 +124,10 @@ def pending(state: dict) -> list[str]:
 
 
 def render_all(rows: list[dict]) -> dict:
-    from scripts import fleet_board, program_board
+    from scripts import fleet_board, program_board, scenario_gallery
 
-    renderers = {"fleet": fleet_board.render, "program": program_board.render}
+    renderers = {"fleet": fleet_board.render, "program": program_board.render,
+                 "gallery": scenario_gallery.render}
     written = {}
     for name, board in BOARDS.items():
         out = ROOT / board["path"]

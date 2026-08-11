@@ -1,0 +1,183 @@
+<title>cohort · the eight scenarios</title>
+<style>
+:root{
+  --ground:#DDE3E5; --panel:#F0F3F3; --sunk:#E7ECEC; --ink:#101A1E; --muted:#54636A;
+  --rule:#C4CDD1; --hair:#D5DCDE; --accent:#2C6E9E; --track:#C8DAE7; --compare:#A67B22;
+  --pass:#2F7D52; --fail:#A6382F; --pass-bg:#DFEBE3; --fail-bg:#F2DEDB;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#0D1417; --panel:#161E22; --sunk:#1C262B; --ink:#DCE4E7; --muted:#8B9BA2;
+    --rule:#25323A; --hair:#1F2B31; --accent:#3E90C8; --track:#22394A; --compare:#B98A2E;
+    --pass:#5CB07E; --fail:#E08074; --pass-bg:#172C22; --fail-bg:#2E1D1B;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0D1417; --panel:#161E22; --sunk:#1C262B; --ink:#DCE4E7; --muted:#8B9BA2;
+  --rule:#25323A; --hair:#1F2B31; --accent:#3E90C8; --track:#22394A; --compare:#B98A2E;
+  --pass:#5CB07E; --fail:#E08074; --pass-bg:#172C22; --fail-bg:#2E1D1B;
+}
+:root[data-theme="light"]{
+  --ground:#DDE3E5; --panel:#F0F3F3; --sunk:#E7ECEC; --ink:#101A1E; --muted:#54636A;
+  --rule:#C4CDD1; --hair:#D5DCDE; --accent:#2C6E9E; --track:#C8DAE7; --compare:#A67B22;
+  --pass:#2F7D52; --fail:#A6382F; --pass-bg:#DFEBE3; --fail-bg:#F2DEDB;
+}
+:root{
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--sans);
+  padding:40px 20px 72px;-webkit-font-smoothing:antialiased}
+.sheet{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:28px}
+
+.eyebrow{font:600 11px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.16em;
+  color:var(--muted)}
+.masthead{display:flex;flex-direction:column;gap:8px;padding-bottom:16px;
+  border-bottom:2px solid var(--ink)}
+.masthead h1{margin:0;font-size:31px;font-weight:660;letter-spacing:-.015em;
+  text-wrap:balance;line-height:1.1}
+.standfirst{margin:0;color:var(--muted);max-width:62ch}
+.specs{display:flex;flex-wrap:wrap;gap:6px 20px;font:12px/1.4 var(--mono);
+  color:var(--muted);padding-top:4px}
+.specs b{color:var(--ink);font-weight:600}
+
+.strip{display:flex;flex-direction:column;gap:10px}
+.note{background:var(--panel);border:1px solid var(--rule);border-left:3px solid var(--muted);
+  border-radius:2px;padding:12px 16px;display:flex;flex-direction:column;gap:3px}
+.note.on{border-left-color:var(--accent)}
+.note-h{font-weight:600;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+.note p{margin:0;color:var(--muted);font-size:13.5px;max-width:74ch}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:none;
+  align-self:center;box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 22%,transparent)}
+.runbar{display:flex;align-items:center;gap:12px;font:12.5px/1 var(--mono);color:var(--muted);
+  flex-wrap:wrap}
+.runbar .meter{flex:1 1 220px;min-width:160px}
+
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(178px,1fr));gap:10px}
+.tile{background:var(--panel);border:1px solid var(--rule);border-radius:2px;
+  padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.tile .k{font:600 10.5px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.11em;
+  color:var(--muted)}
+.tile .v{font-size:27px;font-weight:640;line-height:1.15;font-variant-numeric:tabular-nums}
+.tile .d{font:12px/1.4 var(--mono);color:var(--muted)}
+
+h2.sec{margin:0 0 10px;font:600 12px/1.4 var(--mono);text-transform:uppercase;
+  letter-spacing:.15em;color:var(--muted)}
+tr.grp td{background:var(--sunk);padding:8px 14px;border-bottom:1px solid var(--rule);
+  border-top:1px solid var(--rule)}
+tr.grp:first-child td{border-top:none}
+tr.grp b{font:600 12.5px/1.3 var(--mono);letter-spacing:.02em}
+tr.grp span{font:11.5px/1.3 var(--mono);color:var(--muted);margin-left:10px}
+
+.grid{overflow-x:auto;border:1px solid var(--rule);border-radius:2px;background:var(--panel)}
+table{width:100%;border-collapse:collapse;min-width:700px}
+th{font:600 10px/1.4 var(--mono);text-transform:uppercase;letter-spacing:.12em;
+  color:var(--muted);text-align:left;padding:9px 14px;border-bottom:1px solid var(--rule);
+  white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--hair);font-size:13.5px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+th.n,td.n{text-align:right}
+td.name{white-space:nowrap;min-width:190px}
+td.name .r{font:550 13px/1.3 var(--mono)}
+td.name .ov{display:block;font:11px/1.4 var(--mono);color:var(--muted);margin-top:2px}
+td.val{font:13px/1 var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+td.dim{color:var(--muted)}
+.mcell{width:210px;min-width:150px}
+
+.meter{position:relative;height:10px;background:var(--track);border-radius:2px}
+.meter .fill{position:absolute;left:0;top:0;bottom:0;background:var(--accent);
+  border-radius:0 4px 4px 0}
+.meter .fill.full{border-radius:2px}
+.meter .ci{position:absolute;top:-3px;bottom:-3px;border-left:1.5px solid var(--ink);
+  border-right:1.5px solid var(--ink);opacity:.5}
+.meter.idle{background:var(--sunk)}
+
+.chip{display:inline-block;font:600 10px/1.6 var(--mono);text-transform:uppercase;
+  letter-spacing:.09em;padding:1px 6px;border-radius:2px;border:1px solid var(--rule);
+  color:var(--muted);white-space:nowrap}
+.chip.ok{color:var(--pass);border-color:currentColor;background:var(--pass-bg)}
+.chip.bad{color:var(--fail);border-color:currentColor;background:var(--fail-bg)}
+.chip.on{color:var(--accent);border-color:currentColor}
+.chip.base{color:var(--ink);border-color:var(--ink);font-weight:700}
+.chip + .chip{margin-left:5px}
+
+details.arch{background:var(--panel);border:1px solid var(--rule);border-radius:2px}
+details.arch > summary{cursor:pointer;padding:13px 16px;font:600 12px/1.4 var(--mono);
+  text-transform:uppercase;letter-spacing:.12em;color:var(--muted);list-style:none;
+  display:flex;justify-content:space-between;gap:12px;align-items:center}
+details.arch > summary::-webkit-details-marker{display:none}
+details.arch > summary::after{content:"▾";font-size:13px;transition:transform .15s}
+details.arch[open] > summary::after{transform:rotate(180deg)}
+details.arch > summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+details.arch .grid{border:none;border-top:1px solid var(--rule);border-radius:0}
+.arch p.lede{margin:0;padding:0 16px 12px;color:var(--muted);font-size:13.5px;max-width:74ch}
+section > p.lede{margin:-4px 0 12px;color:var(--muted);font-size:13.5px;max-width:74ch}
+
+footer{border-top:1px solid var(--rule);padding-top:16px;display:flex;flex-direction:column;
+  gap:10px;color:var(--muted);font-size:12.5px}
+.legend{display:flex;gap:8px 22px;flex-wrap:wrap;align-items:center}
+.legend span{display:flex;align-items:center;gap:7px}
+.legend i{width:11px;height:11px;border-radius:2px;display:inline-block;flex:none}
+.legend i.br{width:9px;border:none;border-left:1.5px solid var(--ink);
+  border-right:1.5px solid var(--ink);opacity:.5;border-radius:0}
+footer code{font:12px/1.5 var(--mono);color:var(--ink)}
+footer p{margin:0;max-width:78ch}
+@media (max-width:620px){
+  body{padding:26px 14px 48px}
+  .masthead h1{font-size:26px}
+}
+
+.scn{background:var(--panel);border:1px solid var(--rule);border-radius:2px;
+  display:flex;flex-direction:column;gap:0;overflow:hidden}
+.scn > header{padding:16px 18px 14px;border-bottom:1px solid var(--rule);
+  display:flex;flex-direction:column;gap:7px}
+.scn h3{margin:0;font-size:19px;font-weight:640;letter-spacing:-.01em}
+.scn .brief{margin:0;color:var(--muted);font-size:13.5px;max-width:76ch}
+.facts{display:flex;flex-wrap:wrap;gap:4px 18px;font:12px/1.5 var(--mono);color:var(--muted)}
+.facts b{color:var(--ink);font-weight:600}
+.net{margin:0;padding:14px 18px 16px;font:12px/1.75 var(--mono);overflow-x:auto;
+  background:var(--sunk);white-space:pre;tab-size:2}
+.net .t{color:var(--muted)}
+.net .opord{color:var(--ink);font-weight:700}
+.net .order{color:var(--accent)}
+.net .rep{color:var(--compare)}
+.net .cas{color:var(--fail)}
+.net .close{color:var(--pass);font-weight:700}
+.net .elide{color:var(--muted);font-style:italic;display:block;padding:3px 0}
+.legend-net{display:flex;flex-wrap:wrap;gap:6px 16px;padding:10px 18px;
+  border-top:1px solid var(--hair);font:11.5px/1.6 var(--mono);color:var(--muted)}
+.legend-net i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:6px;
+  vertical-align:-1px}
+.gallery{display:flex;flex-direction:column;gap:18px}
+.missing{padding:16px 18px;color:var(--muted);font-size:13.5px}
+</style>
+<div class="sheet">
+  <header class="masthead">
+    <div class="eyebrow">cohort — chain of command, multi-agent RL</div>
+    <h1>Eight scenarios, as radio traffic</h1>
+    <p class="standfirst">One evaluated episode from each member of the baseline fleet,
+      read off the net. A success rate cannot show that the OPORD came down, that it was
+      acknowledged, that a rifleman took over a dead leader's fire team, or that HQ closed
+      the operation — the transcript can.</p>
+    <div class="specs">
+      <span>generated <b>2026-08-11 10:46</b></span>
+      <span>source <b>runs/&lt;member&gt;/eval_transcript.txt</b></span>
+      <span>episodes shown <b>1 of 100 evaluated</b></span>
+    </div>
+  </header>
+
+  <div class="gallery"><article class="scn"><header><h3>fireteam</h3><p class="brief">A fire team (TL + 3 RFN) seizes OBJ ALPHA held by a small OpFor garrison.</p><div class="facts"><span>org <b>fireteam</b></span><span>root <b>SEIZE</b></span><span>objective <b>ALPHA</b></span><span>clock <b>300</b> steps</span><span>run <b>fireteam_v9</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>fireteam_defend</h3><p class="brief">A fire team defends OBJ ALPHA against an OpFor assault.</p><div class="facts"><span>org <b>fireteam</b></span><span>root <b>DEFEND</b></span><span>objective <b>ALPHA</b></span><span>clock <b>450</b> steps</span><span>horizon <b>225</b></span><span>run <b>fireteam_defend_v20</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>squad</h3><p class="brief">A squad (SL + 2 fire teams) seizes OBJ ALPHA; OpFor garrisons ALPHA and BRAVO.</p><div class="facts"><span>org <b>squad</b></span><span>root <b>SEIZE</b></span><span>objective <b>ALPHA</b></span><span>clock <b>450</b> steps</span><span>run <b>squad_v10</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>squad_recon</h3><p class="brief">A squad reconnoiters OBJ BRAVO (RECONNAÎTRE: may engage if needed).</p><div class="facts"><span>org <b>squad</b></span><span>root <b>RECON</b></span><span>objective <b>BRAVO</b></span><span>clock <b>375</b> steps</span><span>run <b>squad_recon_v8</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>squad_screen</h3><p class="brief">A squad screens OBJ BRAVO (ÉCLAIRER: intel WITHOUT engaging — weapons tight).</p><div class="facts"><span>org <b>squad</b></span><span>root <b>SCREEN</b></span><span>objective <b>BRAVO</b></span><span>clock <b>375</b> steps</span><span>run <b>squad_screen_v11</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>patrol_brique</h3><p class="brief">A squad patrols across ambush country to seize OBJ ALPHA; a BRIQUE armed band (manual p. 9) is posted in ambush on the route, with mines laid.</p><div class="facts"><span>org <b>squad</b></span><span>root <b>SEIZE</b></span><span>objective <b>ALPHA</b></span><span>clock <b>450</b> steps</span><span>run <b>patrol_brique_v6</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>defend_brique</h3><p class="brief">A fire team holds OBJ ALPHA against a BRIQUE band that probes, harasses and raids (manual p. 9), with mines on the approaches.</p><div class="facts"><span>org <b>fireteam</b></span><span>root <b>DEFEND</b></span><span>objective <b>ALPHA</b></span><span>clock <b>420</b> steps</span><span>horizon <b>210</b></span><span>run <b>defend_brique_v15</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article><article class="scn"><header><h3>platoon</h3><p class="brief">A platoon (PL, PSG, 2 squads — 16 agents) seizes OBJ ALPHA.</p><div class="facts"><span>org <b>platoon</b></span><span>root <b>SEIZE</b></span><span>objective <b>ALPHA</b></span><span>clock <b>600</b> steps</span><span>run <b>platoon_v6</b></span></div></header><p class="missing">No evaluated episode on disk yet — <code>scripts/publish_baseline.py</code> writes the transcript beside the checkpoint.</p><div class="legend-net"><span><i style="background:var(--ink)"></i>OPORD</span><span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span><span><i style="background:var(--compare)"></i>contact &amp; situation reports</span><span><i style="background:var(--fail)"></i>casualties &amp; succession</span><span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span></div></article></div>
+
+  <footer>
+    <p><b>What to look for at the bottom of each net.</b> The root's
+      <code>MISSION COMPLETE</code> is a REPORT and HQ's <code>ENDEX</code> is the FACT
+      that the operation is over. Since v1.19 the ENDEX is transmitted on every scenario,
+      so a win is never something only the scoreboard knows about — but a net that ends in
+      an ENDEX with no COMPLETE before it is a cohort that won <i>without saying so</i>,
+      and that difference is measured as <code>closed_on_root_report_rate</code>.</p>
+    <p>The transcript is elided in the middle, never at the ends: the OPORD cascade and the
+      close are what this page is for. The full file and the episode animation sit in the
+      run directory. Regenerate with <code>scripts/scenario_gallery.py</code>.</p>
+  </footer>
+</div>

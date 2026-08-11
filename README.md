@@ -18,7 +18,14 @@ same language back*:
 [t= 87] ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.
 [t=112] HQ, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.
 [t=112] RFN1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+[t=112] RFN1, THIS IS HQ: ENDEX. OUT.
 ```
+
+The last two lines are two different acts and the distinction is the point: the
+rifleman who inherited the fire team **reported**, and HQ **ended the
+operation**. Every successful operation gets that ENDEX, on every scenario — so
+a win is never something only the scoreboard knows about. What the cohort's own
+report buys is closing early, and it is priced.
 
 The same sentence a human types — `TL1, seize obj bravo` — is parsed, validated against
 rank authority, and lands as a mission on the agent, which the trained policy then executes.
