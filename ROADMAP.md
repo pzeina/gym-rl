@@ -1,6 +1,59 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-10, the DONE-channel trilogy)
+## ⟳ Session handoff — resume here (2026-08-11, v1.18.0 shipped)
+
+**State**: `main` and `multi-agent-dev` both at HEAD and in sync with origin;
+**`v1.18.0` tagged and pushed** (first tag since v1.9.0). 687 tests green, ruff
+clean, spaces **Discrete(228)/Box(220)** frozen. Nothing training. Boards
+published and current. Read the tag annotation first — it states what the
+release does *not* claim.
+
+**⚑ THE NEXT ITEM, and it needs a decision before code.** The fleet re-published
+at N=100 exposed that **the announcement guarantee covers two scenarios of
+nine**. Measured, final policy, wins announced on the net:
+
+  defend (ENDEX, a protocol act)   391/391 — complete by construction
+  squad_screen / squad_recon / squad   91–98%
+  fireteam_v8                       49/80
+  **platoon_v5  0/100   ·   patrol_brique_v5  0/99**
+
+`platoon` and `patrol_brique` succeed on essentially every episode and **never
+once say so**. Same shape as `fireteam_defend_v16`'s 0/99 before ENDEX. Where the
+announcement is a protocol act it is complete; where it is an agent behaviour it
+ranges from 98% to nothing and does not track how well the scenario is solved.
+
+**Options, none taken:**
+  (a) Extend COMMAND's close announcement to completable roots — ENDEX, or a
+      confirm-shaped act, on SEIZE/RECON/CLEAR too. Mirrors v1.16 exactly and is
+      the only option that yields a guarantee. Touches every scenario's
+      transcript; masking-only, so spaces stay frozen; needs a fleet retrain to
+      publish honestly.
+  (b) Leave it and say so in the README, as it now does.
+  (c) Attack root-claim reliability instead — the option four price experiments
+      say does not work.
+I recommend (a). It is the same argument v1.14–v1.17 established, and it
+reproduces across the fleet with no new experiment.
+
+**Also open**: `fireteam_v8` does **not** clear the publishing bar (12.0-point
+give-back, 80% ± 8 at N=100 against a superseded N=20 90% ± 13) and is published
+with the flag. It is the one scenario whose champion is unfit; a retrain is the
+obvious move and nobody has taken it.
+
+**Autocycle findings, 2026-08-11** (three items, all logged below): `squad_v7`'s
+lost artifacts recovered and its crash found unreproducible; the publish gate
+**validated** — give-back predicts *signed* overstatement at r = 0.564, p = 0.015,
+via new `scripts/publish_audit.py --validate`; and the README's `—` in the
+announced column found to be hiding a zero. **Two of the three items were
+corrections to claims I had made ahead of a measurement that was already
+available.** That is the pattern to watch in this file.
+
+**How to work here**: `CLAUDE.md` (Operating guide + Training workflow) first;
+assurance contract in `ASSURANCE-SYNC.md`. Commits are pre-authorised; **pushing
+is not**. Quote every between-run delta at both checkpoints or not at all.
+
+---
+
+## ⟳ Session handoff — 2026-08-10, the DONE-channel trilogy (SUPERSEDED)
 
 **Everything in the 2026-08-08 block below is superseded.** It is kept because
 its D4 and option-4 reasoning is still the best account of those decisions, but
