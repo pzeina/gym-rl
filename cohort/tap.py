@@ -86,7 +86,18 @@ from cohort.training.evaluate import _pick_actions
 #: briefing shapes** and an accessor could not tell a corpus that predates the
 #: key from one whose scenario genuinely lacks it. That distinction is the whole
 #: reason 12.46 made ``briefing_anchor()`` return None rather than a default.
-TAP_SCHEMA = "1.5.0"
+#:
+#: **1.6.0** -- the header gains ``cohort_tree``, a content digest of the
+#: ``cohort/`` package this process actually imported. Header-only, additive,
+#: no message body changes. It exists because ``cohort_commit`` does not answer
+#: the question we keep asking it: upstream sealed baseline v1.19 "at cohort/
+#: 5f848fb6 across FIVE commits, all tooling -- the seal is the environment,
+#: never the sha", and conversely this fork's ``cohort/`` differs from
+#: upstream's by exactly this file, so two corpora can share a commit and not
+#: an environment. 12.82 recorded the hazard and 12.117's open item asked for
+#: the tree; this is it. ``None`` -- never a default -- on every corpus tapped
+#: before the bump.
+TAP_SCHEMA = "1.6.0"
 
 
 def _open(path: str) -> IO[str]:
@@ -126,10 +137,24 @@ def _cohort_provenance() -> dict[str, str | bool | None]:
     Stamping the resolved path and commit into the header makes that failure
     self-evident instead of silent: two corpora claiming to bracket a change
     while carrying the same `cohort_commit` did not bracket anything.
+
+    `cohort_tree` (schema 1.6.0) is the field that actually answers "same
+    ENVIRONMENT?", which `cohort_commit` does not. Upstream sealed baseline
+    v1.19 "at cohort/ 5f848fb6 across five commits, all tooling -- the seal is
+    the environment, never the sha" (their `9819696`), so five distinct commits
+    there denote one environment. It cuts the other way too: this fork's
+    `cohort/` differs from upstream's by exactly this file, so two corpora can
+    share a commit and not an environment. The digest is computed over the
+    imported package's own bytes rather than asked of git, so it is defined
+    when the tree is dirty, when it is not a checkout at all, and across the
+    `git mv` that broke a reader of ours (assurance PLAN.md 12.117) -- content,
+    not location, for the same reason `checkpoint_sha256` names bytes rather
+    than a path (12.80). It reads git state but never mutates it.
     """
     import cohort
 
-    root = str(pathlib.Path(cohort.__file__).resolve().parent.parent)
+    pkg = pathlib.Path(cohort.__file__).resolve().parent
+    root = str(pkg.parent)
     commit: str | None = None
     dirty: bool | None = None
     try:
@@ -145,7 +170,56 @@ def _cohort_provenance() -> dict[str, str | bool | None]:
         )
     except (subprocess.SubprocessError, OSError):
         pass  # not a checkout, or no git -- absent beats a wrong value
-    return {"cohort_source": root, "cohort_commit": commit, "cohort_dirty": dirty}
+    return {
+        "cohort_source": root,
+        "cohort_commit": commit,
+        "cohort_dirty": dirty,
+        "cohort_tree": _tree_digest(pkg),
+    }
+
+
+#: Excluded from the environment digest: this file. The digest answers "did the
+#: thing that GENERATES rollouts change?", and the tap is an observer of the
+#: rollout, not a participant -- it drives the same loop as
+#: `training.evaluate` and reads public state. Including it would make every
+#: edit to the tap read as an environment change and fire every sentinel
+#: comparison spuriously, which is the exact failure mode `cohort_tree` exists
+#: to remove. The tap's own identity is already carried, by `tap_schema`.
+_DIGEST_EXCLUDE = frozenset({"tap.py"})
+
+
+def _tree_digest(pkg: pathlib.Path) -> str | None:
+    """Content digest of the imported `cohort/` package -- the environment ID.
+
+    Over `*.py` only, because that is what the environment IS: caches, weights
+    and stray artifacts under the package must not change the identity of the
+    code that produced a corpus. Sorted relative POSIX paths with their own
+    digests, so the result is invariant to filesystem order and to where the
+    package sits -- and a rename is a change, which it is. `_DIGEST_EXCLUDE`
+    drops the tap itself; see the note on that constant.
+    """
+    try:
+        files = sorted(
+            p
+            for p in pkg.rglob("*.py")
+            if "__pycache__" not in p.parts
+            and p.relative_to(pkg).as_posix() not in _DIGEST_EXCLUDE
+        )
+        if not files:
+            return None
+        outer = hashlib.sha256()
+        for path in files:
+            inner = hashlib.sha256()
+            with open(path, "rb") as fh:
+                for chunk in iter(lambda: fh.read(1 << 20), b""):
+                    inner.update(chunk)
+            outer.update(path.relative_to(pkg).as_posix().encode())
+            outer.update(b"\0")
+            outer.update(inner.hexdigest().encode())
+            outer.update(b"\n")
+        return outer.hexdigest()
+    except OSError:
+        return None  # absent beats a wrong value
 
 
 def _callsign(env: CohortEnv, agent_id: int) -> str:
