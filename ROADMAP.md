@@ -3,9 +3,10 @@
 ## ⟳ Session handoff — resume here (2026-08-11, baseline v1.19 landed)
 
 **State**: `multi-agent-dev`, **pushed and in sync with origin**; tag still
-v1.18.0. **807 tests green, 3 skipped**, ruff clean, spaces
+v1.18.0. **822 tests green, 3 skipped**, ruff clean, spaces
 **Discrete(228)/Box(220)** frozen. Nothing training. All three boards published
-and current.
+and current. The squad pricing arc (v11/v12/v12b) is settled and logged below:
+mechanism confirmed, both fixes rejected, `squad_v10` stays the member.
 
 **What shipped.** `runs/BASELINE.json` names one run per doctrine scenario and
 `scripts/baseline.py` passes on it: **one `cohort/` tree (5f848fb6), no
@@ -47,11 +48,16 @@ moves action masks and therefore every rollout: **applying it invalidates this
 baseline and requires the fleet to be retrained.** That is the v1.20 cycle.
 
 **Also open, in order:**
-1. **The squad regression.** `squad_v10` 0.92 and `squad_v10b` 0.88 against the
-   previous era's 0.98 and 0.97 — two seeds agreeing (p = 0.48), pooled
-   p = 0.0031. The chattiness association and the refuted crowding-out mechanism
-   are logged; the discriminating experiment is `done_probe.py` in all three
-   regimes on `squad_v10b`, then one `done_false=-2.0` arm against it.
+1. **The squad regression — mechanism found, both pricing fixes rejected.**
+   `squad_v10` 0.92 / `squad_v10b` 0.88 against the previous era's 0.98/0.97
+   (pooled p = 0.0031) stands. The `done_false` price drives the claim spam and
+   the decay (v11, single-variable), but −2.0 mutes the honest report, and
+   `first_claim_only` (v12/v12b, one seed each way) pools to a null at p = 0.86
+   with the regression intact under it (p = 0.0086). Twice now, claims ROSE as
+   their EV fell — the open hypothesis is action-mass, not economics; the
+   discriminating arm is a zero-price probe (claim economics zeroed, everything
+   else shipped). Launching an arm is pre-authorised; changing any default is
+   not.
 2. **Three deferred `cohort/` patches** from the assurance cycle, each with its
    exact diff and a skipped test: #39 (`eval_commit` in the artifact), #40
    (`parse_succession`, the formatter's inverse), #42 (above). All three want
@@ -5947,3 +5953,50 @@ deliberately deferred (`docs/vision.md` §2c).
   checkpoints. **No `cohort/` change** — the quantity was always derivable from
   what every corpus already records — so the baseline seal (`5f848fb6`) and the
   eight published numbers are untouched. 815 → 822 tests.
+
+- **2026-08-11 — the ordinal flag A/B, second seed: DOES NOT REPLICATE. Fix
+  rejected; the spam looks less like EV every round.** `squad_v12b` (seed 13,
+  `root_done_bonus_first_claim_only=true`, single-variable against `squad_v10b`
+  — economics verdict: one price, same code) landed and was scored at N=100,
+  seed 123, both checkpoints on the split. Side by side with seed 12, FINAL
+  policy:
+
+      axis                       seed 12: v10 → v12    seed 13: v10b → v12b
+      success                    0.92 → 0.96           0.88 → 0.86
+      give-back (best → final)    −7 pt → +2 pt         −5 pt → −10 pt
+      root claims                178 → 132             307 → 328
+      first claim precision      0.543 → 0.696         0.143 → 0.053
+      later claim precision      0.314 → 0.375         0.259 → 0.184
+      timeout rate               0.01 → 0.01           0.02 → 0.14
+      root death                 0.30 → 0.17           0.25 → 0.00
+      messages / episode         101 → 86              167 → 138
+
+  **The seeds disagree on every axis the pre-registration cares about.** Seed 12
+  is the wanted result to the letter — `squad_v11`'s stability with the
+  reporting kept. Seed 13 answers the same flag with MORE claims (+21), the
+  first-claim slot burned on a 0.053-precision probe, a doubled give-back and a
+  +12 pt timeout mode. Pooled success 182/200 vs 180/200, Fisher p = 0.86 — a
+  clean null — and the regression against the previous era stands under the
+  flag: 182/200 vs 195/200, p = 0.0086.
+
+  **The #46 quantification called the failing seed in advance.** It put the
+  flag's premise at "holds on one of three corpora and only just", with
+  `squad_v10b` the corpus where the honest first claim goes to −1.713 — and that
+  is the seed that failed. But not by muteness, the failure the number
+  predicted: the realised response is slot-burning and more volume under worse
+  prices. On seed 13 every claim ordinal became less valuable and claiming
+  ROSE. An EV-driven claimer claims less when claims pay less; this is the
+  second consecutive result (after the −2.0 collapse's asymmetry) pointing at
+  their §3 hypothesis — that later-claim volume is action-mass, not economics,
+  the way §12.61's voice-sync was.
+
+  **Rejected.** Both ends of the pricing axis are now closed by evidence:
+  `done_false=−2.0` buys stability by muting the honest report (v11);
+  `first_claim_only` fails to replicate and adds a timeout mode on exactly the
+  seed where its own EV analysis predicted trouble (v12b). A default does not
+  move on one seed in two. `runs/BASELINE.json` keeps `squad_v10`; the squad
+  regression stays open with the discriminating question sharpened: is the
+  claiming EV-driven at all? A zero-price probe — claim economics zeroed on an
+  otherwise-shipped config — would answer it: volume that survives its own EV
+  going to zero is action-mass, and the fix then belongs in masking or the
+  claim API, not in prices.
