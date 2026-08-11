@@ -2,8 +2,8 @@
 
 ## ⟳ Session handoff — resume here (2026-08-11, baseline v1.19 landed)
 
-**State**: `multi-agent-dev`, **~25 commits ahead of origin, nothing pushed**;
-tag still v1.18.0. **795 tests green, 3 skipped**, ruff clean, spaces
+**State**: `multi-agent-dev`, **pushed and in sync with origin**; tag still
+v1.18.0. **807 tests green, 3 skipped**, ruff clean, spaces
 **Discrete(228)/Box(220)** frozen. Nothing training. All three boards published
 and current.
 
@@ -26,7 +26,11 @@ announced.**
 `fireteam` was the one champion published with a flag saying it missed the bar,
 at 0.80 with a fifth of its episodes timing out. 96 superseded runs are in
 `runs/archive/` — moved, never deleted, and every reader resolves through
-`fleet_status.find_run` / `run_report.run_dir`.
+`fleet_status.find_run` / `run_report.run_dir`. Every member's FINAL checkpoint
+is committed and hashes to the `checkpoint_sha256` its evaluation recorded (8/8
+verified from `HEAD` blobs), so the published numbers are reproducible from a
+clone — they were not until #44, because the archive move had inverted a
+`.gitignore` glob.
 
 **⚑ THE NEXT ITEM, and it is not a tuning question.** `cohort/core/units.py::
 _fill_vacancy` sets `successor.leader_id = vacated.leader_id` and never adds the
