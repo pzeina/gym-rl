@@ -36,7 +36,14 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
-from scripts.run_report import PUBLISH_STABILITY_POINTS, deciles, fnum, mean  # noqa: E402
+from scripts.fleet_status import run_dirs  # noqa: E402
+from scripts.run_report import (  # noqa: E402
+    PUBLISH_STABILITY_POINTS,
+    deciles,
+    fnum,
+    mean,
+    run_dir,
+)
 
 
 def audit_run(run_dir: Path) -> dict | None:
@@ -273,7 +280,7 @@ def main() -> int:
     if args.validate:
         return validate_gate()
 
-    audits = [a for d in sorted(RUNS.iterdir()) if d.is_dir() and (a := audit_run(d))]
+    audits = [a for d in run_dirs(RUNS) if (a := audit_run(d))]
     audits = [a for a in audits if a["episodes"] >= args.min_episodes]
     if not audits:
         print(f"no runs published at N>={args.min_episodes}")
@@ -283,12 +290,12 @@ def main() -> int:
         from cohort.training.evaluate import evaluate
 
         for a in (x for x in audits if x["final_eval"] is None):
-            ckpt = RUNS / a["run"] / "ckpt_latest.pt"
+            ckpt = run_dir(a["run"]) / "ckpt_latest.pt"
             if not ckpt.exists():
                 continue
             try:
                 s = evaluate(str(ckpt), episodes=args.min_episodes, behavior=True,
-                             behavior_path=str(RUNS / a["run"] / "behavior_final.json"))
+                             behavior_path=str(run_dir(a["run"]) / "behavior_final.json"))
                 a["final_eval"] = s["success_rate"]
             except Exception as exc:  # a space break, a missing scenario — say so, keep going
                 print(f"  ! {a['run']}: final policy not scorable ({type(exc).__name__}: {exc})")

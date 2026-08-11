@@ -52,7 +52,13 @@ RUNS = ROOT / "runs"
 MANIFEST = RUNS / "BASELINE.json"
 sys.path.insert(0, str(ROOT))
 
+from scripts.fleet_status import find_run  # noqa: E402
 from scripts.run_report import PUBLISH_STABILITY_POINTS  # noqa: E402
+
+
+def run_dir(name: str):
+    """Resolve against THIS module's RUNS, which the tests point at a fixture."""
+    return find_run(name, RUNS) or RUNS / name
 
 MIN_EPISODES = 100
 
@@ -90,7 +96,7 @@ def load() -> dict:
 
 def _run_facts(run: str) -> dict:
     """Everything the audit needs about one member, with absences named."""
-    d = RUNS / run
+    d = run_dir(run)
     facts: dict = {"run": run, "exists": d.is_dir(), "problems": []}
     if not facts["exists"]:
         facts["problems"].append("no run directory")
@@ -146,7 +152,7 @@ def _run_facts(run: str) -> dict:
 def _loadable(run: str) -> bool:
     from cohort.viz.dashboard import checkpoint_meta
 
-    ckpt = RUNS / run / "ckpt_best.pt"
+    ckpt = run_dir(run) / "ckpt_best.pt"
     if not ckpt.exists():
         return False
     try:
@@ -225,7 +231,7 @@ def seal(version: str | None = None) -> int:
     manifest = load()
     commits = set()
     for run in manifest.get("runs", {}).values():
-        econ = RUNS / run / "economics.json"
+        econ = run_dir(run) / "economics.json"
         if econ.exists():
             c = json.loads(econ.read_text()).get("git_commit")
             if c:

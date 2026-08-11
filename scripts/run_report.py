@@ -32,8 +32,21 @@ from cohort.metrics import (  # noqa: E402
 )
 
 
+def run_dir(name: str) -> Path:
+    """Where a run lives — ``runs/<name>``, or ``runs/archive/<name>``.
+
+    Archiving a superseded generation must not break the citations that made it
+    worth keeping. Every reader here goes through this, so a run named in
+    ROADMAP three cycles ago still reports after it has been filed away.
+    """
+    current = RUNS / name
+    if not current.is_dir() and (RUNS / "archive" / name).is_dir():
+        return RUNS / "archive" / name
+    return current
+
+
 def rows_of(run: str) -> list[dict]:
-    path = RUNS / run / "metrics.csv"
+    path = run_dir(run) / "metrics.csv"
     if not path.exists():
         raise SystemExit(f"no metrics for run '{run}' ({path})")
     with path.open() as f:
@@ -272,7 +285,7 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
 
 def report(run: str, show_components: bool) -> dict:
     rows = rows_of(run)
-    cfg_path = RUNS / run / "config.json"
+    cfg_path = run_dir(run) / "config.json"
     cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
     first, last = deciles(rows)[0], deciles(rows)[-1]
     best = max((v for r in rows if (v := fnum(r, "success_rate_rolling")) is not None), default=float("nan"))
@@ -319,7 +332,7 @@ def report(run: str, show_components: bool) -> dict:
         for d, c in drift[:6] if not show_components else drift:
             print(f"    {c[5:]:<20} {mean(last, c):>8.4f}   ({d:+.4f})")
 
-    beh_path = RUNS / run / "behavior.json"
+    beh_path = run_dir(run) / "behavior.json"
     if beh_path.exists():
         behavior_block(beh_path, "behavior", summary, "beh_", diagnostics=True)
     else:
@@ -332,7 +345,7 @@ def report(run: str, show_components: bool) -> dict:
     # same rows and the same gates for that reason (refs #22): every prediction
     # in the v1.12 pre-registration is stated at the final policy, and until
     # this printed them the digest could not settle one of them.
-    final_path = RUNS / run / "behavior_final.json"
+    final_path = run_dir(run) / "behavior_final.json"
     if final_path.exists():
         fm = behavior_block(final_path, "FINAL policy", summary, "final_", diagnostics=False)
         if (bs := summary.get("beh_success")) is not None and (fs := fm.get("success_rate")) is not None:
@@ -422,7 +435,7 @@ def economics_diff(run: str, baseline: str) -> None:
     knobs) — `train.py::_spec_economics` calls scenario knobs part of the same
     "what is this run actually an experiment about" question.
     """
-    a_path, b_path = RUNS / run / "economics.json", RUNS / baseline / "economics.json"
+    a_path, b_path = run_dir(run) / "economics.json", run_dir(baseline) / "economics.json"
     if not a_path.exists() or not b_path.exists():
         missing = run if not a_path.exists() else baseline
         print(f"\n  economics: uncheckable — {missing} predates economics.json")
@@ -464,7 +477,7 @@ def code_diff(run: str, baseline: str, price_diffs: int = 0) -> None:
     """
     commits = {}
     for name in (baseline, run):
-        path = RUNS / name / "economics.json"
+        path = run_dir(name) / "economics.json"
         try:
             commits[name] = json.loads(path.read_text()).get("git_commit")
         except (OSError, json.JSONDecodeError):

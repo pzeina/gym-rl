@@ -6,4 +6,9 @@
 #
 # Lane A leads with the long pole: platoon is 16 agents and ~2h on its own.
 platoon_v6            --scenario platoon --total-steps 3000000 --seed 12
+# fireteam_v9 was pulled OUT of this lane and launched standalone at 10:20: a
+# neighbouring project's sweep took ~6 of the box's 10 cores, platoon's ETA went
+# 2h26m -> 4h41m, and fireteam was the only job whose completion depended on the
+# long pole rather than on the work itself. train.sh refuses a duplicate launch,
+# so this line surviving in the file is a no-op, not a second run.
 fireteam_v9           --scenario fireteam --total-steps 3500000 --seed 12
