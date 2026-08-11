@@ -4667,3 +4667,35 @@ deliberately deferred (`docs/vision.md` §2c).
   give-back against measured best-vs-final divergence across every run that now
   has both, and say whether the gate predicts what it is used to predict.**
 
+- **2026-08-11 (autocycle)** — **The publish gate is vindicated, and my own
+  previous entry set it up to be refuted.** `scripts/publish_audit.py --validate`
+  now asks whether give-back predicts what it is used to predict, over every run
+  carrying both checkpoints at N=100.
+
+  **It does.** Give-back vs signed (best − final): **Pearson r = 0.564,
+  p = 0.015**, n = 18 distinct policies. Higher give-back ⇒ `ckpt_best`
+  overstates the final policy more, which is exactly the gate's claim.
+
+  **The entry above got this wrong by picking the wrong statistic.** It read the
+  gate against **|best − final|**, where the correlation is *negative*
+  (r = −0.40, p = 0.097) and squad_v7 looks like a refutation: give-back 39.4
+  over a 1-point difference. But the gate does not claim the checkpoints
+  *differ*, it claims the published one is too **HIGH** — a signed quantity.
+  Absolute divergence is dominated by runs near the ceiling, where neither
+  checkpoint can move far. Same 18 runs, same gate, opposite verdict, decided
+  entirely by whether the sign is kept.
+
+  **Two facts worth having beside it.** `ckpt_best` overstates in only **4 of 18**
+  runs; the fleet mean is **−1.5pt**, so the peak checkpoint usually *understates*
+  the policy the run ended with. And |best − final| never exceeds **5 points**
+  across the fleet, so the practical exposure the FINAL-policy standard removes
+  is real but small — the standard is right for being honest, not for being large.
+
+  **A bug in the validator, found because its output made a claim.** It first
+  deduplicated by hashing the checkpoint FILE, which silently failed: a
+  checkpoint embeds its `reward_config`, so the v1.15 revert and the v1.16 ENDEX
+  restoration each produced arms whose tensors match to 0.000e+00 and whose files
+  do not. It reported 21 "distinct policies" including three duplicates. Now
+  hashes the weights and names each drop. The correlation survives either way
+  (r = 0.571 → 0.564), but "distinct" had to be true.
+
