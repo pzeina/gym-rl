@@ -5261,3 +5261,44 @@ deliberately deferred (`docs/vision.md` §2c).
   worth reading — it asks whether the root closed the window at all, by either
   route: `fireteam_v9` 0.90, `squad_v10` 0.84, `squad_recon_v8` 1.00. That axis
   is what the README quotes, and it is correct as it stands.
+
+- **2026-08-11 — B3 replicated on the v1.19 tree, and it REVERSES on outcome.**
+  One seed per arm (12), 3M steps each, shipped defaults, same `cohort/` tree;
+  the control arm is `squad_v10`, which is also a baseline member, so the trio is
+  single-variable by construction (`ScenarioSpec.ablation` is the only field that
+  differs — checked by dataclass diff, not assumed). N=100, final policy:
+
+  | | full `squad_v10` | nomask `squad_nomask_v1` | flat `squad_flat_v1` |
+  |---|---|---|---|
+  | success | 0.92 ± 0.05 | 0.98 ± 0.03 | **1.00 ± 0.00** |
+  | defeats / 100 | **7.0** | 1.0 | 0.0 |
+  | root death | **0.30** | 0.12 | 0.17 |
+  | doctrine-valid | 1.000 | 0.592 | — no orders |
+  | DONE reports | 325 (182 rejected) | 280 (115) | 231 (47) |
+
+  full vs flat: success p = 0.007, defeats p = 0.014, root death p = 0.045.
+  full vs nomask: success p = 0.101 (not a difference), root death p = 0.003.
+
+  **The 2026-08-06 result was the other way round on exactly these cells** —
+  success full 0.92 / nomask 0.91 / flat 0.85, defeats 5.0 / 4.7 / **11.0**, with
+  the flat arm wiping 2.2x as often. The outcome-robustness half of the published
+  claim does not reproduce on this tree; on this seed it inverts.
+
+  The interpretability half **does**: doctrine-valid 1.000 against 0.592 is the
+  same ordering as 100% against the original's 0.395 ± 0.079, and it is the row
+  the original's own three seeds agree on seed by seed (full's worst 0.387 above
+  nomask's best 0.208), so one seed is entitled to settle it.
+
+  The *completion-reporting* half is dead either way, and not because of the
+  ablation: the original's nomask arm claimed 0.3 DONE per 30 episodes and this
+  one claims 84. That is a code-era difference, not a hierarchy one. "Completion
+  reporting only survives under masks" should not be repeated.
+
+  **Provisional, and the check is already running.** `squad_v10` is the weakest
+  squad run on record (0.92 against 0.98 and 0.97) and it is the control arm, so
+  the reversal could be one bad draw of the control rather than a property of the
+  tree. `squad_v10b` (seed 13) lands ~13:45 and bounds it: if it comes in at 0.98
+  the reversal is a control artifact; if it comes in at 0.92 the outcome claim is
+  genuinely gone on this build. **No README change until that lands** — the
+  ablation section keeps the 2026-08-06 numbers, which are three seeds and remain
+  the stronger evidence for what they measured.
