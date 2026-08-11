@@ -274,7 +274,13 @@ def test_the_anchor_corpus_still_shows_the_split_the_early_close_reading_rests_o
     those group sizes — if the file is ever re-scored, the reading has to be
     re-derived rather than silently inherited.
     """
-    path = ROOT / "runs" / "defend_brique_v13" / "behavior_final.json"
+    from scripts.fleet_status import find_run
+
+    # Resolved, not hard-pathed: this run is archived, and a data-level
+    # invariant that switches itself off when its corpus is filed away is
+    # worth nothing.
+    run = find_run("defend_brique_v13", ROOT / "runs")
+    path = (run / "behavior_final.json") if run else ROOT / "nonexistent"
     if not path.is_file():
         pytest.skip("defend_brique_v13/behavior_final.json not present in this working copy")
     episodes = json.loads(path.read_text())["per_episode"]

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 
 import pytest
 import torch
@@ -25,6 +26,8 @@ from cohort.env.actions import N_ACTIONS
 from cohort.env.observations import OBS_DIM
 from cohort.training.evaluate import _file_sha256, evaluate
 from cohort.training.ppo import PolicyNet
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def _write_checkpoint(path, hidden: int = 16) -> None:
@@ -144,9 +147,14 @@ def test_published_runs_carry_a_digest_for_the_weights_they_quote(run, file, che
     is gitignored, so a fresh clone has the field but not the file to check
     it against, and that asymmetry is the whole point of issue #28.
     """
-    from pathlib import Path
+    from scripts.fleet_status import find_run
 
-    root = Path(__file__).resolve().parent.parent / "runs" / run
+    # Through the resolver, never RUNS / run: archiving a superseded run must
+    # not silently switch this invariant off. It did — 6 of these skipped the
+    # moment 96 runs moved into runs/archive/, and a skip is not a pass.
+    root = find_run(run, ROOT / "runs")
+    if root is None:
+        pytest.skip(f"{run} not present in this working copy")
     payload_path = root / file
     if not payload_path.is_file():
         pytest.skip(f"{run}/{file} not present in this working copy")
