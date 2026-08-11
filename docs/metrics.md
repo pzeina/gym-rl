@@ -348,6 +348,41 @@ a cadence-compliant report accounts for *falls* — 0.38 → 0.00 and 0.28 → 0
 The same behavioural change reads as an improvement on one number and a
 regression on the other, and only the pair says which it was.
 
+### Did the win get announced at all? (issues #31, #38)
+
+`successes_announced` / `successes_announced_rate` — of the operations that
+**succeeded**, how many said so on the net: COMMAND's ENDEX **or** the root's
+own confirmed MISSION COMPLETE, deliberately either/or, because on a SEIZE root
+the claim *is* the announcement. Separate from `closed_on_root_report_rate`,
+whose denominator is ENDEXes sent and which therefore cannot see an operation
+that closed in silence — the blind spot that let v1.14 announce 0 of 57
+`fireteam_defend` successes with no published number moving. *Edge case*: no
+success → `null`.
+
+**A zero on it has three causes, and the integer cannot say which** (issue #38,
+from the assurance layer, which reads the same zeros off the radio). The
+announcement line therefore renders the root's own claim channel beside it
+(`format_root_claim_shape`), which is the #13 argument above one level up:
+
+* **channel shut** — `done_admissible_root == 0`. No price was ever consulted;
+  the v1.17 defend family, by mask and by design.
+* **declined** — admissible and never used. `patrol_brique_v5`/final: 0 of 99
+  announced, **0 claims in 7772 admissible agent-steps**.
+* **refused** — claimed and rejected by the umpire. `platoon_v5`/final: 0 of 100
+  announced, **5 claims in 5 episodes, 5 refusals**.
+
+The first two are properties of the mask and of the policy; the third is
+upstream of the announcement entirely, and a change to *who may announce* would
+move the first two and not the third.
+
+**Quote it at both checkpoints.** It is the least stable published column
+measured here: `squad_v8` announces 0/97 at `ckpt_best` and 91/98 at
+`ckpt_latest` (success 97 vs 98, p = 1.00; announcement p = 8.0e-48), and three
+more runs swing 74–97 points across the same pair. The `|best − final| ≤ 5pt`
+result from `publish_audit.py --validate` is measured on **success** and says
+nothing here; `--validate` prints this axis under its own table to keep the two
+apart.
+
 ### Succession recovery time
 
 A *leader death* is the death of an agent with living direct subordinates.

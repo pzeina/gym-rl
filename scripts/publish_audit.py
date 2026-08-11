@@ -71,6 +71,32 @@ def audit_run(run_dir: Path) -> dict | None:
     }
 
 
+def _announcement_axis(ann: list[tuple[str, float | None, float | None]]) -> None:
+    """The same policies on `successes_announced_rate`, printed here so the
+    success-axis result cannot be quoted about this one (refs #38).
+
+    Everything above is measured on success, and the small spreads it reports
+    are a fact about success. The assurance layer re-tapped one pair at one
+    commit and found `squad_v8` announcing **0 of 97** at `ckpt_best` and
+    **91 of 98** at `ckpt_latest` — one point apart on success, ninety-three on
+    the announcement. So a bound established here says nothing about a column
+    published there, and any between-checkpoint claim about the announcement
+    has to be measured at both checkpoints or not made.
+    """
+    pairs = [(n, b, f) for n, b, f in ann if b is not None and f is not None]
+    if not pairs:
+        return
+    worst = max(pairs, key=lambda z: abs(z[1] - z[2]))
+    swings = sorted(((abs(b - f) * 100, n, b, f) for n, b, f in pairs), reverse=True)
+    print(f"\n{len(pairs)} of those carry the ANNOUNCEMENT at both checkpoints "
+          "(successes announced / successes):")
+    print(f"{'run':<26}{'best':>7}{'final':>7}{'|best-final|':>14}")
+    for swing, n, b, f in swings:
+        print(f"{n:<26}{b:>7.2f}{f:>7.2f}{swing:>13.0f}pt")
+    print(f"largest swing {abs(worst[1] - worst[2]) * 100:.0f}pt ({worst[0]}) — this gate is "
+          "validated on SUCCESS; do not carry its bound to the announcement column")
+
+
 def validate_gate() -> int:
     """Does give-back predict that ckpt_best OVERSTATES the final policy?
 
@@ -85,6 +111,12 @@ def validate_gate() -> int:
     Runs whose ``ckpt_latest`` hashes identically are one policy, not several —
     v1.16/v1.17 produced three bit-identical fireteam_defend arms and two
     defend_brique ones, and counting them separately would inflate n by 17%.
+
+    **This is a statement about the SUCCESS axis only.** It is measured on
+    ``success_rate``, and nothing it finds transfers to another published
+    column: the same checkpoint pair that agrees to one point on success can
+    disagree by ninety-three on the announcement. ``_announcement_axis`` prints
+    that axis underneath rather than leaving the scope to be assumed (refs #38).
     """
     import hashlib
 
@@ -114,6 +146,7 @@ def validate_gate() -> int:
 
     seen: dict[str, str] = {}
     rows = []
+    ann: list[tuple[str, float | None, float | None]] = []
     for d in sorted(RUNS.iterdir()):
         if not d.is_dir():
             continue
@@ -134,6 +167,9 @@ def validate_gate() -> int:
             seen[digest] = d.name
         rows.append((d.name, a["gap"],
                      b["metrics"]["success_rate"], f["metrics"]["success_rate"]))
+        ann.append((d.name,
+                    b["metrics"].get("successes_announced_rate"),
+                    f["metrics"].get("successes_announced_rate")))
 
     if len(rows) < 4:
         print(f"only {len(rows)} distinct policies carry both checkpoints at N=100 — "
@@ -149,6 +185,7 @@ def validate_gate() -> int:
         print(f"{n:<26}{g:>10.2f}{bs:>7.2f}{fs:>7.2f}{sg:>+11.0f}pt")
     print(f"\nckpt_best overstates the final policy in {over}/{len(rows)} runs; "
           f"mean {sum(signed) / len(signed):+.1f}pt")
+    _announcement_axis(ann)
     try:
         from scipy.stats import pearsonr
     except ImportError:

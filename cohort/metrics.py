@@ -1694,6 +1694,46 @@ def format_staging(agg: dict[str, Any]) -> str:
     )
 
 
+def format_root_claim_shape(agg: dict[str, Any]) -> str:
+    """What the root's own claim channel did, beside the announcement (#38).
+
+    ``successes_announced`` is one integer, and a zero on it has at least three
+    causes that want different fixes. Two published runs made the point: at
+    N=100 on the final policy, `patrol_brique_v5` announces 0 of 99 with the
+    root **never claiming**, and `platoon_v5` announces 0 of 100 with the root
+    **claiming five times and refused every time**. On the radio one is a
+    silent policy and the other a rejected one; grouped by the integer alone
+    they read as the same result, and the README grouped them.
+
+    The three shapes this renders, which are #13's argument about zero DONE
+    reports carried over to the announcement:
+
+    * **channel shut** — no admissible agent-step at all, so no price was ever
+      consulted. The v1.17 defend family, by mask and by design.
+    * **declined** — the act was admissible and never used. `squad_v8`/best
+      declines it at 8812 admissible steps; a policy, not a mask.
+    * **refused** — claimed and rejected by the umpire. Upstream of the
+      announcement: extending COMMAND's close to completable roots changes who
+      announces, and would leave this untouched.
+
+    Denominator note, stated because the line sits next to a rate that has a
+    different one: the claim counts pool over ALL episodes, while
+    ``successes_announced`` counts over the successful ones.
+    """
+    claims = agg.get("done_reports_root")
+    if claims is None:
+        return ""
+    admissible = agg.get("done_admissible_root") or 0
+    refused = agg.get("done_rejected_root") or 0
+    if not claims:
+        return "root never claimed, channel shut" if not admissible else (
+            f"root never claimed, {admissible} admissible step{'' if admissible == 1 else 's'}"
+        )
+    if refused == claims:
+        return f"root claimed {claims}, all refused"
+    return f"root claimed {claims}, {refused} refused"
+
+
 def format_behavior_table(agg: dict[str, Any]) -> str:
     """Human-readable table of an aggregated behavior summary."""
     by_rank = ", ".join(
@@ -1755,9 +1795,13 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             + (f" (interval {agg['sitrep_interval']})" if agg.get("sitrep_interval") else "")
         ),
         "closes_per_root_sitrep": f"n={agg.get('root_sitreps', 0)} root SITREPs",
+        # refs #38: the announcement and, beside it, what the root's own claim
+        # channel did — a zero here is a silent policy, a declined one or a
+        # refused one, and the integer alone cannot say which
         "successes_announced_rate": (
             f"{agg['successes_announced']} of {agg['successes']} wins, "
             f"{agg['endex_sent']} by ENDEX"
+            + (f"; {shape}" if (shape := format_root_claim_shape(agg)) else "")
         ),
         "done_claim_rate": (
             f"{agg.get('done_admissible', 0)} admissible agent-steps "

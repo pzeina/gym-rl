@@ -4847,3 +4847,52 @@ deliberately deferred (`docs/vision.md` §2c).
   trained with `--reward sitrep_interval=N` is scored against N. The per-episode
   trace already records the value actually in force, and for a given run that
   one is authoritative.
+
+- **2026-08-11 (assurance, #38)** — **Two zeros, two silences — and a column
+  published at one checkpoint that swings 93 points between them.**
+
+  **1. The decomposition.** `ed19418` put `successes_announced` on every row and
+  grouped the two zeros: "`platoon_v5` 0/100 and `patrol_brique_v5` 0/99, the
+  same shape as `fireteam_defend_v16`'s 0/99". They are not the same shape. Read
+  off the committed artifacts at our own cut (N=100, seed 123, `ckpt_latest`):
+
+  | run | successes | announced | root claims | refused | admissible steps |
+  |---|---|---|---|---|---|
+  | `patrol_brique_v5` | 99 | 0 | **0** | 0 | 7772 |
+  | `platoon_v5` | 100 | 0 | **5** | **5** | 10211 |
+  | `fireteam_defend_v19` | 98 | 98 | 0 | 0 | **0** (masked) |
+
+  `patrol_brique_v5`'s root is **offered the act 7772 times and declines it**.
+  `platoon_v5`'s root **claims in five episodes and is refused in all five**. On
+  the radio: a silent policy and a rejected one. The fix they want differs —
+  extending COMMAND's close to completable roots (the option logged in `e27863b`)
+  changes who announces and leaves five refusals untouched — and a single integer
+  cannot express the difference. This is exactly #13's argument about zero DONE
+  reports, one level up, so `format_root_claim_shape` now renders the root's
+  channel beside the announcement in every behavior table: "root never claimed,
+  7772 admissible steps" / "root claimed 5, all refused" / "channel shut".
+
+  **2. We broke our own both-checkpoints rule on the column we had just added.**
+  All day we have enforced "quote a between-run delta at both checkpoints or not
+  at all" (refs #24–#26), and then published the announcement at the FINAL policy
+  only. It is the least stable column in the table. `squad_v8`, both checkpoints
+  at one commit: **0/97 at `ckpt_best`, 91/98 at `ckpt_latest`** — success 97 vs
+  98 (Fisher p = 1.00), announcement 0.00 vs 0.93 (**p = 8.0e-48**). Not one run:
+  `squad_screen_fallen_v2` 1/99 → 98/100, `_v1` 8/98 → 96/100, `squad_recon_v7`
+  21/94 → 94/98, `fireteam_v8` 67/82 → **49/80** the other way. The table now
+  prints `final · best` on every row.
+
+  **3. The ≤5-point figure must not travel to it.** That bound is measured on
+  `success_rate` by `publish_audit.py --validate` (and was already retracted once
+  when `fireteam_v7` came back at +17pt). On the announcement axis the same
+  policies swing up to **97 points**. `--validate` now prints the announcement
+  axis under its own table, so the scope is stated by the tool rather than
+  assumed by the reader.
+
+  **Independently verified, and it reproduces exactly**: 0/99 · 0 claims,
+  0/100 · 5 claims · 5 refusals, and 0/97 → 91/98, all read from committed
+  `behavior*.json` with no re-scoring. Their 91/98, computed net-only on their
+  side, matches ours computed from the artifacts — a cross-check on both
+  pipelines. One number of theirs we cannot confirm and do not need to: their
+  `patrol_brique_v2b` 27/29 is a `ckpt_best` figure on a checkpoint carrying
+  input dim 137, which cannot load at head at any N.

@@ -19,6 +19,7 @@ from cohort.metrics import (
     format_behavior_table,
     format_gate_report,
     format_order_task_mix,
+    format_root_claim_shape,
     regression_gates,
 )
 from cohort.training.evaluate import evaluate, run_episode
@@ -993,6 +994,88 @@ def test_successes_announced_counts_the_wins_that_said_so_on_the_net():
     assert agg["successes"] == 3, "a failed operation is not a win to announce"
     assert agg["successes_announced"] == 2
     assert agg["successes_announced_rate"] == 2 / 3
+
+
+def test_a_zero_announcement_says_which_kind_of_silence_it_is():
+    """refs #38: `successes_announced` is one integer, and a zero on it has
+    three causes that want three different fixes.
+
+    The published case: at N=100 on the final policy `patrol_brique_v5`
+    announces 0 of 99 with its root **never claiming**, and `platoon_v5`
+    announces 0 of 100 with its root **claiming five times and refused every
+    time**. Identical on the integer, opposite on the radio — a silent policy
+    and a rejected one — and the README grouped them as the same result.
+
+    So the announcement line renders the root's own claim channel beside it,
+    which is #13's argument about zero DONE reports carried one level up.
+    """
+    root_open = {**sold("TL1"), "root": True, "done_ok": True}
+    root_shut = {**sold("TL1"), "root": True, "done_ok": False}
+
+    declined = episode_behavior(
+        trace([step(0, [root_open]), step(1, [root_open])], root_mission="SEIZE")
+    )
+    refused = episode_behavior(
+        trace(
+            [
+                step(0, [root_open]),
+                step(1, [root_open],
+                     messages=[msg("done", "TL1", "HQ"), msg("done_reject", "HQ", "TL1")]),
+                step(2, [root_open]),
+            ],
+            root_mission="SEIZE",
+        )
+    )
+    shut = episode_behavior(
+        trace(
+            [step(0, [root_shut]),
+             step(1, [root_shut], messages=[msg("endex", "HQ", "TL1")])],
+            root_mission="DEFEND",
+        )
+    )
+
+    # all three succeed; two of them announce nothing, for opposite reasons
+    assert declined["close_announced"] == 0 and refused["close_announced"] == 0
+    assert shut["close_announced"] == 1
+
+    silent_agg = aggregate_behavior([declined])
+    assert silent_agg["successes_announced"] == 0
+    assert silent_agg["done_reports_root"] == 0
+    assert silent_agg["done_admissible_root"] == 1
+    assert format_root_claim_shape(silent_agg) == "root never claimed, 1 admissible step"
+
+    refused_agg = aggregate_behavior([refused])
+    assert refused_agg["successes_announced"] == 0
+    assert refused_agg["done_reports_root"] == 1 == refused_agg["done_rejected_root"]
+    assert format_root_claim_shape(refused_agg) == "root claimed 1, all refused"
+
+    # the defend family's zero claims are the mask, not a policy — the
+    # distinction that made v1.15's silence a failure and v1.17's a design
+    shut_agg = aggregate_behavior([shut])
+    assert shut_agg["done_admissible_root"] == 0
+    assert format_root_claim_shape(shut_agg) == "root never claimed, channel shut"
+
+    # and a partly-accepted channel reports both halves rather than a ratio
+    accepted = episode_behavior(
+        trace(
+            [
+                step(0, [root_open]),
+                step(1, [root_open],
+                     messages=[msg("done", "TL1", "HQ"), msg("done_reject", "HQ", "TL1")]),
+                step(2, [root_open],
+                     messages=[msg("done", "TL1", "HQ"), msg("done_confirm", "HQ", "TL1")]),
+            ],
+            root_mission="SEIZE",
+            root_close_step=2,
+        )
+    )
+    accepted_agg = aggregate_behavior([accepted])
+    assert accepted_agg["successes_announced"] == 1
+    assert format_root_claim_shape(accepted_agg) == "root claimed 2, 1 refused"
+
+    # the shape travels with the rendered table, where the grouping went wrong
+    table = format_behavior_table(refused_agg)
+    assert "root claimed 1, all refused" in table
 
 
 def test_successes_announced_rate_is_none_when_nothing_succeeded():
