@@ -74,7 +74,19 @@ from cohort.training.evaluate import _pick_actions
 #: absolute step, upstream's ``_ANNOUNCED_ASSAULT_RE`` accepts either on the
 #: way in, and every pinned corpus stores the PARSED value rather than the
 #: words, so no corpus recorded before this bump loses its announcement.
-TAP_SCHEMA = "1.4.0"
+#:
+#: **1.5.0** -- the briefing overlay gains ``sitrep_interval`` (upstream
+#: ``38234b2``, our issue #37): the freshness gap a SITREP is priced against,
+#: which is what ``closed_on_cadence_report_rate`` is *defined* by and which a
+#: monitor holding only the radio previously had to assume at 25. Header-only
+#: and additive -- no message body changes, verified by sentinel (PLAN.md
+#: 12.111). Upstream did not version this, because on their side the overlay is
+#: a function call whose result is always current; here a corpus is a pinned
+#: artifact, so **without a bump the same "1.4.0" would denote two different
+#: briefing shapes** and an accessor could not tell a corpus that predates the
+#: key from one whose scenario genuinely lacks it. That distinction is the whole
+#: reason 12.46 made ``briefing_anchor()`` return None rather than a default.
+TAP_SCHEMA = "1.5.0"
 
 
 def _open(path: str) -> IO[str]:
