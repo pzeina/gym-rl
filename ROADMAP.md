@@ -1,12 +1,42 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-11, baseline v1.19 landed)
+## ⟳ Session handoff — resume here (2026-08-12, the pricing axis closed)
 
-**State**: `multi-agent-dev`, **pushed and in sync with origin**; tag still
-v1.18.0. **827 tests green, 3 skipped**, ruff clean, spaces
-**Discrete(228)/Box(220)** frozen. Nothing training. All three boards published
-and current. The squad pricing arc (v11/v12/v12b) is settled and logged below:
-mechanism confirmed, both fixes rejected, `squad_v10` stays the member.
+**State**: `multi-agent-dev`; tag still v1.18.0. **827 tests green, 3 skipped**,
+ruff clean, spaces **Discrete(228)/Box(220)** frozen. `baseline.py` green, seal
+`5f848fb6` untouched. **`squad_v14_nobonus` + `squad_v14b_nobonus` are
+training** (campaign pid in `runs/*/.job.json`; `/train-status` to check).
+
+**⚑ READ THIS FIRST — the squad pricing arc did not end where the entry below
+it says.** The zero-price probe (`squad_v13_zeroprice` / `squad_v13b_zeroprice`,
+both scored at N=100) came back and reversed the framing of the whole arc:
+
+1. **Its pre-registered question answers NO.** Claim volume did not survive its
+   EV going to zero — it went **4.5× and 6.5×** the shipped rate, on both
+   seeds, with strictly −EV non-root claims going 1.47 → 8.67 and 9.84 per
+   episode. The claiming is action-mass, not economics. **The pricing axis is
+   closed**; the remedy belongs in masking or the claim API.
+2. **The squad regression closes under it, and both seeds agree** — 192/200
+   against the shipped 180/200 (p = 0.0295) and a **clean null against the
+   previous era** (195/200, p = 0.57). First arm in the arc to do either.
+3. **So claim volume was never the regression's signature.** `squad_v8` and
+   `squad_v10` have *identical* claim rates (0.0060) and differ by six points
+   of success. Every fix in this arc was aimed at the wrong quantity.
+
+**Nothing shipped and no default moved**, for three reasons that all still
+hold: the recovery is CONFOUNDED (three prices moved at once), it costs
+**false-COMPLETE 0.844 / 0.897** against `squad_v10`'s 0.560, and a run needing
+a `--reward` override cannot be a baseline member by CLAUDE.md's own rule —
+*a scenario that needs an override to work is a finding about the defaults*.
+`squad_v10` stays the member. Full numbers, the #47 root-death read (n.s.,
+p = 0.109) and the reasoning are in the 2026-08-12 progress entry at the bottom.
+
+**Next**: `squad_v14*` isolates `root_done_bonus=0` alone against
+`squad_v10`/`v10b`, same tree, same seeds. If the recovery survives it, the
+regression has a named cause and it is a **default** — the owner's call, and it
+wants the v1.20 window that `_fill_vacancy` (⚑ below) already forces a fleet
+retrain for. If not, the recovery is in `done_true`/`done_false` and needs its
+own split. Either way the *decision* is not pre-authorised; the arms are.
 
 **What shipped.** `runs/BASELINE.json` names one run per doctrine scenario and
 `scripts/baseline.py` passes on it: **one `cohort/` tree (5f848fb6), no
@@ -48,16 +78,18 @@ moves action masks and therefore every rollout: **applying it invalidates this
 baseline and requires the fleet to be retrained.** That is the v1.20 cycle.
 
 **Also open, in order:**
-1. **The squad regression — mechanism found, both pricing fixes rejected.**
+1. **The squad regression — still open, but the claim-spam mechanism is dead.**
    `squad_v10` 0.92 / `squad_v10b` 0.88 against the previous era's 0.98/0.97
-   (pooled p = 0.0031) stands. The `done_false` price drives the claim spam and
-   the decay (v11, single-variable), but −2.0 mutes the honest report, and
-   `first_claim_only` (v12/v12b, one seed each way) pools to a null at p = 0.86
-   with the regression intact under it (p = 0.0086). Twice now, claims ROSE as
-   their EV fell — the open hypothesis is action-mass, not economics; the
-   discriminating arm is a zero-price probe (claim economics zeroed, everything
-   else shipped). Launching an arm is pre-authorised; changing any default is
-   not.
+   (pooled p = 0.0031) stands, and so does the rejection of both pricing fixes
+   (v11 mutes the honest report; `first_claim_only` pools to a null at p = 0.86).
+   What did NOT survive is the account of *why*: the zero-price probe showed
+   claim volume is action-mass rather than economics, and — reading the corpora
+   adjacently for the first time — `squad_v8` and `squad_v10` share a claim rate
+   of 0.0060 while differing by six points of success, so **claim volume never
+   was the regression's signature.** The zero-price arm nonetheless erases the
+   regression (p = 0.57 vs the previous era) by an unidentified route;
+   `squad_v14*` is splitting the three prices to name it. Launching an arm is
+   pre-authorised; changing any default is not.
 2. **Three deferred `cohort/` patches** from the assurance cycle, each with its
    exact diff and a skipped test: #39 (`eval_commit` in the artifact), #40
    (`parse_succession`, the formatter's inverse), #42 (above). All three want
@@ -6052,3 +6084,96 @@ deliberately deferred (`docs/vision.md` §2c).
   separated these arms at p < 1e-4, and unlike the raw rate it cannot be bought
   by declining the engagement. Adding it changes what is allowed to ship, which
   is a decision about the project's claims, not an experiment.
+
+- **2026-08-12 — the zero-price probe answers its pre-registered question NO,
+  and closes the squad regression on the way past. Both seeds agree. Nothing
+  ships.** `squad_v13_zeroprice` (seed 12) and `squad_v13b_zeroprice` (seed 13)
+  ran `done_true=0 done_false=0 root_done_bonus=0` on the otherwise-shipped
+  config, and were scored at N=100 on both checkpoints. The arms and every
+  comparator below are on **one `cohort/` tree, `5f848fb6`** — the frozen v1.19
+  environment — so the whole pricing axis is readable side by side.
+
+  **1. The pre-registered question: is the claiming EV-driven at all? No.**
+  The entry above set the test — "volume that survives its own EV going to zero
+  is action-mass, and the fix then belongs in masking or the claim API, not in
+  prices." Volume did not survive. It *multiplied*, on both seeds:
+
+      arm            done_false   claim rate / admissible step   x shipped
+      squad_v10        -0.5              0.0060                    1.00
+      squad_v10b       -0.5              0.0064                    1.07
+      squad_v11        -2.0              0.0000                    0.00
+      squad_v12b       -0.5 first-only   0.0208                    3.47
+      squad_v13         0.0              0.0268                    4.47
+      squad_v13b        0.0              0.0387                    6.45
+
+  The cleanest cell is the **non-root** DONE claim. At zero price it earns
+  literally nothing and still pays `transmission_cost` −0.01, so it is strictly
+  −EV every time it is emitted; it goes from **1.47/ep on `squad_v10` to 8.67
+  and 9.84** on the arms. Third result in a row where claims rose as their EV
+  fell, and this time the EV is exactly zero and both seeds agree. **The
+  pricing axis is closed.** `done_false=−2.0` buys silence (v11), the ordinal
+  flag does not replicate (v12b), and zero price buys a claim-rate explosion —
+  the volume is action-mass, as §12.61's voice-sync was, and the remedy belongs
+  in masking or the claim API.
+
+  **2. Unasked-for, and the bigger result: the squad regression closes.**
+  Pooled FINAL-policy success at N=100, Fisher exact (the method reproduces the
+  published p = 0.0031 exactly):
+
+      previous era (v8+v9)          195/200 = 0.975
+      shipped v1.19 (v10+v10b)      180/200 = 0.900     <- the regression
+      ordinal flag (v12+v12b)       182/200 = 0.910     p = 0.86 vs shipped
+      zero price (v13+v13b)         192/200 = 0.960     p = 0.0295 vs shipped
+
+  Against the previous era the zero-price arm is **p = 0.57 — a clean null**.
+  The 7.5-point regression that has been open since 2026-08-11 is not
+  detectable under it. The two seeds agree (98/100 vs 94/100, p = 0.28), which
+  neither v12 nor any earlier fix managed.
+
+  **3. Which demolishes the premise the whole arc was built on.** The arm with
+  the *highest* claim volume and the *worst* false-COMPLETE rate ever measured
+  on squad is also the *best* on success; the arms with zero claims (v9, v11)
+  score 0.97 and 0.96; the shipped middle scores 0.90. Across a claim rate of
+  0.0000 → 0.0387 success runs 0.86–0.98 with no monotone relation. The
+  tell was in the corpora the whole time and nobody had put the two columns
+  adjacent: **`squad_v8` and `squad_v10` have identical claim rates (0.0060,
+  0.0060) and differ by six points of success.** Claim volume was never the
+  regression's signature. Every arm in this arc was aimed at the wrong quantity.
+
+  **4. What this does NOT license.** Nothing ships and no default moves:
+  - The recovery is **CONFOUNDED by construction** — three prices moved at
+    once, and `run_report`'s economics audit says so. Which one carries it is
+    unknown.
+  - The price of the recovery is the report itself: **false-COMPLETE 0.844 /
+    0.897** (`squad_v10`: 0.560), root claims 309 and 488 per 100 episodes with
+    72–84% refused, first-claim precision 0.061 and 0.000. Unlike v11 this does
+    *not* mute the net — contact `report_recall` holds at 0.88/0.86 against
+    `squad_v10`'s 0.795, precision 0.93/0.95, doctrine containment 1.000, and
+    every win is still announced (98/98 and 94/94 by ENDEX) — but a C2 project
+    cannot ship a COMPLETE claim that is wrong nine times in ten.
+  - **`runs/BASELINE.json` could not take it anyway.** It needs a `--reward`
+    override to exist, and CLAUDE.md's rule is that what ships is what was
+    trained: *"a scenario that needs an override to work is a finding about the
+    defaults."* That is exactly what this is. `squad_v10` stays the member;
+    `baseline.py` re-verified green after the re-scoring (seal `5f848fb6`
+    untouched — the arms are not members, so their artifacts are not digested).
+
+  **Read on the #47 axis, as that entry asked.** Root death *within successes*,
+  FINAL at N=100: `squad_v13` 13/98 = 0.133 and `squad_v13b` 19/94 = 0.202
+  against `squad_v10`'s 23/92 = 0.250 — pooled 32/192 vs 23/92, **p = 0.109**,
+  n.s. Commander survival did not move when claim volume moved 4.5–6.5×, which
+  is the cheapest evidence yet that the two are unconnected. `squad_v12b`'s
+  0/100 remains a property of that policy, not of any price.
+
+  **Launched, not decided** (`scripts/campaigns/squad_v14_nobonus.jobs`):
+  `squad_v14_nobonus` / `squad_v14b_nobonus`, seeds 12 and 13,
+  `root_done_bonus=0` **alone** — single-variable against `squad_v10`/`v10b` on
+  the same tree. It isolates the largest of the three prices and the one #46's
+  EV analysis centred on: at the shipped settings an accepted root claim pays
+  `done_true` 1.0 + 3.0 = 4.0 against a rejected −0.5, break-even p = 0.111 and
+  a later claim worth +0.903; removing the bonus alone moves break-even to
+  0.333 without touching the penalty. If the recovery survives, the squad
+  regression has a named cause and it is a **default**, which is the owner's
+  call and wants the v1.20 window that `_fill_vacancy` (⚑) already forces a
+  fleet retrain for. If it does not, the recovery is in `done_true`/
+  `done_false` and needs its own split.
