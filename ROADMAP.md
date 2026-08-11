@@ -4699,3 +4699,34 @@ deliberately deferred (`docs/vision.md` §2c).
   hashes the weights and names each drop. The correlation survives either way
   (r = 0.571 → 0.564), but "distinct" had to be true.
 
+- **2026-08-11 (autocycle)** — **The README printed `—` where a zero was
+  sitting.** The v1.17 table gave the non-defend rows a dash in the `announced`
+  column, with a note asserting those roots announce by their own MISSION
+  COMPLETE. The figure existed all along: `successes_announced` counts ENDEX
+  **or** a confirmed root claim, deliberately either/or, and it was in the
+  artifacts committed the same hour. I wrote the dash without opening them.
+
+  Measured at N=100, final policy, successes announced on the net:
+
+  | run | announced | | run | announced |
+  |---|---|---|---|---|
+  | `squad_screen_fallen_v2` | 98/100 | | `squad_v8` | 91/98 |
+  | `squad_recon_v7` | 94/98 | | `fireteam_v8` | 49/80 |
+  | `squad_screen_fallen_v1` | 96/100 | | **`platoon_v5`** | **0/100** |
+  | | | | **`patrol_brique_v5`** | **0/99** |
+
+  **`platoon_v5` and `patrol_brique_v5` succeed on essentially every episode and
+  never once say so.** Same shape as `fireteam_defend_v16`'s 0/99 before ENDEX
+  was restored — and these are scenarios nobody was worried about, publishing
+  100% and 99%.
+
+  **The v1.14–v1.17 argument reproduces across the fleet with no new experiment.**
+  Where the announcement is a *protocol act* it is complete by construction
+  (defend, 391/391). Where it is an *agent behaviour* it ranges from 98% to
+  nothing, uncorrelated with how well the scenario is otherwise solved. The
+  table now carries the numbers instead of the dash.
+
+  **No metric change was needed** — `close_announced` was already right. The
+  defect was mine, in the publication, and it is the second time this cycle that
+  a claim went out ahead of the measurement that was already available.
+
