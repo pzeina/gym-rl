@@ -108,6 +108,13 @@ def main() -> int:
     print(f"publishing {len(names)} run(s) at N={args.episodes}")
     problems = sum(publish(r, args.episodes, force=args.force) for r in names)
     print("done" if not problems else f"done with {problems} problem(s)")
+    # Writing an evaluation is exactly what invalidates the seal (issue #45), and
+    # it is meant to: the manifest digests these files so that a spot-check
+    # cannot quietly replace a published number. Say so here, or the next
+    # `baseline.py` reads as sixteen mysterious digest mismatches.
+    if baseline.load().get("artifacts"):
+        print("re-seal the manifest over the new artifacts:  "
+              "scripts/baseline.py --seal")
     return 0 if not problems else 1
 
 

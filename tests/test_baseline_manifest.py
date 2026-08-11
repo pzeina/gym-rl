@@ -51,7 +51,7 @@ def test_the_shipped_manifest_covers_the_doctrine_scenarios():
 
 
 def _member(tmp_path, run: str, *, commit="a" * 40, overrides=(), episodes=100,
-            gates=(), successes=97, announced=97):
+            gates=(), successes=97, announced=97, peak_episodes=100):
     d = tmp_path / run
     d.mkdir(parents=True, exist_ok=True)
     (d / "economics.json").write_text(json.dumps({
@@ -63,6 +63,14 @@ def _member(tmp_path, run: str, *, commit="a" * 40, overrides=(), episodes=100,
         "metrics": {"success_rate": 0.97, "successes": successes,
                     "successes_announced": announced},
         "gates": [{"name": g, "passed": False} for g in gates],
+    }))
+    # The peak the README publishes. A member is not two files by accident: the
+    # headline is scored from ckpt_latest and this from ckpt_best, and this one
+    # is the half nothing used to check (issue #45).
+    (d / "behavior.json").write_text(json.dumps({
+        "episodes": peak_episodes,
+        "success_ci95": "0.98 ± 0.03",
+        "metrics": {"success_rate": 0.98},
     }))
     return d
 
@@ -158,6 +166,46 @@ def test_a_smoke_test_sized_evaluation_fails_the_fleet(fleet, capsys):
     assert "N=20, needs 100" in out
 
 
+def test_a_spot_check_over_the_peak_evaluation_fails_the_fleet(fleet, capsys):
+    """Issue #45, the exact incident.
+
+    `cohort.training.evaluate` writes `behavior.json` by DEFAULT, so a review's
+    `--episodes 5` functional spot-check overwrote `platoon_v6`'s N=100 peak
+    with an N=5 one and `git add -A` committed it (`a321329`, repaired in
+    `bcdbfab`). Reproduced against this gate on the real tree before the fix:
+    control and treatment both exited 0 with `BASELINE OK`, and their output
+    diffed empty. The environment digest and the checkpoint digest were both
+    untouched and both correct — what moved was the number derived from them,
+    and the README published it as `1.00 ± 0.00 (N=5)` in the peak column for
+    the whole window.
+    """
+    _member(fleet, "platoon_v1", peak_episodes=5)
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "peak evaluated at N=5, needs 100" in out
+    assert "README publishes this cell" in out
+
+
+def test_an_absent_peak_evaluation_is_named_rather_than_silently_ungated(fleet, capsys):
+    """The hole a "when present, require N>=100" rule would have left open.
+
+    `publish_audit.audit_run` returns None when `behavior.json` is missing, and
+    `_run_facts` only applies the give-back gate `if a:` — so deleting the file
+    does not merely skip the new N check, it silently switches off the
+    stability gate as well and prints a `—` in the give-back column. Two gates
+    stood down for one absence and nothing said so.
+    """
+    (fleet / "squad_v1" / "behavior.json").unlink()
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "no behavior.json" in out
+    assert "give-back gate cannot run" in out
+
+
 def test_a_failed_regression_gate_fails_the_fleet(fleet, capsys):
     _member(fleet, "defend_brique_v1", gates=["mean_distance_from_objective_under_threat"])
 
@@ -222,6 +270,115 @@ def test_a_sealed_manifest_detects_a_member_swapped_underneath_it(fleet, capsys)
 
     assert code == 1
     assert "sealed at cohort/ env1" in out
+
+
+def test_sealing_stamps_a_digest_of_every_published_evaluation(fleet):
+    """What `cohort_tree` and `checkpoint_sha256` between them do not cover.
+
+    Those two pin the environment and the weights. The numbers *derived* from
+    them were undigested, which is how a fleet stayed byte-identical in its
+    manifest across a corruption of one of its published cells (issue #45).
+    """
+    assert baseline.seal("v1.19") == 0
+
+    stamped = json.loads((fleet / "BASELINE.json").read_text())["artifacts"]
+
+    assert set(stamped) == set(baseline.load()["runs"].values())
+    for run, files in stamped.items():
+        assert set(files) == set(baseline.PUBLISHED_EVALUATIONS), run
+        for name, digest in files.items():
+            assert digest == baseline.artifact_digest(fleet / run / name)
+
+
+def test_an_evaluation_rewritten_after_the_seal_fails_the_fleet(fleet, capsys):
+    """The durable half of the fix: drift is detectable from the tree alone.
+
+    No live campaign to diff against, no README to re-read, no host state — the
+    manifest says what the numbers were and the files either still hash to it or
+    they do not. The one check that caught the real incident,
+    `test_the_readme_table_matches_the_runs_on_disk`, skips whenever any member
+    is RUNNING, so it would have been silent had the fleet still been in flight.
+    """
+    baseline.seal("v1.19")
+    # Re-scored at a full N — so the evidence bar alone cannot see this, and
+    # only the digest can. A silent re-score is exactly how a published cell
+    # stops describing the checkpoint the rest of the row describes.
+    (fleet / "platoon_v1" / "behavior.json").write_text(json.dumps({
+        "episodes": 100, "success_ci95": "1.00 ± 0.00", "metrics": {"success_rate": 1.0}}))
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "behavior.json changed since the seal" in out
+    assert "re-seal" in out
+
+
+def test_an_evaluation_deleted_after_the_seal_fails_the_fleet(fleet, capsys):
+    baseline.seal("v1.19")
+    (fleet / "squad_v1" / "behavior_final.json").unlink()
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "behavior_final.json was sealed at" in out
+    assert "is not on disk" in out
+
+
+def test_a_member_added_after_the_seal_is_not_covered_by_it(fleet, capsys):
+    """Silence would make the stamp evadable by editing the members list."""
+    baseline.seal("v1.19")
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest["runs"]["platoon"] = "platoon_v2"
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+    _member(fleet, "platoon_v2")
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "stamps no evaluation for platoon_v2" in out
+
+
+def test_a_manifest_written_before_stamping_existed_is_not_an_accusation(fleet, capsys):
+    """Unstamped is not the same finding as changed.
+
+    Every gate in this file that fires on missing information rather than on
+    wrong information has taught somebody to ignore it. A manifest with no
+    `artifacts` key predates the stamp; it has no opinion about these files.
+    """
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    assert "artifacts" not in manifest
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "BASELINE OK" in out
+    assert "sealed" not in out
+
+
+def test_every_evaluation_the_shipped_manifest_sealed_is_unchanged_on_disk():
+    """The tree-only detector, run against the real fleet.
+
+    Deliberately keyed on the *sealed* run names rather than the manifest's
+    current members, so a re-baseline campaign that re-points `runs` before its
+    new members land does not turn this red for hours — the old runs are still
+    on disk (archived or not, `run_dir` finds either) and still hash to their
+    seal. `scripts/baseline.py` is the gate that a campaign is finished; this is
+    the gate that a finished one has not moved since.
+    """
+    stamped = baseline.load().get("artifacts")
+    assert stamped, (
+        "the shipped manifest carries no evaluation digests — re-seal it with "
+        "scripts/baseline.py --seal (issue #45)"
+    )
+
+    drift = []
+    for run, files in sorted(stamped.items()):
+        for name, want in sorted(files.items()):
+            got = baseline.artifact_digest(baseline.run_dir(run) / name)
+            if got != want:
+                drift.append(f"{run}/{name}: sealed {want[:12]}, on disk "
+                             f"{got[:12] if got else 'ABSENT'}")
+    assert not drift, "sealed evaluations have changed:\n  " + "\n  ".join(drift)
 
 
 def test_an_uncommitted_final_policy_fails_the_fleet(fleet, capsys, monkeypatch):
