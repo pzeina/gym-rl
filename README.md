@@ -365,13 +365,13 @@ scenario at a time as the fleet is re-published off final numbers.
 |---|---|---|---|---|---|---|---|---|
 | fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | 0.10 | 0.02 | **98/98 · 96/96** | 4/4 ✓ |
 | defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | 0.01 | 0.00 | **100/100 · 97/97** | 4/4 ✓ |
-| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | — | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | — | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | — | 2/2 ✓ |
-| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | — | 2/2 ✓ |
-| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | — | 2/2 ✓ |
-| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | — | 2/2 ✓ |
-| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | — | 2/2 ✓ |
+| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | **0/100** | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | 96/100 | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | 98/100 | 2/2 ✓ |
+| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | **0/99** | 2/2 ✓ |
+| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | 91/98 | 2/2 ✓ |
+| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | 94/98 | 2/2 ✓ |
+| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | 49/80 | 2/2 ✓ |
 
 > **`fireteam_v8` does not clear the publishing bar and is printed anyway.** Its
 > give-back is **12.0 points** against a bar of 10, so by this repo's own standard
@@ -391,15 +391,23 @@ scenario at a time as the fleet is re-published off final numbers.
 > numbers are being published for the first time — `squad_v8` at **0.23** is the
 > highest in the fleet and no gate covers it.
 
-> **The `—` in `announced` is not a gap in the data, it is a gap in the fleet.**
-> ENDEX is COMMAND's act on a *continuous* posture, so it fires only on DEFEND /
-> DENY roots. Everywhere else the operation is announced by the root's own
-> MISSION COMPLETE — an agent behaviour, optional and learnable, exactly the
-> thing v1.14–v1.17 spent four cycles establishing cannot be relied on. Their
-> false-complete rates at final say the same: `squad_screen_fallen_v2` 0.27,
-> `squad_recon_v7` 0.36, `squad_v8` 0.44, `platoon_v5` 0.74, `fireteam_v8` 0.89.
-> **The announcement guarantee currently exists on two scenarios out of nine.**
-> That is the next thread, and it is stated here rather than discovered later.
+> **`announced` is measured on every scenario, and two of them are at zero.**
+> An earlier revision of this table printed `—` for the non-defend rows on the
+> assumption that the figure did not exist for them. It did — `successes_announced`
+> counts COMMAND's ENDEX **or** the root's own confirmed claim, deliberately
+> either/or, because on a SEIZE root the claim *is* the announcement. The numbers
+> were in the artifacts the whole time and the dash was hiding them.
+>
+> What they show: **`platoon_v5` announces 0 of 100 wins and `patrol_brique_v5`
+> 0 of 99.** Both succeed on essentially every episode and neither ever says so
+> on the net — the same shape as `fireteam_defend_v16`'s 0/99 before ENDEX was
+> restored. `fireteam_v8` manages 49/80. The rest run 91–98%.
+>
+> Where the announcement is a **protocol act** it is complete by construction
+> (defend, 391/391). Where it is an **agent behaviour** it ranges from 98% to
+> nothing at all, on scenarios that are otherwise solved. That is the argument
+> of v1.14–v1.17 reproduced across the rest of the fleet without a single new
+> experiment, and it is the next thread.
 >
 > **Read `successes announced` as the headline, not the success rate.** It is
 > `successes_announced`: of the operations that succeeded, how many said so on

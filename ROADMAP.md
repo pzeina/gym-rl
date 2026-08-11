@@ -1,6 +1,59 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-10, the DONE-channel trilogy)
+## ⟳ Session handoff — resume here (2026-08-11, v1.18.0 shipped)
+
+**State**: `main` and `multi-agent-dev` both at HEAD and in sync with origin;
+**`v1.18.0` tagged and pushed** (first tag since v1.9.0). 687 tests green, ruff
+clean, spaces **Discrete(228)/Box(220)** frozen. Nothing training. Boards
+published and current. Read the tag annotation first — it states what the
+release does *not* claim.
+
+**⚑ THE NEXT ITEM, and it needs a decision before code.** The fleet re-published
+at N=100 exposed that **the announcement guarantee covers two scenarios of
+nine**. Measured, final policy, wins announced on the net:
+
+  defend (ENDEX, a protocol act)   391/391 — complete by construction
+  squad_screen / squad_recon / squad   91–98%
+  fireteam_v8                       49/80
+  **platoon_v5  0/100   ·   patrol_brique_v5  0/99**
+
+`platoon` and `patrol_brique` succeed on essentially every episode and **never
+once say so**. Same shape as `fireteam_defend_v16`'s 0/99 before ENDEX. Where the
+announcement is a protocol act it is complete; where it is an agent behaviour it
+ranges from 98% to nothing and does not track how well the scenario is solved.
+
+**Options, none taken:**
+  (a) Extend COMMAND's close announcement to completable roots — ENDEX, or a
+      confirm-shaped act, on SEIZE/RECON/CLEAR too. Mirrors v1.16 exactly and is
+      the only option that yields a guarantee. Touches every scenario's
+      transcript; masking-only, so spaces stay frozen; needs a fleet retrain to
+      publish honestly.
+  (b) Leave it and say so in the README, as it now does.
+  (c) Attack root-claim reliability instead — the option four price experiments
+      say does not work.
+I recommend (a). It is the same argument v1.14–v1.17 established, and it
+reproduces across the fleet with no new experiment.
+
+**Also open**: `fireteam_v8` does **not** clear the publishing bar (12.0-point
+give-back, 80% ± 8 at N=100 against a superseded N=20 90% ± 13) and is published
+with the flag. It is the one scenario whose champion is unfit; a retrain is the
+obvious move and nobody has taken it.
+
+**Autocycle findings, 2026-08-11** (three items, all logged below): `squad_v7`'s
+lost artifacts recovered and its crash found unreproducible; the publish gate
+**validated** — give-back predicts *signed* overstatement at r = 0.564, p = 0.015,
+via new `scripts/publish_audit.py --validate`; and the README's `—` in the
+announced column found to be hiding a zero. **Two of the three items were
+corrections to claims I had made ahead of a measurement that was already
+available.** That is the pattern to watch in this file.
+
+**How to work here**: `CLAUDE.md` (Operating guide + Training workflow) first;
+assurance contract in `ASSURANCE-SYNC.md`. Commits are pre-authorised; **pushing
+is not**. Quote every between-run delta at both checkpoints or not at all.
+
+---
+
+## ⟳ Session handoff — 2026-08-10, the DONE-channel trilogy (SUPERSEDED)
 
 **Everything in the 2026-08-08 block below is superseded.** It is kept because
 its D4 and option-4 reasoning is still the best account of those decisions, but
@@ -4630,3 +4683,103 @@ deliberately deferred (`docs/vision.md` §2c).
   the fleet-load map is byte-identical before and after: 44 of 98 committed
   `ckpt_best.pt` load into current-era spaces, the other 54 being the same
   pre-existing 131/137/166-dim obs eras as before this commit.
+
+- **2026-08-11 (autocycle)** — **`squad_v7`'s lost artifacts recovered; the
+  original failure is not reproducible, and the recovery contradicts the gate
+  that flagged it.** `train_status` classifies `squad_v7` FAILED — a v1.11-era
+  run that reached 100% of its steps and then lost `behavior_final.json`,
+  `eval.gif` and `eval_transcript.txt` to a post-training artifact crash.
+
+  **Mechanism: not identified, and that is the result.** Re-running the failing
+  stage on the same checkpoint under current code succeeds cleanly — gif,
+  transcript and behavior file all produced. The cause lived in code that has
+  since moved, and inventing a story for it would be worse than recording that
+  it is gone. Artifacts regenerated instead; both checkpoints now carry
+  `checkpoint_sha256` (refs #28), which the originals never had.
+
+  **A near-miss of my own, logged because it was one keystroke from a quiet
+  downgrade.** The recovery initially overwrote `behavior.json`, which was
+  *present, not lost*, replacing a committed **N=100, 0.92 ± 0.05** evaluation
+  with a fresh **N=20, 0.85 ± 0.16**. Fewer episodes, triple the interval, and
+  no announcement that a published number had moved — exactly the failure mode
+  `publish_audit.py` exists to catch, arriving through the repair rather than
+  the publication. Caught by diffing before committing, restored with
+  `git checkout --`, and the recovered final-policy eval was then matched to
+  N=100 so both checkpoints agree. **Recovery must touch only what is missing.**
+
+  **The finding the recovery exposed.** With `behavior_final.json` in place,
+  `squad_v7` audits at peak 0.99, final-decile **0.596**, give-back **39.4
+  points** — the worst in the fleet by a wide margin. Its FINAL POLICY scores
+  **0.91 ± 0.06** at N=100, against its peak checkpoint's **0.92 ± 0.05**. A
+  one-point difference behind a thirty-nine-point gate reading. So for this run
+  the give-back statistic — computed from the rolling training curve — does not
+  describe the divergence it is meant to stand in for. Compare `fireteam_v8`,
+  where a *smaller* gap of 12.0 sat over a genuine final-policy drop to 0.80.
+  The gate is not thereby wrong; it is a curve statistic being read as a
+  checkpoint statement, and the two came apart here. **Next item: measure
+  give-back against measured best-vs-final divergence across every run that now
+  has both, and say whether the gate predicts what it is used to predict.**
+
+- **2026-08-11 (autocycle)** — **The publish gate is vindicated, and my own
+  previous entry set it up to be refuted.** `scripts/publish_audit.py --validate`
+  now asks whether give-back predicts what it is used to predict, over every run
+  carrying both checkpoints at N=100.
+
+  **It does.** Give-back vs signed (best − final): **Pearson r = 0.564,
+  p = 0.015**, n = 18 distinct policies. Higher give-back ⇒ `ckpt_best`
+  overstates the final policy more, which is exactly the gate's claim.
+
+  **The entry above got this wrong by picking the wrong statistic.** It read the
+  gate against **|best − final|**, where the correlation is *negative*
+  (r = −0.40, p = 0.097) and squad_v7 looks like a refutation: give-back 39.4
+  over a 1-point difference. But the gate does not claim the checkpoints
+  *differ*, it claims the published one is too **HIGH** — a signed quantity.
+  Absolute divergence is dominated by runs near the ceiling, where neither
+  checkpoint can move far. Same 18 runs, same gate, opposite verdict, decided
+  entirely by whether the sign is kept.
+
+  **Two facts worth having beside it.** `ckpt_best` overstates in only **4 of 18**
+  runs; the fleet mean is **−1.5pt**, so the peak checkpoint usually *understates*
+  the policy the run ended with. And |best − final| never exceeds **5 points**
+  across the fleet, so the practical exposure the FINAL-policy standard removes
+  is real but small — the standard is right for being honest, not for being large.
+
+  **A bug in the validator, found because its output made a claim.** It first
+  deduplicated by hashing the checkpoint FILE, which silently failed: a
+  checkpoint embeds its `reward_config`, so the v1.15 revert and the v1.16 ENDEX
+  restoration each produced arms whose tensors match to 0.000e+00 and whose files
+  do not. It reported 21 "distinct policies" including three duplicates. Now
+  hashes the weights and names each drop. The correlation survives either way
+  (r = 0.571 → 0.564), but "distinct" had to be true.
+
+- **2026-08-11 (autocycle)** — **The README printed `—` where a zero was
+  sitting.** The v1.17 table gave the non-defend rows a dash in the `announced`
+  column, with a note asserting those roots announce by their own MISSION
+  COMPLETE. The figure existed all along: `successes_announced` counts ENDEX
+  **or** a confirmed root claim, deliberately either/or, and it was in the
+  artifacts committed the same hour. I wrote the dash without opening them.
+
+  Measured at N=100, final policy, successes announced on the net:
+
+  | run | announced | | run | announced |
+  |---|---|---|---|---|
+  | `squad_screen_fallen_v2` | 98/100 | | `squad_v8` | 91/98 |
+  | `squad_recon_v7` | 94/98 | | `fireteam_v8` | 49/80 |
+  | `squad_screen_fallen_v1` | 96/100 | | **`platoon_v5`** | **0/100** |
+  | | | | **`patrol_brique_v5`** | **0/99** |
+
+  **`platoon_v5` and `patrol_brique_v5` succeed on essentially every episode and
+  never once say so.** Same shape as `fireteam_defend_v16`'s 0/99 before ENDEX
+  was restored — and these are scenarios nobody was worried about, publishing
+  100% and 99%.
+
+  **The v1.14–v1.17 argument reproduces across the fleet with no new experiment.**
+  Where the announcement is a *protocol act* it is complete by construction
+  (defend, 391/391). Where it is an *agent behaviour* it ranges from 98% to
+  nothing, uncorrelated with how well the scenario is otherwise solved. The
+  table now carries the numbers instead of the dash.
+
+  **No metric change was needed** — `close_announced` was already right. The
+  defect was mine, in the publication, and it is the second time this cycle that
+  a claim went out ahead of the measurement that was already available.
+

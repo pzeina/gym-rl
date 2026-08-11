@@ -71,13 +71,108 @@ def audit_run(run_dir: Path) -> dict | None:
     }
 
 
+def validate_gate() -> int:
+    """Does give-back predict that ckpt_best OVERSTATES the final policy?
+
+    The gate exists on the premise that a best-rolling-window checkpoint can be
+    a measurement of a transient. That premise is checkable now that runs carry
+    both checkpoints at N=100, and it must be checked against the SIGNED
+    quantity: the gate claims the published figure is too HIGH, not merely that
+    the two checkpoints differ. Reading it against |best - final| says the
+    opposite of the truth, because absolute divergence is dominated by runs near
+    the ceiling where neither checkpoint can move far.
+
+    Runs whose ``ckpt_latest`` hashes identically are one policy, not several —
+    v1.16/v1.17 produced three bit-identical fireteam_defend arms and two
+    defend_brique ones, and counting them separately would inflate n by 17%.
+    """
+    import hashlib
+
+    def sha(path: Path) -> str | None:
+        """Hash the WEIGHTS, not the file.
+
+        The file bytes differ between policies that are bit-identical as
+        policies: a checkpoint embeds its ``reward_config``, so the v1.15 revert
+        and the v1.16 ENDEX restoration each produced arms whose tensors match
+        to 0.000e+00 and whose files do not. Hashing the file silently fails to
+        deduplicate and then reports the survivors as "distinct policies", which
+        is the kind of quiet false claim this whole audit exists to catch.
+        """
+        if not path.is_file():
+            return None
+        try:
+            import torch
+
+            model = torch.load(path, map_location="cpu", weights_only=False)["model"]
+        except Exception:
+            return None
+        h = hashlib.sha256()
+        for key in sorted(model):
+            h.update(key.encode())
+            h.update(model[key].detach().cpu().numpy().tobytes())
+        return h.hexdigest()
+
+    seen: dict[str, str] = {}
+    rows = []
+    for d in sorted(RUNS.iterdir()):
+        if not d.is_dir():
+            continue
+        best, final = d / "behavior.json", d / "behavior_final.json"
+        if not (best.is_file() and final.is_file()):
+            continue
+        b, f = json.loads(best.read_text()), json.loads(final.read_text())
+        if b.get("episodes") != 100 or f.get("episodes") != 100:
+            continue          # mismatched N is not a comparison (refs #34)
+        a = audit_run(d)
+        if not a:
+            continue
+        digest = sha(d / "ckpt_latest.pt")
+        if digest and digest in seen:
+            print(f"  (skipping {d.name}: weights identical to {seen[digest]})")
+            continue
+        if digest:
+            seen[digest] = d.name
+        rows.append((d.name, a["gap"],
+                     b["metrics"]["success_rate"], f["metrics"]["success_rate"]))
+
+    if len(rows) < 4:
+        print(f"only {len(rows)} distinct policies carry both checkpoints at N=100 — "
+              "not enough to say anything")
+        return 0
+
+    signed = [(bs - fs) * 100 for _, _, bs, fs in rows]      # + = best overstates
+    gaps = [g for _, g, _, _ in rows]
+    over = sum(1 for x in signed if x > 0)
+    print(f"\n{len(rows)} distinct policies, both checkpoints at N=100\n")
+    print(f"{'run':<26}{'give-back':>10}{'best':>7}{'final':>7}{'best-final':>12}")
+    for (n, g, bs, fs), sg in sorted(zip(rows, signed, strict=True), key=lambda z: -z[0][1]):
+        print(f"{n:<26}{g:>10.2f}{bs:>7.2f}{fs:>7.2f}{sg:>+11.0f}pt")
+    print(f"\nckpt_best overstates the final policy in {over}/{len(rows)} runs; "
+          f"mean {sum(signed) / len(signed):+.1f}pt")
+    try:
+        from scipy.stats import pearsonr
+    except ImportError:
+        print("scipy not available — correlation skipped")
+        return 0
+    r, p = pearsonr(gaps, signed)
+    verdict = ("the gate PREDICTS overstatement" if r > 0 and p < 0.05
+               else "no significant relationship at this n")
+    print(f"give-back vs signed (best - final): Pearson r={r:.3f}, p={p:.3f}  ->  {verdict}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--evaluate", action="store_true",
                     help="measure the FINAL policy for any run missing behavior_final.json")
+    ap.add_argument("--validate", action="store_true",
+                    help="ask whether the give-back gate predicts what it is used to predict")
     ap.add_argument("--min-episodes", type=int, default=100,
                     help="only audit runs published at this eval size or larger")
     args = ap.parse_args()
+
+    if args.validate:
+        return validate_gate()
 
     audits = [a for d in sorted(RUNS.iterdir()) if d.is_dir() and (a := audit_run(d))]
     audits = [a for a in audits if a["episodes"] >= args.min_episodes]
