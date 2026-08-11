@@ -292,19 +292,27 @@ them:
 *Edge case*: no admissible step → `null`, never `0.0` — an undefined rate and
 a declined opportunity are the distinction the metric exists to preserve.
 
-### Closing a continuous-posture operation: timing vs volume (issue #35)
+### Closing an operation: timing vs volume (issue #35)
 
-A DEFEND/DENY root may never declare its own operation over, so COMMAND ends
-it with ENDEX and what the root's report buys is closing the window *early*,
-plus `root_done_bonus` (+3.0). Four numbers describe that route, and the first
-one alone is a trap.
+COMMAND ends **every** operation with ENDEX since v1.19; what the root's own
+report buys is closing the window *early*, plus `root_done_bonus` (+3.0). Four
+numbers describe that route, and the first one alone is a trap.
+
+Before v1.19 this whole block only existed on the defend family, because a
+completable root got no ENDEX and every rate below has ENDEXes-sent for a
+denominator. It now reads on all eight scenarios, and that is the point: the
+behaviour `successes_announced` used to carry — did the root report, or did HQ
+have to close for it — moved here when the announcement itself became
+guaranteed.
 
 * **`closed_on_root_report_rate`** = `endex_on_root_report` / `endex_sent` —
   of the operations COMMAND closed, the share closed by the root's own report
-  rather than by the grace window expiring. *Edge case*: no ENDEX → `null`
-  (a completable root closes with MISSION COMPLETE, and reading that as
-  "never reported" is the denominator confusion `false_complete_rate` fell
-  into on `fireteam_defend_v12`).
+  rather than by the grace window expiring. *Edge case*: no ENDEX → `null`,
+  which since v1.19 means only "no successful operation" — every win gets an
+  ENDEX, so the denominator is the win count. (Before v1.19 a completable root
+  closed with MISSION COMPLETE and no ENDEX at all, and reading that as "never
+  reported" is the denominator confusion `false_complete_rate` fell into on
+  `fireteam_defend_v12`.)
 * **`root_sitreps_per_episode`** — SITREPs transmitted by whoever held the
   root at that step (read per step, because succession moves the root).
 * **`closes_per_root_sitrep`** = `endex_on_root_report` / `root_sitreps` —
@@ -352,15 +360,23 @@ regression on the other, and only the pair says which it was.
 
 `successes_announced` / `successes_announced_rate` — of the operations that
 **succeeded**, how many said so on the net: COMMAND's ENDEX **or** the root's
-own confirmed MISSION COMPLETE, deliberately either/or, because on a SEIZE root
-the claim *is* the announcement. Separate from `closed_on_root_report_rate`,
-whose denominator is ENDEXes sent and which therefore cannot see an operation
-that closed in silence — the blind spot that let v1.14 announce 0 of 57
-`fireteam_defend` successes with no published number moving. *Edge case*: no
-success → `null`.
+own confirmed MISSION COMPLETE, deliberately either/or. *Edge case*: no success
+→ `null`.
 
-**A zero on it has three causes, and the integer cannot say which** (issue #38,
-from the assurance layer, which reads the same zeros off the radio). The
+**Since v1.19 this is complete by construction and that is deliberate.** It used
+to be gated on the root's mission, which made it a protocol act on a defence and
+an agent behaviour everywhere else — 391/391 on the defend family, 91–98% on the
+squad ones, 49/80 on `fireteam_v8`, and 0/100 on `platoon_v5` and 0/99 on
+`patrol_brique_v5`, two scenarios that succeed on essentially every episode and
+never once say so. A metric pinned at 1.00 is worth less as a *measurement* and
+far more as a *guarantee*: `scripts/baseline.py` fails any fleet where a win went
+unannounced, which is now a broken protocol rather than a shy policy. The
+behaviour it used to carry is `closed_on_root_report_rate`, above.
+
+**A zero on it had three causes, and the integer could not say which** (issue
+#38, from the assurance layer, which reads the same zeros off the radio). Kept
+because it is how the pre-v1.19 corpora must be read, and because it is the
+diagnosis to reach for if the guarantee ever regresses. The
 announcement line therefore renders the root's own claim channel beside it
 (`format_root_claim_shape`), which is the #13 argument above one level up:
 

@@ -65,3 +65,12 @@ success rates are expected to *match* their predecessors and the announcement
 column is expected to go to 100% everywhere. A success-rate move on any scenario
 is therefore a finding, not a win: it means something other than the announcement
 changed.
+
+## One rule for the session that runs this
+
+**Do not touch `cohort/` while the lanes are in flight.** A queue launches each
+job as it reaches it, and `train.py` imports the tree that exists at that
+moment — so a commit to `cohort/` at 11:00 would train the last four members
+against a different environment than the first four, and the provenance gate
+would (correctly) fail the fleet. Tooling, tests, docs and boards are free to
+move; the environment is frozen from the first launch to the last landing.
