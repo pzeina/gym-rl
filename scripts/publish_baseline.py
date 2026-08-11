@@ -71,8 +71,14 @@ def publish(run: str, episodes: int, *, force: bool = False) -> int:
             problems += 1
             continue
         have = _episodes(out)
-        if have > episodes and not force:
-            print(f"  · {run}/{artifact}: already N={have} — refusing to shrink to {episodes}")
+        if have >= episodes and not force:
+            # >= and not >: an equal-N re-evaluation is a DIFFERENT SAMPLE
+            # replacing a committed, possibly published number, and it buys
+            # nothing. Caught by smoke-testing this script on squad_v9, which
+            # duly overwrote its N=100 artifact, its transcript and its GIF —
+            # the squad_v7 incident, reproduced by the tool built to avoid it.
+            print(f"  · {run}/{artifact}: already N={have} — leaving it alone "
+                  f"(--force to re-measure at N={episodes})")
             continue
         extra = {}
         if with_media:
