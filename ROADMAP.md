@@ -5360,3 +5360,141 @@ deliberately deferred (`docs/vision.md` §2c).
   this entry as its caveat. It clears every gate — N=100 final policy, all gates
   green, give-back 7.0 under the bar of 10, 92/92 announced — and it is the
   weakest member of the fleet by a clear margin.
+
+- **2026-08-11 (assurance, #42)** — **Command does not devolve to a branch whose
+  leader was itself a successor: the silence #42 heard on the net is an org-chart
+  hole, not a reporting gap.** The filing's worked example reproduces line for
+  line on this tree — including the silence — and its ground truth does not.
+
+  **The defect, in one statement.** `Roster._fill_vacancy`
+  (`cohort/core/units.py:251-288`) sets `successor.leader_id = vacated.leader_id`
+  and never adds `successor.id` to that leader's `subordinate_ids`. Its own
+  *recursive* branch does exactly this (`successor.subordinate_ids.append(
+  promoted.id)`, line 287) — the top-level call does not. So the first succession
+  into a **mid-chart** slot leaves the new leader pointing at a superior that does
+  not list it, and the link is one-way from then on. Minimal repro, pure core, no
+  policy involved:
+
+      roster = squad()                      # SL1 → TL1(RFN1,RFN2), TL2(RFN3,RFN4)
+      tl2.alive = False; roster.succeed(tl2)
+      RFN3.leader_id      == SL1.id         # RFN3 reports to the squad leader
+      SL1.subordinate_ids == [1, 4]         # …which still lists TL2's corpse
+      SL1.living_subordinates(roster)       # ['TL1'] — RFN3 and RFN4 are gone
+
+  RFN3 and RFN4 are now off the squad leader's chart. `env/actions.py` masks
+  orders on `living_subordinates`, so they cannot be tasked; `env/observations.py`
+  builds the leader's subordinate slots from the same list, so they are not
+  perceived; `metrics.py:321` records the same list as the trace's `subs`, so
+  `succession_recovery`'s orphan set omits them and scores a recovery that did not
+  happen. And when SL1 falls in turn, `_pick_successor` cannot see that branch, so
+  command does not devolve to it.
+
+  **Why the net goes quiet, which is what they measured.** The announcement is
+  emitted per succession *event* (`cohort_env.py:704-710`). No event, no message.
+  Replaying the filing's own death order on our roster — SL1 69, TL1 78, TL2 82,
+  RFN1 95, RFN2 103 — reproduces their transcript exactly:
+
+      step  69  TL1: SL1 IS DOWN. I AM ASSUMING COMMAND   /  RFN1: ASSUMING TL1'S POSITION
+      step  78  RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND  /  RFN2: ASSUMING RFN1'S POSITION
+      step  82  RFN3: TL2 IS DOWN. I AM ASSUMING COMMAND
+      step  95  RFN2: RFN1 IS DOWN. I AM ASSUMING COMMAND
+      step 103  (silence)                         root=None   living=['RFN3','RFN4']
+
+  **Where their ground truth is wrong, and it matters.** #42 says "truth promotes
+  RFN3 — the top-ranked survivor". This repo's truth is `Roster.root()` = the
+  senior living agent with `leader_id is None`, and at step 103 that is **`None`**.
+  Two agents alive, nobody in command. So the cost is not that a monitor lags the
+  truth; it is that there is no root, and every root-keyed mechanism in the
+  environment goes dead with it: `is_root_opord_claim` requires `soldier is
+  roster.root()` so the operation's MISSION COMPLETE channel shuts,
+  `_root_sitrep_step` (`cohort_env.py:1127`) stops being recorded so the v1.19
+  COMMAND close is unreachable, and the ENDEX branch (`cohort_env.py:966`) is
+  guarded by `if root is not None` and emits nothing. A rootless episode can only
+  end by timeout or the grace window. Their measurement is right, their diagnosis
+  is one level too shallow, and their proposed fix would paper over it — announcing
+  a root change would leave the branch untaskable and unobserved, and here there is
+  no new root to announce.
+
+  **Measured, twice.** Structurally, over *every* order in which a team can die
+  (pure `Roster`, no policy, no seeds):
+
+      squad     4080/5040 orderings orphan a branch (81.0%)
+                1928/5040 reach a living team with no root (38.3%)
+      fireteam     0/24    /    0/24        — exempt: a fireteam successor's new
+                                              leader is HQ, which keeps no list
+
+  Realised on the shipped fleet, sampled actions, seeds 500+, 660 episodes over
+  the seven readable baseline members (`squad_screen_v11` was still training and
+  was not touched):
+
+      fireteam        0/100    fireteam_defend  0/100    defend_brique  0/100
+      patrol_brique   1/100    squad            6/100    squad_recon   18/100
+      platoon        19/60
+      → 44/660 episodes end with a broken chart; 1/660 (squad_recon) loses the
+        root entirely, for 11 of 62,090 (step × living-team) checks = 0.018%
+
+  The org kind predicts it exactly: every `fireteam`-org scenario is clean, every
+  `squad`/`platoon`-org scenario is not. **We do not reproduce their rates** —
+  0.343% of checks and 18.5% of episodes against our 0.018% and 0.15%. Their
+  corpora are older, weaker policies that lose leaders far more often (their
+  `squad_v2` corpus carries 62 successions in 30 episodes; `squad_v10` carries 38
+  in 100). The mechanism is identical; the frequency is a property of the policy
+  being watched, not of the environment, and should be quoted as theirs.
+
+  Also measured and **zero**: a root that moves *silently to another living agent*.
+  0 in 5,040 orderings structurally, 0 in 62,090 checks on the fleet. In this repo
+  the root is either announced or lost — which is why the announced chain never
+  names a live non-root, and why "hold a dead commander" is the correct
+  description of the failure.
+
+  **The patch, and why it is not applied today.** One statement, in
+  `cohort/core/units.py::_fill_vacancy`, immediately after
+  `successor.leader_id = vacated.leader_id`:
+
+      + # The superior inherits the successor in the slot it just filled. Without
+      + # this the promoted agent is unreachable from above: unorderable (masks
+      + # read living_subordinates), unobserved, and — when the superior falls —
+      + # not devolved to, which is how an operation ends up with no root (#42).
+      + if successor.leader_id is not None:
+      +     parent = self.by_id[successor.leader_id]
+      +     if successor.id not in parent.subordinate_ids:
+      +         parent.subordinate_ids.append(successor.id)
+
+  With it, the filing's own example produces the message they asked for and
+  restores the root, using the existing formatter, with no new vocabulary and no
+  new emission rule:
+
+      step 103  RFN3: RFN2 IS DOWN. I AM ASSUMING COMMAND  /  RFN4: ASSUMING RFN3'S POSITION
+                root=RFN3
+
+  Evidence it is safe: applied in memory as a pytest plugin (nothing on disk under
+  `cohort/` changed), the full suite is **794 passed, 4 skipped** — identical to
+  head — with the new test unskipped and green, and the structural sweep goes to
+  0/5040 on both counts.
+
+  `cohort/` is **frozen**: `squad_screen_v11`, the last baseline member, was 64%
+  through training when this was written, and `train.py` imports the tree that
+  exists when a job starts — landing this now would train one member of the
+  shipping fleet against a different environment than the other seven and destroy
+  the baseline's provenance. It is also not a patch but a **v-cycle** change: it
+  restores an order edge, so action masks and observations move and every rollout
+  changes. `tests/test_succession.py::
+  test_a_promoted_leader_is_on_the_chart_of_the_superior_it_reports_to` is written
+  and skipped with that reason; unskip it when the patch lands. README's succession
+  paragraph now carries the scope.
+
+  **Coverage note, on us.** Six succession tests existed and all six killed the
+  **root** — where `vacated.leader_id is None` and there is no superior to
+  re-point. Not one killed a mid-chart leader. The defect has been reachable since
+  the roster was written and the suite could not see it, which is why the new test
+  kills TL2 and then sweeps every death order rather than asserting one more
+  transcript.
+
+  **What we would not do.** #42 offers "emit `TAKING_COMMAND` whenever the root
+  changes" and, as a cheaper alternative, "have `probe.py` report when the
+  announced chain and the rank-derived root disagree". The first treats the symptom
+  and buys an external monitor an announcement that the environment itself cannot
+  act on; the second would report a disagreement that, measured here, does not
+  exist — the announced chain and the truth never disagree about a *living* root.
+  Fixing the chart closes both, and pays for itself in the env: two agents that
+  were unorderable for the rest of the episode become orderable again.
