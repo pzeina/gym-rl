@@ -1,6 +1,77 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-11, v1.18.0 shipped)
+## ⟳ Session handoff — resume here (2026-08-11, baseline v1.19 landed)
+
+**State**: `multi-agent-dev`, **~25 commits ahead of origin, nothing pushed**;
+tag still v1.18.0. **795 tests green, 3 skipped**, ruff clean, spaces
+**Discrete(228)/Box(220)** frozen. Nothing training. All three boards published
+and current.
+
+**What shipped.** `runs/BASELINE.json` names one run per doctrine scenario and
+`scripts/baseline.py` passes on it: **one `cohort/` tree (5f848fb6), no
+`--reward` overrides, every headline the FINAL policy at N=100, every gate
+green, every give-back under the bar, every checkpoint loadable, every win
+announced.**
+
+    fireteam         fireteam_v9          0.97 ± 0.03     97/97 announced
+    fireteam_defend  fireteam_defend_v20  0.98 ± 0.03     98/98
+    squad            squad_v10            0.92 ± 0.05     92/92
+    squad_recon      squad_recon_v8       0.99 ± 0.02     99/99
+    squad_screen     squad_screen_v11     0.98 ± 0.03     98/98
+    patrol_brique    patrol_brique_v6     0.99 ± 0.02     99/99
+    defend_brique    defend_brique_v15    1.00 ± 0.00   100/100
+    platoon          platoon_v6           1.00 ± 0.00   100/100
+
+`platoon` and `patrol_brique` used to win in complete silence (0/100 and 0/99);
+`fireteam` was the one champion published with a flag saying it missed the bar,
+at 0.80 with a fifth of its episodes timing out. 96 superseded runs are in
+`runs/archive/` — moved, never deleted, and every reader resolves through
+`fleet_status.find_run` / `run_report.run_dir`.
+
+**⚑ THE NEXT ITEM, and it is not a tuning question.** `cohort/core/units.py::
+_fill_vacancy` sets `successor.leader_id = vacated.leader_id` and never adds the
+successor to that leader's `subordinate_ids`. Its own recursive branch does; the
+top-level call does not. The promoted branch therefore drops off the commander's
+chart — unorderable, unobserved, absent from the trace, and **never devolved to
+when the commander falls in turn**. On the squad chart **4,080 of 5,040** death
+orderings orphan a branch and **1,928** reach a state with nobody in command;
+fireteam is exempt (0/24). Realised on this fleet, 660 episodes: 44 with a broken
+chart, 1 with no commander. The one-statement patch is in the `(assurance, #42)`
+entry below and was **validated in memory without being applied** — suite stays
+green, the sweep goes to 0/5040. It stays out because restoring an order edge
+moves action masks and therefore every rollout: **applying it invalidates this
+baseline and requires the fleet to be retrained.** That is the v1.20 cycle.
+
+**Also open, in order:**
+1. **The squad regression.** `squad_v10` 0.92 and `squad_v10b` 0.88 against the
+   previous era's 0.98 and 0.97 — two seeds agreeing (p = 0.48), pooled
+   p = 0.0031. The chattiness association and the refuted crowding-out mechanism
+   are logged; the discriminating experiment is `done_probe.py` in all three
+   regimes on `squad_v10b`, then one `done_false=-2.0` arm against it.
+2. **Three deferred `cohort/` patches** from the assurance cycle, each with its
+   exact diff and a skipped test: #39 (`eval_commit` in the artifact), #40
+   (`parse_succession`, the formatter's inverse), #42 (above). All three want
+   the same v1.20 window.
+3. **A denominator v1.19 widened**: `closed_on_cadence_report_rate` and
+   `closes_per_root_sitrep` read 0.000 and 11.0 on completable roots because
+   every scenario now sends an ENDEX while the numerator stayed SITREP-only.
+   Patch written out; `closed_on_root_report_rate` is unaffected and is what the
+   README quotes.
+4. **The B3 ablation inverts on outcome** at v1.19 (success 0.92 / 0.98 / 1.00,
+   defeats 7.0 / 1.0 / 0.0) while the interpretability half holds. Read it with
+   item 1: the full arm IS the run that regressed. The README claims the
+   interpretability result and no longer claims the outcome one.
+
+**How to work here**: `CLAUDE.md` first — especially its new **"The baseline
+fleet (v1.19 onward)"** section, which carries the four rules that are easy to
+break by accident (provenance is the tree not the sha; a campaign freezes
+`cohort/`; no overrides in a member; archiving is a move). Commits are
+pre-authorised; **pushing is not**. Quote every between-run delta at both
+checkpoints or not at all.
+
+---
+
+## ⟳ Session handoff — 2026-08-11 earlier, v1.18.0 shipped (SUPERSEDED)
 
 **State**: `main` and `multi-agent-dev` both at HEAD and in sync with origin;
 **`v1.18.0` tagged and pushed** (first tag since v1.9.0). 687 tests green, ruff
