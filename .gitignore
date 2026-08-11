@@ -183,15 +183,31 @@ timing_stats.csv
 .DS_Store
 
 
-# cohort training runs: keep curves/GIFs/config, ignore bulky artifacts
-runs/*/tb/
-runs/*/ckpt_latest.pt
+# cohort training runs: keep curves/GIFs/config/weights, ignore bulky artifacts.
+#
+# These rules use `**` rather than `*` because a `*` does not cross `/`, so every
+# `runs/*/…` rule silently stopped matching the 96 runs that f80097d moved one
+# level deeper into runs/archive/ (refs #44). Nothing was done wrong; the glob
+# just stopped meaning what it meant, and it flipped three rules at once — 96
+# ckpt_latest.pt, 79 tb/ event files and 44 host-specific .job.json got swept in.
+# `**` keeps the meaning at any depth, so the next archive move is a no-op here.
+runs/**/tb/
 runs/*_train.log
 legacy/models/
 legacy/**/__pycache__/
 
 # detached training job files (pid/host specific)
-runs/*/.job.json
+runs/**/.job.json
+
+# ckpt_latest.pt IS the final policy — the weights every published headline is
+# measured from (behavior_final.json), as against ckpt_best.pt's best-rolling-
+# WINDOW snapshot. Ignoring it fleet-wide meant a fresh clone could read the
+# eight baseline figures and not re-derive one of them, while the 96 superseded
+# runs nobody cites carried both. That asymmetry is now the right way round: the
+# live fleet in runs/ commits both checkpoints, the archive sheds the final one.
+# (The 96 already tracked stay tracked — their bytes are in the pack either way,
+# and untracking them would only shrink a checkout, never the history.)
+runs/archive/**/ckpt_latest.pt
 
 # generated boards + the record of what was last published to claude.ai.
 # Derived from the committed behavior*.json, rewritten every time a run lands:

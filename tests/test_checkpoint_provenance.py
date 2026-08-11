@@ -1,16 +1,22 @@
 """An evaluation must name the weights it scored, not just their path.
 
 Issue #28: every published run commits `ckpt_best.pt` and none commits
-`ckpt_latest.pt` (it is gitignored fleet-wide), while the README's headline
+`ckpt_latest.pt` (it was gitignored fleet-wide), while the README's headline
 column is the FINAL policy — so the quoted checkpoint is the one nobody
 outside this machine can obtain. The digest does not fix that; it makes it
 checkable, which is the cheap 95%: an independent re-measurement can prove
 it scored the same object the headline was measured on.
 
+Issue #44 closed the other half for the live fleet: `runs/` now commits both
+checkpoints and `runs/archive/` sheds the final one. So for a baseline member
+the digest is no longer merely checkable in principle — the bytes it anchors
+are in the repository, and the last test here checks them against it.
+
 The regression hazard these tests encode is a silent one. If the field
 quietly disappears (or, worse, names `ckpt_best` in `behavior_final.json`),
 nothing fails and nothing looks wrong — the numbers still publish, and the
-anchor is gone.
+anchor is gone. Same for the weights: re-ignoring `ckpt_latest.pt` breaks
+nothing visible here and quietly un-reproduces every headline.
 """
 
 from __future__ import annotations
@@ -143,9 +149,10 @@ def test_published_runs_carry_a_digest_for_the_weights_they_quote(run, file, che
 
     Backfilled, not re-evaluated: the numbers in these files are published
     and unchanged; the digest only says which weights produced them. Skips
-    where the run has been pruned from this working copy — `ckpt_latest.pt`
-    is gitignored, so a fresh clone has the field but not the file to check
-    it against, and that asymmetry is the whole point of issue #28.
+    where the run has been pruned from this working copy — these three are
+    superseded and live in `runs/archive/`, which under issue #44's rule is
+    the half of the tree that sheds `ckpt_latest.pt`. The digest is asserted
+    unconditionally; the bytes only when they are here to check.
     """
     from scripts.fleet_status import find_run
 
@@ -163,3 +170,104 @@ def test_published_runs_carry_a_digest_for_the_weights_they_quote(run, file, che
     assert len(payload["checkpoint_sha256"]) == 64
     if (root / checkpoint).is_file():
         assert payload["checkpoint_sha256"] == _file_sha256(root / checkpoint)
+
+
+def _git_tracked(*paths: Path) -> set[Path] | None:
+    """What of ``paths`` is in this repository's index — None if git cannot say.
+
+    A tarball export, or a CI that fetches without `.git`, has no index and so
+    no opinion about what is committed. That is a different answer from "not
+    committed", and conflating them would make this suite fail for a reason
+    unrelated to what it checks.
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "ls-files", "--", *(str(p) for p in paths)],
+                             cwd=ROOT, capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {ROOT / line for line in out.stdout.splitlines() if line}
+
+
+def _baseline_members() -> list[tuple[str, str]]:
+    # BASELINE.json is fleet state, not a run — addressed directly on purpose.
+    manifest = json.loads((ROOT / "runs" / "BASELINE.json").read_text())
+    return sorted(manifest.get("runs", {}).items())
+
+
+@pytest.mark.parametrize(("scenario", "run"), _baseline_members())
+def test_a_baseline_members_headline_weights_are_in_the_repository(scenario, run):
+    """Issue #44: the number and the weights that produce it ship together.
+
+    The sealed fleet's headline is the FINAL policy — `behavior_final.json`,
+    scored from `ckpt_latest.pt`. Committing only `ckpt_best.pt` left a clone
+    able to *read* all eight figures and re-derive none of them, because
+    `ckpt_best.pt` is a best-rolling-WINDOW snapshot and by this repo's own
+    audit not the policy the headline describes. Best and final have disagreed
+    on this very fleet by 30/30 success vs 30/30 timeout on one run.
+
+    So: the file is tracked, and its bytes are the ones the digest names. The
+    second half is what makes the first worth anything — a committed
+    `ckpt_latest.pt` that does not hash to `checkpoint_sha256` would be a
+    reproducibility claim backed by the wrong weights, which is worse than the
+    absence this issue reported.
+    """
+    from scripts.fleet_status import find_run
+
+    root = find_run(run, ROOT / "runs")
+    assert root is not None, f"{run} is a baseline member and is not in this tree"
+
+    final = root / "behavior_final.json"
+    assert final.is_file(), f"{run} has no FINAL-policy evaluation to anchor"
+    payload = json.loads(final.read_text())
+    assert payload["checkpoint"].endswith("ckpt_latest.pt")
+
+    ckpt = root / "ckpt_latest.pt"
+    tracked = _git_tracked(ckpt)
+    if tracked is None:
+        pytest.skip("no git index here — cannot tell committed from absent")
+    assert ckpt in tracked, (
+        f"{run}/ckpt_latest.pt is not committed: a reader can see this member's "
+        f"headline in behavior_final.json and cannot re-derive it (issue #44)"
+    )
+    assert payload["checkpoint_sha256"] == _file_sha256(ckpt), (
+        f"{run}/ckpt_latest.pt is committed but is not the object "
+        f"behavior_final.json scored"
+    )
+
+
+def test_the_archive_is_the_half_of_the_tree_that_sheds_the_final_policy():
+    """The rule that makes the fix survive the next archive move.
+
+    `.gitignore`'s `runs/*/ckpt_latest.pt` was depth-dependent — a `*` does not
+    cross `/` — so filing 96 runs into `runs/archive/` silently inverted it:
+    every superseded run started carrying the final weights and not one
+    shipping member did. The rule is now stated on the axis that actually
+    means something (live vs superseded) rather than on directory depth, and
+    this pins both directions of it.
+    """
+    import subprocess
+
+    def ignored(path: str) -> bool:
+        # --no-index: already-tracked paths are otherwise reported as unignored,
+        # and the 96 the move swept in stay tracked by design.
+        return subprocess.run(["git", "check-ignore", "--no-index", "-q", path],
+                              cwd=ROOT, capture_output=True).returncode == 0
+
+    if subprocess.run(["git", "rev-parse", "--git-dir"], cwd=ROOT,
+                      capture_output=True).returncode != 0:
+        pytest.skip("not a git work tree")
+
+    for name in ("ckpt_latest.pt", "ckpt_best.pt"):
+        assert not ignored(f"runs/a_live_run/{name}"), (
+            f"a live run's {name} must be committable — it is what a reader "
+            "reproduces the headline from"
+        )
+    assert ignored("runs/archive/a_superseded_run/ckpt_latest.pt")
+    # Depth-independent for the bulky and the host-specific, at both levels.
+    for prefix in ("runs/a_live_run", "runs/archive/a_superseded_run"):
+        assert ignored(f"{prefix}/tb/events.out.tfevents.1")
+        assert ignored(f"{prefix}/.job.json")

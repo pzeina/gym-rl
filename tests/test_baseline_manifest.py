@@ -222,3 +222,50 @@ def test_a_sealed_manifest_detects_a_member_swapped_underneath_it(fleet, capsys)
 
     assert code == 1
     assert "sealed at cohort/ env1" in out
+
+
+def test_an_uncommitted_final_policy_fails_the_fleet(fleet, capsys, monkeypatch):
+    """Issue #44: a headline whose weights are not in the repository.
+
+    `.gitignore` ignored `ckpt_latest.pt` fleet-wide, so every member shipped
+    the number and withheld the policy that produces it. Nothing failed —
+    `behavior_final.json` was present and complete, the gates were green, and
+    the one artifact a reader needs to re-derive the figure was absent. That
+    silence is why this is a gate and not a note.
+    """
+    monkeypatch.setattr(
+        baseline, "_uncommitted",
+        lambda run: ["ckpt_latest.pt"] if run == "squad_v1" else [],
+    )
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "squad_v1: ckpt_latest.pt is not committed" in out
+    assert "cannot re-derive it" in out
+
+
+def test_a_tree_with_no_git_index_is_not_an_accusation(fleet):
+    """The real `_uncommitted` against a directory git knows nothing about.
+
+    A tarball export has no index, so it cannot distinguish "not committed"
+    from "cannot tell" — and a gate that fires there fires for a reason that
+    has nothing to do with the fleet, which is how a gate teaches people to
+    ignore it. Silence is the only honest answer.
+    """
+    d = fleet / "squad_v1"
+    (d / "ckpt_best.pt").write_text("stub")
+    (d / "ckpt_latest.pt").write_text("stub")
+
+    assert baseline._uncommitted("squad_v1") == []
+
+
+def test_the_headline_checkpoint_is_the_final_policy_not_the_best_window():
+    """What `_loadable` and `_uncommitted` are about, named once.
+
+    The audit's `evidence` rule is explicit that the headline is the policy the
+    run ended with. `_loadable` used to check `ckpt_best.pt` alone — the one
+    checkpoint that rule says is not it.
+    """
+    assert baseline.HEADLINE_CKPT == "ckpt_latest.pt"
+    assert set(baseline.CHECKPOINTS) == {"ckpt_best.pt", "ckpt_latest.pt"}

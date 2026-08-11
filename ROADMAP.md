@@ -5574,3 +5574,82 @@ deliberately deferred (`docs/vision.md` §2c).
   exist — the announced chain and the truth never disagree about a *living* root.
   Fixing the chart closes both, and pays for itself in the env: two agents that
   were unorderable for the rest of the episode become orderable again.
+
+- **2026-08-11 (assurance, #44)** — **The sealed fleet published eight numbers and
+  withheld the eight sets of weights that produce them.** Filed against the seal,
+  true as filed, and the mechanism is one character in `.gitignore`.
+
+  **Verified on disk before changing anything**, because the layer has been wrong
+  three times today:
+
+      tracked ckpt_latest.pt   runs/<member>/     0 of 8      ← the shipping fleet
+                               runs/archive/<n>/  96 of 96    ← superseded, nobody cites
+      tracked ckpt_best.pt     runs/             13 of 13
+                               runs/archive/     96 of 96
+
+  A gitignore `*` does not cross `/`. `runs/*/ckpt_latest.pt` matched
+  `runs/<name>/…` and stopped at `runs/archive/<name>/…`, so `f80097d` filing 96
+  runs one level deeper inverted the rule without touching it. #44 spotted one
+  consequence; there were **three**, all the same bug: the move also swept in **79
+  `tb/` event files** (`runs/*/tb/`) and **44 host-specific `.job.json`**
+  (`runs/*/.job.json`), ~99 MB of weights and 66 MB of tensorboard nobody asked
+  for. The rules are now `runs/**/…`, which means the same thing at every depth,
+  so the next archive move is a no-op here.
+
+  **Why it is the wrong way round, specifically.** The headline is the FINAL
+  policy — `behavior_final.json`, scored from `ckpt_latest.pt`. What was committed
+  is `ckpt_best.pt`, a best-rolling-*window* snapshot, which this repo's own audit
+  says is not the policy the headline describes; best and final have disagreed on
+  this fleet by 30/30 success vs 30/30 timeout on one run. So a fresh clone could
+  read all eight figures and re-derive none of them.
+
+  **The bytes are the right bytes** — checked before committing them, since a
+  committed checkpoint that is not the one scored would be worse than the absence
+  reported. All 11 live runs carrying a `behavior_final.json` hash to exactly the
+  digest #28 recorded:
+
+      fireteam_v9 675bce50  fireteam_defend_v20 b7221b3a  squad_v10 baa049ad
+      squad_recon_v8 56ebf10a  squad_screen_v11 2afb2549  patrol_brique_v6 ba9d2bb0
+      defend_brique_v15 33b60d62  platoon_v6 63355bf1  squad_v10b 5c375de3
+      squad_nomask_v1 d85b6388  squad_flat_v1 95c29900        — 11/11 MATCH, 0 mismatches
+
+  13 `ckpt_latest.pt` committed (~15 MB): the 8 members plus the 5 runs
+  `BASELINE.json` cites in `referenced_history`, on the same argument — an
+  ablation arm's number is published too. The two Box(137) `squad_abl_*_s3`
+  originals have no `behavior_final.json` and their weights do not load under the
+  current spaces; committed for uniformity, claimed for nothing.
+
+  **The 96 archived stay tracked.** Untracking them shrinks a checkout and never
+  the pack — the bytes are in history either way — and `runs/` is not a tree to
+  do reversible-looking surgery on for tidiness. The rule now sheds
+  `ckpt_latest.pt` for *future* archived runs, which is where the cost is.
+
+  **Turned into a gate, because the failure was silent.** Nothing broke when the
+  weights went missing: `behavior_final.json` was present and complete, every gate
+  was green, and the one artifact needed to reproduce the figure was absent.
+  `scripts/baseline.py` gains **committed** to its list of what a baseline *is* —
+  both checkpoints in the repository — and it answers `[]` rather than failing
+  wherever git cannot say (a tarball, the audit's own `tmp_path` fixtures), since
+  a gate that fires for an unrelated reason teaches people to ignore it.
+
+  **A second defect found in the same place.** `_loadable` — the check whose
+  docstring says "a baseline whose weights no longer load is a historical
+  artifact" — was loading `ckpt_best.pt` **only**, the one checkpoint the
+  `evidence` rule four lines above it explicitly says is *not* the headline. It
+  now checks both. All 8 members' `ckpt_latest.pt` load at obs=220; the fleet
+  passes the stricter gate unchanged.
+
+  Both new gates were watched to fail and recover (un-stage one checkpoint →
+  `BASELINE NOT READY — platoon_v6: ckpt_latest.pt is not committed`; re-stage →
+  `BASELINE OK`), on the principle that a gate nobody has seen fail is a gate
+  nobody knows works. Suite **807 passed, 3 skipped** (was 795/3): +8 parametrized
+  per-member reproducibility checks, +1 pinning both directions of the gitignore
+  rule, +3 on the gate. `scripts/baseline.py` prints BASELINE OK. **No `cohort/`
+  file was touched — the v1.19 seal at `5f848fb6` is intact and no retrain is
+  implied.**
+
+  **Where we disagree with the filing.** #44 says "no urgency, nothing blocks us"
+  and offers to keep tapping weights from the working tree with a provenance
+  caveat. The caveat was the finding. A number whose weights are not in the
+  repository is a claim, not a result, and that is exactly the distinction this
+  repo keeps trying to hold — so it is fixed and gated rather than noted.
