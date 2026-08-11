@@ -117,7 +117,9 @@ Slash commands: `/train`, `/train-status`, `/train-report`, `/boards`.
 ## Operating guide (established practice — follow unless the owner redirects)
 
 - **Session start**: read the "⟳ Session handoff" block at the top of ROADMAP.md —
-  it carries current state, verdicts, and the prioritized next steps.
+  it carries current state, verdicts, and the prioritized next steps. For what to
+  do next rather than where things stand, `docs/next-cycles.md` is the plan: it
+  says which changes force a fleet retrain and which can ride along.
 - **Delegation**: substantial build/retrain campaigns run in ONE background
   general-purpose agent with a precise phased brief: one commit per phase,
   pytest+ruff green per commit, spaces frozen unless the cycle is explicitly

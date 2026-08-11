@@ -62,6 +62,11 @@ baseline and requires the fleet to be retrained.** That is the v1.20 cycle.
    item 1: the full arm IS the run that regressed. The README claims the
    interpretability result and no longer claims the outcome one.
 
+**The plan, not just the state**: [`docs/next-cycles.md`](docs/next-cycles.md)
+carries the v1.20 cycle (four written-and-unapplied `cohort/` patches that want
+one window), the squad-regression experiment in order, the ablation at three
+seeds, the measurement gaps, and the two habits that paid today.
+
 **How to work here**: `CLAUDE.md` first — especially its new **"The baseline
 fleet (v1.19 onward)"** section, which carries the four rules that are easy to
 break by accident (provenance is the tree not the sha; a campaign freezes
