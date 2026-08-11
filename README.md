@@ -390,6 +390,59 @@ scenario at a time as the fleet is re-published off final numbers.
 > buries no commanders, and one that wins can still bury them. Several of these
 > numbers are being published for the first time — `squad_v8` at **0.23** is the
 > highest in the fleet and no gate covers it.
+>
+> **Read that row against its own series, not only against the fleet** (refs
+> #36). Highest-in-the-fleet is true and reads as a regression; the squad line
+> is *falling*, and `squad_v8` is where it fell to. Root-death rate at N=100,
+> seed 123, from the committed artifacts:
+>
+> | run | root deaths, `ckpt_best` | root deaths, final | note |
+> |---|---|---|---|
+> | `squad_v6` | 0.45 [0.350, 0.553] | — | no final evaluation was ever committed |
+> | `squad_v7` | 0.35 | 0.35 [0.257, 0.452] | |
+> | **`squad_v8`** | 0.15 [0.086, 0.235] | **0.23** [0.152, 0.325] | the published row |
+> | `squad_v9` | 0.19 | 0.18 | `done_false` A/B arm, not a published champion |
+>
+> Fisher exact, two-sided: `v8`/final vs `v6`/best **p = 0.0016**, and
+> `v8`/best vs `v7`/best **p = 0.0017** — the fall is real. What does *not*
+> support it, stated because it is the same measurement: `v8`/final vs
+> `v7`/final is **p = 0.086, not significant**, and `v8` vs `squad_v4` — the
+> only squad ever trained with the `human_death` −25 price actually in force —
+> is **p = 0.807, a wash**, permanently unrepeatable because `v4` carries input
+> dim 137 and does not load at head.
+>
+> Three honest limits. (1) The v7 → v8 pair is **not single-variable**: `v8` is
+> the first squad run carrying `d44ee8d` (the fallen share in the win) *and* it
+> moved `done_false` −2.0 → −0.5. `run_report --vs` compares prices and cannot
+> see the first. (2) `squad_v6` has no committed final evaluation, so its cell
+> is `ckpt_best` and is labelled as one rather than quietly standing in for a
+> final — the assurance layer's own v6 figure (0.48 at the final policy) is
+> from their re-tap, not from anything in this repo, which is why the p-value
+> above is 0.0016 and theirs is 0.00036. (3) We do **not** adopt "the lowest
+> rate squad has ever recorded":
+> `squad_v8`/best is 0.15 and `squad_v9`/final 0.18, both lower, and `squad_v5`
+> read 0.23 at `ckpt_best` in the pre-A5 `Box(166)` space, which cannot be
+> re-tapped at all. The claim that survives all three is the direction.
+>
+> Regenerate the whole family, any metric, from committed artifacts only:
+> `scripts/publish_audit.py --series human_death_rate --scenario squad`. It
+> exists because this is the **seventh** number to read as a regression against
+> its predecessor and as ordinary-or-better against its series;
+> `scripts/program_board.py` has had `_family` for that since #24 and the README
+> had no equivalent.
+>
+> **A correction from the assurance layer, offered unprompted, on numbers this
+> repo cites.** Their N=30 protocol reads *lower* than our N=100 on
+> bit-identical weights in 10 of 14 cells (sign test **p = 0.0117**). They
+> decomposed it against pre-registered arms: not their detector (100/100
+> per-episode agreement at our protocol) and not environment drift (byte-identical
+> bodies four versions later) — their N=30 protocol. Resampling 30-episode
+> windows from our 100 real episodes, a policy at 0.230 reads anywhere in
+> 3/30–11/30. Two figures of theirs are withdrawn: `squad_v8` "4/30 at both
+> checkpoints" (0.15 / 0.23 at N=100) and "the fallen fix achieves on squad what
+> the price never did — 4/30 vs a historical best of 8/30", which was never
+> significant even at N=30 (p = 0.334). Their standard is now N ≥ 100 for any
+> root-death number entering a comparison.
 
 > **`announced` is measured on every scenario, and two of them are at zero.**
 > An earlier revision of this table printed `—` for the non-defend rows on the

@@ -71,6 +71,62 @@ def audit_run(run_dir: Path) -> dict | None:
     }
 
 
+def series(metric: str, scenario: str | None = None) -> int:
+    """One metric across every generation of each scenario, both checkpoints.
+
+    The README's missing ``_family`` (refs #36). ``program_board.py`` renders a
+    metric's spread across a scenario's other generations beside any thread that
+    leads with a level, because a level a whole family shows is a property of
+    the family and not a finding about the run being discussed. The README had
+    no equivalent, and published ``squad_v8``'s root-death rate of 0.23 as "the
+    highest in the fleet, and no gate covers it" — both true — with nothing to
+    say that the same lineage read 0.45 and 0.35 in the two generations before
+    it. Seven numbers have now been read as regressions against their
+    predecessor and as ordinary-or-better against their series.
+
+    Read off committed ``behavior*.json`` only: no re-scoring, no checkpoint
+    load. Runs whose evaluation predates a metric simply do not appear for it,
+    and a missing ``behavior_final.json`` prints as ``—`` rather than silently
+    letting a ``ckpt_best`` number stand in for a final one.
+    """
+    rows = []
+    for d in sorted(RUNS.iterdir()):
+        if not d.is_dir():
+            continue
+        cells = {}
+        for tag, name in (("best", "behavior.json"), ("final", "behavior_final.json")):
+            path = d / name
+            if not path.is_file():
+                continue
+            doc = json.loads(path.read_text())
+            cells[tag] = (doc.get("metrics", {}).get(metric), doc.get("episodes"))
+            cells["scenario"] = doc.get("scenario")
+        if not cells or all(cells.get(t, (None,))[0] is None for t in ("best", "final")):
+            continue
+        if scenario and cells.get("scenario") != scenario:
+            continue
+        rows.append((cells.get("scenario") or "?", d.name, cells.get("best"), cells.get("final")))
+
+    if not rows:
+        print(f"no committed evaluation carries {metric!r}"
+              + (f" on scenario {scenario!r}" if scenario else ""))
+        return 1
+
+    def cell(v: tuple | None) -> str:
+        if not v or v[0] is None:
+            return "—"
+        return f"{v[0]:.3f} (N={v[1]})"
+
+    print(f"\n{metric}, every generation, both checkpoints — from committed artifacts\n")
+    for family in sorted({r[0] for r in rows}):
+        print(f"  {family}")
+        for _, run, best, final in [r for r in rows if r[0] == family]:
+            print(f"    {run:<26}best {cell(best):>16}   final {cell(final):>16}")
+    print("\na level the whole family shows is a property of the family, not a "
+          "finding about one run")
+    return 0
+
+
 def _announcement_axis(ann: list[tuple[str, float | None, float | None]]) -> None:
     """The same policies on `successes_announced_rate`, printed here so the
     success-axis result cannot be quoted about this one (refs #38).
@@ -206,8 +262,14 @@ def main() -> int:
                     help="ask whether the give-back gate predicts what it is used to predict")
     ap.add_argument("--min-episodes", type=int, default=100,
                     help="only audit runs published at this eval size or larger")
+    ap.add_argument("--series", metavar="METRIC",
+                    help="print one metric across every generation of each scenario, "
+                         "both checkpoints (the README's missing _family, refs #36)")
+    ap.add_argument("--scenario", help="restrict --series to one scenario")
     args = ap.parse_args()
 
+    if args.series:
+        return series(args.series, args.scenario)
     if args.validate:
         return validate_gate()
 

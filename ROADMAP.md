@@ -4896,3 +4896,66 @@ deliberately deferred (`docs/vision.md` §2c).
   pipelines. One number of theirs we cannot confirm and do not need to: their
   `patrol_brique_v2b` 27/29 is a `ckpt_best` figure on a checkpoint carrying
   input dim 137, which cannot load at head at any N.
+
+- **2026-08-11 (assurance, #36)** — **The squad row reads as a regression and is
+  the recovery — the README had no `_family`.** `177ba5b` published
+  `squad_v8`'s root-death rate as **0.23, the highest in the fleet, and no gate
+  covers it**. Both halves are true. Against its own lineage the same number is
+  the bottom of a falling series. From the committed artifacts, N=100, seed 123:
+
+  | run | best | final |
+  |---|---|---|
+  | `squad_v6` | 0.450 [0.350, 0.553] | — (no final evaluation committed) |
+  | `squad_v7` | 0.350 | 0.350 [0.257, 0.452] |
+  | **`squad_v8`** | 0.150 [0.086, 0.235] | **0.230** [0.152, 0.325] |
+  | `squad_v9` | 0.190 | 0.180 (`done_false` arm, not a published champion) |
+
+  Fisher exact, two-sided: `v8`/final vs `v6`/best **p = 0.0016**, `v8`/best vs
+  `v7`/best **p = 0.0017**. Against it: `v8`/final vs `v7`/final **p = 0.086**,
+  not significant; `v8` vs `squad_v4` — the only squad trained with
+  `human_death` −25 in force — **p = 0.807**, a wash, and permanently closed
+  because `v4` carries input dim 137.
+
+  **Where we differ from the filing.** They quote `squad_v6`/final at 48/100;
+  we hold no `behavior_final.json` for `squad_v6` at all, so our v6 cell is
+  `ckpt_best` at 45/100 and their v8-vs-v6 p = 0.00036 is ours at p = 0.0016.
+  Same verdict, different cell — and their "14/14 checkpoint_sha256 verified,
+  finals included" cannot cover a v6 final we never wrote. We also decline the
+  headline "the lowest rate squad has ever recorded": `squad_v8`/best is 0.15,
+  `squad_v9`/final 0.18, and `squad_v5` read 0.23 at best in the `Box(166)`
+  space. The direction survives all of it; the superlative does not. Their
+  `v8` vs `v7` p = 0.086 and `v8` vs `v4` p = 0.807 reproduce exactly, as does
+  the `squad_v4` CP95 [0.123, 0.459].
+
+  **And the v7 → v8 pair is not single-variable.** `v8` is the first squad run
+  carrying `d44ee8d` (the fallen share in the win) *and* it moved `done_false`
+  −2.0 → −0.5. `run_report --vs` reported that pair as a single-variable A/B
+  because it diffs `economics.json`, and the fallen fix is a code change no
+  price diff can see. Worth remembering the next time a pair is called clean.
+
+  **Mechanism, not just prose:** `scripts/publish_audit.py --series <metric>
+  [--scenario <name>]` prints one metric across every generation of each
+  scenario at BOTH checkpoints, from committed artifacts only — the `_family`
+  `program_board.py` grew after #24 and the README never had. A missing
+  `behavior_final.json` prints as `—`; it never lets a `ckpt_best` number stand
+  in for a final one.
+
+  **Their correction, offered unprompted.** Their N=30 protocol reads lower than
+  our N=100 on bit-identical weights in 10 of 14 cells (sign test p = 0.0117).
+  Decomposed with pre-registered arms: not their detector (100/100 per-episode
+  agreement at our protocol), not env drift (byte-identical bodies four versions
+  later) — the N=30 protocol itself, since a policy at 0.230 resamples anywhere
+  in 3/30–11/30. Two of their figures are withdrawn, including "the fallen fix
+  achieves on squad what the price never did", which was never significant even
+  at N=30 (p = 0.334). Their standard is now N ≥ 100 for any root-death number
+  entering a comparison — ours since #34. Both figures are quoted in the README
+  as theirs, and the ROADMAP's citations of their root-death numbers should be
+  read at N=100 from here.
+
+  **One of our own sentences goes with them.** The `squad_v9` entry above says
+  "in the `squad` family specifically, only `squad_v8`/best (0.05 at N=20) is
+  inside the band". At N=100 that cell is **0.150**, outside the 1–4/30 band,
+  so **no squad cell on record is inside it** — which strengthens that entry's
+  conclusion (the band is a description of four v1.4-era N=30 runs, not a bound;
+  no gate added) while removing its one counter-example. Dated entries stand as
+  written; the correction is here.
