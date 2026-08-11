@@ -540,8 +540,10 @@ while succeeding on essentially every episode.
 >
 > **The ≤5-point best-vs-final result is about SUCCESS and does not transfer
 > here.** That bound came from `scripts/publish_audit.py --validate`, which is
-> measured on `success_rate` (and has itself been retracted once, when
-> `fireteam_v7` was recovered at +17pt). On the announcement axis the same
+> measured on `success_rate` — and it holds, at ≤5 points on all 16 pairs whose
+> two evaluations were taken at one commit. Its one retraction, `fireteam_v7` at
+> +17pt, was a pair scored 36 `cohort/` commits apart, and `--validate` now keeps
+> mixed-era pairs out of the headline (refs #39). On the announcement axis the same
 > policies swing up to **97 points**. `--validate` now prints that axis
 > underneath its own table so the scope cannot be assumed.
 >

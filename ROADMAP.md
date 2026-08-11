@@ -5018,3 +5018,86 @@ deliberately deferred (`docs/vision.md` §2c).
   prints one verdict over both axes; an unchecked axis reads UNCHECKABLE and never
   as agreement. The test that had encoded the wrong belief
   (`test_squad_v7_to_v8_is_a_single_variable_ab`) now pins the corrected reading.
+
+- **2026-08-11 (assurance, #39)** — **The audit differenced two artifacts written
+  five days and 36 `cohort/` commits apart, and "real but small" was retracted on
+  the strength of it.** `--validate` builds `signed = best − final` out of
+  `behavior.json` and `behavior_final.json`. Nothing ever asked whether those two
+  files were written in the same environment. For three runs they were not, and
+  git says so without needing to re-measure anything:
+
+  | run | `behavior.json` | `behavior_final.json` | `cohort/` commits between |
+  |---|---|---|---|
+  | `fireteam_v7` | `703a6ac` (08-06) | `f18462d` (08-11) | **36** (21 in `env`/`core`/`config`) |
+  | `fireteam_defend_v10` | `2bada50` (08-06) | `2957ae8` (08-07) | 16 (incl. `d44ee8d`) |
+  | `squad_v7` | `351eaca` (08-08) | `b1a6c0e` (08-11) | 14 |
+
+  Among those 36 are `d44ee8d` (the fallen share in the win), `ac1fb19` (DONE
+  repriced), `eccf816` (DEFEND success redefined) and `09913d0`/`8dbb299` (who may
+  claim, and who announces). Any of them can move a measured score. The three
+  mixed-era pairs are the fleet's **first, second and fifth** largest give-backs,
+  so the gate's validation rested on precisely the rows it should not have used.
+
+  **What the correction costs and what survives.** Over the 16 pairs measured at
+  one commit: **r = 0.749, p = 0.0008** — the gate still predicts overstatement,
+  and it is not the r = 0.889 the entry above published. `ckpt_best` overstates in
+  2/16 rather than 5/19, mean **−1.9pt**, and the largest same-commit
+  overstatement in the whole fleet is **+3pt** (`defend_brique_v10`), not +17pt.
+
+  **So the retraction two entries above is itself retracted.** That entry said
+  `fireteam_v7` at +17pt refuted "|best − final| never exceeds 5 points across the
+  fleet, so what the FINAL-policy standard removes is real but small". On every
+  one of the 16 same-commit pairs |best − final| ≤ 5. The bound was never broken
+  by a checkpoint; it was broken by the one number that was not a checkpoint
+  comparison. Dated entries stand as written; the correction is here, and the
+  README's ≤5-point sentence now carries the same-commit qualifier.
+
+  **Where we differ from the filing.** Their tap re-scored `fireteam_v7`/best at
+  head as 0.87 (so +9pt at one commit rather than +17pt). We did not reproduce
+  that number — six baseline trainings were saturating the box and a 100-episode
+  re-score would have contended with them — and the fix does not rest on it: git
+  provenance settles that the pair is mixed-era without re-measuring either arm.
+  Everything else in the filing reproduces exactly: `--validate` reads n = 19,
+  r = 0.889, p = 3.7e-07 before the change; `fireteam_v7`'s `behavior.json`
+  carries no `checkpoint_sha256` (it predates #28) while `behavior_final.json`
+  carries `4920ae93…`; `ckpt_best.pt` entered at `351eaca` and has not been
+  modified since. Their announcement-axis figures were already conceded at #38.
+
+  **Mechanism.** `publish_audit.evaluation_era()` dates each artifact by the
+  commit that committed it — an upper bound on when it was written, which is
+  enough — and `era_gap()` counts what moved under `cohort/` between the two.
+  `--validate` prints the era per row, names and excludes the mixed-era pairs,
+  takes its headline over same-commit pairs, and prints the all-pairs figure
+  underneath labelled CONFOUNDED. Commits touching only `scripts/`, `tests/` or
+  docs cannot move a number and are not counted; a pair git cannot date reads
+  `unknown` and is excluded, because "we could not tell" and "there is no
+  difference" are opposite findings. This is `run_report.code_diff`'s rule
+  (#36) turned on the audit itself.
+
+  **The durable half is deferred, and here is the patch.** Git provenance dates an
+  artifact only from outside, and only while it stays committed and unmoved; the
+  artifact should date itself, next to the `checkpoint_sha256` that #28 put there.
+  That is a change to the writer, `cohort/training/evaluate.py`, and `cohort/` is
+  frozen today — `train.py` imports the tree that exists when a job starts, and
+  the baseline retrain campaign has six runs in flight with more queued, so an
+  edit now would train the later members against a different environment than the
+  earlier ones. The patch, to apply after the campaign lands:
+
+      # cohort/training/evaluate.py, in the behavior-artifact block (~line 227)
+      sha = _file_sha256(checkpoint) if checkpoint is not None else None
+      if sha is not None:
+          payload["checkpoint_sha256"] = sha
+    + # When, not just what: a score is only comparable to another score taken
+    + # against the same tree (refs #39). train.py already records HEAD per RUN;
+    + # an evaluation can be re-run at any later commit, so it needs its own.
+    + commit = _git_commit()
+    + if commit is not None:
+    +     payload["eval_commit"] = commit
+
+  with `_git_commit()` lifted verbatim from `train.py:506` into a module both can
+  import (`cohort/training/provenance.py`) and re-exported there, so `train.py`'s
+  `economics.json:git_commit` keeps its meaning. `publish_audit.evaluation_era()`
+  then prefers `payload["eval_commit"]` and keeps the git fallback for the 22
+  artifacts already on disk, none of which will ever carry the field.
+  `tests/test_publish_audit_era.py::test_an_evaluation_records_the_tree_it_was_measured_against`
+  is written and skipped with that reason; unskip it when the patch lands.

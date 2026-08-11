@@ -39,11 +39,22 @@ sys.path.insert(0, str(ROOT))
 from scripts.fleet_status import run_dirs  # noqa: E402
 from scripts.run_report import (  # noqa: E402
     PUBLISH_STABILITY_POINTS,
+    _git,
     deciles,
     fnum,
     mean,
     run_dir,
 )
+
+# What a re-evaluation can move. A checkpoint's measured score depends on the
+# environment it is scored in, the policy class that loads it and the evaluator
+# that scores it — all of which live under ``cohort/``. Commits touching only
+# ``scripts/``, ``tests/`` or docs cannot move a number, and are not counted.
+EVALUATION_TREE = "cohort/"
+
+# An artifact that is not committed yet was measured against the tree as it
+# stands, i.e. HEAD or later.
+WORKTREE = "WORKTREE"
 
 
 def audit_run(run_dir: Path) -> dict | None:
@@ -76,6 +87,47 @@ def audit_run(run_dir: Path) -> dict | None:
         "published_ci": beh.get("success_ci95", "?"),
         "final_eval": final_eval,
     }
+
+
+def evaluation_era(path: Path) -> str | None:
+    """Which tree an evaluation artifact was measured against (refs #39).
+
+    ``behavior.json`` records the checkpoint (``checkpoint_sha256``, refs #28),
+    the seed, N and the sampling mode — everything about the measurement except
+    *when* it was taken, which is the one field that decides whether two
+    evaluations can be differenced at all. Adding it means changing the writer
+    under ``cohort/``; until that lands, git already knows when each artifact
+    entered the repository, and that bounds the era from above: an artifact
+    cannot have been written after the commit that committed it.
+
+    Returns a sha, ``WORKTREE`` for an artifact that is not committed yet, or
+    None when git could not answer — which is *unknown*, not agreement.
+    """
+    out = _git(["log", "-1", "--format=%H", "--", str(path)])
+    if out is None:
+        return None
+    return out.strip() or WORKTREE
+
+
+def era_gap(best: Path, final: Path) -> int | None:
+    """Commits under ``cohort/`` between two evaluations; None if unknowable.
+
+    Zero means the pair can be differenced: both numbers describe policies
+    scored in the same environment by the same instrument, so their difference
+    is a property of the checkpoints. Anything above zero means the difference
+    also contains however much the environment moved, and the pair is not
+    evidence about checkpoints.
+    """
+    a, b = evaluation_era(best), evaluation_era(final)
+    if a is None or b is None:
+        return None
+    if a == b:
+        return 0
+    span = _git(["rev-list", "--count", f"{'HEAD' if a == WORKTREE else a}..."
+                 f"{'HEAD' if b == WORKTREE else b}", "--", EVALUATION_TREE])
+    if span is None:
+        return None
+    return int(span.strip() or 0)
 
 
 def series(metric: str, scenario: str | None = None) -> int:
@@ -134,6 +186,12 @@ def series(metric: str, scenario: str | None = None) -> int:
     return 0
 
 
+def _era_label(gap: int | None) -> str:
+    if gap is None:
+        return "unknown"
+    return "same commit" if gap == 0 else f"+{gap} apart"
+
+
 def _announcement_axis(ann: list[tuple[str, float | None, float | None]]) -> None:
     """The same policies on `successes_announced_rate`, printed here so the
     success-axis result cannot be quoted about this one (refs #38).
@@ -180,6 +238,19 @@ def validate_gate() -> int:
     column: the same checkpoint pair that agrees to one point on success can
     disagree by ninety-three on the announcement. ``_announcement_axis`` prints
     that axis underneath rather than leaving the scope to be assumed (refs #38).
+
+    **And only pairs measured at one commit are evidence** (refs #39). ``best``
+    comes from ``behavior.json`` and ``final`` from ``behavior_final.json``, and
+    for three runs those two files entered the repository days and dozens of
+    ``cohort/`` commits apart — ``fireteam_v7``'s best was scored at ``703a6ac``
+    and its final at ``f18462d``, 36 ``cohort/`` commits later (21 of them under
+    ``env``/``core``/``config``), among them the fallen-share-the-win fix and two
+    rewrites of when a mission counts as done. Differencing those two numbers
+    measures the
+    checkpoint *and* the environment. That is the same rule this repo already
+    applies to A/B pairs (``run_report.code_diff``), applied to the audit
+    itself; the headline correlation is now taken over same-commit pairs only,
+    with the all-pairs figure printed underneath and labelled as confounded.
     """
     import hashlib
 
@@ -228,8 +299,8 @@ def validate_gate() -> int:
             continue
         if digest:
             seen[digest] = d.name
-        rows.append((d.name, a["gap"],
-                     b["metrics"]["success_rate"], f["metrics"]["success_rate"]))
+        rows.append((d.name, a["gap"], b["metrics"]["success_rate"],
+                     f["metrics"]["success_rate"], era_gap(best, final)))
         ann.append((d.name,
                     b["metrics"].get("successes_announced_rate"),
                     f["metrics"].get("successes_announced_rate")))
@@ -239,25 +310,53 @@ def validate_gate() -> int:
               "not enough to say anything")
         return 0
 
-    signed = [(bs - fs) * 100 for _, _, bs, fs in rows]      # + = best overstates
-    gaps = [g for _, g, _, _ in rows]
-    over = sum(1 for x in signed if x > 0)
+    signed = [(bs - fs) * 100 for _, _, bs, fs, _ in rows]      # + = best overstates
+    one_commit = [r[4] == 0 for r in rows]
     print(f"\n{len(rows)} distinct policies, both checkpoints at N=100\n")
-    print(f"{'run':<26}{'give-back':>10}{'best':>7}{'final':>7}{'best-final':>12}")
-    for (n, g, bs, fs), sg in sorted(zip(rows, signed, strict=True), key=lambda z: -z[0][1]):
-        print(f"{n:<26}{g:>10.2f}{bs:>7.2f}{fs:>7.2f}{sg:>+11.0f}pt")
-    print(f"\nckpt_best overstates the final policy in {over}/{len(rows)} runs; "
-          f"mean {sum(signed) / len(signed):+.1f}pt")
-    _announcement_axis(ann)
+    print(f"{'run':<26}{'give-back':>10}{'best':>7}{'final':>7}{'best-final':>12}"
+          f"   {'evaluations':<13}")
+    for (n, g, bs, fs, eg), sg in sorted(zip(rows, signed, strict=True), key=lambda z: -z[0][1]):
+        print(f"{n:<26}{g:>10.2f}{bs:>7.2f}{fs:>7.2f}{sg:>+11.0f}pt   {_era_label(eg):<13}")
+
+    cross = [(n, eg) for (n, _, _, _, eg) in rows if eg != 0]
+    if cross:
+        print(f"\n{sum(one_commit)}/{len(rows)} pairs were measured at one commit. "
+              f"{len(cross)} were not, and are excluded (refs #39):")
+        for n, eg in sorted(cross, key=lambda z: -(z[1] or 0)):
+            what = (f"{eg} commits touched {EVALUATION_TREE} between the two evaluations"
+                    if eg else "the two evaluations cannot be dated in this clone")
+            print(f"  {n:<26} {what}")
+        print("  their best-final is a checkpoint difference PLUS an environment "
+              "difference, and\n  says nothing about either on its own")
+
+    kept = [(r, s) for r, s, ok in zip(rows, signed, one_commit, strict=True) if ok]
+    over = sum(1 for _, s in kept if s > 0)
+    if kept:
+        print(f"\nover the {len(kept)} same-commit pairs: ckpt_best overstates the final "
+              f"policy in {over}/{len(kept)} runs; mean "
+              f"{sum(s for _, s in kept) / len(kept):+.1f}pt")
+    _announcement_axis([a for a, ok in zip(ann, one_commit, strict=True) if ok])
     try:
         from scipy.stats import pearsonr
     except ImportError:
         print("scipy not available — correlation skipped")
         return 0
-    r, p = pearsonr(gaps, signed)
-    verdict = ("the gate PREDICTS overstatement" if r > 0 and p < 0.05
-               else "no significant relationship at this n")
-    print(f"give-back vs signed (best - final): Pearson r={r:.3f}, p={p:.3f}  ->  {verdict}")
+
+    def correlate(pairs: list[tuple[tuple, float]], label: str) -> None:
+        if len(pairs) < 4:
+            print(f"only {len(pairs)} {label} — not enough to say anything")
+            return
+        r, p = pearsonr([r[1] for r, _ in pairs], [s for _, s in pairs])
+        verdict = ("the gate PREDICTS overstatement" if r > 0 and p < 0.05
+                   else "no significant relationship at this n")
+        print(f"give-back vs signed (best - final), {label}: "
+              f"n={len(pairs)}, Pearson r={r:.3f}, p={p:.3f}  ->  {verdict}")
+
+    print()
+    correlate(kept, "pairs measured at one commit")
+    if cross:
+        correlate(list(zip(rows, signed, strict=True)),
+                  "ALL pairs (CONFOUNDED — mixes environment drift into the difference)")
     return 0
 
 
