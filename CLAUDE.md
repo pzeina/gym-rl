@@ -128,13 +128,33 @@ Slash commands: `/train`, `/train-status`, `/train-report`, `/boards`.
   their nohup trainings run — resume them via SendMessage with the active-polling
   reminder (`until ! ps -p $(cat PIDFILE) ...` in <9-min Bash calls). Training
   *launch/monitor* ops go to the cheap-model workflow below, never general-purpose.
-- **Committing is pre-authorised** (owner's instruction, 2026-08-09): commit
-  finished work on `multi-agent-dev` without asking each time. Conditions, not
-  formalities — full pytest + ruff green, one commit per coherent unit, a message
-  that says what changed and why, and the repo's two trailers. **Pushing is NOT
-  covered and stays a separate, explicit ask**; nor is anything destructive
-  (`reset --hard`, history rewrites, force-anything). Say what was committed in
-  the reply — pre-authorised is not the same as silent.
+- **Standing authority — do not ask for a "go"** (owner's instruction,
+  2026-08-11: *"minimize such necessity of a 'go' command, I lose time with
+  those, whereas you can proceed directly"*). These are pre-authorised on
+  `multi-agent-dev`; do them and say what you did:
+  - **Commit** finished work. Conditions, not formalities — full pytest + ruff
+    green, one commit per coherent unit, a message that says what changed and
+    why, and the repo's two trailers.
+  - **Push** `multi-agent-dev`.
+  - **Launch training** — experiment arms, confirmation seeds, retrains, whole
+    campaigns. A run costs wall-clock and zero model tokens and publishes
+    nothing by itself, so asking costs more than the run.
+  - **Apply and publish** a result that BEATS its incumbent, via `/publish`.
+
+  **The distinction that makes this safe: running an experiment is not deciding.**
+  An arm that tests a hypothesis adds evidence and can be ignored; changing a
+  default, a reward, a vocabulary or a scenario's semantics is the decision, and
+  that stays the owner's — present options, a recommendation, and the measurement
+  that would settle it.
+
+  Still an explicit ask, every time: **merging to `main`**, **tagging**, anything
+  **destructive** (`reset --hard`, history rewrites, force-anything, deleting a
+  run directory), and **publishing a MISS over an incumbent** — misses ship with
+  numbers and a diagnosis, but whether one supersedes a published claim is a
+  judgement about the project's claims.
+
+  Pre-authorised is not the same as silent: say what was committed, pushed or
+  launched, in the reply.
 - **Shipping** (main session only): review gate (full pytest + ruff + a functional
   spot-check) → push `multi-agent-dev` → merge `main` (fast-forward, re-test) →
   annotated monotonic tag `vX.Y.0` for milestone-sized ships (at v1.9.0).

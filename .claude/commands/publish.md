@@ -34,7 +34,16 @@ credibility; I read the draft before it lands.
      honest caveat if there is one
    - if a previous checkpoint is being superseded, what happens to it
 
-4. Then stop and ask whether to apply. Only after I approve do you edit
-   `README.md` / `ROADMAP.md` — and even then, do not commit unless I say so.
+4. Then **apply it and commit**, and show me the diff in your reply. This step
+   used to stop and ask; it does not need to any more, because the things the
+   ask was protecting are now enforced by machinery: the README table is
+   GENERATED from the committed evaluations (`scripts/results_table.py`, with
+   `tests/test_results_table.py` failing on drift), `scripts/baseline.py` gates
+   the fleet on N, gates, stability, provenance and per-artifact digests, and
+   the digests catch a number changing under a published claim.
+
+   What still stops and asks: a MISS. This repo's standard is that misses ship
+   with numbers and a diagnosis, and deciding whether a miss supersedes an
+   incumbent is a judgement about the project's claims, not about a number.
 
 Never pull `metrics.csv`, `tb/`, or a full training log into this context.
