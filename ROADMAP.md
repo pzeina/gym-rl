@@ -4816,3 +4816,146 @@ deliberately deferred (`docs/vision.md` §2c).
   audit built from artifacts. It removes the run from the statistic, and the runs
   whose artifacts crash are not a random sample of runs.
 
+- **2026-08-11 (assurance, #37)** — **The cadence metric now says what it is
+  measured against.** `closed_on_cadence_report_rate` (#35) counts the closes
+  made by a report the cadence would have produced anyway, and "would have"
+  means at least `sitrep_interval` steps after the sender's last report. That
+  value is a `RewardConfig` field: not in the words, and — until now — not in
+  `briefing()` either, so the external monitor was scoring every cadence number
+  against an assumed 25 and stamping `sitrep_interval_source: "assumed"` on it.
+
+  **The assumption was load-bearing, not cosmetic.** Their sweep over the
+  threshold, on the v1.17 cells: at any assumed interval ≥ 15 the retrains lose
+  to their controls on the cadence rate (the inversion #35 predicted), and below
+  ~12 the `fireteam_defend_v18` → `v19` pair *reverses* — 0.500 → 0.929 at an
+  assumed 5, against 0.300 → 0.036 at the real 25. A finding whose direction
+  depends on an unpublished constant is a finding the monitor cannot state.
+
+  `briefing()` now publishes `sitrep_interval` = `spec.sitrep_cadence or
+  RewardConfig().sitrep_interval` — the same resolution the environment performs
+  at step time and the recorder writes into every trace, in one place so the
+  three cannot drift. Pure spec function, rollout-neutral, `defend_horizon`'s
+  treatment from #30 exactly.
+
+  **Not in the OPORD, deliberately.** `9dd4edf` put the horizon on the net
+  because HQ *orders* an hour; a reward threshold is not something HQ says, and
+  an OPORD clause reading out a price would be the mistake that commit avoided
+  by gating its own clause on `HOLDS_GROUND`. The overlay is the right home for
+  the standard a number is computed against.
+
+  One limit, stated in the docstring: this is the scenario as shipped, so a run
+  trained with `--reward sitrep_interval=N` is scored against N. The per-episode
+  trace already records the value actually in force, and for a given run that
+  one is authoritative.
+
+- **2026-08-11 (assurance, #38)** — **Two zeros, two silences — and a column
+  published at one checkpoint that swings 93 points between them.**
+
+  **1. The decomposition.** `ed19418` put `successes_announced` on every row and
+  grouped the two zeros: "`platoon_v5` 0/100 and `patrol_brique_v5` 0/99, the
+  same shape as `fireteam_defend_v16`'s 0/99". They are not the same shape. Read
+  off the committed artifacts at our own cut (N=100, seed 123, `ckpt_latest`):
+
+  | run | successes | announced | root claims | refused | admissible steps |
+  |---|---|---|---|---|---|
+  | `patrol_brique_v5` | 99 | 0 | **0** | 0 | 7772 |
+  | `platoon_v5` | 100 | 0 | **5** | **5** | 10211 |
+  | `fireteam_defend_v19` | 98 | 98 | 0 | 0 | **0** (masked) |
+
+  `patrol_brique_v5`'s root is **offered the act 7772 times and declines it**.
+  `platoon_v5`'s root **claims in five episodes and is refused in all five**. On
+  the radio: a silent policy and a rejected one. The fix they want differs —
+  extending COMMAND's close to completable roots (the option logged in `e27863b`)
+  changes who announces and leaves five refusals untouched — and a single integer
+  cannot express the difference. This is exactly #13's argument about zero DONE
+  reports, one level up, so `format_root_claim_shape` now renders the root's
+  channel beside the announcement in every behavior table: "root never claimed,
+  7772 admissible steps" / "root claimed 5, all refused" / "channel shut".
+
+  **2. We broke our own both-checkpoints rule on the column we had just added.**
+  All day we have enforced "quote a between-run delta at both checkpoints or not
+  at all" (refs #24–#26), and then published the announcement at the FINAL policy
+  only. It is the least stable column in the table. `squad_v8`, both checkpoints
+  at one commit: **0/97 at `ckpt_best`, 91/98 at `ckpt_latest`** — success 97 vs
+  98 (Fisher p = 1.00), announcement 0.00 vs 0.93 (**p = 8.0e-48**). Not one run:
+  `squad_screen_fallen_v2` 1/99 → 98/100, `_v1` 8/98 → 96/100, `squad_recon_v7`
+  21/94 → 94/98, `fireteam_v8` 67/82 → **49/80** the other way. The table now
+  prints `final · best` on every row.
+
+  **3. The ≤5-point figure must not travel to it.** That bound is measured on
+  `success_rate` by `publish_audit.py --validate` (and was already retracted once
+  when `fireteam_v7` came back at +17pt). On the announcement axis the same
+  policies swing up to **97 points**. `--validate` now prints the announcement
+  axis under its own table, so the scope is stated by the tool rather than
+  assumed by the reader.
+
+  **Independently verified, and it reproduces exactly**: 0/99 · 0 claims,
+  0/100 · 5 claims · 5 refusals, and 0/97 → 91/98, all read from committed
+  `behavior*.json` with no re-scoring. Their 91/98, computed net-only on their
+  side, matches ours computed from the artifacts — a cross-check on both
+  pipelines. One number of theirs we cannot confirm and do not need to: their
+  `patrol_brique_v2b` 27/29 is a `ckpt_best` figure on a checkpoint carrying
+  input dim 137, which cannot load at head at any N.
+
+- **2026-08-11 (assurance, #36)** — **The squad row reads as a regression and is
+  the recovery — the README had no `_family`.** `177ba5b` published
+  `squad_v8`'s root-death rate as **0.23, the highest in the fleet, and no gate
+  covers it**. Both halves are true. Against its own lineage the same number is
+  the bottom of a falling series. From the committed artifacts, N=100, seed 123:
+
+  | run | best | final |
+  |---|---|---|
+  | `squad_v6` | 0.450 [0.350, 0.553] | — (no final evaluation committed) |
+  | `squad_v7` | 0.350 | 0.350 [0.257, 0.452] |
+  | **`squad_v8`** | 0.150 [0.086, 0.235] | **0.230** [0.152, 0.325] |
+  | `squad_v9` | 0.190 | 0.180 (`done_false` arm, not a published champion) |
+
+  Fisher exact, two-sided: `v8`/final vs `v6`/best **p = 0.0016**, `v8`/best vs
+  `v7`/best **p = 0.0017**. Against it: `v8`/final vs `v7`/final **p = 0.086**,
+  not significant; `v8` vs `squad_v4` — the only squad trained with
+  `human_death` −25 in force — **p = 0.807**, a wash, and permanently closed
+  because `v4` carries input dim 137.
+
+  **Where we differ from the filing.** They quote `squad_v6`/final at 48/100;
+  we hold no `behavior_final.json` for `squad_v6` at all, so our v6 cell is
+  `ckpt_best` at 45/100 and their v8-vs-v6 p = 0.00036 is ours at p = 0.0016.
+  Same verdict, different cell — and their "14/14 checkpoint_sha256 verified,
+  finals included" cannot cover a v6 final we never wrote. We also decline the
+  headline "the lowest rate squad has ever recorded": `squad_v8`/best is 0.15,
+  `squad_v9`/final 0.18, and `squad_v5` read 0.23 at best in the `Box(166)`
+  space. The direction survives all of it; the superlative does not. Their
+  `v8` vs `v7` p = 0.086 and `v8` vs `v4` p = 0.807 reproduce exactly, as does
+  the `squad_v4` CP95 [0.123, 0.459].
+
+  **And the v7 → v8 pair is not single-variable.** `v8` is the first squad run
+  carrying `d44ee8d` (the fallen share in the win) *and* it moved `done_false`
+  −2.0 → −0.5. `run_report --vs` reported that pair as a single-variable A/B
+  because it diffs `economics.json`, and the fallen fix is a code change no
+  price diff can see. Worth remembering the next time a pair is called clean.
+
+  **Mechanism, not just prose:** `scripts/publish_audit.py --series <metric>
+  [--scenario <name>]` prints one metric across every generation of each
+  scenario at BOTH checkpoints, from committed artifacts only — the `_family`
+  `program_board.py` grew after #24 and the README never had. A missing
+  `behavior_final.json` prints as `—`; it never lets a `ckpt_best` number stand
+  in for a final one.
+
+  **Their correction, offered unprompted.** Their N=30 protocol reads lower than
+  our N=100 on bit-identical weights in 10 of 14 cells (sign test p = 0.0117).
+  Decomposed with pre-registered arms: not their detector (100/100 per-episode
+  agreement at our protocol), not env drift (byte-identical bodies four versions
+  later) — the N=30 protocol itself, since a policy at 0.230 resamples anywhere
+  in 3/30–11/30. Two of their figures are withdrawn, including "the fallen fix
+  achieves on squad what the price never did", which was never significant even
+  at N=30 (p = 0.334). Their standard is now N ≥ 100 for any root-death number
+  entering a comparison — ours since #34. Both figures are quoted in the README
+  as theirs, and the ROADMAP's citations of their root-death numbers should be
+  read at N=100 from here.
+
+  **One of our own sentences goes with them.** The `squad_v9` entry above says
+  "in the `squad` family specifically, only `squad_v8`/best (0.05 at N=20) is
+  inside the band". At N=100 that cell is **0.150**, outside the 1–4/30 band,
+  so **no squad cell on record is inside it** — which strengthens that entry's
+  conclusion (the band is a description of four v1.4-era N=30 runs, not a bound;
+  no gate added) while removing its one counter-example. Dated entries stand as
+  written; the correction is here.

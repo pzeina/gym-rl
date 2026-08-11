@@ -71,6 +71,88 @@ def audit_run(run_dir: Path) -> dict | None:
     }
 
 
+def series(metric: str, scenario: str | None = None) -> int:
+    """One metric across every generation of each scenario, both checkpoints.
+
+    The README's missing ``_family`` (refs #36). ``program_board.py`` renders a
+    metric's spread across a scenario's other generations beside any thread that
+    leads with a level, because a level a whole family shows is a property of
+    the family and not a finding about the run being discussed. The README had
+    no equivalent, and published ``squad_v8``'s root-death rate of 0.23 as "the
+    highest in the fleet, and no gate covers it" — both true — with nothing to
+    say that the same lineage read 0.45 and 0.35 in the two generations before
+    it. Seven numbers have now been read as regressions against their
+    predecessor and as ordinary-or-better against their series.
+
+    Read off committed ``behavior*.json`` only: no re-scoring, no checkpoint
+    load. Runs whose evaluation predates a metric simply do not appear for it,
+    and a missing ``behavior_final.json`` prints as ``—`` rather than silently
+    letting a ``ckpt_best`` number stand in for a final one.
+    """
+    rows = []
+    for d in sorted(RUNS.iterdir()):
+        if not d.is_dir():
+            continue
+        cells = {}
+        for tag, name in (("best", "behavior.json"), ("final", "behavior_final.json")):
+            path = d / name
+            if not path.is_file():
+                continue
+            doc = json.loads(path.read_text())
+            cells[tag] = (doc.get("metrics", {}).get(metric), doc.get("episodes"))
+            cells["scenario"] = doc.get("scenario")
+        if not cells or all(cells.get(t, (None,))[0] is None for t in ("best", "final")):
+            continue
+        if scenario and cells.get("scenario") != scenario:
+            continue
+        rows.append((cells.get("scenario") or "?", d.name, cells.get("best"), cells.get("final")))
+
+    if not rows:
+        print(f"no committed evaluation carries {metric!r}"
+              + (f" on scenario {scenario!r}" if scenario else ""))
+        return 1
+
+    def cell(v: tuple | None) -> str:
+        if not v or v[0] is None:
+            return "—"
+        return f"{v[0]:.3f} (N={v[1]})"
+
+    print(f"\n{metric}, every generation, both checkpoints — from committed artifacts\n")
+    for family in sorted({r[0] for r in rows}):
+        print(f"  {family}")
+        for _, run, best, final in [r for r in rows if r[0] == family]:
+            print(f"    {run:<26}best {cell(best):>16}   final {cell(final):>16}")
+    print("\na level the whole family shows is a property of the family, not a "
+          "finding about one run")
+    return 0
+
+
+def _announcement_axis(ann: list[tuple[str, float | None, float | None]]) -> None:
+    """The same policies on `successes_announced_rate`, printed here so the
+    success-axis result cannot be quoted about this one (refs #38).
+
+    Everything above is measured on success, and the small spreads it reports
+    are a fact about success. The assurance layer re-tapped one pair at one
+    commit and found `squad_v8` announcing **0 of 97** at `ckpt_best` and
+    **91 of 98** at `ckpt_latest` — one point apart on success, ninety-three on
+    the announcement. So a bound established here says nothing about a column
+    published there, and any between-checkpoint claim about the announcement
+    has to be measured at both checkpoints or not made.
+    """
+    pairs = [(n, b, f) for n, b, f in ann if b is not None and f is not None]
+    if not pairs:
+        return
+    worst = max(pairs, key=lambda z: abs(z[1] - z[2]))
+    swings = sorted(((abs(b - f) * 100, n, b, f) for n, b, f in pairs), reverse=True)
+    print(f"\n{len(pairs)} of those carry the ANNOUNCEMENT at both checkpoints "
+          "(successes announced / successes):")
+    print(f"{'run':<26}{'best':>7}{'final':>7}{'|best-final|':>14}")
+    for swing, n, b, f in swings:
+        print(f"{n:<26}{b:>7.2f}{f:>7.2f}{swing:>13.0f}pt")
+    print(f"largest swing {abs(worst[1] - worst[2]) * 100:.0f}pt ({worst[0]}) — this gate is "
+          "validated on SUCCESS; do not carry its bound to the announcement column")
+
+
 def validate_gate() -> int:
     """Does give-back predict that ckpt_best OVERSTATES the final policy?
 
@@ -85,6 +167,12 @@ def validate_gate() -> int:
     Runs whose ``ckpt_latest`` hashes identically are one policy, not several —
     v1.16/v1.17 produced three bit-identical fireteam_defend arms and two
     defend_brique ones, and counting them separately would inflate n by 17%.
+
+    **This is a statement about the SUCCESS axis only.** It is measured on
+    ``success_rate``, and nothing it finds transfers to another published
+    column: the same checkpoint pair that agrees to one point on success can
+    disagree by ninety-three on the announcement. ``_announcement_axis`` prints
+    that axis underneath rather than leaving the scope to be assumed (refs #38).
     """
     import hashlib
 
@@ -114,6 +202,7 @@ def validate_gate() -> int:
 
     seen: dict[str, str] = {}
     rows = []
+    ann: list[tuple[str, float | None, float | None]] = []
     for d in sorted(RUNS.iterdir()):
         if not d.is_dir():
             continue
@@ -134,6 +223,9 @@ def validate_gate() -> int:
             seen[digest] = d.name
         rows.append((d.name, a["gap"],
                      b["metrics"]["success_rate"], f["metrics"]["success_rate"]))
+        ann.append((d.name,
+                    b["metrics"].get("successes_announced_rate"),
+                    f["metrics"].get("successes_announced_rate")))
 
     if len(rows) < 4:
         print(f"only {len(rows)} distinct policies carry both checkpoints at N=100 — "
@@ -149,6 +241,7 @@ def validate_gate() -> int:
         print(f"{n:<26}{g:>10.2f}{bs:>7.2f}{fs:>7.2f}{sg:>+11.0f}pt")
     print(f"\nckpt_best overstates the final policy in {over}/{len(rows)} runs; "
           f"mean {sum(signed) / len(signed):+.1f}pt")
+    _announcement_axis(ann)
     try:
         from scipy.stats import pearsonr
     except ImportError:
@@ -169,8 +262,14 @@ def main() -> int:
                     help="ask whether the give-back gate predicts what it is used to predict")
     ap.add_argument("--min-episodes", type=int, default=100,
                     help="only audit runs published at this eval size or larger")
+    ap.add_argument("--series", metavar="METRIC",
+                    help="print one metric across every generation of each scenario, "
+                         "both checkpoints (the README's missing _family, refs #36)")
+    ap.add_argument("--scenario", help="restrict --series to one scenario")
     args = ap.parse_args()
 
+    if args.series:
+        return series(args.series, args.scenario)
     if args.validate:
         return validate_gate()
 

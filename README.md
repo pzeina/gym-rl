@@ -361,17 +361,17 @@ the number `scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`,
 quoted beside it as a peak and labelled as one. This table is being filled a
 scenario at a time as the fleet is re-published off final numbers.
 
-| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | human death | timeout | announced | gates |
+| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | human death | timeout | announced (final · best) | gates |
 |---|---|---|---|---|---|---|---|---|
 | fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | 0.10 | 0.02 | **98/98 · 96/96** | 4/4 ✓ |
 | defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | 0.01 | 0.00 | **100/100 · 97/97** | 4/4 ✓ |
-| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | **0/100** | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | 96/100 | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | 98/100 | 2/2 ✓ |
-| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | **0/99** | 2/2 ✓ |
-| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | 91/98 | 2/2 ✓ |
-| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | 94/98 | 2/2 ✓ |
-| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | 49/80 | 2/2 ✓ |
+| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | **0/100 · 0/96** | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | 96/100 · **8/98** | 2/2 ✓ |
+| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | 98/100 · **1/99** | 2/2 ✓ |
+| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | **0/99 · 0/95** | 2/2 ✓ |
+| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | 91/98 · **0/97** | 2/2 ✓ |
+| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | 94/98 · **21/94** | 2/2 ✓ |
+| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | 49/80 · 67/82 | 2/2 ✓ |
 
 > **`fireteam_v8` does not clear the publishing bar and is printed anyway.** Its
 > give-back is **12.0 points** against a bar of 10, so by this repo's own standard
@@ -390,6 +390,59 @@ scenario at a time as the fleet is re-published off final numbers.
 > buries no commanders, and one that wins can still bury them. Several of these
 > numbers are being published for the first time — `squad_v8` at **0.23** is the
 > highest in the fleet and no gate covers it.
+>
+> **Read that row against its own series, not only against the fleet** (refs
+> #36). Highest-in-the-fleet is true and reads as a regression; the squad line
+> is *falling*, and `squad_v8` is where it fell to. Root-death rate at N=100,
+> seed 123, from the committed artifacts:
+>
+> | run | root deaths, `ckpt_best` | root deaths, final | note |
+> |---|---|---|---|
+> | `squad_v6` | 0.45 [0.350, 0.553] | — | no final evaluation was ever committed |
+> | `squad_v7` | 0.35 | 0.35 [0.257, 0.452] | |
+> | **`squad_v8`** | 0.15 [0.086, 0.235] | **0.23** [0.152, 0.325] | the published row |
+> | `squad_v9` | 0.19 | 0.18 | `done_false` A/B arm, not a published champion |
+>
+> Fisher exact, two-sided: `v8`/final vs `v6`/best **p = 0.0016**, and
+> `v8`/best vs `v7`/best **p = 0.0017** — the fall is real. What does *not*
+> support it, stated because it is the same measurement: `v8`/final vs
+> `v7`/final is **p = 0.086, not significant**, and `v8` vs `squad_v4` — the
+> only squad ever trained with the `human_death` −25 price actually in force —
+> is **p = 0.807, a wash**, permanently unrepeatable because `v4` carries input
+> dim 137 and does not load at head.
+>
+> Three honest limits. (1) The v7 → v8 pair is **not single-variable**: `v8` is
+> the first squad run carrying `d44ee8d` (the fallen share in the win) *and* it
+> moved `done_false` −2.0 → −0.5. `run_report --vs` compares prices and cannot
+> see the first. (2) `squad_v6` has no committed final evaluation, so its cell
+> is `ckpt_best` and is labelled as one rather than quietly standing in for a
+> final — the assurance layer's own v6 figure (0.48 at the final policy) is
+> from their re-tap, not from anything in this repo, which is why the p-value
+> above is 0.0016 and theirs is 0.00036. (3) We do **not** adopt "the lowest
+> rate squad has ever recorded":
+> `squad_v8`/best is 0.15 and `squad_v9`/final 0.18, both lower, and `squad_v5`
+> read 0.23 at `ckpt_best` in the pre-A5 `Box(166)` space, which cannot be
+> re-tapped at all. The claim that survives all three is the direction.
+>
+> Regenerate the whole family, any metric, from committed artifacts only:
+> `scripts/publish_audit.py --series human_death_rate --scenario squad`. It
+> exists because this is the **seventh** number to read as a regression against
+> its predecessor and as ordinary-or-better against its series;
+> `scripts/program_board.py` has had `_family` for that since #24 and the README
+> had no equivalent.
+>
+> **A correction from the assurance layer, offered unprompted, on numbers this
+> repo cites.** Their N=30 protocol reads *lower* than our N=100 on
+> bit-identical weights in 10 of 14 cells (sign test **p = 0.0117**). They
+> decomposed it against pre-registered arms: not their detector (100/100
+> per-episode agreement at our protocol) and not environment drift (byte-identical
+> bodies four versions later) — their N=30 protocol. Resampling 30-episode
+> windows from our 100 real episodes, a policy at 0.230 reads anywhere in
+> 3/30–11/30. Two figures of theirs are withdrawn: `squad_v8` "4/30 at both
+> checkpoints" (0.15 / 0.23 at N=100) and "the fallen fix achieves on squad what
+> the price never did — 4/30 vs a historical best of 8/30", which was never
+> significant even at N=30 (p = 0.334). Their standard is now N ≥ 100 for any
+> root-death number entering a comparison.
 
 > **`announced` is measured on every scenario, and two of them are at zero.**
 > An earlier revision of this table printed `—` for the non-defend rows on the
@@ -400,14 +453,54 @@ scenario at a time as the fleet is re-published off final numbers.
 >
 > What they show: **`platoon_v5` announces 0 of 100 wins and `patrol_brique_v5`
 > 0 of 99.** Both succeed on essentially every episode and neither ever says so
-> on the net — the same shape as `fireteam_defend_v16`'s 0/99 before ENDEX was
-> restored. `fireteam_v8` manages 49/80. The rest run 91–98%.
+> on the net. `fireteam_v8` manages 49/80 at its final policy. The rest run
+> 91–98% there — and 0–22% at `ckpt_best`, which is the next note.
 >
 > Where the announcement is a **protocol act** it is complete by construction
 > (defend, 391/391). Where it is an **agent behaviour** it ranges from 98% to
 > nothing at all, on scenarios that are otherwise solved. That is the argument
 > of v1.14–v1.17 reproduced across the rest of the fleet without a single new
 > experiment, and it is the next thread.
+>
+> **The two zeros are not the same silence** (refs #38). An earlier revision of
+> this note grouped them — "the same shape as `fireteam_defend_v16`'s 0/99" — and
+> they are opposite situations on the radio. `successes_announced` is one integer
+> and cannot carry the difference; the root's own claim channel can. At N=100,
+> seed 123, final policy, read off the committed artifacts:
+>
+> | run | successes | announced | root claims | refused | admissible steps |
+> |---|---|---|---|---|---|
+> | `patrol_brique_v5` | 99 | 0 | **0** | 0 | 7772 |
+> | `platoon_v5` | 100 | 0 | **5** | **5** | 10211 |
+> | `fireteam_defend_v19` | 98 | 98 | 0 | 0 | **0** (masked) |
+>
+> `patrol_brique_v5`'s root **never claims** although the act is admissible at
+> 7772 agent-steps — it is offered and declined. `platoon_v5`'s root **does
+> claim, five times in five episodes, and is refused every time**. A silent
+> policy and a rejected one, and they want different fixes: extending COMMAND's
+> close to completable roots changes who announces, which does nothing about five
+> refusals upstream of the announcement. The defend family's zero claims are a
+> third shape again — no admissible step at all, the v1.17 mask. This is #13's
+> argument about zero DONE reports one level up, and `metrics.py` now prints the
+> decomposition beside the announcement so the integer is never read alone.
+>
+> **The announcement column is printed at BOTH checkpoints, because it swings.**
+> Every between-run delta in this README is quoted at both checkpoints or not at
+> all (refs #24–#26); this column was published at the final policy only, and it
+> is the least stable column in the table. `squad_v8` announces **0 of 97 at
+> `ckpt_best` and 91 of 98 at `ckpt_latest`** — 1 point apart on success
+> (p = 1.00), 93 apart on the announcement (Fisher p = 8.0e-48). It is not one
+> run: `squad_screen_fallen_v2` goes 1/99 → 98/100, `_v1` 8/98 → 96/100,
+> `squad_recon_v7` 21/94 → 94/98, and `fireteam_v8` moves the other way,
+> 67/82 → 49/80. Nothing about a policy's announcement rate at its peak predicts
+> its rate at the end of the same run.
+>
+> **The ≤5-point best-vs-final result is about SUCCESS and does not transfer
+> here.** That bound came from `scripts/publish_audit.py --validate`, which is
+> measured on `success_rate` (and has itself been retracted once, when
+> `fireteam_v7` was recovered at +17pt). On the announcement axis the same
+> policies swing up to **97 points**. `--validate` now prints that axis
+> underneath its own table so the scope cannot be assumed.
 >
 > **Read `successes announced` as the headline, not the success rate.** It is
 > `successes_announced`: of the operations that succeeded, how many said so on
