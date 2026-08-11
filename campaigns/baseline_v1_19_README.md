@@ -20,8 +20,12 @@ never touches.
 
 ## The rules this campaign holds to
 
-1. **One commit.** Every run's `economics.json:git_commit` is identical, and
-   `scripts/publish_audit.py --baseline` fails the set if it is not.
+1. **One environment.** Every run's `cohort/` tree — resolved from its recorded
+   `economics.json:git_commit` — is identical, and `scripts/baseline.py` fails
+   the set if it is not. Not commit equality: `fireteam_v9` was pulled out of
+   lane A and relaunched three tooling commits later, and the `cohort/` tree was
+   byte-identical (`5f848fb`) across all of them. A gate that failed on that
+   would be teaching its readers to ignore it.
 2. **No overrides.** No `--reward` anywhere in these files. The three settings
    the defend family used to pass on the command line
    (`defend_survivor_scale=0.35`, `root_done_bonus_first_claim_only=false`,

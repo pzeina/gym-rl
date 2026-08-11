@@ -94,6 +94,37 @@ def load() -> dict:
         return {"version": None, "commit": None, "runs": {}}
 
 
+def cohort_tree(commit: str | None) -> str | None:
+    """The hash of ``cohort/`` as of a commit — the provenance that matters.
+
+    "Same commit" is the wrong bar and this campaign proved it within an hour:
+    ``fireteam_v9`` was launched three commits after its lane-mates, and all
+    three commits were tooling — scripts, tests, a README table. The tree under
+    ``cohort/`` was byte-identical across every one of them
+    (``5f848fb`` throughout), so the four runs trained in the same environment
+    and a commit-equality check would have failed the fleet for a reason that
+    has nothing to do with the runs.
+
+    The converse is what the check must catch: two members whose ``cohort/``
+    trees differ trained against different environments and cannot be read as
+    one system, however adjacent their commits look.
+
+    Derived from git rather than recorded at train time, so it works for every
+    run already on disk. A commit this clone does not have reads as None, which
+    the audit reports as unknown and never as agreement.
+    """
+    if not commit:
+        return None
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "rev-parse", f"{commit}:cohort"], cwd=ROOT,
+                             capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
 def _run_facts(run: str) -> dict:
     """Everything the audit needs about one member, with absences named."""
     d = run_dir(run)
@@ -106,9 +137,11 @@ def _run_facts(run: str) -> dict:
     if econ.exists():
         e = json.loads(econ.read_text())
         facts["commit"] = e.get("git_commit")
+        facts["cohort_tree"] = cohort_tree(facts["commit"])
         facts["overrides"] = list(e.get("reward_overrides") or [])
     else:
         facts["commit"] = None
+        facts["cohort_tree"] = None
         facts["overrides"] = []
         facts["problems"].append("no economics.json — provenance unknown")
 
@@ -191,16 +224,24 @@ def audit(check_loadable: bool = True) -> int:
             failures.append(f"{run}: {p}")
 
     commits = {f["commit"] for _, _, f, _ in rows if f and f.get("commit")}
-    if len(commits) > 1:
+    trees = {f["cohort_tree"] for _, _, f, _ in rows if f and f.get("cohort_tree")}
+    unknown = [run for _, run, f, _ in rows
+               if f and f.get("commit") and not f.get("cohort_tree")]
+    if len(trees) > 1:
         failures.append(
-            f"provenance: {len(commits)} distinct commits across the fleet — "
-            "these runs are not one system"
+            f"provenance: {len(trees)} distinct cohort/ trees across the fleet — "
+            "these runs trained against different environments"
         )
-    sealed = manifest.get("commit")
-    if sealed and commits and {sealed} != commits:
+    if unknown:
         failures.append(
-            f"provenance: manifest is sealed at {sealed[:8]} but the runs carry "
-            f"{', '.join(sorted(c[:8] for c in commits))}"
+            f"provenance: cannot resolve cohort/ for {', '.join(unknown)} — "
+            "unknown is not the same finding as identical"
+        )
+    sealed = manifest.get("cohort_tree")
+    if sealed and trees and {sealed} != trees:
+        failures.append(
+            f"provenance: manifest is sealed at cohort/ {sealed[:8]} but the runs "
+            f"carry {', '.join(sorted(t[:8] for t in trees))}"
         )
 
     print(f"{'scenario':<18}{'run':<24}{'N':>5}{'success':>16}{'gap':>7}  status")
@@ -213,12 +254,17 @@ def audit(check_loadable: bool = True) -> int:
               f"{f.get('ci') or '—'!s:>16}{gap:>7}  {status}")
 
     print()
+    if trees:
+        verdict = "one environment" if len(trees) == 1 else "NOT one environment"
+        print(f"cohort/ tree: {'  '.join(sorted(t[:8] for t in trees))}   ({verdict})")
     if commits:
-        print(f"commit: {'  '.join(sorted(c[:8] for c in commits))}"
-              f"{'   (one system)' if len(commits) == 1 else '   (NOT one system)'}")
+        # Printed, never gated on. Tooling commits between two launches are
+        # routine and say nothing about what the runs trained against.
+        note = "" if len(commits) == 1 else "   (tooling-only differences are expected)"
+        print(f"commits:      {'  '.join(sorted(c[:8] for c in commits))}{note}")
     if not failures:
-        print("\nBASELINE OK — every member same commit, no overrides, N>=100 final "
-              "policy, gates green, stable, loadable, every win announced.")
+        print("\nBASELINE OK — every member on the same cohort/ tree, no overrides, "
+              "N>=100 final policy, gates green, stable, loadable, every win announced.")
         return 0
     print(f"\nBASELINE NOT READY — {len(failures)} problem(s):")
     for f in failures:
@@ -227,23 +273,33 @@ def audit(check_loadable: bool = True) -> int:
 
 
 def seal(version: str | None = None) -> int:
-    """Record the commit the members actually carry, so drift is detectable."""
+    """Record the environment the members trained against, so drift is detectable.
+
+    The seal is the ``cohort/`` tree, not the commit: a member launched a
+    tooling commit after its lane-mates is the same system, and a member
+    launched across an env change is not, however close the shas look. The
+    commits are recorded alongside as provenance, never as the gate.
+    """
     manifest = load()
-    commits = set()
+    commits, trees = set(), set()
     for run in manifest.get("runs", {}).values():
         econ = run_dir(run) / "economics.json"
         if econ.exists():
             c = json.loads(econ.read_text()).get("git_commit")
             if c:
                 commits.add(c)
-    if len(commits) != 1:
-        print(f"refusing to seal: {len(commits)} distinct commits across the fleet")
+                trees.add(cohort_tree(c))
+    if len(trees) != 1 or None in trees:
+        print(f"refusing to seal: {len(trees)} distinct cohort/ tree(s) across the fleet")
         return 1
-    manifest["commit"] = commits.pop()
+    manifest["cohort_tree"] = trees.pop()
+    manifest["commits"] = sorted(commits)
+    manifest["commit"] = manifest["commits"][0] if len(commits) == 1 else None
     if version:
         manifest["version"] = version
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
-    print(f"sealed {manifest.get('version')} at {manifest['commit'][:8]}")
+    print(f"sealed {manifest.get('version')} at cohort/ {manifest['cohort_tree'][:8]} "
+          f"({len(commits)} commit(s))")
     return 0
 
 

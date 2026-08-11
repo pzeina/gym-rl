@@ -363,8 +363,12 @@ it and labelled as a peak.
 
 That the eight belong together is not a claim in prose: `runs/BASELINE.json`
 names them and `scripts/baseline.py` fails if they are not one system — same
-commit, no `--reward` overrides, N ≥ 100 on the final policy, gates green,
-give-back under the publishing bar, checkpoints loadable, every win announced.
+`cohort/` tree, no `--reward` overrides, N ≥ 100 on the final policy, gates
+green, give-back under the publishing bar, checkpoints loadable, every win
+announced. The gate is on the environment the runs trained against, not on the
+commit sha: a tooling commit between two launches is routine and says nothing
+about the runs, while two members either side of an env change are not one
+system however adjacent their shas look.
 The fleet this replaces could not have passed it: eight champions at seven
 different commits, four of which only reproduced with
 `--reward defend_survivor_scale=0.35` — a setting that has since become the

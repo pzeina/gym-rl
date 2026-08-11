@@ -77,6 +77,10 @@ def fleet(tmp_path, monkeypatch):
     monkeypatch.setattr(baseline, "RUNS", tmp_path)
     monkeypatch.setattr(baseline, "MANIFEST", tmp_path / "BASELINE.json")
     monkeypatch.setattr(baseline, "_loadable", lambda run: True)
+    # commit -> cohort/ tree. "a"*40 and "t"*40 are the same environment a
+    # tooling commit apart; "b"*40 is a different one.
+    monkeypatch.setattr(baseline, "cohort_tree",
+                        lambda c: {"a" * 40: "env1", "t" * 40: "env1"}.get(c, "env2"))
     # audit_run reads metrics.csv for the give-back; absent here, so no gap
     monkeypatch.setattr("scripts.publish_audit.audit_run", lambda d: None)
     return tmp_path
@@ -93,15 +97,46 @@ def test_a_complete_consistent_fleet_passes(fleet, capsys):
     assert "BASELINE OK" in out
 
 
-def test_a_second_commit_fails_the_fleet(fleet, capsys):
-    """The check the old fleet could not have passed: seven commits, eight runs."""
+def test_a_second_environment_fails_the_fleet(fleet, capsys):
+    """The check the old fleet could not have passed: eight runs, seven commits."""
     _member(fleet, "platoon_v1", commit="b" * 40)
 
     code, out = _audit(capsys)
 
     assert code == 1
-    assert "2 distinct commits" in out
-    assert "not one system" in out.lower()
+    assert "2 distinct cohort/ trees" in out
+    assert "not one environment" in out.lower()
+
+
+def test_a_tooling_commit_between_launches_does_not_fail_the_fleet(fleet, capsys):
+    """The lesson from this campaign's own first hour.
+
+    `fireteam_v9` was launched three commits after its lane-mates, and all three
+    were tooling — scripts, tests, a README table. The `cohort/` tree was
+    byte-identical across every one of them, so the runs trained in the same
+    environment. A commit-equality gate would have failed the fleet for a reason
+    that has nothing to do with the runs, which is how a gate teaches people to
+    ignore it.
+    """
+    _member(fleet, "platoon_v1", commit="t" * 40)
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "one environment" in out
+    assert "tooling-only differences are expected" in out
+
+
+def test_a_commit_this_clone_cannot_resolve_is_not_agreement(fleet, capsys, monkeypatch):
+    """Unknown provenance must fail, not pass quietly."""
+    monkeypatch.setattr(baseline, "cohort_tree",
+                        lambda c: None if c == "b" * 40 else "env1")
+    _member(fleet, "platoon_v1", commit="b" * 40)
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "cannot resolve cohort/ for platoon_v1" in out
 
 
 def test_a_reward_override_fails_the_fleet(fleet, capsys):
@@ -158,18 +193,22 @@ def test_a_missing_member_fails_the_fleet(fleet, capsys):
     assert "coverage: no member for platoon" in out
 
 
-def test_sealing_refuses_a_fleet_that_is_not_one_system(fleet, capsys):
+def test_sealing_refuses_a_fleet_that_is_not_one_environment(fleet, capsys):
     _member(fleet, "platoon_v1", commit="b" * 40)
 
     assert baseline.seal("v1.19") == 1
     assert "refusing to seal" in capsys.readouterr().out
 
 
-def test_sealing_records_the_commit_the_members_carry(fleet, capsys):
+def test_sealing_records_the_environment_and_every_commit_in_it(fleet, capsys):
+    _member(fleet, "platoon_v1", commit="t" * 40)  # same environment, later commit
+
     assert baseline.seal("v1.19") == 0
 
     manifest = json.loads((fleet / "BASELINE.json").read_text())
-    assert manifest["commit"] == "a" * 40
+    assert manifest["cohort_tree"] == "env1"
+    assert manifest["commits"] == sorted(["a" * 40, "t" * 40])
+    assert manifest["commit"] is None, "two commits: there is no single one to name"
     assert manifest["version"] == "v1.19"
 
 
@@ -177,9 +216,9 @@ def test_a_sealed_manifest_detects_a_member_swapped_underneath_it(fleet, capsys)
     """Sealing is not a rubber stamp: it must notice the fleet moving after it."""
     baseline.seal("v1.19")
     for run in json.loads((fleet / "BASELINE.json").read_text())["runs"].values():
-        _member(fleet, run, commit="c" * 40)
+        _member(fleet, run, commit="c" * 40)  # a different environment entirely
 
     code, out = _audit(capsys)
 
     assert code == 1
-    assert "sealed at aaaaaaaa" in out
+    assert "sealed at cohort/ env1" in out
