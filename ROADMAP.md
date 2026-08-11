@@ -5101,3 +5101,121 @@ deliberately deferred (`docs/vision.md` §2c).
   artifacts already on disk, none of which will ever carry the field.
   `tests/test_publish_audit_era.py::test_an_evaluation_records_the_tree_it_was_measured_against`
   is written and skipped with that reason; unskip it when the patch lands.
+
+- **2026-08-11 (assurance, #40)** — **One kind, two acts: `taking_command` is
+  both "the command passes to me" and "I am filling the slot you just left", and
+  only the prose says which.** The filing's premise holds; its proposed fix does
+  not, and the instance that actually shipped was in our own board code.
+
+  **What the net emits** (`cohort/env/cohort_env.py:704-710`): for every
+  `(successor, replaced)` pair `Roster.succeed` returns, the text is
+  `format_taking_command` when `replaced` is dead and `format_assuming_position`
+  when it is alive. Same `MessageKind.TAKING_COMMAND`, same two callsigns, same
+  sender field. A consumer following the root has to decide on each one whether
+  the root pointer moves, and the only thing that tells it is the wording.
+
+  | act | text | pointer moves |
+  |---|---|---|
+  | root appointment | `ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.` | yes |
+  | backfill | `ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.` | no |
+
+  **What reproduces, and what does not.** `runs/squad_v8/behavior_final.json`
+  (N=100) carries `successes` 98 and `successes_announced` **91** — exactly the
+  "91 of 98" and the 91/98 = **0.929** the filing quotes, and its 73/98 = 0.745
+  is internally consistent. So the arithmetic is theirs and it checks out. But
+  the metric it is attached to is not ours: **`closed_on_root_report_rate` in
+  this repo never follows a net-derived root pointer.** `metrics._endex_close`
+  reads `trace["root_close_step"]` (set by the environment at
+  `cohort_env.py:936`/`1301`) and `metrics._root_sitreps` recomputes
+  `roots = {rec["cs"] for rec in step["soldiers"] if rec.get("root")}` **per
+  step**, from the trace's own ground-truth `root` flag — so succession moves the
+  root for free and no single-pointer rule is ever applied. On `squad_v8` the
+  rate is `None` on both artifacts anyway (`endex_sent` 0 — no denominator).
+  There is also no `runs/squad_v8_v119/` on disk, and `succession_records_
+  ambiguous` is not a metric this repo computes. **The 0.745 is a property of
+  their net-only reconstruction, not of any number we publish** — which is the
+  correct reading of it, because reconstructing command state from traffic alone
+  is a promise this project makes (`docs/transparency.md`, `cohort/probe.py`),
+  and a promise that costs an external reader 18 points is a real defect even
+  when our own scoreboard is unaffected.
+
+  **The instance that shipped is `scripts/scenario_gallery.py`.** Its `ACTS`
+  table classifies each transcript line by regex, and the rule for the casualty
+  colour was `IS DOWN|ASSUMING COMMAND`. `ASSUMING RFN1'S POSITION` contains
+  neither, so the backfill fell through the whole table to the ORDER default and
+  was rendered as an order — on a page whose own standfirst promises to show
+  "that a rifleman took over a dead leader's fire team". `ALL STATIONS: RFN2 HIT
+  A DEVICE …` fell through the same way. Neither had reached the published HTML
+  yet (the current gallery's eight episodes contain no leader death), but the
+  page regenerates from whatever the baseline members' transcripts hold, so it
+  was one casualty away. Fixed, plus a legend that now names both halves, plus
+  `test_every_act_the_net_can_carry_is_colored_by_what_it_is`, which drives every
+  `format_*` in `core/language.py` through `_classify` and fails on any it does
+  not name — so the next message kind cannot quietly become an order. Against the
+  pre-fix table it fails naming exactly `format_assuming_position` and
+  `format_trap`.
+
+  **Where we differ from the filing: not a payload.** #40 asks for
+  `role: "command" | "position"` or `assumes_command: true|false` **in the
+  message payload**. `Message` has no payload field and will not get one:
+  structured payloads on the net are forbidden by owner decision, the transcript
+  is the single source of truth for what was said, and
+  `tests/test_orders_flow.py::test_radio_messages_are_text_only` pins the schema
+  so they cannot return. The filing also rules out "a regex on the text" — but on
+  a text-only net a matcher is not a workaround, it is the interface. What is
+  actually wrong is that the matcher is written *four times*
+  (`probe._TAKING_RE`/`_FILLING_RE`, `metrics._succession`'s inline marker,
+  `scenario_gallery.ACTS`, and every external monitor) instead of shipping once
+  as the formatter's inverse — which is this repo's stated contract for every
+  other act on the net (CLAUDE.md: "formatter/parser stay inverses").
+
+  **The durable half is deferred, and here is the patch.** It is a change to
+  `cohort/core/language.py`, and `cohort/` is frozen: five baseline trainings
+  were live when this was written, `train.py` imports the tree that exists when a
+  job starts, and a commit under `cohort/core/` would additionally date every
+  best/final pair in the fleet as mixed-era under `publish_audit.era_gap` (#39).
+  Purely additive, no behavioural change, nothing on the net moves:
+
+      # cohort/core/language.py, beside format_taking_command (~line 394)
+    + @dataclass(frozen=True)
+    + class Succession:
+    +     """One succession move, as the net reports it (refs #40)."""
+    +
+    +     successor: str
+    +     replaced: str
+    +     #: True: the root appointment, command passed to `successor`.
+    +     #: False: `successor` backfilled the slot `replaced` vacated moving up.
+    +     assumes_command: bool
+    +
+    + _TAKING_COMMAND_RE = re.compile(
+    +     r"THIS IS (?P<successor>[A-Za-z]{2,3}\d+): "
+    +     r"(?P<replaced>[A-Za-z]{2,3}\d+) IS DOWN\. I AM ASSUMING COMMAND")
+    + _ASSUMING_POSITION_RE = re.compile(
+    +     r"THIS IS (?P<successor>[A-Za-z]{2,3}\d+): "
+    +     r"ASSUMING (?P<replaced>[A-Za-z]{2,3}\d+)'S POSITION")
+    +
+    + def parse_succession(text: str) -> Succession | None:
+    +     """Inverse of the two succession formatters: which act, and by whom."""
+    +     if (m := _TAKING_COMMAND_RE.search(text)) is not None:
+    +         return Succession(m["successor"], m["replaced"], assumes_command=True)
+    +     if (m := _ASSUMING_POSITION_RE.search(text)) is not None:
+    +         return Succession(m["successor"], m["replaced"], assumes_command=False)
+    +     return None
+
+  The two regexes are `probe._TAKING_RE`/`_FILLING_RE` lifted verbatim and named;
+  landing it means `probe._step` calls `parse_succession` and branches on
+  `assumes_command`, `metrics._succession` drops its `f"{cs} IS DOWN. I AM
+  ASSUMING COMMAND"` marker for it, and `scenario_gallery.ACTS` can be derived
+  from it rather than transcribed.
+  `tests/test_language.py::test_a_succession_message_says_which_act_it_performs`
+  is written and skipped with that reason; unskip it when the patch lands.
+
+  **One thing that is the owner's call, not ours.** The cleanest answer to #40 is
+  a *separate `MessageKind`* — `ASSUMING_POSITION` beside `TAKING_COMMAND` — so
+  the act is readable from the kind with no parsing at all, which is what a
+  monitor keys on. That is a change to the net's vocabulary: every consumer
+  switching on `taking_command` learns a new kind, `cohort/viz/dashboard.html`'s
+  `KIND_COLORS`/`KIND_GROUPS` change, and every committed trace and transcript
+  reads differently across the boundary. Recommendation: ship `parse_succession`
+  after the campaign (additive, closes the four-matchers hole immediately) and
+  put the kind split to the owner as a v-cycle vocabulary question.

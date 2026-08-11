@@ -46,6 +46,72 @@ def test_each_act_on_the_net_is_colored_by_what_it_is(tmp_path):
     assert out.count('class="close"') == 3
 
 
+def _one_of_every_act() -> dict[str, tuple[str, str]]:
+    """One sample per shipped formatter: {formatter name: (text, css class)}.
+
+    Built by CALLING ``cohort.core.language``, never by transcribing its prose
+    into this file — transcribing is how the two misses below got in.
+    """
+    from cohort.core import language as lang
+    from cohort.core.missions import Formation, MissionType
+
+    return {
+        "format_opord": (lang.format_opord("SL1", MissionType.SEIZE, "ALPHA"), "opord"),
+        "format_order": (lang.format_order("SL1", "TL2", MissionType.OBSERVE, "ALPHA"), "order"),
+        "format_formation_order": (
+            lang.format_formation_order("SL1", "TL2", Formation.WEDGE), "order"),
+        "format_ack": (lang.format_ack("SL1", "TL2"), "order"),
+        "format_execute": (lang.format_execute("SL1"), "order"),
+        "format_sync_propose": (lang.format_sync_propose("RFN1", ["RFN2"]), "order"),
+        "format_sync_go": (lang.format_sync_go("RFN1"), "order"),
+        "format_contact": (lang.format_contact("SL1", "TL2", 3, (12, 7)), "rep"),
+        "format_sitrep": (
+            lang.format_sitrep("SL1", "TL2", 90, 24, (12, 7), in_cover=True), "rep"),
+        "format_done": (lang.format_done("SL1", "TL2", MissionType.OBSERVE, "ALPHA"), "close"),
+        "format_done_confirm": (
+            lang.format_done_confirm("TL2", "SL1", MissionType.OBSERVE, "ALPHA"), "close"),
+        "format_done_reject": (lang.format_done_reject("TL2", "SL1"), "close"),
+        "format_endex": (lang.format_endex("SL1"), "close"),
+        "format_casualty": (lang.format_casualty("TL1"), "cas"),
+        # deliberate: SUPPORT ENDED is a report, but the fact it reports is a
+        # death ("RFN3 IS DOWN"), and that is what a reader is looking for
+        "format_support_end": (lang.format_support_end("SL1", "TL2", "RFN3"), "cas"),
+        "format_trap": (lang.format_trap("RFN2", (9, 4)), "cas"),
+        "format_taking_command": (lang.format_taking_command("RFN1", "TL1"), "cas"),
+        "format_assuming_position": (lang.format_assuming_position("RFN2", "RFN1"), "cas"),
+    }
+
+
+def test_every_act_the_net_can_carry_is_colored_by_what_it_is():
+    """Regression, refs #40: two acts fell through to the ORDER default.
+
+    ``ASSUMING X'S POSITION`` is the backfill half of succession — the *other*
+    act carried on ``MessageKind.TAKING_COMMAND``, told apart from the root
+    appointment only by this prose — and the page's own standfirst promises to
+    show "a rifleman took over a dead leader's fire team". It was colored as an
+    order. So was the trap broadcast. Both were missed because ``ACTS`` was
+    written from memory of the wording instead of from the formatters, and
+    nothing checked the two against each other.
+
+    Exhaustive on purpose: a new message kind, or a reworded formatter, fails
+    here rather than quietly rendering as one more order.
+    """
+    from cohort.core import language as lang
+
+    samples = _one_of_every_act()
+    shipped = {name for name in dir(lang) if name.startswith("format_")}
+    assert shipped == set(samples), (
+        "a formatter in cohort/core/language.py has no expected color here: "
+        f"{shipped ^ set(samples)}"
+    )
+    wrong = {
+        name: (text, got, want)
+        for name, (text, want) in samples.items()
+        if (got := scenario_gallery._classify(text)) != want
+    }
+    assert not wrong, f"acts colored as something else: {wrong}"
+
+
 def test_a_long_episode_is_elided_in_the_middle_never_at_the_ends(tmp_path):
     lines = NET.splitlines()
     filler = [f"[t={i:3d}] SL1, THIS IS TL2: SITREP, GRID 2029, HEALTH 100%. OVER."

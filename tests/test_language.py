@@ -162,6 +162,47 @@ def test_succession_formatters():
     )
 
 
+@pytest.mark.skip(reason="needs cohort/core/language.py, frozen while the "
+                         "baseline retrain campaign is in flight — train.py imports "
+                         "the tree that exists when a job starts, so an edit under "
+                         "cohort/ today would train the later fleet members against a "
+                         "different environment than the earlier ones, and it would "
+                         "date every best/final pair in the fleet as mixed-era under "
+                         "publish_audit.era_gap. Patch is written out in ROADMAP.md's "
+                         "2026-08-11 #40 entry; unskip when it lands.")
+def test_a_succession_message_says_which_act_it_performs():
+    """The durable half of #40: two acts share ``MessageKind.TAKING_COMMAND``.
+
+    The root appointment ("I AM ASSUMING COMMAND", the command passes) and the
+    backfill of the slot the successor just vacated ("ASSUMING X'S POSITION",
+    the command does not) are the same kind and the same pair of callsigns.
+    Only the prose tells them apart, so every consumer writes its own matcher:
+    ``probe._TAKING_RE``/``_FILLING_RE``, ``metrics._succession``'s inline
+    marker string, ``scenario_gallery.ACTS`` — which got it wrong — and any
+    external monitor. #40 asks for a structured payload key; this repo's net is
+    text-only by owner decision (``test_orders_flow.py::
+    test_radio_messages_are_text_only``), so the answer that fits is the
+    formatter's **inverse**, shipped beside it, which is the round-trip
+    contract every other act on this net already has.
+    """
+    from cohort.core.language import (
+        format_assuming_position,
+        format_taking_command,
+        parse_succession,
+    )
+
+    appointed = parse_succession(format_taking_command("RFN1", "TL1"))
+    assert (appointed.successor, appointed.replaced) == ("RFN1", "TL1")
+    assert appointed.assumes_command is True, "the root pointer moves to RFN1"
+
+    backfill = parse_succession(format_assuming_position("RFN2", "RFN1"))
+    assert (backfill.successor, backfill.replaced) == ("RFN2", "RFN1")
+    assert backfill.assumes_command is False, "a slot was filled; no command passed"
+
+    # the plain casualty broadcast is not a succession at all
+    assert parse_succession("ALL STATIONS: TL1 IS DOWN. OUT.") is None
+
+
 # ---------------------------------------------------------------------- #
 # SITREP posture (issue #10)
 # ---------------------------------------------------------------------- #
