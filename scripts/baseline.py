@@ -183,14 +183,28 @@ def _run_facts(run: str) -> dict:
 
 
 def _loadable(run: str) -> bool:
+    """Does this member's checkpoint load under the current spaces?
+
+    ``checkpoint_meta`` takes a Path and calls ``path.stat()`` on it. This
+    passed ``str(ckpt)``, which raises ``AttributeError`` — and a bare
+    ``except Exception`` turned that into "does not load" for **all eight
+    members at once**, on a fleet whose every checkpoint had just been loaded
+    to score it at N=100. A gate that fails for a reason unrelated to what it
+    gates is worse than no gate: this one would have been read as a spaces
+    break and sent someone hunting a retrain.
+
+    So the type is right, and the except is narrow. A torch/pickle failure is a
+    genuine "does not load"; a TypeError or an AttributeError is a bug in this
+    function and must surface as one.
+    """
     from cohort.viz.dashboard import checkpoint_meta
 
     ckpt = run_dir(run) / "ckpt_best.pt"
-    if not ckpt.exists():
+    if not ckpt.is_file():
         return False
     try:
-        return bool(checkpoint_meta(str(ckpt)).get("loadable"))
-    except Exception:
+        return bool(checkpoint_meta(ckpt).get("loadable"))
+    except (OSError, RuntimeError, ValueError, KeyError):
         return False
 
 
