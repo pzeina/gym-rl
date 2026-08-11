@@ -215,8 +215,10 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
     <h1>Eight scenarios, as radio traffic</h1>
     <p class="standfirst">One evaluated episode from each member of the baseline fleet,
       read off the net. A success rate cannot show that the OPORD came down, that it was
-      acknowledged, that a rifleman took over a dead leader's fire team, or that HQ closed
-      the operation — the transcript can.</p>
+      acknowledged, or that HQ closed the operation — the transcript can. What you will
+      mostly <i>not</i> see here is a succession: these policies are good enough that
+      their leaders rarely fall, so the casualty and hand-over traffic the legend names
+      is real but uncommon, and one episode per scenario is a thin sample of it.</p>
     <div class="specs">
       <span>generated <b>{stamp}</b></span>
       <span>source <b>runs/&lt;member&gt;/eval_transcript.txt</b></span>
