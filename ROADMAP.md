@@ -5302,3 +5302,61 @@ deliberately deferred (`docs/vision.md` §2c).
   genuinely gone on this build. **No README change until that lands** — the
   ablation section keeps the 2026-08-06 numbers, which are three seeds and remain
   the stronger evidence for what they measured.
+
+- **2026-08-11 — the squad regression is real, is not the seed, and comes with a
+  behavioural signature.** `squad_v10b` (seed 13) was launched to test whether
+  `squad_v10`'s 0.92 was a bad draw. It came in **lower**: 0.88 ± 0.06.
+
+      squad_v8    0.98 ± 0.03      squad_v10   0.92 ± 0.05     (v1.19 tree)
+      squad_v9    0.97 ± 0.03      squad_v10b  0.88 ± 0.06     (v1.19 tree)
+
+  The two v1.19 seeds agree with each other (p = 0.48). Pooled 180/200 against
+  the previous era's 195/200: **p = 0.0031**. The squad scenario is genuinely
+  ~7.5 points weaker on this tree.
+
+  **What moved with it**, across the whole squad family including the two
+  ablation arms trained on the same tree:
+
+      run              success   false-claim rate   messages/ep   root SITREPs/ep
+      squad_flat_v1     1.00          0.203            17.2            0.13
+      squad_v8          0.98          0.444            77.3            0.00
+      squad_nomask_v1   0.98          0.411            44.9            0.73
+      squad_v10         0.92          0.560           101.2            1.64
+      squad_v10b        0.88          0.805           166.8            5.26
+
+  Success against false-claim rate is r = -0.952 over those five. But the
+  first-guess mechanism — claims crowding orders off a single-frequency net —
+  is **wrong**, and the table is what refutes it: the weaker runs issue MORE
+  orders (17.4 and 17.6 against 13.4) and carry MORE traffic overall. Nothing is
+  being starved. What separates the eras is that the whole net got chattier:
+  101 and 167 messages per episode against 77 and 83, with root SITREPs going
+  from 0.00 to 1.64 and 5.26.
+
+  **Direction of causation is NOT established** and the confound is obvious: a
+  policy that is worse at the mission claims falsely more often *because* it has
+  not finished, so `false_complete_rate` rises without doing any work. What can
+  be said is that on this tree the squad policy converged to a chattier
+  equilibrium, and that both the false claims and the lost success ride with it.
+  Every transmission is an agent-step not spent moving, firing or taking cover —
+  the same shape as the order-spam and stall-farming exploits this repo has
+  fixed twice before — but that is a hypothesis with a mechanism, not a result.
+
+  **Not fixed today, and deliberately.** The lever people reach for is
+  `done_false` (-0.5 → -2.0, which is exactly what `squad_v9` ran with, and it
+  claimed **zero** times and scored 0.97). Three reasons to leave it alone:
+  CLAUDE.md's own rule is to diagnose with the oracle before touching rewards;
+  the correlation above cannot tell a price problem from a policy problem; and
+  changing a reward default now would put the eight members on two different
+  trees and destroy the provenance the whole baseline rests on.
+
+  **The discriminating experiment**, for the next cycle: `scripts/done_probe.py`
+  on `squad_v10b` in all three regimes — golden steps say whether truthful
+  claiming was reachable and declined (a pricing problem) or unreachable (a
+  masking one), and the observe regime gives the unperturbed opportunity count.
+  Then one arm at `done_false=-2.0` against `squad_v10b` as a named single-
+  variable A/B on a frozen tree.
+
+  **What ships meanwhile**: `squad_v10` as the squad member, at 0.92 ± 0.05, with
+  this entry as its caveat. It clears every gate — N=100 final policy, all gates
+  green, give-back 7.0 under the bar of 10, 92/92 announced — and it is the
+  weakest member of the fleet by a clear margin.
