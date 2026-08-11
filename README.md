@@ -61,6 +61,19 @@ vacancy the successor leaves behind is filled the same way, recursively, and eac
 promotion is announced on the net (`I AM ASSUMING COMMAND`). A rifleman can end up
 commanding a squad — and the action mask expands with the acting rank.
 
+> ⚠️ **Scope, honestly (#42).** Devolution is complete only for a slot's *first*
+> succession. A promoted leader takes its predecessor's superior, but that superior's
+> own subordinate list is never re-pointed at it — so the promoted branch drops off
+> the commander's chart: unorderable, absent from the commander's observation, and
+> when the commander falls in turn, never devolved to and never announced. On the
+> **squad** chart 4,080 of the 5,040 possible orders of death leave a living agent off
+> its commander's list and 1,928 reach a state with nobody in command at all; the
+> **fireteam** chart is exempt (0/24 — its successors report to HQ, which has no list).
+> Realised on the shipped fleet at sampled actions, 660 episodes: 44 with a broken
+> chart, 1 with no commander. Diagnosis, measurements and the one-statement patch:
+> ROADMAP, `2026-08-11 (assurance, #42)` — deferred behind the baseline-campaign
+> freeze, because it moves action masks and therefore every rollout.
+
 **Humans in the ranks**: by default the root commander is a *human* embodied in the sim
 (`ScenarioSpec.root_human`) — marked with a gold ring in every view, observable to
 teammates (own/leader is-human observation flags). An org must satisfy the

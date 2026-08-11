@@ -1,6 +1,9 @@
 """Chain-of-command succession: command devolves, recursively, with the mission."""
 
+import itertools
 import re
+
+import pytest
 
 from cohort.core.missions import Mission, MissionType
 from cohort.core.ranks import Rank
@@ -44,6 +47,54 @@ def test_leader_death_promotes_senior_subordinate_recursively():
     assert promoted.id in tl1.subordinate_ids
     assert roster.by_callsign["RFN2"].leader_id == promoted.id
     assert len(events) == 2
+
+
+@pytest.mark.skip(
+    reason="refs #42 — the fix is one statement in cohort/core/units.py::_fill_vacancy and "
+    "cohort/ is FROZEN until the baseline campaign lands (squad_screen_v11 in flight): "
+    "train.py imports the tree that exists when a job starts, so an edit now would train "
+    "the last fleet member against a different environment than the other seven and destroy "
+    "the baseline's provenance. It also moves action masks, so it is a v-cycle change, not a "
+    "patch. Diagnosis, measurements and the exact patch: ROADMAP, '2026-08-11 (assurance, "
+    "#42)'. Unskip when it lands."
+)
+def test_a_promoted_leader_is_on_the_chart_of_the_superior_it_reports_to():
+    """Succession must not orphan the branch it promotes.
+
+    ``_fill_vacancy`` sets ``successor.leader_id = vacated.leader_id``, and its
+    *recursive* branch appends the promoted agent to its new leader's
+    ``subordinate_ids``. The top-level call never does. So the first succession
+    into a mid-chart slot leaves the new leader pointing at a superior that does
+    not list it: unorderable (``env/actions.py`` masks orders on
+    ``living_subordinates``), absent from that superior's observation
+    (``env/observations.py``), missing from the trace's ``subs`` — and, when the
+    superior itself falls, never devolved to. On a squad the cascade ends with
+    ``roster.root()`` None while the team is alive, which is the silence #42
+    observed on the net: there is no successor to announce because the branch
+    that should have produced one is off the chart.
+    """
+    roster = _squad()
+    tl2 = roster.by_callsign["TL2"]
+    tl2.alive = False
+    roster.succeed(tl2)  # a MID-CHART leader dies; every other test kills the root
+
+    sl1, rfn3 = roster.by_callsign["SL1"], roster.by_callsign["RFN3"]
+    assert rfn3.leader_id == sl1.id, "the new TL2 reports to the squad leader"
+    assert rfn3.id in sl1.subordinate_ids, "…and the squad leader must be able to task it"
+    assert rfn3 in sl1.living_subordinates(roster)
+
+    # The consequence, exhaustively: no order of deaths may leave a living team
+    # with nobody in command. As shipped, 1928 of these 5040 orderings do.
+    for order in itertools.permutations(range(7)):
+        roster = _squad()
+        for dead_id in order:
+            dead = roster.by_id[dead_id]
+            dead.alive = False
+            roster.succeed(dead)
+            living = roster.living
+            assert not living or roster.root() is not None, (
+                f"deaths in order {order} left {[s.callsign for s in living]} with no root"
+            )
 
 
 def test_deputy_preferred_over_higher_authority_subordinate():
