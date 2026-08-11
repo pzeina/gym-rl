@@ -25,23 +25,34 @@ import json
 print(' '.join(json.load(open('runs/BASELINE.json'))['runs'].values()))
 ")
 
-echo "=== waiting on: $members"
-for run in $members; do
-  while :; do
-    if [ "$(date +%s)" -gt "$DEADLINE" ]; then
-      echo "!!! deadline reached while waiting for $run — giving up on the rest"
-      exit 2
-    fi
+# Publish whichever member is READY, never in a fixed order. The first version
+# of this waited on the manifest in order and blocked on fireteam_defend_v20 —
+# the LAST job of its lane — while four runs that had already landed sat
+# unscored behind it. Waiting on a named run is only correct when you know the
+# order things finish in, and across three parallel lanes you do not.
+echo "=== watching: $members"
+remaining="$members"
+while [ -n "${remaining// /}" ]; do
+  if [ "$(date +%s)" -gt "$DEADLINE" ]; then
+    echo "!!! deadline reached; never scored: $remaining"
+    exit 2
+  fi
+  progressed=0
+  next=""
+  for run in $remaining; do
     # Landed = the directory exists, a final checkpoint is on disk, and no
-    # training process is carrying this run name. All three: a queued job has no
+    # training process carries this run name. All three: a queued job has no
     # directory, and a directory mid-run has a checkpoint but a live pid.
     if [ -f "runs/$run/ckpt_latest.pt" ] && ! "$PY" scripts/train_status.py --is-running "$run"; then
-      break
+      echo "=== [$(date +%H:%M:%S)] $run landed — scoring at N=100"
+      "$PY" scripts/publish_baseline.py "$run" || echo "!!! $run: publish reported problems"
+      progressed=1
+    else
+      next="$next $run"
     fi
-    sleep "$POLL"
   done
-  echo "=== [$(date +%H:%M:%S)] $run landed — scoring at N=100"
-  "$PY" scripts/publish_baseline.py "$run" || echo "!!! $run: publish reported problems"
+  remaining=$next
+  [ "$progressed" = "1" ] || sleep "$POLL"
 done
 
 echo "=== every member scored; refreshing boards and the README table"
