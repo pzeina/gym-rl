@@ -68,17 +68,47 @@ EXTRA_CSS = """
 
 #: (regex over the message text, css class). First match wins, so the close
 #: rules sit above the generic order rule.
+#:
+#: The file this page reads is ``Transcript.render()`` output — voice-procedure
+#: text and nothing else, by the same owner decision that forbids structured
+#: payloads on ``Message``. A text matcher is therefore not a workaround here,
+#: it is the only interface; but the patterns have to mirror the formatters in
+#: ``cohort/core/language.py`` exactly, and written from memory of the prose
+#: they missed two acts (refs #40). Both fell through to the default and were
+#: rendered as one more ORDER:
+#:
+#: * ``ALL STATIONS, THIS IS RFN2: ASSUMING RFN1'S POSITION. OUT.`` — the
+#:   backfill half of succession. It shares ``MessageKind.TAKING_COMMAND`` with
+#:   the root appointment and is distinguished from it only by this prose, so a
+#:   reader of the *text* must know both shapes. That is #40's finding, and this
+#:   page is the instance of it that shipped: its own standfirst promises to
+#:   show "a rifleman took over a dead leader's fire team", which is precisely
+#:   the sentence it was coloring as an order.
+#: * ``ALL STATIONS: RFN2 HIT A DEVICE AT GRID 0904. OUT.`` — the trap
+#:   broadcast, an event of the same family (``cohort/viz/dashboard.html``
+#:   already groups TRAP with CASUALTY and TAKING_COMMAND).
+#:
+#: ``tests/test_scenario_gallery.py`` now drives **every** shipped ``format_*``
+#: through :func:`_classify` and fails on any it does not name, so a new message
+#: kind or a reworded one cannot quietly become an order again.
 ACTS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"OPORD"), "opord"),
     (re.compile(r"ENDEX"), "close"),
     (re.compile(r"COMPLETE\.|CONFIRMED|NEGATIVE, CONTINUE"), "close"),
-    (re.compile(r"IS DOWN|ASSUMING COMMAND"), "cas"),
+    (re.compile(r"IS DOWN|ASSUMING COMMAND|'S POSITION|HIT A DEVICE"), "cas"),
     (re.compile(r"CONTACT|SITREP|NO CHANGE|IN POSITION"), "rep"),
     (re.compile(r"WILCO|ROGER"), "order"),
 )
 
 
 def _classify(text: str) -> str:
+    """Which act a line of the net is, from its text alone.
+
+    Unmatched text is an ORDER: that is the default because an order is the
+    only act whose wording is open-ended (it carries a mission phrase), so it
+    is the one shape a fixed pattern list cannot enumerate. Every other act has
+    a fixed formatter and therefore belongs in :data:`ACTS`, under test.
+    """
     for pattern, cls in ACTS:
         if pattern.search(text):
             return cls
@@ -152,7 +182,9 @@ def _scenario(scenario: str, run: str, rows: dict) -> str:
         '<span><i style="background:var(--ink)"></i>OPORD</span>'
         '<span><i style="background:var(--accent)"></i>orders &amp; acknowledgements</span>'
         '<span><i style="background:var(--compare)"></i>contact &amp; situation reports</span>'
-        '<span><i style="background:var(--fail)"></i>casualties &amp; succession</span>'
+        '<span><i style="background:var(--fail)"></i>casualties, devices &amp; succession '
+        '&mdash; both halves: <code>I AM ASSUMING COMMAND</code> and '
+        "<code>ASSUMING X'S POSITION</code></span>"
         '<span><i style="background:var(--pass)"></i>the close — COMPLETE, CONFIRMED, ENDEX</span>'
         + (f"<span>animation: <code>{html.escape(str(gif.relative_to(ROOT)))}</code></span>"
            if gif.is_file() else "")
