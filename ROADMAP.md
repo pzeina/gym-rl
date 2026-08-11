@@ -5219,3 +5219,45 @@ deliberately deferred (`docs/vision.md` §2c).
   reads differently across the boundary. Recommendation: ship `parse_succession`
   after the campaign (additive, closes the four-matchers hole immediately) and
   put the kind split to the owner as a v-cycle vocabulary question.
+
+- **2026-08-11 — v1.19 changed a denominator, and the new fleet is where it
+  showed.** Found by reading the first three baseline members' behaviour suites
+  rather than their headlines. `closed_on_cadence_report_rate` reads **0.000 on
+  every completable root** — `fireteam_v9`, `squad_v10`, `squad_recon_v8` alike —
+  and `closes_per_root_sitrep` reads **11.0** on `squad_recon_v8`, off 0.09 root
+  SITREPs per episode.
+
+  Neither is a policy result. `cohort/metrics.py::_root_sitreps` says it in its
+  own docstring: *"An operation closed by a confirmed MISSION COMPLETE rather
+  than by a SITREP counts in that rate's denominator and not in its numerator …
+  On the v1.17 defend family the claim route is masked shut, so every close
+  there is a SITREP."* That last sentence was the load-bearing assumption:
+  `endex_sent > 0` used to imply a defence, and on a defence every close *is* a
+  SITREP. v1.19 gives every scenario an ENDEX, so the denominator quietly went
+  from "defend operations" to "all operations" while the numerator stayed
+  SITREP-only. A completable root closes with its claim, so it can only ever
+  score 0.
+
+  Read naively, `squad_recon_v8` reports a policy that times nothing. It has no
+  SITREP channel in use at all — which is a different statement, and the honest
+  one. Same shape as the `false_complete_rate` denominator confusion on
+  `fireteam_defend_v12`, and as v1.14 announcing 0 of 57: a predicate that was
+  true of the corpus it was written against, and stopped being true.
+
+  **Deferred — `cohort/` is frozen while the fleet trains.** The patch, to apply
+  once the campaign lands:
+  1. `cohort_env.py` records the close ROUTE beside `_root_close_step` — `"sitrep"`
+     where the SITREP branch sets it, `"claim"` where `_report_done` does — and
+     the recorder writes it into the trace as `root_close_route`.
+  2. `metrics._root_sitreps` takes SITREP-route closes as the denominator of
+     `closed_on_cadence_report_rate` and of `closes_per_root_sitrep`, so both read
+     `null` where the operation closed on a claim, exactly as they read `null`
+     today where no ENDEX was sent.
+  3. `docs/metrics.md`'s close-rate block gains the route distinction; the
+     paragraph rewritten this morning already says the block now reads on all
+     eight scenarios, and this is the half of that which is not yet true.
+
+  `closed_on_root_report_rate` is unaffected and stays the cross-scenario number
+  worth reading — it asks whether the root closed the window at all, by either
+  route: `fireteam_v9` 0.90, `squad_v10` 0.84, `squad_recon_v8` 1.00. That axis
+  is what the README quotes, and it is correct as it stands.
