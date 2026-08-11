@@ -63,6 +63,10 @@ BOARDS = {
 STABLE = (
     "run", "scenario", "success_ci95", "episodes", "policy", "gates_failed",
     "overrides", "env_steps", "obs_dim", "loadable", "state",
+    # Which runs the baseline manifest names, and which have been filed away.
+    # Both change what the boards LEAD with rather than a number in a cell, so
+    # a manifest edit must republish even when no run has moved.
+    "baseline", "archived",
 )
 
 

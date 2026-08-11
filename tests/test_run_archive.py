@@ -89,6 +89,36 @@ def test_an_absent_run_still_resolves_to_the_current_path_for_the_error_message(
     assert run_report.run_dir("squad_v99") == fleet / "squad_v99"
 
 
+def test_archiving_never_touches_a_manifest_run_or_a_live_one(fleet, monkeypatch):
+    """The two refusals that matter: the fleet itself, and anything still writing.
+
+    A run that is training has a process appending to its metrics.csv and its
+    checkpoints; moving that directory out from under it corrupts the run and
+    the campaign queue waiting on it.
+    """
+    from scripts import archive_runs, baseline, train_status
+
+    _run(fleet, "squad_v9")
+    _run(fleet, "platoon_v6")
+    monkeypatch.setattr(archive_runs, "RUNS", fleet)
+    monkeypatch.setattr(baseline, "MANIFEST", fleet / "BASELINE.json")
+    (fleet / "BASELINE.json").write_text(json.dumps({
+        "runs": {"squad": "squad_v10"},
+        "referenced_history": {"squad_v5": "the arm the ablation rests on"},
+    }))
+    monkeypatch.setattr(
+        train_status, "summarize",
+        lambda d: {"state": "RUNNING" if d.name == "platoon_v6" else "DONE"},
+    )
+    monkeypatch.setattr(archive_runs, "summarize", train_status.summarize)
+
+    moving, keep, live = archive_runs.candidates()
+
+    assert sorted(keep) == ["squad_v10", "squad_v5"]
+    assert live == ["platoon_v6"]
+    assert [d.name for d in moving] == ["squad_v9"]
+
+
 def test_every_reader_goes_through_the_resolver():
     """The guard that keeps this true.
 
@@ -106,6 +136,8 @@ def test_every_reader_goes_through_the_resolver():
             stripped = line.strip()
             if stripped.startswith("#") or "find_run(" in stripped:
                 continue  # a fallback INSIDE a resolver is the resolver
+            if "not-archive-aware:" in stripped:
+                continue  # deliberate, and the line has to say why
             if "RUNS / run" in stripped or "RUNS / name" in stripped or "RUNS / a[" in stripped:
                 offenders.append(f"{path.name}:{i}: {stripped}")
     assert not offenders, (

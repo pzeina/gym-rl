@@ -104,9 +104,22 @@ def find_run(name: str, runs_dir: Path) -> Path | None:
     return None
 
 
+def baseline_members(runs_dir: Path) -> dict[str, str]:
+    """run name -> the scenario it is the baseline member for, per the manifest.
+
+    Read here rather than in each board so that "is this run part of the
+    shipping fleet" is answered in one place, by the same file the audit gate
+    reads. A board that decided membership by name pattern would drift from the
+    gate the moment a member was replaced.
+    """
+    manifest = _json(runs_dir / "BASELINE.json")
+    return {run: scenario for scenario, run in (manifest.get("runs") or {}).items()}
+
+
 def collect(runs_dir: Path) -> list[dict]:
     from cohort.viz.dashboard import checkpoint_meta
 
+    members = baseline_members(runs_dir)
     rows = []
     for run in run_dirs(runs_dir):
         if not (run / "metrics.csv").is_file():
@@ -140,6 +153,7 @@ def collect(runs_dir: Path) -> list[dict]:
             {
                 "run": run.name,
                 "archived": run.parent.name == "archive",
+                "baseline": members.get(run.name),
                 "scenario": cfg.get("scenario"),
                 "success": _rate(head.get("success_ci95")),
                 "success_ci95": head.get("success_ci95"),
