@@ -856,16 +856,47 @@ first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on u
 
 ### Does the hierarchy actually help? (ablation)
 
-Measured, not assumed: a 3-arm × 3-seed ablation on the squad scenario (same
-network, same spaces, 2.5M steps from scratch each) compared the shipped system
-against a hierarchy *without* doctrine masks and against a flat, order-less team
-where every agent gets the OPORD directly. Structured command wins on **outcome
-robustness** (N=100 success 0.92 ± 0.01 vs 0.85 ± 0.06 flat, which wipes 2.2× as
-often) and on **interpretability** (100% doctrine-valid radio traffic by
-construction vs 40% without masks; completion reporting only survives under
-masks) — but not on raw speed-to-threshold, where the all-tasked flat team is
-fastest on a scenario this small. Full tables, learning curves, and the honest
-verdict: [docs/ablation.md](docs/ablation.md).
+Measured, not assumed — and measured twice, with the two answers disagreeing.
+Three arms on the squad scenario, same network and spaces: the shipped system,
+a hierarchy *without* doctrine masks, and a flat order-less team where every
+agent gets the OPORD directly.
+
+**2026-08-06, 3 seeds per arm, Box(137), 2.5M steps.** Structured command won on
+**outcome robustness** (N=100 success 0.92 ± 0.01 against 0.85 ± 0.06 flat,
+which wiped 2.2× as often) and on **interpretability** (100% doctrine-valid
+radio traffic by construction against 0.395 ± 0.079 without masks) — but not on
+speed-to-threshold, where the all-tasked flat team is fastest on a scenario this
+small. Full tables and the honest verdict: [docs/ablation.md](docs/ablation.md).
+
+**2026-08-11, 1 seed per arm, the current build.** The control arm is
+`squad_v10`, which is also the squad baseline member, so the trio differs by one
+field (`ScenarioSpec.ablation`) and nothing else. The outcome half **inverts**:
+
+| N=100, final policy | full | nomask | flat |
+|---|---|---|---|
+| success | 0.92 ± 0.05 | 0.98 ± 0.03 | **1.00 ± 0.00** |
+| defeats / 100 | **7.0** | 1.0 | 0.0 |
+| root death | **0.30** | 0.12 | 0.17 |
+| doctrine-valid orders | 1.000 | 0.592 | — none issued |
+
+full vs flat separates on success (p = 0.007), defeats (p = 0.014) and root
+death (p = 0.045). **The interpretability claim survives** — 1.000 against 0.592
+is the same ordering as before, and it is the row whose three original seeds
+agree individually, so one seed is entitled to settle it. The outcome claim does
+not survive, and the completion-reporting claim is dead for an unrelated reason:
+the original's nomask arm claimed 0.3 DONE per 30 episodes and this one claims
+84, which is a change of code era, not of hierarchy.
+
+**Read the reversal together with the squad regression, because they are one
+observation.** The full arm is exactly the run that got weaker on this build
+(0.92 and 0.88 at two seeds, against 0.98 and 0.97 before, pooled p = 0.0031),
+while the ablated arms did not. On this tree the full-hierarchy squad converged
+to a chattier equilibrium — 101 and 167 messages per episode against 77 and 83 —
+and the ablated arms did not. Whether that is a price problem or a policy
+problem is **not** established; the diagnosis, the refuted first guess, and the
+discriminating experiment are in `ROADMAP.md` under 2026-08-11. Until that runs,
+this project claims the interpretability result and does not claim the outcome
+one.
 
 ### Can you predict the cohort from its radio net? (transparency probe)
 
