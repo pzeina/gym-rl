@@ -893,20 +893,37 @@ class CohortEnv(ParallelEnv):
         # a defense; masking the claim without it would make the bonus dead
         # reward, the v1.4 failure in v1.13 clothes.
         root_may_declare_the_end = is_completable(self.spec_cfg.root_mission)
-        # The ANNOUNCEMENT is a different question with a different answer. On a
-        # continuous posture — DEFEND / DENY, held until a new order arrives —
-        # the order to stop is COMMAND's to give, so COMMAND transmits ENDEX
-        # whether or not the root also reported the mission complete. A
-        # confirmed claim and an ENDEX are not redundant: the claim is the
-        # root's REPORT, the ENDEX is the FACT.
+        # The ANNOUNCEMENT is a different question with a different answer, and
+        # since v1.19 the answer no longer depends on the mission at all:
+        # COMMAND closes EVERY operation on the net. A confirmed claim and an
+        # ENDEX are not redundant — the claim is the root's REPORT, the ENDEX is
+        # the FACT — so both can go out on the same episode and on a completable
+        # root they now do.
         #
-        # This is the pre-v1.14 gate, restored deliberately. v1.14 gave DEFEND a
-        # horizon, which made it completable, which switched the announcement
-        # off through the one predicate that gated it — measured at 0 of 57
-        # successes announced on fireteam_defend, against 103 of 103 across the
-        # four corpora before it. Nobody decided that; it fell out of reusing
-        # one function for two purposes.
-        command_closes_the_operation = not is_completable(self.spec_cfg.root_mission)
+        # Why it stopped being a predicate. Gating the announcement on the
+        # mission made the guarantee cover two scenarios of nine. Measured at
+        # N=100 on the final policy of every published champion:
+        #
+        #     defend (ENDEX, a protocol act)        391/391 successes announced
+        #     squad / squad_recon / squad_screen    91-98%
+        #     fireteam_v8                            49/80
+        #     platoon_v5  0/100   ·   patrol_brique_v5  0/99
+        #
+        # `platoon` and `patrol_brique` succeed on essentially every episode and
+        # never once say so. Where the announcement is a protocol act it is
+        # complete; where it is left to be an agent behaviour it ranges from 98%
+        # to nothing and does not track how well the scenario is solved. Two
+        # policies that seize the objective equally well are not two different
+        # standards of reporting — they are one standard and one silence.
+        #
+        # This does not make the root's report worthless, and that distinction
+        # is the whole design: the ENDEX says the operation is over, the root's
+        # own act says it reported before HQ had to ask. The second is still
+        # priced (root_done_bonus), still closes the window early, and is now
+        # measurable fleet-wide on one scale — `closed_on_root_report_rate` has
+        # ENDEXes-sent for a denominator, so before v1.19 it simply did not
+        # exist outside the defend family.
+        command_closes_the_operation = True
         if (
             success_locked
             and not root_may_declare_the_end
@@ -932,12 +949,19 @@ class CohortEnv(ParallelEnv):
         truncated_all = step >= self.spec_cfg.max_steps and not success and not defeat
         if success:
             self._episode_outcome = "success"
-            # COMMAND closes a continuous-posture operation on the net (v1.13,
-            # decoupled from completability in v1.16). Transmitted whether or
-            # not the root reported in time and whether or not it claimed the
-            # mission complete — the order to stop defending is COMMAND's to
-            # give either way; what the root's report buys is closing early,
-            # and root_done_bonus. Once per episode, guarded by _endex_step.
+            # COMMAND closes the operation on the net (v1.13 on a continuous
+            # posture, decoupled from completability in v1.16, extended to every
+            # root in v1.19). Transmitted whether or not the root reported in
+            # time and whether or not it claimed the mission complete — the
+            # order to stop is COMMAND's to give either way; what the root's
+            # report buys is closing early, and root_done_bonus. Once per
+            # episode, guarded by _endex_step.
+            #
+            # Emitted here, in the terminal branch, AFTER the step's actions
+            # have been applied — which is why extending it is rollout-neutral:
+            # no agent ever chooses an action from an observation containing it.
+            # Asserted once and measured false in the other direction; it is
+            # pinned by tests now rather than argued (test_endex_guarantee).
             if command_closes_the_operation and self._endex_step is None:
                 root = self.roster.root()
                 if root is not None:

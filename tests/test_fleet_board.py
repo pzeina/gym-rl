@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import baseline as baseline_module
 from scripts import fleet_board, fleet_status
 
 
@@ -151,7 +152,38 @@ def test_stale_runs_are_archived_rather_than_ranked_beside_current_ones(tmp_path
     html = fleet_board.render(fleet_status.collect(tmp_path))
 
     assert "Superseded observation eras" in html
-    assert "Current build — 0 runs" in html
+    assert "0 further runs on this build" in html
+
+
+def test_the_board_leads_with_the_baseline_not_with_the_directory_listing(tmp_path, loadable,
+                                                                         monkeypatch):
+    """A hundred run names is a filing cabinet; the manifest says which eight ship.
+
+    Membership comes from ``runs/BASELINE.json`` rather than from a name pattern,
+    so the board and ``scripts/baseline.py``'s gate can never disagree about what
+    the fleet is.
+    """
+    from scripts import fleet_board, fleet_status
+
+    (tmp_path / "BASELINE.json").write_text(
+        '{"version": "v9.9", "runs": {"squad": "squad_v10"}}'
+    )
+    _run(tmp_path, "squad_v10", scenario="squad",
+         final={"episodes": 100, "success_ci95": "0.97 ± 0.03", "gates": []}, best=None)
+    _run(tmp_path, "squad_v5", scenario="squad",
+         final={"episodes": 100, "success_ci95": "0.93 ± 0.05", "gates": []}, best=None)
+
+    rows = {r["run"]: r for r in fleet_status.collect(tmp_path)}
+    assert rows["squad_v10"]["baseline"] == "squad"
+    assert rows["squad_v5"]["baseline"] is None
+
+    page = fleet_board.render(list(rows.values()))
+    assert "chip base" in page
+    # the member is not also listed among the runs below, or it reads as two runs
+    assert page.count('<span class="r">squad_v10</span>') == 1
+    assert '<span class="r">squad_v5</span>' in page
+    # every doctrine scenario is accounted for, including the ones with no member
+    assert page.count("no member on disk yet") == len(baseline_module.DOCTRINE_SCENARIOS) - 1
 
 
 def test_version_order_is_numeric_not_lexical():

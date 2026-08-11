@@ -75,11 +75,53 @@ def _live(run: Path) -> dict:
     }
 
 
+def run_dirs(runs_dir: Path) -> list[Path]:
+    """Every run on disk, current ones and archived ones alike.
+
+    ``runs/archive/`` holds the superseded generations — the observation eras
+    that no longer load, the experiment arms whose question has been answered,
+    the churn of a family that was retrained four times in a day. They stay in
+    the repository because they are the evidence behind published claims, and
+    they move out of ``runs/`` because a directory listing of 100 names is not
+    a fleet, it is a filing cabinet.
+
+    Everything that reads a run reads through here, so archiving is a move and
+    not a deletion, and nothing that cited a run by name stops working.
+    """
+    if not runs_dir.is_dir():
+        return []
+    live = [d for d in sorted(runs_dir.iterdir()) if d.is_dir() and d.name != "archive"]
+    archive = runs_dir / "archive"
+    old = [d for d in sorted(archive.iterdir()) if d.is_dir()] if archive.is_dir() else []
+    return live + old
+
+
+def find_run(name: str, runs_dir: Path) -> Path | None:
+    """Resolve a run name to its directory, wherever it currently lives."""
+    for candidate in (runs_dir / name, runs_dir / "archive" / name):
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def baseline_members(runs_dir: Path) -> dict[str, str]:
+    """run name -> the scenario it is the baseline member for, per the manifest.
+
+    Read here rather than in each board so that "is this run part of the
+    shipping fleet" is answered in one place, by the same file the audit gate
+    reads. A board that decided membership by name pattern would drift from the
+    gate the moment a member was replaced.
+    """
+    manifest = _json(runs_dir / "BASELINE.json")
+    return {run: scenario for scenario, run in (manifest.get("runs") or {}).items()}
+
+
 def collect(runs_dir: Path) -> list[dict]:
     from cohort.viz.dashboard import checkpoint_meta
 
+    members = baseline_members(runs_dir)
     rows = []
-    for run in sorted(runs_dir.iterdir()) if runs_dir.is_dir() else []:
+    for run in run_dirs(runs_dir):
         if not (run / "metrics.csv").is_file():
             continue
         cfg = _json(run / "config.json")
@@ -110,6 +152,8 @@ def collect(runs_dir: Path) -> list[dict]:
         rows.append(
             {
                 "run": run.name,
+                "archived": run.parent.name == "archive",
+                "baseline": members.get(run.name),
                 "scenario": cfg.get("scenario"),
                 "success": _rate(head.get("success_ci95")),
                 "success_ci95": head.get("success_ci95"),

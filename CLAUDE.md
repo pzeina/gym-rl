@@ -12,7 +12,8 @@ scripts/train.sh <run-name> --scenario fireteam --total-steps 1500000   # detach
 scripts/train_queue.sh <jobs-file>                    # a whole campaign, detached
 .venv/bin/python scripts/train_status.py [run]        # cheap check-in
 .venv/bin/python scripts/run_report.py <run> [--vs <baseline>]          # compact digest
-.venv/bin/python scripts/update_boards.py             # re-render both boards (automatic on landing)
+.venv/bin/python scripts/update_boards.py             # re-render all three boards (automatic on landing)
+.venv/bin/python scripts/baseline.py                  # is the shipping fleet one system?
 .venv/bin/python -m cohort.training.evaluate runs/<run>/ckpt_best.pt --episodes 20
 .venv/bin/python -m cohort.play --checkpoint runs/<run>/ckpt_best.pt
 ```
@@ -48,10 +49,12 @@ style preferences — they are the cost model.
 - Bounded `grep`/`tail` over a log via Bash is fine for diagnosing a crash.
 - Use the **run-digest** agent (haiku) to sweep several runs; it returns facts only.
 
-**Boards & artifacts.** Two published boards visualise the fleet:
-`runs/fleet_board.html` (every run, CI, gates) and `runs/program_board.html` (the
-settled experiments and what they rest on). **Both refresh themselves when a run
-lands** — `scripts/train.sh` launches through `scripts/train_then_boards.sh`, which
+**Boards & artifacts.** Three published boards visualise the project:
+`runs/fleet_board.html` (the baseline, then every other run, CI, gates),
+`runs/program_board.html` (the settled experiments and what they rest on) and
+`runs/scenario_gallery.html` (one evaluated episode per scenario, as radio
+traffic — the only one where the artifact IS the claim). **All three refresh
+themselves when a run lands** — `scripts/train.sh` launches through `scripts/train_then_boards.sh`, which
 re-runs `scripts/update_boards.py` after training exits, crash or not. Zero tokens,
 no session involved.
 - The one step a shell cannot do is *publishing* to claude.ai — that needs the
@@ -62,11 +65,44 @@ no session involved.
 - The digest is over what the boards *say* (results, gates, overrides, run state),
   not the rendered bytes — a live run's percentage ticking must not mark the
   artifacts stale, or the signal is worthless.
-- **Never hand-edit the HTML.** It is generated; fix `scripts/fleet_board.py` or
-  `scripts/program_board.py`. Board numbers come from each run's committed
+- **Never hand-edit the HTML.** It is generated; fix `scripts/fleet_board.py`,
+  `scripts/program_board.py` or `scripts/scenario_gallery.py`. Board numbers come from each run's committed
   `behavior_final.json` (final policy) / `behavior.json` (best checkpoint) — the
   board states which and at what N, because captioning N=20 rows as N=100 is exactly
   the overstatement `publish_audit.py` exists to catch.
+
+## The baseline fleet (v1.19 onward) — READ BEFORE PUBLISHING ANYTHING
+
+`runs/BASELINE.json` names **one run per doctrine scenario**, and that set is what
+the project ships. It exists because the fleet it replaced was not one thing:
+eight champions at seven commits, four reproducible only with a `--reward`
+override that had since become the default, one published with a flag saying it
+missed the bar. Every number was honest; the set was not a system.
+
+```bash
+.venv/bin/python scripts/baseline.py            # the gate — exit 0 or the reasons
+.venv/bin/python scripts/baseline.py --seal     # stamp the cohort/ tree it holds
+.venv/bin/python scripts/publish_baseline.py    # score every member at N=100 (detach it)
+.venv/bin/python scripts/results_table.py --write   # regenerate the README table
+.venv/bin/python scripts/archive_runs.py [--apply]  # file the superseded runs away
+```
+
+- **Provenance is the `cohort/` tree, never the commit sha.** Resolved from each
+  run's recorded `git_commit`. A tooling commit between two launches is routine
+  and says nothing about the runs; two members either side of an env change are
+  not one system however adjacent their shas look.
+- **A campaign freezes `cohort/`.** A queue launches each job when it reaches it
+  and `train.py` imports the tree that exists at that moment, so a commit to
+  `cohort/` mid-campaign trains the last members against a different environment.
+  Tooling, tests, docs and boards stay free to move.
+- **No `--reward` overrides in a baseline run.** What ships is what was trained.
+  A scenario that needs an override to work is a finding about the defaults.
+- **The README results table is generated** from the members' committed
+  evaluations; `tests/test_results_table.py` fails when it drifts. Do not hand-edit
+  it — every overstatement this repo has corrected was a hand-kept number.
+- **Archiving is a move, never a delete.** `runs/archive/` keeps the evidence
+  behind published claims resolvable; every reader goes through
+  `fleet_status.find_run` / `run_report.run_dir`, and a test enforces that.
 
 **Division of labour.** Cheap models move data (launch, extract, summarise). The big
 model does what only it can: reading a digest, judging whether an effect is real

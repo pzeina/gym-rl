@@ -202,10 +202,14 @@ def boards_line() -> str:
 
 
 def detail(name: str) -> int:
-    run_dir = RUNS / name
-    if not run_dir.is_dir():
+    from scripts.fleet_status import find_run
+
+    run_dir = find_run(name, RUNS)
+    if run_dir is None:
         print(f"no such run: runs/{name}", file=sys.stderr)
         return 2
+    if run_dir.parent.name == "archive":
+        print(f"(archived — runs/archive/{name})")
     s = summarize(run_dir)
     job, rows = s["job"], s["rows"]
     print(f"{name}: {s['state']}")

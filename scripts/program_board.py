@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import json
 import math
 import subprocess
 import sys
@@ -42,7 +43,7 @@ from scripts.fleet_board import CSS as BASE_CSS
 from scripts.fleet_status import _half_width, _json, _rate, collect
 
 ROOT = Path(__file__).resolve().parent.parent
-VERSION = "v1.13"
+VERSION = "v1.19"
 ROADMAP_AS_OF = "2026-08-09"
 
 EXTRA_CSS = """
@@ -561,6 +562,127 @@ def _endex_success_verdict() -> str:
     return f"<b>Success held.</b> {held} — intervals overlap, so no difference is established."
 
 
+def _baseline_card(rows: list[dict]) -> dict:
+    """The v1.19 headline: the announcement guarantee, and one fleet at one commit.
+
+    Written from the state the campaign is actually in — training, landed, or
+    published — because a card that says "under test" after the answer arrived is
+    the exact staleness these boards were rebuilt to stop.
+    """
+    from scripts import baseline as manifest
+
+    members = manifest.load().get("runs", {})
+    by_run = {r["run"]: r for r in rows}
+    training = [r for r in members.values() if by_run.get(r, {}).get("state") == "RUNNING"]
+    scored = [
+        r for r in members.values()
+        if (by_run.get(r, {}).get("policy") == "final"
+            and (by_run.get(r, {}).get("episodes") or 0) >= 100)
+    ]
+    trees = {
+        t for r in members.values()
+        if (t := manifest.cohort_tree(_run_commit(r)))
+    }
+
+    chips = ['<span class="chip">628fecf</span>',
+             '<span class="chip">rollout-neutral</span>']
+    if training:
+        chips.append('<span class="chip on">retraining</span>')
+    elif len(scored) == len(members) and members:
+        chips.append('<span class="chip ok">landed</span>')
+    else:
+        chips.append('<span class="chip">queued</span>')
+
+    question = (
+        '<p class="q">A win nobody announces is a win the net cannot distinguish from a '
+        "timeout. Before v1.19 the announcement was gated on the root's mission, so it was "
+        "a <b>protocol act</b> on a defence and an <b>agent behaviour</b> everywhere else — "
+        "and measured at N=100 on the final policy of every published champion, that meant "
+        "the guarantee covered two scenarios of nine: 391/391 on the defend family, 91-98% "
+        "on the squad ones, 49/80 on <code>fireteam_v8</code>, and <b>0 of 100</b> on "
+        "<code>platoon_v5</code> and <b>0 of 99</b> on <code>patrol_brique_v5</code> — two "
+        "scenarios that succeed on essentially every episode and never once say so. "
+        "COMMAND now closes every operation. The root's own report is unchanged: it still "
+        "closes the window early and still earns <code>root_done_bonus</code>.</p>"
+    )
+
+    neutrality = (
+        '<p class="q"><b>Measured, not assumed.</b> The ENDEX is stamped in the terminal '
+        "branch after the step's actions are applied, so no agent ever selects an action "
+        "from an observation containing it. Same checkpoints, same seed, two worktrees "
+        "either side of the change: <b>8 of 8 top-level metrics identical</b> on both "
+        "<code>patrol_brique_v5</code> and <code>platoon_v5</code>, mean return and mean "
+        "length to full float precision. Exactly four behaviour rows moved and all four are "
+        "the ENDEX itself — announced 0.00 → 1.00, the close rate gaining a denominator, "
+        "and messages per episode <b>+1</b>.</p>"
+    )
+
+    fleet = (
+        '<p class="q"><b>And the fleet stopped being eight separate answers.</b> Its eight '
+        "champions sat at seven different commits, and four only reproduced with "
+        "<code>--reward defend_survivor_scale=0.35</code> — a setting that has since become "
+        "the default, so the override was describing the tree of its day. "
+        "<code>runs/BASELINE.json</code> names the members and "
+        "<code>scripts/baseline.py</code> fails the set unless they are one system: same "
+        "commit, no overrides, N ≥ 100 on the final policy, gates green, give-back under "
+        "the bar, checkpoints loadable, every win announced.</p>"
+    )
+
+    if len(trees) == 1:
+        state = (f"<b>All {len(members)} members trained against the same "
+                 f"<code>cohort/</code> tree ({sorted(trees)[0][:8]}).</b> ")
+    elif trees:
+        state = (f"<b>{len(trees)} distinct <code>cohort/</code> trees across the fleet</b> "
+                 "— not one environment yet. ")
+    else:
+        state = ""
+
+    if training:
+        verdict = (state + f"{len(training)} of {len(members)} still training: "
+                   + ", ".join(f"<code>{html.escape(r)}</code>" for r in sorted(training))
+                   + ". Success rates are expected to MATCH their predecessors — the change "
+                   "under test is rollout-neutral — so a success move on any scenario is a "
+                   "finding, not a win.")
+    elif len(scored) == len(members) and members:
+        verdict = (state + "Every member scored at N=100 on the final policy, with the "
+                   "announcement complete by construction. What used to hide inside that "
+                   "column now lives in <code>closed_on_root_report_rate</code>, which has "
+                   "ENDEXes-sent for a denominator and so did not exist outside the defend "
+                   "family before today.")
+    else:
+        verdict = (state + f"{len(scored)} of {len(members)} scored at publication size so "
+                   "far.")
+
+    card = (
+        f'<article class="card"><header><div class="tagrow">{"".join(chips)}</div>'
+        "<h3>HQ closes every operation, and the fleet becomes one system</h3>"
+        f"{question}</header>{neutrality}{fleet}"
+        f'<p class="verdict">{verdict}</p></article>'
+    )
+    return {
+        "heading": ("Retraining — baseline v1.19" if training else
+                    "Landed — baseline v1.19" if scored else "Queued — baseline v1.19"),
+        "card": card,
+        "standfirst": (
+            "Three questions this campaign settled, what each one rests on, and the fourth: "
+            "who says an operation is over."
+        ),
+        "lede_tail": (
+            "The question after that one is narrower and it had gone unasked: "
+            "<b>who says an operation is over</b> — and whether anybody says it at all."
+        ),
+    }
+
+
+def _run_commit(run: str) -> str | None:
+    from scripts.baseline import run_dir
+
+    try:
+        return json.loads((run_dir(run) / "economics.json").read_text()).get("git_commit")
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
 def _endex(rows: list[dict]) -> dict:
     """The v1.13 card, written from whatever state the campaign is actually in.
 
@@ -733,7 +855,7 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
             '<div class="note"><div class="note-h"><span>Nothing is training.</span></div>'
             "<p>The board is a snapshot of committed evaluations only.</p></div>"
         )
-    endex = _endex(rows)
+    endex = _baseline_card(rows)
 
     return f"""<title>cohort · program board</title>
 <style>{BASE_CSS}{EXTRA_CSS}</style>

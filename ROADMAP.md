@@ -4959,3 +4959,62 @@ deliberately deferred (`docs/vision.md` §2c).
   conclusion (the band is a description of four v1.4-era N=30 runs, not a bound;
   no gate added) while removing its one counter-example. Dated entries stand as
   written; the correction is here.
+
+- **2026-08-11** — **v1.19: HQ closes every operation, and the fleet becomes one
+  system.** The v1.18 handoff's flagged item and the owner's standing goal met in
+  one cycle: the announcement gap is closed by making the announcement a protocol
+  act everywhere, and the fleet is retrained once, from one commit, on the shipped
+  defaults, so that "the baseline" names a thing rather than a habit.
+
+  **The gap, restated in one table.** Measured at N=100 on the final policy of
+  every published champion, successes announced on the net:
+
+      defend (ENDEX, a protocol act)        391/391
+      squad / squad_recon / squad_screen    91-98%
+      fireteam_v8                            49/80
+      platoon_v5  0/100   ·   patrol_brique_v5  0/99
+
+  `platoon` and `patrol_brique` succeed on essentially every episode and never
+  once say so. The fix is option (a) of the three the handoff listed:
+  `command_closes_the_operation` stops being a predicate on the root mission and
+  becomes True. The claim is still the root's REPORT and still pays
+  `root_done_bonus`; the ENDEX is HQ's FACT. What used to hide inside
+  `successes_announced` moves to `closed_on_root_report_rate`, which has
+  ENDEXes-sent for a denominator and therefore did not exist outside the defend
+  family before today.
+
+  **Rollout neutrality, measured rather than asserted** — the same claim was made
+  in the opposite direction once and measured false, so this one was checked
+  before it was relied on. Same checkpoints, same seed (4242), 30 episodes, two
+  git worktrees (`91f0438` vs `628fecf`):
+
+      patrol_brique_v5   8 of 8 top-level metrics identical
+      platoon_v5         8 of 8 top-level metrics identical
+
+  identical including `mean_return` and `mean_length` to full float precision —
+  a behavioural difference could not survive that. Exactly four behaviour-suite
+  rows moved, and all four are the ENDEX itself: successes announced 0.00 → 1.00
+  on both, `closed on root's report` gaining a denominator (— → 0.00), and
+  `messages / ep` 28 → 29 and 113 → 114, i.e. **plus exactly one message**. So
+  v1.19 is a scoring-and-transcript change; numbers stay comparable across it.
+
+  **The fleet was never one system, and now says so out loud.** Eight champions
+  sat at seven commits (`fireteam_v8` 9933a3a, `squad_v9` 48716cc, `squad_recon_v7`
+  4395c12, `squad_screen_fallen_v2` a0649de, `fireteam_defend_v19`/`defend_brique_v14`
+  e91b753, `patrol_brique_v5` 0e3cf43, `platoon_v5` 6571b70), and four of them
+  only reproduced with `--reward defend_survivor_scale=0.35` — a setting that has
+  since become the default, so the override was describing the tree of its day.
+  `runs/BASELINE.json` names the members; `scripts/baseline.py` is the gate over
+  it (coverage, provenance, purity, evidence, gates, stability, loadability, and
+  the announcement guarantee), exit 0 only if all hold.
+
+  **A real defect in the attribution tooling, found by the assurance layer's #36
+  and confirmed here.** `run_report --vs` printed "CLEAN — share every reward/spec
+  value" for `squad_v7` → `squad_v8` and that was read as "single-variable A/B".
+  The pair is 35 commits apart, **17 of them touching `cohort/`**, including
+  `d44ee8d` — the fallen-share-the-win fix. A code change never touches
+  `economics.json`'s prices, so the confound auditor was blind to half its own
+  class. It now reads `git_commit`, lists the intervening `cohort/` commits, and
+  prints one verdict over both axes; an unchecked axis reads UNCHECKABLE and never
+  as agreement. The test that had encoded the wrong belief
+  (`test_squad_v7_to_v8_is_a_single_variable_ab`) now pins the corrected reading.

@@ -32,8 +32,21 @@ from cohort.metrics import (  # noqa: E402
 )
 
 
+def run_dir(name: str) -> Path:
+    """Where a run lives — ``runs/<name>``, or ``runs/archive/<name>``.
+
+    Archiving a superseded generation must not break the citations that made it
+    worth keeping. Every reader here goes through this, so a run named in
+    ROADMAP three cycles ago still reports after it has been filed away.
+    """
+    current = RUNS / name
+    if not current.is_dir() and (RUNS / "archive" / name).is_dir():
+        return RUNS / "archive" / name
+    return current
+
+
 def rows_of(run: str) -> list[dict]:
-    path = RUNS / run / "metrics.csv"
+    path = run_dir(run) / "metrics.csv"
     if not path.exists():
         raise SystemExit(f"no metrics for run '{run}' ({path})")
     with path.open() as f:
@@ -272,7 +285,7 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
 
 def report(run: str, show_components: bool) -> dict:
     rows = rows_of(run)
-    cfg_path = RUNS / run / "config.json"
+    cfg_path = run_dir(run) / "config.json"
     cfg = json.loads(cfg_path.read_text()) if cfg_path.exists() else {}
     first, last = deciles(rows)[0], deciles(rows)[-1]
     best = max((v for r in rows if (v := fnum(r, "success_rate_rolling")) is not None), default=float("nan"))
@@ -319,7 +332,7 @@ def report(run: str, show_components: bool) -> dict:
         for d, c in drift[:6] if not show_components else drift:
             print(f"    {c[5:]:<20} {mean(last, c):>8.4f}   ({d:+.4f})")
 
-    beh_path = RUNS / run / "behavior.json"
+    beh_path = run_dir(run) / "behavior.json"
     if beh_path.exists():
         behavior_block(beh_path, "behavior", summary, "beh_", diagnostics=True)
     else:
@@ -332,7 +345,7 @@ def report(run: str, show_components: bool) -> dict:
     # same rows and the same gates for that reason (refs #22): every prediction
     # in the v1.12 pre-registration is stated at the final policy, and until
     # this printed them the digest could not settle one of them.
-    final_path = RUNS / run / "behavior_final.json"
+    final_path = run_dir(run) / "behavior_final.json"
     if final_path.exists():
         fm = behavior_block(final_path, "FINAL policy", summary, "final_", diagnostics=False)
         if (bs := summary.get("beh_success")) is not None and (fs := fm.get("success_rate")) is not None:
@@ -422,7 +435,7 @@ def economics_diff(run: str, baseline: str) -> None:
     knobs) — `train.py::_spec_economics` calls scenario knobs part of the same
     "what is this run actually an experiment about" question.
     """
-    a_path, b_path = RUNS / run / "economics.json", RUNS / baseline / "economics.json"
+    a_path, b_path = run_dir(run) / "economics.json", run_dir(baseline) / "economics.json"
     if not a_path.exists() or not b_path.exists():
         missing = run if not a_path.exists() else baseline
         print(f"\n  economics: uncheckable — {missing} predates economics.json")
@@ -435,13 +448,100 @@ def economics_diff(run: str, baseline: str) -> None:
         if a.get(section, {}).get(key) != b.get(section, {}).get(key)
     ]
     if not diffs:
-        print(f"\n  economics: CLEAN — {run} and {baseline} share every reward/spec value")
-        return
-    label = ("single-variable A/B" if len(diffs) == 1 else
-             f"CONFOUNDED — {len(diffs)} keys differ, NOT a single-variable A/B")
-    print(f"\n  economics: {label} ({run} vs {baseline})")
-    for section, key, bv, av in diffs:
-        print(f"    {section}.{key:<24} {bv!r} → {av!r}")
+        print(f"\n  economics: prices identical — {run} and {baseline} share every reward/spec value")
+    else:
+        label = ("one price differs" if len(diffs) == 1 else
+                 f"{len(diffs)} prices differ")
+        print(f"\n  economics: {label} ({run} vs {baseline})")
+        for section, key, bv, av in diffs:
+            print(f"    {section}.{key:<24} {bv!r} → {av!r}")
+    code_diff(run, baseline, price_diffs=len(diffs))
+
+
+def code_diff(run: str, baseline: str, price_diffs: int = 0) -> None:
+    """The other half of "is this a single-variable A/B" — the code.
+
+    ``economics_diff`` above compares prices, and for a year it printed
+    "CLEAN — share every reward/spec value" as though that settled the
+    question. It does not. `squad_v7` -> `squad_v8` reads price-clean on one
+    key and was reported as a single-variable A/B, but `squad_v8` is also the
+    first squad run carrying `d44ee8d` — a change to the environment itself.
+    A code change never touches `economics.json`'s prices, so the instrument
+    built to catch confounds was blind to half the class it was built for.
+
+    The commit is already recorded (``economics.json:git_commit``); nothing
+    consulted it. Now the two runs' commits are compared and, when they differ,
+    the intervening commits that touched ``cohort/`` are listed — those are the
+    ones that can move behaviour. Commits touching only ``scripts/``, ``tests/``
+    or docs are counted and not listed: they cannot change what a policy learned.
+    """
+    commits = {}
+    for name in (baseline, run):
+        path = run_dir(name) / "economics.json"
+        try:
+            commits[name] = json.loads(path.read_text()).get("git_commit")
+        except (OSError, json.JSONDecodeError):
+            commits[name] = None
+
+    code_moved: bool | None  # None = we could not tell, which is not "no"
+    if not all(commits.values()):
+        missing = [n for n, c in commits.items() if not c]
+        print(f"    code: UNCHECKABLE — no git_commit recorded for {', '.join(missing)}")
+        code_moved = None
+    elif commits[run] == commits[baseline]:
+        print(f"    code: same commit {commits[run][:8]}")
+        code_moved = False
+    else:
+        span = _git(["rev-list", "--count", f"{commits[baseline]}..{commits[run]}"])
+        touching = _git(
+            ["log", "--oneline", f"{commits[baseline]}..{commits[run]}", "--", "cohort/"]
+        )
+        if span is None or touching is None:
+            print(f"    code: UNCHECKABLE — {commits[baseline][:8]} is not an ancestor "
+                  "of this run in this clone")
+            code_moved = None
+        else:
+            lines = [ln for ln in touching.splitlines() if ln.strip()]
+            print(f"    code: {commits[baseline][:8]} → {commits[run][:8]}  "
+                  f"({int(span or 0)} commits, {len(lines)} touching cohort/)")
+            for ln in lines[:8]:
+                print(f"      {ln}")
+            if len(lines) > 8:
+                print(f"      … {len(lines) - 8} more")
+            code_moved = bool(lines)
+
+    # One verdict over both axes, because the failure this whole function exists
+    # for was reading a clean verdict on one axis as a clean verdict overall.
+    # Order matters: a known confound outranks an unknown one — two prices apart
+    # is CONFOUNDED whether or not the code can be checked — and only a pair
+    # that is clean on one axis and unreadable on the other is UNCHECKABLE.
+    if price_diffs > 1:
+        extra = " (and the code is unknown)" if code_moved is None else (
+            " (and the environment moved too)" if code_moved else "")
+        print(f"    verdict: CONFOUNDED — {price_diffs} prices differ{extra}")
+    elif code_moved:
+        print("    verdict: CONFOUNDED — the environment moved between these runs, "
+              "whatever the prices say")
+    elif code_moved is None:
+        prices = "prices identical" if price_diffs == 0 else "one price differs"
+        print(f"    verdict: UNCHECKABLE — {prices}, code unknown. "
+              "Not the same finding as 'no difference'.")
+    elif price_diffs == 1:
+        print("    verdict: single-variable A/B — one price, same code")
+    else:
+        print("    verdict: IDENTICAL SETUP — same code, same prices")
+
+
+def _git(argv: list[str]) -> str | None:
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", *argv], cwd=RUNS.parent, capture_output=True, text=True, timeout=20
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout if out.returncode == 0 else None
 
 
 def main() -> int:

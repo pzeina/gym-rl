@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -45,6 +46,15 @@ BOARDS = {
         "url": "https://claude.ai/code/artifact/1713413b-62c6-4576-8e25-db280a798cd8",
         "title": "cohort · program board",
     },
+    # The third board answers the question the other two cannot: what does a
+    # chain of command sound like. It is one evaluated episode per scenario,
+    # read off the net, and it is the only one of the three where the artifact
+    # IS the claim rather than a summary of it.
+    "gallery": {
+        "path": "runs/scenario_gallery.html",
+        "url": "https://claude.ai/code/artifact/e92bdf13-14a5-4905-be81-dca29ad51de4",
+        "title": "cohort · the eight scenarios",
+    },
 }
 
 # Fields that change what a board SAYS about the FLEET. Deliberately excludes
@@ -62,6 +72,10 @@ BOARDS = {
 STABLE = (
     "run", "scenario", "success_ci95", "episodes", "policy", "gates_failed",
     "overrides", "env_steps", "obs_dim", "loadable", "state",
+    # Which runs the baseline manifest names, and which have been filed away.
+    # Both change what the boards LEAD with rather than a number in a cell, so
+    # a manifest edit must republish even when no run has moved.
+    "baseline", "archived",
 )
 
 
@@ -80,8 +94,21 @@ def read_state() -> dict:
 
 
 def write_state(state: dict) -> None:
+    """Atomically, because several runs can land at once.
+
+    Every training job refreshes the boards as it exits (``train_then_boards.sh``),
+    and a baseline campaign runs several queues in parallel — so two refreshes
+    landing in the same second is normal, not exotic. A plain ``write_text``
+    truncates first, and a reader arriving mid-write gets a half-file; the
+    ``except json.JSONDecodeError`` in ``read_state`` would then silently reset
+    the publish state to ``{}`` and every board would read as never-published.
+    ``os.replace`` is atomic on POSIX, so a reader sees the old file or the new
+    one and never a partial one.
+    """
     STATE.parent.mkdir(parents=True, exist_ok=True)
-    STATE.write_text(json.dumps(state, indent=2) + "\n")
+    tmp = STATE.with_suffix(f".json.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(state, indent=2) + "\n")
+    os.replace(tmp, STATE)
 
 
 def pending(state: dict) -> list[str]:
@@ -97,9 +124,10 @@ def pending(state: dict) -> list[str]:
 
 
 def render_all(rows: list[dict]) -> dict:
-    from scripts import fleet_board, program_board
+    from scripts import fleet_board, program_board, scenario_gallery
 
-    renderers = {"fleet": fleet_board.render, "program": program_board.render}
+    renderers = {"fleet": fleet_board.render, "program": program_board.render,
+                 "gallery": scenario_gallery.render}
     written = {}
     for name, board in BOARDS.items():
         out = ROOT / board["path"]

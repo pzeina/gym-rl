@@ -18,7 +18,14 @@ same language back*:
 [t= 87] ALL STATIONS, THIS IS RFN1: TL1 IS DOWN. I AM ASSUMING COMMAND. OUT.
 [t=112] HQ, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.
 [t=112] RFN1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+[t=112] RFN1, THIS IS HQ: ENDEX. OUT.
 ```
+
+The last two lines are two different acts and the distinction is the point: the
+rifleman who inherited the fire team **reported**, and HQ **ended the
+operation**. Every successful operation gets that ENDEX, on every scenario — so
+a win is never something only the scoreboard knows about. What the cohort's own
+report buys is closing early, and it is priced.
 
 The same sentence a human types — `TL1, seize obj bravo` — is parsed, validated against
 rank authority, and lands as a mission on the agent, which the trained policy then executes.
@@ -353,25 +360,61 @@ A campaign-wide caveat, documented in the ROADMAP (D4): under the v1.4 death eco
 of human-commander deaths). The rolling-best checkpoints capture the policies at their
 peaks; the training curves show the collapses honestly.
 
-### Results (v1.17 — ENDEX restored, root claim masked on defend, current build)
+### Results — baseline v1.19 (the current build)
 
-Spaces `Discrete(228)/Box(220)`. Unlike the v1.9 table below, the `success`
-column is the **FINAL policy** — the one the run ended with — because that is
-the number `scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`,
-quoted beside it as a peak and labelled as one. This table is being filled a
-scenario at a time as the fleet is re-published off final numbers.
+Spaces `Discrete(228)/Box(220)`. **One run per doctrine scenario, all trained
+from the same commit, all on the shipped reward defaults, all scored on the
+FINAL policy** — the one the run ended with, which is the number
+`scripts/publish_audit.py` holds a run to. `peak` is `ckpt_best`, quoted beside
+it and labelled as a peak.
 
-| scenario | run | success (N=100, final) | peak (`ckpt_best`) | stability | human death | timeout | announced (final · best) | gates |
-|---|---|---|---|---|---|---|---|---|
-| fireteam_defend | `fireteam_defend_v19` | **98% ± 3** | 96% ± 4 | ✓ gap 1.5 (bar 10) | 0.10 | 0.02 | **98/98 · 96/96** | 4/4 ✓ |
-| defend_brique | `defend_brique_v14` | **100% ± 0** | 97% ± 3 | ✓ gap 0.5 | 0.01 | 0.00 | **100/100 · 97/97** | 4/4 ✓ |
-| platoon | `platoon_v5` | **100% ± 0** | 96% ± 4 | ✓ gap 1.1 | 0.00 | 0.00 | **0/100 · 0/96** | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v1` | **100% ± 0** | 98% ± 3 | ✓ gap 0.3 | 0.07 | 0.00 | 96/100 · **8/98** | 2/2 ✓ |
-| squad_screen | `squad_screen_fallen_v2` | **100% ± 0** | 99% ± 2 | ✓ gap 0.7 | 0.17 | 0.00 | 98/100 · **1/99** | 2/2 ✓ |
-| patrol_brique | `patrol_brique_v5` | **99% ± 2** | 95% ± 4 | ✓ gap 1.2 | 0.13 | 0.00 | **0/99 · 0/95** | 2/2 ✓ |
-| squad | `squad_v8` | **98% ± 3** | 97% ± 3 | ✓ gap 4.2 | 0.23 | 0.00 | 91/98 · **0/97** | 2/2 ✓ |
-| squad_recon | `squad_recon_v7` | **98% ± 3** | 94% ± 5 | ✓ gap 1.6 | 0.17 | 0.00 | 94/98 · **21/94** | 2/2 ✓ |
-| fireteam | `fireteam_v8` | 80% ± 8 | 82% ± 8 | **✗ gave back 12.0** | 0.00 | **0.20** | 49/80 · 67/82 | 2/2 ✓ |
+That the eight belong together is not a claim in prose: `runs/BASELINE.json`
+names them and `scripts/baseline.py` fails if they are not one system — same
+`cohort/` tree, no `--reward` overrides, N ≥ 100 on the final policy, gates
+green, give-back under the publishing bar, checkpoints loadable, every win
+announced. The gate is on the environment the runs trained against, not on the
+commit sha: a tooling commit between two launches is routine and says nothing
+about the runs, while two members either side of an env change are not one
+system however adjacent their shas look.
+The fleet this replaces could not have passed it: eight champions at seven
+different commits, four of which only reproduced with
+`--reward defend_survivor_scale=0.35` — a setting that has since become the
+default, so the override was describing the tree of its day.
+
+**The table below is generated** from those runs' committed evaluations by
+`scripts/results_table.py`, and `tests/test_results_table.py` fails if what is
+printed here stops matching them. Every overstatement this project has had to
+correct was a hand-kept number that drifted from its artifact; this one cannot.
+
+<!-- BASELINE-TABLE:START -->
+| scenario | run | success (final, N) | peak (best ckpt) | give-back | root death | timeout | announced | root-reported | gates |
+|---|---|---|---|---|---|---|---|---|---|
+| `fireteam` | `fireteam_v9` | not yet evaluated | — | — | — | — | — | — | — |
+| `fireteam_defend` | `fireteam_defend_v20` | not yet evaluated | — | — | — | — | — | — | — |
+| `squad` | `squad_v10` | not yet evaluated | — | — | — | — | — | — | — |
+| `squad_recon` | `squad_recon_v8` | not yet evaluated | — | — | — | — | — | — | — |
+| `squad_screen` | `squad_screen_v11` | not yet evaluated | — | — | — | — | — | — | — |
+| `patrol_brique` | `patrol_brique_v6` | not yet evaluated | — | — | — | — | — | — | — |
+| `defend_brique` | `defend_brique_v15` | not yet evaluated | — | — | — | — | — | — | — |
+| `platoon` | `platoon_v6` | not yet evaluated | — | — | — | — | — | — | — |
+
+Generated by `scripts/results_table.py`.
+<!-- BASELINE-TABLE:END -->
+
+Reading the columns: **root death** and **timeout** travel with success because
+success alone is blind to what it cost — a cohort can win every episode over its
+commander's body, and a policy that never closes with the enemy buries nobody
+and achieves nothing. **announced** is wins that went out on the net, complete
+by construction since v1.19; **root-reported** is the share of those the root
+closed itself rather than leaving to HQ, which is where the agent behaviour the
+announced column used to carry now lives.
+
+The v1.17 fleet these supersede — `fireteam_defend_v19`, `defend_brique_v14`,
+`platoon_v5`, `squad_screen_fallen_v1`/`v2`, `patrol_brique_v5`, `squad_v8`,
+`squad_recon_v7`, `fireteam_v8` — is in `runs/archive/` and on the fleet board.
+Two of its numbers are worth carrying forward as the reason v1.19 exists:
+`platoon_v5` announced **0 of 100** wins and `patrol_brique_v5` **0 of 99**,
+while succeeding on essentially every episode.
 
 > **`fireteam_v8` does not clear the publishing bar and is printed anyway.** Its
 > give-back is **12.0 points** against a bar of 10, so by this repo's own standard

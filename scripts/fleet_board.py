@@ -31,7 +31,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cohort.env.actions import N_ACTIONS
 from cohort.env.observations import OBS_DIM
+from scripts import baseline
 from scripts.fleet_status import collect
+
+BASELINE_VERSION = (baseline.load().get("version") or "").strip() or "(unversioned)"
 
 # Palette: APP-6 friendly blue is the data hue, on a plotting-sheet slate ground.
 # Both themes validated for the lightness band, chroma floor, CVD separation and
@@ -137,6 +140,7 @@ td.dim{color:var(--muted)}
 .chip.ok{color:var(--pass);border-color:currentColor;background:var(--pass-bg)}
 .chip.bad{color:var(--fail);border-color:currentColor;background:var(--fail-bg)}
 .chip.on{color:var(--accent);border-color:currentColor}
+.chip.base{color:var(--ink);border-color:var(--ink);font-weight:700}
 .chip + .chip{margin-left:5px}
 
 details.arch{background:var(--panel);border:1px solid var(--rule);border-radius:2px}
@@ -149,6 +153,7 @@ details.arch[open] > summary::after{transform:rotate(180deg)}
 details.arch > summary:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 details.arch .grid{border:none;border-top:1px solid var(--rule);border-radius:0}
 .arch p.lede{margin:0;padding:0 16px 12px;color:var(--muted);font-size:13.5px;max-width:74ch}
+section > p.lede{margin:-4px 0 12px;color:var(--muted);font-size:13.5px;max-width:74ch}
 
 footer{border-top:1px solid var(--rule);padding-top:16px;display:flex;flex-direction:column;
   gap:10px;color:var(--muted);font-size:12.5px}
@@ -222,8 +227,10 @@ def _tip(row: dict) -> str:
 def _row(row: dict) -> str:
     name = f'<span class="r">{html.escape(row["run"])}</span>'
     chips = ""
+    if row.get("baseline"):
+        chips = ' <span class="chip base">baseline</span>'
     if row["state"] == "RUNNING":
-        chips = ' <span class="chip on">training</span>'
+        chips += ' <span class="chip on">training</span>'
     ov = (
         f'<span class="ov">{html.escape(" ".join(row["overrides"]))}</span>'
         if row["overrides"]
@@ -338,8 +345,37 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
         for v, k, d in tiles
     )
 
+    # The baseline is the answer to "what does this project ship"; the other 90
+    # runs are how it got there. Leading with the fleet-as-directory-listing was
+    # the board's own version of the mistake the manifest exists to fix.
+    members = [r for r in rows if r.get("baseline")]
+    ordered = sorted(members, key=lambda r: baseline.DOCTRINE_SCENARIOS.index(r["baseline"])
+                     if r["baseline"] in baseline.DOCTRINE_SCENARIOS else 99)
+    base_rows = "".join(_row(r) for r in ordered)
+    covered = {r["baseline"] for r in members}
+    absent = [s for s in baseline.DOCTRINE_SCENARIOS if s not in covered]
+    for scenario in absent:
+        base_rows += (
+            f'<tr><td class="name"><span class="r dim">{html.escape(scenario)}</span></td>'
+            '<td class="mcell">' + _meter(None, None) + '</td>'
+            '<td class="val dim" colspan="5">no member on disk yet</td></tr>'
+        )
+    baseline_section = (
+        f'<section><h2 class="sec">Baseline {html.escape(BASELINE_VERSION)} — '
+        f"the {len(baseline.DOCTRINE_SCENARIOS)} doctrine scenarios</h2>"
+        '<p class="lede">One run per scenario, all trained from the same commit on the '
+        "shipped reward defaults, all scored on the FINAL policy. This is the fleet the "
+        "README describes; everything below is the record of getting here.</p>"
+        f'<div class="grid"><table>{COLS}<thead>{HEAD}</thead>'
+        f"<tbody>{base_rows}</tbody></table></div></section>"
+        if base_rows
+        else ""
+    )
+
     groups: dict[str, list[dict]] = defaultdict(list)
     for r in live:
+        if r.get("baseline"):
+            continue  # already shown above; a run appearing twice reads as two runs
         groups[r["scenario"] or "unknown"].append(r)
     body = []
     for scenario in sorted(groups):
@@ -377,8 +413,10 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
 
   <div class="tiles">{tilehtml}</div>
 
+  {baseline_section}
+
   <section>
-    <h2 class="sec">Current build — {len(live)} runs</h2>
+    <h2 class="sec">The record — {len(live) - len(members)} further runs on this build</h2>
     {fleet}
   </section>
 

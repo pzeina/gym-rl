@@ -22,7 +22,11 @@ PY=${PY:-$ROOT/.venv/bin/python}
 JOBS=${1:?usage: scripts/train_queue.sh <jobs-file>}
 [ -f "$JOBS" ] || { echo "no such jobs file: $JOBS" >&2; exit 2; }
 
-STAMP=$(date +%Y%m%d_%H%M%S)
+# $$ as well as the clock: a multi-lane campaign launches its queues in the
+# same second, and two of them sharing one log file interleaves the campaign
+# transcript of both. Caught launching baseline v1.19 — lanes A and B both
+# opened logs/queue_20260811_100314.log.
+STAMP=$(date +%Y%m%d_%H%M%S)_$$
 QLOG="$ROOT/logs/queue_$STAMP.log"
 mkdir -p "$ROOT/logs"
 

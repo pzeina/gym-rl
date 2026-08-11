@@ -110,6 +110,30 @@ CONFIRMED. OUT.` when the claim is verified, `NEGATIVE, CONTINUE MISSION. OUT.` 
 is false. Command state therefore stays derivable from radio traffic alone through the
 completion phase: a reader who sees no confirmation knows the mission still stands.
 
+## The operation ends when HQ says so (v1.19)
+
+The root's report and the end of the operation are two different acts, and since
+v1.19 they are two different messages on every scenario:
+
+```
+[t=112] HQ, THIS IS RFN1: SEIZE OBJ ALPHA — COMPLETE. OVER.     ← the REPORT
+[t=112] RFN1, THIS IS HQ: ROGER, SEIZE OBJ ALPHA CONFIRMED. OUT.
+[t=112] RFN1, THIS IS HQ: ENDEX. OUT.                            ← the FACT
+```
+
+`ENDEX` closes **every** successful operation, whatever the root's mission. It
+used to be sent only where the root was forbidden to declare its own end — a
+DEFEND is held until relieved, so the order to stop is HQ's to give — and the
+consequence was that whether a win was announced at all depended on which
+scenario you were in: complete on the defend family, and 0 of 100 on `platoon`.
+
+What the root's own report still buys is real and is priced: it closes the grace
+window early and pays `root_done_bonus`. So the transcript distinguishes an
+operation the cohort reported from one HQ had to close for it, and
+`closed_on_root_report_rate` (see `docs/metrics.md`) is that distinction as a
+number. A reader who sees `ENDEX` with no `COMPLETE` before it is looking at a
+cohort that won without saying so.
+
 ## Net discipline: one station transmits at a time
 
 The net is a **single frequency**. Per tick, at most one *learned* transmission —
