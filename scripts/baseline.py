@@ -2,7 +2,7 @@
 """The baseline fleet: what it is, and whether it still holds together.
 
     scripts/baseline.py              # audit the manifest, table + verdict
-    scripts/baseline.py --seal       # stamp the commit the fleet was trained at
+    scripts/baseline.py --seal       # stamp the tree, commits and evaluations
 
 A *baseline* here is one run per doctrine scenario that a reader can treat as a
 single system: same code, same prices, same evidence standard. The fleet this
@@ -26,6 +26,18 @@ over it, and the checks are the definition:
                    a finding about the defaults, not a launch flag.
 * **evidence**   — a FINAL-policy evaluation at N >= 100. Not the best
                    checkpoint: the headline is the policy the run ended with.
+                   The best checkpoint's evaluation is held to the same N,
+                   because the README publishes it too (issue #45). It is the
+                   *peak* column, honestly labelled as a peak — but a peak read
+                   off five episodes and a peak read off a hundred are not the
+                   same claim, and until this rule existed only the caption
+                   could tell them apart.
+* **sealed**     — every published evaluation still hashes to what ``--seal``
+                   recorded. ``cohort_tree`` pins the environment and
+                   ``checkpoint_sha256`` pins the weights; this pins the numbers
+                   derived from them, which is the side the other two leave
+                   open. A re-score is not an accusation — it is a reason to
+                   re-seal.
 * **gates**      — no failed regression gate on any member.
 * **stability**  — best-final give-back under ``PUBLISH_STABILITY_POINTS``, the
                    bar ``publish_audit.py --validate`` showed predicts signed
@@ -47,6 +59,7 @@ be run before publishing anything that calls itself the baseline.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -65,6 +78,26 @@ def run_dir(name: str):
     return find_run(name, RUNS) or RUNS / name
 
 MIN_EPISODES = 100
+
+# The two evaluations the README publishes for every member, and therefore the
+# two this module gates and seals. ``behavior_final.json`` is the headline (the
+# policy the run ended with); ``behavior.json`` is the peak column, scored from
+# ``ckpt_best.pt``. Both are *derived* — they are what the weights and the
+# environment produce — and the derived side is where nothing was digested.
+PUBLISHED_EVALUATIONS = ("behavior_final.json", "behavior.json")
+
+
+def artifact_digest(path: Path) -> str | None:
+    """sha256 of one published evaluation, or None when it is not there.
+
+    Absence answers None rather than raising, so a missing artifact reads as a
+    named finding at the call site instead of a traceback in a gate.
+    """
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        return None
+
 
 # The scenarios a deployable baseline must cover: the eight that are doctrine
 # rather than instrumentation.
@@ -129,7 +162,46 @@ def cohort_tree(commit: str | None) -> str | None:
     return out.stdout.strip() if out.returncode == 0 else None
 
 
-def _run_facts(run: str) -> dict:
+def _seal_drift(run: str, sealed: dict | None) -> list[str]:
+    """How this member's published evaluations differ from what was sealed.
+
+    Issue #45. ``platoon_v6``'s ``behavior.json`` was overwritten at N=5 by a
+    spot-check (``cohort.training.evaluate`` writes it by DEFAULT) and committed
+    in ``a321329``. For that whole window ``runs/BASELINE.json`` was
+    byte-identical — same ``cohort_tree``, same ``checkpoint_sha256`` — because
+    the environment and the weights had not moved. Only the number derived from
+    them had, and nothing in the tree digested that. This gate printed
+    ``BASELINE OK`` with output byte-identical to the repaired tree's.
+
+    So the seal now covers the derived side too, and drift in a sealed member is
+    detectable from the tree alone at any later date, by anyone, without a
+    running campaign to compare against.
+
+    ``sealed`` is the manifest's whole stamp, or None for a manifest written
+    before stamping existed — silence there, because an unstamped manifest has
+    no opinion, which is not the same finding as disagreement.
+    """
+    if sealed is None:
+        return []
+    mine = sealed.get(run)
+    if mine is None:
+        return [f"the manifest is sealed and stamps no evaluation for {run} — "
+                "this member joined the fleet after the seal; re-seal it"]
+    problems = []
+    for name, want in sorted(mine.items()):
+        got = artifact_digest(run_dir(run) / name)
+        if got is None:
+            problems.append(f"{name} was sealed at {want[:12]} and is not on disk")
+        elif got != want:
+            problems.append(
+                f"{name} changed since the seal ({want[:12]} -> {got[:12]}) — "
+                "if the re-score was intended, re-seal; if it was a spot-check, "
+                "it just overwrote a published number"
+            )
+    return problems
+
+
+def _run_facts(run: str, sealed: dict | None = None) -> dict:
     """Everything the audit needs about one member, with absences named."""
     d = run_dir(run)
     facts: dict = {"run": run, "exists": d.is_dir(), "problems": []}
@@ -162,6 +234,26 @@ def _run_facts(run: str) -> dict:
     else:
         facts["episodes"] = 0
         facts["problems"].append("no behavior_final.json — the FINAL policy was never scored")
+
+    # The peak column the README publishes, held to the same evidence bar. Its
+    # absence is a finding rather than a silence: audit_run returns None without
+    # it, so the give-back gate below simply would not run.
+    best = d / "behavior.json"
+    if best.exists():
+        facts["peak_episodes"] = json.loads(best.read_text()).get("episodes", 0)
+        if facts["peak_episodes"] < MIN_EPISODES:
+            facts["problems"].append(
+                f"peak evaluated at N={facts['peak_episodes']}, needs {MIN_EPISODES} — "
+                "the README publishes this cell"
+            )
+    else:
+        facts["peak_episodes"] = 0
+        facts["problems"].append(
+            "no behavior.json — the peak the README publishes was never scored, "
+            "and the give-back gate cannot run without it"
+        )
+
+    facts["problems"].extend(_seal_drift(run, sealed))
 
     if facts["overrides"]:
         facts["problems"].append(f"reward overrides: {', '.join(facts['overrides'])}")
@@ -283,7 +375,7 @@ def audit(check_loadable: bool = True) -> int:
         if not run:
             rows.append((scenario, "—", None, "MISSING"))
             continue
-        f = _run_facts(run)
+        f = _run_facts(run, manifest.get("artifacts"))
         if check_loadable and f["exists"] and not _loadable(run):
             f["problems"].append("checkpoint does not load under the current spaces")
         if f["exists"]:
@@ -338,8 +430,8 @@ def audit(check_loadable: bool = True) -> int:
         print(f"commits:      {'  '.join(sorted(c[:8] for c in commits))}{note}")
     if not failures:
         print("\nBASELINE OK — every member on the same cohort/ tree, no overrides, "
-              "N>=100 final policy, gates green, stable, loadable, committed, "
-              "every win announced.")
+              "N>=100 on both published evaluations, unchanged since the seal, "
+              "gates green, stable, loadable, committed, every win announced.")
         return 0
     print(f"\nBASELINE NOT READY — {len(failures)} problem(s):")
     for f in failures:
@@ -354,6 +446,13 @@ def seal(version: str | None = None) -> int:
     tooling commit after its lane-mates is the same system, and a member
     launched across an env change is not, however close the shas look. The
     commits are recorded alongside as provenance, never as the gate.
+
+    It also stamps a digest of every published evaluation (issue #45). The tree
+    already pinned the environment and the weights; those two held perfectly
+    through the one corruption this fleet actually had, because what moved was
+    the *number derived from them*. Re-scoring a member is a normal thing to do
+    and it invalidates the seal by design — ``--seal`` again and the manifest
+    says so out loud, which is the whole point of a seal.
     """
     manifest = load()
     commits, trees = set(), set()
@@ -372,9 +471,18 @@ def seal(version: str | None = None) -> int:
     manifest["commit"] = manifest["commits"][0] if len(commits) == 1 else None
     if version:
         manifest["version"] = version
+
+    artifacts: dict[str, dict[str, str]] = {}
+    for run in manifest.get("runs", {}).values():
+        d = run_dir(run)
+        artifacts[run] = {name: digest for name in PUBLISHED_EVALUATIONS
+                          if (digest := artifact_digest(d / name)) is not None}
+    manifest["artifacts"] = artifacts
+
     MANIFEST.write_text(json.dumps(manifest, indent=2) + "\n")
+    stamped = sum(len(v) for v in artifacts.values())
     print(f"sealed {manifest.get('version')} at cohort/ {manifest['cohort_tree'][:8]} "
-          f"({len(commits)} commit(s))")
+          f"({len(commits)} commit(s), {stamped} evaluation digest(s))")
     return 0
 
 
@@ -382,7 +490,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seal", action="store_true",
-                    help="stamp the manifest with the commit its members carry")
+                    help="stamp the manifest with its members' cohort/ tree, commits "
+                         "and a digest of every published evaluation")
     ap.add_argument("--version", help="set the baseline version while sealing")
     ap.add_argument("--no-loadable", action="store_true",
                     help="skip the checkpoint-load check (it imports torch)")

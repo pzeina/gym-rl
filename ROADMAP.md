@@ -5657,3 +5657,111 @@ deliberately deferred (`docs/vision.md` §2c).
   caveat. The caveat was the finding. A number whose weights are not in the
   repository is a claim, not a result, and that is exactly the distinction this
   repo keeps trying to hold — so it is fixed and gated rather than noted.
+
+- **2026-08-11 (assurance, #45)** — **The seal gated the headline and published the
+  peak ungated: a member re-scored at N=5 passed `baseline.py` with byte-identical
+  output.** True as filed on the mechanism, wrong on one detail, and the fix is two
+  conditions in `scripts/`.
+
+  **Reproduced on the real tree before changing anything.** Restore the N=5 blob
+  into `runs/platoon_v6/behavior.json`, run the gate, restore the repair:
+
+      control   (repaired, N=100)  exit 0, BASELINE OK
+      treatment (restored,  N=5)   exit 0, BASELINE OK
+      diff(control, treatment)     EMPTY
+
+  **Where the filing is wrong.** It names `9819696` (the seal commit) as where the
+  N=5 blob was committed. It was not — `9819696` carries N=100. The corrupt window
+  is exactly one commit, `a321329`, repaired the next commit in `bcdbfab`:
+
+      38808fe N=100 · 9819696 N=100 · a321329 N=5 · bcdbfab N=100 · e6b600c N=100
+
+  That the window was one commit rather than three does not weaken the finding —
+  it sharpens it. The corruption arrived **after** the seal and the seal did not
+  notice, which is the whole point.
+
+  **Why nothing saw it.** `runs/BASELINE.json` was byte-identical throughout:
+  `cohort_tree 5f848fb6` and every `checkpoint_sha256` correct, because the
+  environment and the weights had not moved. What moved was a number *derived*
+  from them, and the derived side was undigested. Confirmed by reading:
+  `_run_facts` gates `episodes >= 100` on `behavior_final.json` alone;
+  `publish_audit.audit_run` opens `behavior.json` but only requires it to exist,
+  taking `gap` from `metrics.csv`; `results_table.py` sources the README's **peak**
+  column from it. Published, and gated by nothing.
+
+  **The one catcher was host-dependent.**
+  `test_the_readme_table_matches_the_runs_on_disk` skips whenever any member is
+  `RUNNING` — live state, not tree state. Had the fleet still been in flight the
+  N=5 peak would have sealed with nothing in the tree able to detect it, and the
+  skip message points at `baseline.py`, which was blind to this field.
+
+  **Both fixes taken, because they cover different failures.** The evidence rule
+  now holds the peak evaluation to N >= 100 like the headline, and `--seal` stamps
+  a sha256 of every published evaluation into the manifest (16 digests, 8 members ×
+  2 files). The first catches a bad number as it is written; the second catches a
+  *re-scored* one, at full N and plausible, which the evidence bar cannot see —
+  drift in a sealed member is now detectable from the tree alone, by anyone, with
+  no live campaign to compare against.
+
+  **A third defect in the same place, which "when present, require N>=100" would
+  have left open.** `audit_run` returns `None` when `behavior.json` is missing and
+  `_run_facts` applies the give-back gate only `if a:` — so *deleting* the file did
+  not merely skip the new check, it silently switched off the stability gate too
+  and printed `—` in the give-back column. Two gates standing down for one absence,
+  saying nothing. Absence is now named.
+
+  Watched to fail and recover on the real fleet, on the principle that a gate
+  nobody has seen fail is a gate nobody knows works — the same manipulation now
+  gives `platoon_v6 … FAIL`, `peak evaluated at N=5, needs 100` and `behavior.json
+  changed since the seal (ef13e69daca0 -> fe43ead3ec5e)`, and `BASELINE OK` on the
+  restored tree. An unstamped manifest stays silent rather than accusing, and
+  `publish_baseline.py` now ends by telling the operator to re-seal, since
+  re-scoring is a normal thing to do and is precisely what invalidates the stamp.
+
+  Suite **815 passed, 3 skipped** (was 807/3), ruff clean, `scripts/baseline.py`
+  prints BASELINE OK. **No `cohort/` file was touched — the v1.19 seal at
+  `5f848fb6` is intact and no retrain is implied.**
+
+  **Where we disagree with the filing.** #45 offers the two fixes as alternatives
+  ("either; the second is the durable one"). They are not alternatives: the N gate
+  cannot see a silent re-score at full N, and the digest cannot see a bad number
+  written before the seal. Its closing table — for each checkpoint exactly one of
+  {weights committed, evaluation gated} holds — is now false in the good direction:
+  after #44 and #45 both hold for both checkpoints.
+
+- **2026-08-11 — the DONE probe answers the squad regression: PRICING, not
+  reachability.** `scripts/done_probe.py runs/squad_v10b/ckpt_latest.pt
+  --episodes 40 --seed 700`, observe regime (the unperturbed one):
+
+      golden steps [root]              134        eps with >=1 golden   40/40
+      claims transmitted by the root   120        confirmed              33
+      root accept rate               0.275        naive-regime accept  0.064
+
+  **Reachability is not the problem.** Every one of 40 episodes offers the root
+  at least one golden step — a step where MISSION COMPLETE is admissible by the
+  mask *and* would be adjudicated truthful. The channel is open and the policy
+  uses it 120 times.
+
+  **The price is.** With the shipped defaults (`root_done_bonus` +3.0,
+  `done_false` −0.5) the break-even accept rate is **0.143**, and the root is
+  running at **0.275** — nearly double. Every claim is worth **+0.463** in
+  expectation, so claiming at low precision is not a failure of the policy, it
+  is the policy correctly reading its own incentives.
+
+      done_false = -0.5   break-even 0.143   EV/claim +0.463   (shipped)
+      done_false = -2.0   break-even 0.400   EV/claim -0.625   (squad_v9's price)
+
+  At −2.0 the break-even rises above the observed accept rate and the behaviour
+  goes −EV. That is consistent with what `squad_v9` actually did: trained at
+  −2.0, it transmitted **zero** DONE claims in 100 episodes and scored 0.97.
+
+  **What this does NOT establish** is that the claiming *causes* the lost
+  success. It establishes that the claiming is rationally priced in, which is a
+  mechanism where before there was only r = −0.952. The causal step is the A/B.
+
+  **`squad_v11` launched**: `--scenario squad --total-steps 3000000 --seed 12
+  --reward done_false=-2.0`. Single-variable against `squad_v10` by construction
+  — same tree (`5f848fb6`), same seed, same steps, one price. If it lands at
+  0.97-0.98 with the claim volume collapsed, the price is the mechanism and the
+  DEFAULT should move as part of v1.20. If it lands at 0.92 with claims gone,
+  the claiming was a symptom and the regression is elsewhere.
