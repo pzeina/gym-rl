@@ -65,11 +65,11 @@ do not explain the asymmetry).
 |---|---|---|---|
 | agent-issued orders / 30 eps | 2212 ± 190 | 2136 ± 471 | 0 † (no orders exist) |
 | **doctrine-valid order rate** | **1.000** (mask-guaranteed) | 0.395 ± 0.079 | — |
-| doctrine-preferred rate | **0.459 ± 0.076** | 0.166 ± 0.037 | — |
+| doctrine-preferred rate | **0.459 ± 0.076** (0.452/0.538/0.387) | 0.166 ± 0.037 (0.148/0.208/0.141) | — |
 | orders issued by unmissioned leaders (90 eps) | 0 (impossible) | 109 | — |
 | obedience latency (steps) | 2.41 ± 0.04 | 2.41 ± 0.32 | 1.50 ± 0.32 † (OPORDs only) |
 | report precision / recall | 0.14 / **0.96** | 0.22 / 0.89 | 0.21 / 0.90 |
-| DONE claims / 30 eps | **128 ± 111** | 0.3 ± 0.6 | 1.0 ± 1.0 |
+| DONE claims / 30 eps | **128 ± 111** (173/210/**2**) | 0.3 ± 0.6 (1/0/0) | 1.0 ± 1.0 (0/2/1) |
 | false-COMPLETE rate | 0.64 ± 0.12 | — (≤1 claim) | — (≤2 claims) |
 | coverage time | 0.969 | 0.968 | 1.000 † (all-tasked by construction) |
 | human commander death rate | **0.178 ± 0.051** | 0.189 ± 0.069 | 0.256 ± 0.126 |
@@ -101,6 +101,20 @@ reporting (#3) only survives in the full arm (≈4.3 DONE/ep vs ≈0): with the
 whole order vocabulary open, the learned policies abandoned the DONE
 channel entirely.
 
+Those two cells are not equally solid, and the parentheses say which is
+which. **Doctrine-preferred separates seed by seed** — the full arm's worst
+seed (0.387) is above the nomask arm's best (0.208), so any single seed
+reproduces the ordering. **The completion cell does not**: 128 ± 111 is 173
+and 210 and a 2, and that 2 is the flat arm's own maximum. One full-arm seed
+in three is therefore indistinguishable on DONE from the arms that have no
+hierarchy at all. The arm mean is real — pooled over 90 episodes the channel
+plainly lives only under the masks — but a *one-seed* replication of this
+cell settles nothing in either direction, and a replication landing near zero
+here is a draw from that spread rather than a refutation. Note also that DONE
+is a report and not an order, so the flat arm can transmit it and does: its
+0/2/1 is a measurement, not an unavailable cell, and it is the arm where
+completion reporting is the only C2 channel left and still goes unused.
+
 ## Conclusion — the claim, honestly scored
 
 **Final performance: supported vs flat, tied within hierarchy.** Both
@@ -123,7 +137,9 @@ order space makes command learnable faster and far more consistently.
 **Interpretability: strongly supported.** Only the full arm yields a net
 that explains the behavior: 100% doctrine-valid traffic (guaranteed), 2.8×
 the doctrine-preferred rate of nomask, and the only surviving completion
-reporting. This is measured, not asserted (tables above).
+reporting. This is measured, not asserted (tables above). The doctrine half
+holds seed by seed; the completion half holds pooled over 90 episodes but
+not at any single seed (173/210/2) — quote it at the strength it has.
 
 **Verdict**: structured command pays for itself in *final outcome
 robustness* and *interpretability*, not in raw sample efficiency on a
