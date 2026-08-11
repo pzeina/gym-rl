@@ -80,12 +80,16 @@ def test_root_report_ends_the_episode_that_step():
     _obs, _rewards, terms, *_ , infos = _step_all(env, {"TL1": DONE})
     assert env.outcome == "success"
     assert all(terms.values())
-    # the transcript ends with the root's COMPLETE answered by HQ
-    last_two = env.transcript.messages[-2:]
-    assert [m.kind.value for m in last_two] == ["done", "done_confirm"]
-    assert "— COMPLETE" in last_two[0].text
-    assert last_two[1].sender_id == HQ_ID
-    assert "CONFIRMED" in last_two[1].text
+    # the transcript ends with the root's COMPLETE answered by HQ, and then HQ
+    # closing the operation — the claim is the REPORT, the ENDEX is the FACT,
+    # and since v1.19 the FACT is transmitted on every root, not only a defence
+    last_three = env.transcript.messages[-3:]
+    assert [m.kind.value for m in last_three] == ["done", "done_confirm", "endex"]
+    assert "— COMPLETE" in last_three[0].text
+    assert last_three[1].sender_id == HQ_ID
+    assert "CONFIRMED" in last_three[1].text
+    assert last_three[2].sender_id == HQ_ID
+    assert "ENDEX" in last_three[2].text
     # the reporter earns the root_done_bonus on top of the shared terminal
     assert infos["TL1"]["components"]["terminal"] == pytest.approx(
         infos["RFN1"]["components"]["terminal"] + env.rewards_cfg.root_done_bonus
@@ -136,7 +140,7 @@ def test_root_reports_the_operation_not_its_own_position():
     _obs, _r, terms, *_ = _step_all(env, {"TL1": DONE})
     assert env.outcome == "success"
     assert all(terms.values())
-    assert env.transcript.messages[-1].kind.value == "done_confirm"
+    assert [m.kind.value for m in env.transcript.messages[-2:]] == ["done_confirm", "endex"]
 
 
 def test_false_root_claim_does_not_end_the_episode():
@@ -226,7 +230,7 @@ def test_root_recon_completes_from_cover_via_team_observation():
     _obs, _r, terms, *_ = _step_all(env, {"SL1": DONE})
     assert env.outcome == "success"
     assert all(terms.values())
-    assert env.transcript.messages[-1].kind.value == "done_confirm"
+    assert [m.kind.value for m in env.transcript.messages[-2:]] == ["done_confirm", "endex"]
 
 
 def test_early_root_claim_rejected_at_team_level():
