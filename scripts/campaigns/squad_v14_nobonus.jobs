@@ -1,0 +1,17 @@
+# Isolating the zero-price recovery (v13/v13b) to ONE price.
+#
+# squad_v13/v13b zeroed done_true, done_false AND root_done_bonus together and
+# recovered the squad regression (192/200 vs the shipped 180/200, p = 0.0295;
+# vs the previous era 195/200, p = 0.57 — a null). run_report's economics audit
+# calls that arm CONFOUNDED, correctly: three prices moved at once.
+#
+# root_done_bonus=3.0 is the largest of the three and the one #46's EV analysis
+# centred on — at the shipped settings it takes an accepted root claim to
+# done_true 1.0 + 3.0 = 4.0 against a rejected -0.5, putting the break-even for
+# a further root claim at p = 0.111 and a later claim at +0.903. Removing it
+# alone moves that break-even to 0.333 without touching the claim penalty.
+#
+# Seeds 12 and 13 so the arms read single-variable against squad_v10 / v10b on
+# the same cohort/ tree (5f848fb6).
+squad_v14_nobonus   --scenario squad --total-steps 3000000 --seed 12 --reward root_done_bonus=0
+squad_v14b_nobonus  --scenario squad --total-steps 3000000 --seed 13 --reward root_done_bonus=0
