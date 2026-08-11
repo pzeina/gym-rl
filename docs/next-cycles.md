@@ -175,6 +175,22 @@ argument for a chain of command; nobody has measured it at three echelons.
 
 ---
 
+## Repository hygiene, left deliberately undone
+
+The same `.gitignore` depth bug that hid the fleet's final checkpoints (#44) also
+swept in two classes of file nobody wants tracked, and they are still tracked:
+
+    79   runs/**/tb/  tensorboard event files   (~66 MB)
+    44   runs/**/.job.json                      host pids and absolute log paths
+
+They were left alone on purpose. Untracking them shrinks a *checkout* and never
+the pack — the bytes are in history either way — and `runs/` is not a tree to do
+reversible-looking surgery on for tidiness. The new depth-independent rules shed
+both for every FUTURE archived run, which is where the ongoing cost actually is.
+
+If a clone size ever becomes a real constraint, the honest fix is a history
+rewrite, and that is an owner decision with a force-push in it, not a cleanup.
+
 ## Scale and product
 
 - **A company echelon.** `CO`/`XO` exist in the rank table with authority 6 and

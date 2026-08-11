@@ -30,8 +30,12 @@ over it, and the checks are the definition:
 * **stability**  — best-final give-back under ``PUBLISH_STABILITY_POINTS``, the
                    bar ``publish_audit.py --validate`` showed predicts signed
                    overstatement at r = 0.564, p = 0.015.
-* **loadable**   — the checkpoint loads under the current spaces. A baseline
+* **loadable**   — both checkpoints load under the current spaces. A baseline
                    whose weights no longer load is a historical artifact.
+* **committed**  — and both are in the repository. The headline is computed from
+                   ``ckpt_latest.pt``, so a clone that does not carry those bytes
+                   can read every published figure and reproduce none of them
+                   (issue #44). A number without its weights is a claim.
 * **announced**  — every success announced on the net (the v1.19 guarantee).
                    Complete by construction, so a miss here means the guarantee
                    broke, not that a policy got shy.
@@ -182,8 +186,12 @@ def _run_facts(run: str) -> dict:
     return facts
 
 
+HEADLINE_CKPT = "ckpt_latest.pt"  # the FINAL policy — what behavior_final.json scored
+CHECKPOINTS = ("ckpt_best.pt", HEADLINE_CKPT)
+
+
 def _loadable(run: str) -> bool:
-    """Does this member's checkpoint load under the current spaces?
+    """Do this member's checkpoints load under the current spaces?
 
     ``checkpoint_meta`` takes a Path and calls ``path.stat()`` on it. This
     passed ``str(ckpt)``, which raises ``AttributeError`` — and a bare
@@ -196,16 +204,61 @@ def _loadable(run: str) -> bool:
     So the type is right, and the except is narrow. A torch/pickle failure is a
     genuine "does not load"; a TypeError or an AttributeError is a bug in this
     function and must surface as one.
+
+    It also checks BOTH checkpoints. It used to check ``ckpt_best.pt`` alone —
+    the one checkpoint the ``evidence`` rule three docstrings up explicitly says
+    is *not* the headline. A fleet whose final weights no longer load is a
+    historical artifact whatever its best-window snapshot does.
     """
     from cohort.viz.dashboard import checkpoint_meta
 
-    ckpt = run_dir(run) / "ckpt_best.pt"
-    if not ckpt.is_file():
-        return False
+    for name in CHECKPOINTS:
+        ckpt = run_dir(run) / name
+        if not ckpt.is_file():
+            return False
+        try:
+            if not checkpoint_meta(ckpt).get("loadable"):
+                return False
+        except (OSError, RuntimeError, ValueError, KeyError):
+            return False
+    return True
+
+
+def _uncommitted(run: str) -> list[str]:
+    """Which of this member's checkpoints are absent from the repository.
+
+    Issue #44. ``.gitignore``'s ``runs/*/ckpt_latest.pt`` ignored the final
+    policy fleet-wide, so from a fresh clone the eight headline figures could be
+    *read* in ``behavior_final.json`` and not one of them re-derived — the
+    weights that produce them were the single artifact not committed. Worse, a
+    ``*`` does not cross ``/``, so when 96 superseded runs moved to
+    ``runs/archive/`` the rule stopped covering them and the runs nobody needs
+    to reproduce became the only ones carrying both checkpoints.
+
+    A number whose weights are not in the repository is a claim, not a result,
+    so this is a gate rather than a note. It answers with ``[]`` — silence, not
+    a failure — whenever git cannot answer at all: a tarball export, or the
+    tmp_path fixtures the audit's own tests run against. An environment with no
+    index has no opinion about what is committed, and a gate that fires there
+    would fire for a reason that has nothing to do with the fleet.
+    """
+    import subprocess
+
+    d = run_dir(run)
+    present = [n for n in CHECKPOINTS if (d / n).is_file()]
+    if not present:
+        return []
     try:
-        return bool(checkpoint_meta(ckpt).get("loadable"))
-    except (OSError, RuntimeError, ValueError, KeyError):
-        return False
+        out = subprocess.run(
+            ["git", "ls-files", "--", *(str(d / n) for n in present)],
+            cwd=ROOT, capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if out.returncode != 0:
+        return []
+    tracked = {line.rsplit("/", 1)[-1] for line in out.stdout.split()}
+    return [n for n in present if n not in tracked]
 
 
 def audit(check_loadable: bool = True) -> int:
@@ -233,6 +286,13 @@ def audit(check_loadable: bool = True) -> int:
         f = _run_facts(run)
         if check_loadable and f["exists"] and not _loadable(run):
             f["problems"].append("checkpoint does not load under the current spaces")
+        if f["exists"]:
+            absent = _uncommitted(run)
+            if absent:
+                f["problems"].append(
+                    f"{', '.join(absent)} is not committed — a reader can see this "
+                    "run's headline and cannot re-derive it"
+                )
         rows.append((scenario, run, f, "OK" if not f["problems"] else "FAIL"))
         for p in f["problems"]:
             failures.append(f"{run}: {p}")
@@ -278,7 +338,8 @@ def audit(check_loadable: bool = True) -> int:
         print(f"commits:      {'  '.join(sorted(c[:8] for c in commits))}{note}")
     if not failures:
         print("\nBASELINE OK — every member on the same cohort/ tree, no overrides, "
-              "N>=100 final policy, gates green, stable, loadable, every win announced.")
+              "N>=100 final policy, gates green, stable, loadable, committed, "
+              "every win announced.")
         return 0
     print(f"\nBASELINE NOT READY — {len(failures)} problem(s):")
     for f in failures:
