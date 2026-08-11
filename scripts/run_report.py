@@ -222,6 +222,102 @@ def curve(rows: list[dict]) -> str:
     return f"{spark}  ({lo:.0%}→{hi:.0%})"
 
 
+class ClaimOrdinalError(Exception):
+    """The artifact's per-episode root claims cannot be split by ordinal."""
+
+
+def root_claim_ordinal(per_episode: list[dict]) -> dict | None:
+    """Split the root's MISSION COMPLETE claims into the episode's FIRST and the rest.
+
+    **Why a pooled precision is the wrong instrument here** (refs #46). The
+    lever now under test on ``squad`` — ``root_done_bonus_first_claim_only`` —
+    is a rule about the first claim versus later ones, and its expected value
+    was pre-registered from ``squad_v10``'s POOLED claim precision, 77/178 =
+    0.433. That number describes neither ordinal: on the same corpus the first
+    claim is accepted at 0.543 and later ones at 0.314. On the same run's
+    ``ckpt_best`` the split INVERTS (0.474 / 0.547), so a precision computed on
+    one checkpoint does not describe the other either. **The missing quantity
+    is the one the existing metric cannot represent** — the same shape as
+    ``done_reports`` without ``done_admissible`` and order share without
+    availability. So the digest carries the split, not just the pool.
+
+    **The derivation is exact, not a heuristic**, and it rests on one pinned
+    invariant: a confirmed root claim is the LAST root claim of its episode
+    (``tests/test_confirmed_claim_is_last.py``; ``cohort_env`` closes the
+    operation in the same ``step`` that confirms it). So per episode there is at
+    most one acceptance, and ``done_reports_root - done_rejected_root`` says
+    which ordinal it fell on: 1 acceptance with 1 claim means the FIRST claim
+    was accepted; 1 acceptance with n > 1 claims means a LATER one was, and the
+    first was rejected.
+
+    ``first_rejected`` / ``closed_after_rejected_first`` are the two halves of
+    what ``rewards.py`` calls burning the bonus: under the first-claim rule a
+    rejected opening probe forfeits ``root_done_bonus`` for the whole episode,
+    so its real price is ``done_false - root_done_bonus x P(the episode later
+    closes by a root claim)``. That P measured **1.000** on
+    ``defend_brique_v11`` and is what reverted the rule at v1.16 — a run's own
+    corpus can say in advance whether the rule would price its honest first
+    report into silence.
+
+    Returns ``None`` for an artifact that predates the root-split fields (the
+    2026-08-07 era has ``done_reports`` only), because an absent measurement is
+    not a zero. Raises rather than reporting an impossible corpus, on
+    ``done_probe.py``'s rule: the impossible number is the one that gets quoted.
+    """
+    first = first_accepted = later = later_accepted = 0
+    measured = False
+    for i, ep in enumerate(per_episode):
+        claims, rejected = ep.get("done_reports_root"), ep.get("done_rejected_root")
+        if claims is None or rejected is None:
+            return None
+        measured = True
+        accepted = claims - rejected
+        if accepted not in (0, 1):
+            raise ClaimOrdinalError(
+                f"episode {i}: {claims} root claims, {rejected} rejected — every DONE is "
+                "answered exactly once and at most one root claim per episode is confirmed, "
+                "so this artifact is a broken measurement rather than a strange policy"
+            )
+        if not claims:
+            continue
+        first += 1
+        later += claims - 1
+        if accepted and claims == 1:
+            first_accepted += 1
+        elif accepted:
+            later_accepted += 1
+    if not measured:
+        return None
+    return {
+        "claims": first + later,
+        "first": first,
+        "first_accepted": first_accepted,
+        "later": later,
+        "later_accepted": later_accepted,
+        # the two halves of the burn: opening probes that were rejected, and how
+        # many of those episodes went on to close by a root claim anyway
+        "first_rejected": first - first_accepted,
+        "closed_after_rejected_first": later_accepted,
+    }
+
+
+def format_claim_ordinal(o: dict) -> tuple[str, str | None]:
+    """The ordinal split as digest lines: the claim line, and the burn line or None."""
+    parts = [str(o["claims"])]
+    for label, num, den in (
+        ("first", o["first_accepted"], o["first"]),
+        ("later", o["later_accepted"], o["later"]),
+    ):
+        if den:
+            parts.append(f"{label} {num}/{den} = {num / den:.3f}")
+    burn_den, burn_num = o["first_rejected"], o["closed_after_rejected_first"]
+    burn = (
+        f"{burn_num}/{burn_den} = {burn_num / burn_den:.3f}   "
+        "(rejected first claims whose episode still closed)"
+    ) if burn_den else None
+    return "   ".join(parts), burn
+
+
 def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagnostics: bool) -> dict:
     """Print one evaluated checkpoint's suite, and file it under ``prefix``.
 
@@ -253,6 +349,22 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
         if (v := m.get(key)) is not None:
             print(f"    {label:<20} {fmt.format(v)}")
             summary[f"{prefix}{key}"] = v
+    # refs #46: the ordinal split, because the rule being priced is ordinal and
+    # `false_complete_rate` above is a pool. Filed into the summary so `--vs`
+    # prints it as a delta — reading squad_v12 against squad_v10 on a pooled
+    # precision is the mistake this line exists to make impossible.
+    if (ordinal := root_claim_ordinal(b.get("per_episode", []))) is not None:
+        claims_line, burn_line = format_claim_ordinal(ordinal)
+        print(f"    {'root claims':<20} {claims_line}")
+        if burn_line:
+            print(f"    {'first claim burned':<20} {burn_line}")
+        summary[f"{prefix}root_claims"] = ordinal["claims"]
+        for name, num, den in (
+            ("first_claim_precision", ordinal["first_accepted"], ordinal["first"]),
+            ("later_claim_precision", ordinal["later_accepted"], ordinal["later"]),
+        ):
+            if den:  # an undefined rate is left absent, never printed as 0.000
+                summary[f"{prefix}{name}"] = num / den
     if diagnostics:
         # refs #14: a low preference rate is only a command-quality finding if
         # the ordered-task mix says it is not just adoption of one legal leg
