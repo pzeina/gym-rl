@@ -2087,6 +2087,16 @@ deliberately deferred (`docs/vision.md` §2c).
   terminal **0.0000**, ep_length **375.0**, `tx/agent-step` **0.026** (v4: 0.029),
   false-DONE **0.005** (v4: 0.005), entropy 1.809 → **1.025**. The price was
   never what silenced the claim — the claim rate is unchanged at 4× the price.
+  **⚑ SCOPED 2026-08-11 (assurance, #46): that null belongs to the COLLAPSED
+  regime and is not a falsification of the price.** Both figures above are the
+  FINAL policies and both arms are D4-collapsed (0% success, `ep_length` 375 =
+  `max_steps`), so the manipulation had no power to detect an incentive
+  response — a collapsed policy emits the cheapest no-op because it must emit
+  something. At the same two runs' `ckpt_best`, which are **not** collapsed
+  (both 1.00 ± 0.00 at N=20), the committed corpora read **0** DONE claims at
+  −2.0 against **55** at −0.5. Same direction as `squad_v10` → `squad_v11`.
+  Read the 2026-08-11 (#46) entry at the end of this log before quoting the
+  sentence above.
   What the test *did* buy is a much better-posed question, because it proves the
   failure is **not DONE-specific**. `tx/agent-step` falls 0.123 → 0.026 (4.7×)
   against `squad_screen_v3`, and that counts *every* channel: `comp_report` goes
@@ -5807,3 +5817,116 @@ deliberately deferred (`docs/vision.md` §2c).
   Tested on the defend family and reverted; never tested on squad, which is
   where the spam lives. Baseline for the read: `squad_v10`. The result wanted is
   `squad_v11`'s stability with `squad_v10`'s 84% reporting kept.
+
+- **2026-08-11 (assurance, #46)** — **A pooled precision cannot price an ordinal
+  rule, `squad_v12`'s pre-registration was written on one, and the EV under it
+  had dropped `done_true`.** Three claims arrived while `squad_v12` was running.
+  All three check out against the committed corpora — and the arithmetic
+  underneath two of our own entries did not.
+
+  **1. The control arm reproduces, net-only.** Their `squad_v10`/latest tap
+  reads 178 root DONE claims, 101.22 messages/episode, 17.38 orders/episode.
+  Those are `runs/squad_v10/behavior_final.json`'s own numbers to the digit
+  (N=100, seed 123). Three for three, from the radio alone.
+
+  **2. The 2026-08-07 `squad_screen` null belongs to the collapsed regime.**
+  Confirmed here, on our corpora rather than theirs. `economics.json` says the
+  pair is exactly single-variable: the only difference in the entire reward
+  dict is `done_false` −2.0 (`v4`) vs −0.5 (`v5`), specs identical, same seed
+  17, same 2M steps, same hyperparameters. Both FINAL policies are D4-collapsed
+  and their final-decile false-DONE rates are 0.005 either way — that is the
+  "unchanged at 4× the price" the entry recorded. At `ckpt_best`, where both
+  arms are 1.00 ± 0.00 (N=20, seed 123):
+
+      squad_screen_v4 / best   done_false −2.0    0 DONE claims
+      squad_screen_v5 / best   done_false −0.5   55 DONE claims, 44 rejected
+
+  Same direction as `squad_v10` → `squad_v11` (178 → 0); their own tap at N=30
+  from seed 500 reads 0 and 35. **A null from a degenerate manipulation is not a
+  falsification** — a collapsed policy emits the cheapest no-op because it must
+  emit something, so a manipulation whose two arms are both degenerate has no
+  power to detect an incentive response. The 2026-08-07 entry now carries that
+  scope inline. Caveat kept and theirs too: the two bests are otherwise very
+  different policies (orders/episode 67.70 vs 3.75), so this is one
+  checkpoint-matched pair, suggestive rather than settled.
+
+  **3. The ordinal split reproduces exactly — off our own published artifacts.**
+  It needs no re-scoring and no `cohort/` change. `done_reports_root −
+  done_rejected_root` is 0 or 1 per episode because the confirmed root claim is
+  the LAST one (`tests/test_confirmed_claim_is_last.py`), so the claim count
+  says which ordinal collected the acceptance. Every corpus we have committed
+  carries the fields:
+
+      corpus                 first claim      later claim    pooled   burn P
+      squad_v10 / FINAL     50/92 = 0.543    27/86 = 0.314    0.433   27/42 = 0.643
+      squad_v10 / best      45/95 = 0.474    41/75 = 0.547    0.506   41/50 = 0.820
+      squad_v10b / FINAL    13/91 = 0.143   56/216 = 0.259    0.225   56/78 = 0.718
+
+  `burn P` is P(the episode still closes by a root claim | the first claim was
+  rejected) — what a spent opening probe forfeits under the first-claim rule,
+  the quantity `rewards.py` measured at 1.000 on `defend_brique_v11` and
+  reverted the rule over. The pool describes neither ordinal; the split INVERTS
+  between one run's two checkpoints, and inverts again on the second seed. Any
+  single number here is a confident wrong finding, which is why the digest now
+  prints all of it.
+
+  **4. OURS, and it changes a verdict: the EV arithmetic in the two entries
+  above dropped `done_true`.** `rewards.py` states its own break-evens — 1/9 =
+  **0.111** with the bonus on the table, 1/3 = **0.333** once the slot is spent.
+  The DONE-probe entry quotes 0.143 and 0.400; the price-A/B entry quotes first
+  **+1.014** and later **−0.284**. Every one of those reproduces exactly by
+  pricing the claim on `root_done_bonus` alone. An accepted claim also pays
+  `done_true` +1.0. Corrected, at the same pooled 0.433, airtime included:
+
+      claim under the flag         as written     corrected
+      first (bonus on the table)       +1.014        +1.437
+      second and later                 −0.284        +0.139
+
+  In the probe entry the slip is harmless — 0.275 clears 0.111 as easily as it
+  clears 0.143, and `squad_v11` then confirmed that reading empirically. In the
+  `squad_v12` pre-registration it is not: **at the pooled rate the flag does not
+  make later claims −EV at all.** "Spam stops paying" does not follow from the
+  number it was derived from.
+
+  **5. What `squad_v12` is actually pre-registered on.** EV per root claim at
+  each corpus's own realised rates, `done_true` and `transmission_cost`
+  included, the first claim carrying its burn:
+
+      corpus                first: shipped → flag    later: shipped → flag
+      squad_v10 / FINAL        +1.936 → +1.055          +0.903 → −0.039
+      squad_v10 / best         +1.622 → +0.327          +1.950 → +0.310
+      squad_v10b / FINAL       +0.133 → −1.713          +0.657 → −0.121
+
+  The flag's premise — *spam stops paying, the honest report does not* — holds
+  on **one of three corpora and only just**. On `squad_v10`/best it fails on the
+  spam half (a later claim is still worth +0.310). On `squad_v10b` it fails on
+  the honest half: the first truthful report goes to **−1.713**, which is
+  muteness — the failure that reverted this flag at v1.16 and that got
+  `done_false=−2.0` rejected yesterday on behaviour rather than on a p-value.
+  That is the falsifiable risk in v12, now quantified instead of asserted. The
+  rates are realised under the CURRENT pricing and a retrained policy's will
+  move; what they fix is the direction the incentive points from where v12
+  starts. The run continues, and is read at BOTH checkpoints on the split,
+  against `squad_v10` at both of its own.
+
+  **Where their §3 is wrong, and it matters for what v12 tests.** They read
+  0.314 against "the 0.333 root break-even at the shipped −0.5" and conclude the
+  later claims are "already −EV before your change". 0.333 is the break-even
+  *with the slot spent* — under the flag. At the shipped
+  `root_done_bonus_first_claim_only=false` every accepted root claim earns the
+  bonus (`cohort_env.py::_report_done`), so the break-even is 0.111 and a later
+  claim is worth **+0.903**. The 86 later claims per 100 episodes are not an
+  anomaly the flag cannot reach; they are precisely what the incentive asks for,
+  and the flag is a +0.903 → −0.039 price change on them. Their conclusion —
+  that later-claim spam might not be EV-driven, the way §12.61's voice-sync was
+  action-mass — stands as a hypothesis. The premise it was argued from does not.
+
+  **Shipped.** `run_report.py` prints the split and the burn on every behavior
+  block and files `root_claims` / `first_claim_precision` /
+  `later_claim_precision` into the summary, so `--vs` carries them as deltas:
+  reading v12 against v10 on a pooled precision is now something the instrument
+  has to be worked around to do. `tests/test_run_report_claim_ordinal.py` pins
+  the derivation, both corrected break-evens, and `squad_v10`'s split at both
+  checkpoints. **No `cohort/` change** — the quantity was always derivable from
+  what every corpus already records — so the baseline seal (`5f848fb6`) and the
+  eight published numbers are untouched. 815 → 822 tests.

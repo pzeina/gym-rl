@@ -122,6 +122,18 @@ mission claims falsely more often for that reason alone.
    itself: every transmission is an agent-step not spent moving, firing or
    taking cover, and this repo has fixed order-spam and stall-farming before.
 
+**Read `squad_v12` on the claim ORDINAL, at both checkpoints** (refs #46, added
+2026-08-11). Steps 1 and 2 above have since run — the probe said pricing, and
+`squad_v11` at `done_false=-2.0` confirmed the mechanism and was rejected for
+buying muteness. `squad_v12` now tests `root_done_bonus_first_claim_only`, which
+is a rule about the FIRST claim versus later ones, and its pre-registered EV was
+computed from a *pooled* precision that in fact splits 0.543 / 0.314 on
+`squad_v10`'s final policy and inverts to 0.474 / 0.547 on its best.
+`run_report.py` prints the split and the burn on every behavior block and files
+them for `--vs`. The corrected arithmetic is in ROADMAP's 2026-08-11 (#46)
+entry; the thing to check first when v12 lands is the honest half, because on
+`squad_v10b`'s rates the flag prices the FIRST truthful report at **−1.713**.
+
 **Do not** change `done_false` as part of v1.20. It would confound the succession
 fix with a reward change across the same retrain — precisely the confound class
 `run_report --vs` was extended to catch this morning.
