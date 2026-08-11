@@ -5765,6 +5765,14 @@ deliberately deferred (`docs/vision.md` §2c).
   goes −EV. That is consistent with what `squad_v9` actually did: trained at
   −2.0, it transmitted **zero** DONE claims in 100 episodes and scored 0.97.
 
+**⚑ The EV arithmetic in this entry is wrong and is corrected in the
+  `2026-08-11 (assurance, #46)` entry at the end of this log: it prices a claim on
+  `root_done_bonus` alone and drops `done_true` (+1.0). Break-even is 1/9 = 0.111
+  and 1/3 = 0.333, exactly as `rewards.py` states them in its own comments — not
+  the 0.143 and 0.400 quoted here. Every DIRECTION in this entry survives the
+  correction (0.275 is above 0.111 and below 0.333), which is why the verdict
+  stands; the margins were overstated.**
+
   **What this does NOT establish** is that the claiming *causes* the lost
   success. It establishes that the claiming is rationally priced in, which is a
   mechanism where before there was only r = −0.952. The causal step is the A/B.
@@ -5815,7 +5823,16 @@ deliberately deferred (`docs/vision.md` §2c).
   0.433) the flag leaves the FIRST truthful claim at EV **+1.014** and drops the
   second and later to **−0.284** — spam stops paying, the honest report does not.
   Tested on the defend family and reverted; never tested on squad, which is
-  where the spam lives. Baseline for the read: `squad_v10`. The result wanted is
+  where the spam lives.
+
+  **⚑ The `+1.014 / −0.284` figures here are wrong — same dropped `done_true`
+  term; see the `(assurance, #46)` entry. Corrected: at the POOLED precision the
+  flag leaves a later claim at **+0.150**, still positive, so "spam stops paying"
+  did not follow from the number it was derived from. It follows only when later
+  claims are priced at the LATER-claim precision (0.314), where the flag gives
+  **−0.029** — marginally negative, not comfortably so. Pricing an ordinal rule
+  at a pooled rate was the error; `run_report.py` now prints the split.**
+ Baseline for the read: `squad_v10`. The result wanted is
   `squad_v11`'s stability with `squad_v10`'s 84% reporting kept.
 
 - **2026-08-11 (assurance, #46)** — **A pooled precision cannot price an ordinal
