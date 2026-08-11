@@ -556,6 +556,41 @@ def announced_assault_step(scenario: str | ScenarioSpec) -> int | None:
     return None if band is None else (band[0] + band[1]) // 2
 
 
+def sitrep_interval(scenario: str | ScenarioSpec) -> int:
+    """The gap after which a SITREP counts as fresh rather than spam (issue #37).
+
+    The scenario's own reporting doctrine when it has one
+    (``ScenarioSpec.sitrep_cadence``), the shipped reward price otherwise
+    (``RewardConfig.sitrep_interval``) — exactly the resolution the environment
+    performs in ``CohortEnv._apply_action`` and the recorder writes into every
+    trace, kept here so the three cannot drift apart.
+
+    Header material by the same argument as ``defend_horizon``: a pure function
+    of the spec, identical in every episode, available before ``reset()``, and
+    it never enters a rollout. It is published because ``metrics.py``'s
+    ``closed_on_cadence_report_rate`` is *defined* against it — "off cadence"
+    means sooner than this many steps after the sender's last report — so an
+    outside monitor holding only the radio could not read the number its own
+    cadence measurement is judged by, and was assuming 25.
+
+    **Not on the net, deliberately.** The horizon belongs in the OPORD because
+    HQ orders it; a reward threshold is not something HQ says. The overlay is
+    the right home for a price the traffic is scored against.
+
+    One honest limit: this is the *spec-level* value, so a run trained with
+    ``--reward sitrep_interval=N`` is scored against N and not against this.
+    The per-episode trace records the value actually in force
+    (``metrics.py``'s ``sitrep_interval``), and that one is authoritative for a
+    given run; this one describes the scenario as shipped.
+    """
+    # local import: the spec layer is upstream of ``cohort.env`` everywhere
+    # else, and this one default is not worth inverting that at module scope.
+    from cohort.env.rewards import RewardConfig
+
+    spec = get_scenario(scenario) if isinstance(scenario, str) else scenario
+    return int(spec.sitrep_cadence or RewardConfig().sitrep_interval)
+
+
 def briefing(scenario: str | ScenarioSpec) -> dict:
     """The operations overlay: static, pre-mission, JSON-ready (refs issue #10).
 
@@ -628,6 +663,16 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # name. The header still matters, for the same reason it does for the
         # announced step: it holds for a corpus that predates the clause.
         "defend_horizon": spec.defend_horizon,
+        # the freshness gap a SITREP is priced against (issue #37): the
+        # scenario's reporting doctrine where it has one, the shipped reward
+        # price otherwise. Here for the same reason the horizon is — it is the
+        # standard a published number is computed against, not a fact about the
+        # ground. `closed_on_cadence_report_rate` counts the closes made by a
+        # report the cadence would have produced anyway, so without this key a
+        # monitor holding only the radio has to assume the threshold, and that
+        # finding's direction reverses below ~12 on the fireteam pair. NOT in
+        # the OPORD: HQ orders an hour, it does not read out a reward weight.
+        "sitrep_interval": sitrep_interval(spec),
         # doctrinal terrain guarantees — static facts about the map family,
         # unlike the grid itself
         "objective_cover": spec.objective_cover,

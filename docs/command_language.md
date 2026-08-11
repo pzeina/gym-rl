@@ -264,8 +264,9 @@ waypoint and phase-line geometry, map size, spawn, the root tasking, the
 doctrinal terrain guarantees (`objective_cover`, `observation_concealment`), the
 engagement envelope (weapon/vision ranges), the announced assault step
 (`announced_assault_step`, above — `None` where there is no preparation period)
-and the hour a defense is ordered to hold to (`defend_horizon` — `None` for an
-indefinite posture).
+the hour a defense is ordered to hold to (`defend_horizon` — `None` for an
+indefinite posture) and the gap a SITREP is priced fresh against
+(`sitrep_interval`).
 
 `defend_horizon` is there for a sharper reason than the geometry is (issue #30).
 Since v1.14 it is both halves of what DEFEND means: success is "occupied at
@@ -275,6 +276,22 @@ watching a root transmit MISSION COMPLETE could not tell an admissible claim
 from an inadmissible one, because the deciding input was invisible to it.
 Published, the same traffic is auditable. Note it is **not** in the OPORD text:
 the hour is in the order the root holds, not in the words on the net.
+
+`sitrep_interval` is there for the same kind of reason (issue #37), one step
+further out: it is not a fact about the ground at all but the **standard a
+published number is computed against**. `metrics.py`'s
+`closed_on_cadence_report_rate` counts the closes made by a report the cadence
+would have produced anyway, and "would have" means *at least `sitrep_interval`
+steps after the sender's last report*. Unpublished, an outside monitor had to
+assume the value; the assumption is load-bearing, because the same comparison
+reverses below an assumed interval of ~12 on the `fireteam_defend` pair. The
+published value is `spec.sitrep_cadence or RewardConfig().sitrep_interval` —
+the scenario's own reporting doctrine where it has one, the shipped price
+otherwise, which is exactly what the environment resolves at step time. It is
+**not** in the OPORD, deliberately: HQ orders an hour, it does not read out a
+reward weight. A run trained with `--reward sitrep_interval=N` is scored
+against N, and the per-episode trace records the value that was actually in
+force — the header describes the scenario as shipped.
 
 It is a pure function of the `ScenarioSpec`, so it is identical across every
 episode and valid **before `reset()`** — header material for an episode stream,

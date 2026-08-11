@@ -179,6 +179,47 @@ def test_briefing_carries_the_ordered_hour_the_defense_holds_to():
     assert env.briefing()["defend_horizon"] == env.spec_cfg.defend_horizon
 
 
+def test_briefing_carries_the_interval_a_sitrep_is_priced_against():
+    """Issue #37: `closed_on_cadence_report_rate` is *defined* against
+    `sitrep_interval`, and the value was spoken nowhere — not in the words
+    (correctly: HQ orders an hour, it does not read out a reward weight) and
+    not in the overlay. A monitor holding only the radio had to assume 25, and
+    the cadence finding reverses below ~12 on the fireteam pair, so the
+    assumption was load-bearing.
+
+    Same treatment `defend_horizon` got in #30: pure function of the spec,
+    identical every episode, available before `reset()`, never in a rollout.
+    """
+    import json
+    from dataclasses import replace
+
+    from cohort.config import SCENARIOS, briefing, get_scenario, sitrep_interval
+    from cohort.env.rewards import RewardConfig
+
+    for name, spec in SCENARIOS.items():
+        brief = briefing(name)
+        json.dumps(brief)
+        assert brief["sitrep_interval"] == sitrep_interval(spec), name
+        assert brief["sitrep_interval"] == (spec.sitrep_cadence or RewardConfig().sitrep_interval)
+        assert isinstance(brief["sitrep_interval"], int), name
+
+    # the shipped default, and the per-scenario override that is the reason
+    # this cannot be a constant a monitor pins once and forgets
+    assert briefing("fireteam_defend")["sitrep_interval"] == 25
+    doctrine = replace(get_scenario("fireteam"), sitrep_cadence=8)
+    assert briefing(doctrine)["sitrep_interval"] == 8
+
+    # static: same before and after reset, and the same number the recorder
+    # writes into the trace the cadence metric is actually computed from
+    env = make_env("fireteam_defend")
+    before = env.briefing()
+    env.reset(seed=11)
+    assert env.briefing() == before
+    assert env.briefing()["sitrep_interval"] == (
+        env.spec_cfg.sitrep_cadence or env.rewards_cfg.sitrep_interval
+    )
+
+
 def test_sitrep_posture_matches_the_ground_the_sender_stands_on():
     """The self-report must be true: what the soldier says about its cover is
     what `world.cover_at` says (issue #10 — the correlate is only worth

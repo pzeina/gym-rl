@@ -4816,3 +4816,34 @@ deliberately deferred (`docs/vision.md` §2c).
   audit built from artifacts. It removes the run from the statistic, and the runs
   whose artifacts crash are not a random sample of runs.
 
+- **2026-08-11 (assurance, #37)** — **The cadence metric now says what it is
+  measured against.** `closed_on_cadence_report_rate` (#35) counts the closes
+  made by a report the cadence would have produced anyway, and "would have"
+  means at least `sitrep_interval` steps after the sender's last report. That
+  value is a `RewardConfig` field: not in the words, and — until now — not in
+  `briefing()` either, so the external monitor was scoring every cadence number
+  against an assumed 25 and stamping `sitrep_interval_source: "assumed"` on it.
+
+  **The assumption was load-bearing, not cosmetic.** Their sweep over the
+  threshold, on the v1.17 cells: at any assumed interval ≥ 15 the retrains lose
+  to their controls on the cadence rate (the inversion #35 predicted), and below
+  ~12 the `fireteam_defend_v18` → `v19` pair *reverses* — 0.500 → 0.929 at an
+  assumed 5, against 0.300 → 0.036 at the real 25. A finding whose direction
+  depends on an unpublished constant is a finding the monitor cannot state.
+
+  `briefing()` now publishes `sitrep_interval` = `spec.sitrep_cadence or
+  RewardConfig().sitrep_interval` — the same resolution the environment performs
+  at step time and the recorder writes into every trace, in one place so the
+  three cannot drift. Pure spec function, rollout-neutral, `defend_horizon`'s
+  treatment from #30 exactly.
+
+  **Not in the OPORD, deliberately.** `9dd4edf` put the horizon on the net
+  because HQ *orders* an hour; a reward threshold is not something HQ says, and
+  an OPORD clause reading out a price would be the mistake that commit avoided
+  by gating its own clause on `HOLDS_GROUND`. The overlay is the right home for
+  the standard a number is computed against.
+
+  One limit, stated in the docstring: this is the scenario as shipped, so a run
+  trained with `--reward sitrep_interval=N` is scored against N. The per-episode
+  trace already records the value actually in force, and for a given run that
+  one is authoritative.
