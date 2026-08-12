@@ -25,6 +25,28 @@ moves succession-heavy scenarios (platoon most of all), and whether
 `closed_on_root_report_rate` clears its new 0.5 floor everywhere — the gate is
 new, so its first fleet is also its first real test.
 
+**Job 1 of 8 (`fireteam_v10`) landed clean and took the digest with it — fixed,
+tooling only.** The run is PUBLISHABLE (final 95%, best-final gap 5 pts,
+ckpt_best 1.00 ± 0.00 at N=20), but `run_report.py` raised `ClaimOrdinalError`
+on its own artifact: ep19 carries 4 root claims, 2 rejected and **2
+successions**, with `endex_on_root_report` still 1. That is the limit
+`test_confirmed_claim_is_last` already took on 2026-08-12 off
+`squad_v14d_nobonus` — `done_reports_root` counts *root-sender*, the operation
+closes on a root-*OPORD* claim, and a promoted successor may truthfully
+complete its own personal mission while the operation correctly runs on. The
+guard test had the exclusion; the digest had not, so it crashed on a corpus its
+own invariant considers sound. `root_claim_ordinal` now skips succession
+episodes, still raises for a non-succession violation, and **prints the
+exclusion count** so a split is never read as covering episodes it was not
+derived from. Expect this to matter more as the campaign reaches the
+succession-heavy scenarios — #42 is precisely a change that drives successions
+up. Re-pinned on `squad_v10`, where the counts move and **the #46 finding
+strengthens**: the first/later gap goes +0.230 → +0.277 on the final policy and
+−0.073 → −0.223 at `ckpt_best`, so the inversion is wider once the episodes the
+proxy could not attribute stop diluting both ordinals. The pre-registered
+pooled 0.433 is untouched and is now asserted off the corpus totals rather than
+off the split.
+
 **⚑ READ THIS FIRST — the squad pricing arc reversed twice today, and it now
 has an answer and a recommendation.** Four findings, in the order they must be
 read:

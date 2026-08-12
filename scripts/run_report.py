@@ -272,24 +272,54 @@ def root_claim_ordinal(per_episode: list[dict]) -> dict | None:
     corpus can say in advance whether the rule would price its honest first
     report into silence.
 
+    **Succession episodes are excluded, because that is exactly as far as the
+    proxy is exact** — the same scope, and for the same reason, as
+    ``test_confirmed_claim_is_last.py``. The invariant is about the root's
+    *OPORD* claim: ``cohort_env._report_done`` closes the operation only when
+    ``is_root_opord_claim`` holds, while ``metrics._done_traffic`` counts
+    ``done_reports_root`` as *any* DONE whose sender held the root at that step.
+    The two agree while the root is one soldier for the whole episode and
+    diverge the moment a successor is promoted: the promoted commander still
+    carries its personal SEIZE/ADVANCE mission, may truthfully complete **that**,
+    and the completion is confirmed and counted here while the operation
+    correctly runs on. So a succession episode can carry two confirmed root
+    claims without anything being wrong — ``fireteam_v10`` ep19 is one (4 claims,
+    2 rejected, 2 successions, and ``endex_on_root_report`` still 1, the
+    operation closing exactly once).
+
+    That is a limit of the recorded quantity, not of the invariant, so the
+    exclusion is narrow and **counted, never silent**: ``excluded`` rides in the
+    result and the digest prints it. An ordinal split quoted over 18 of 20
+    episodes while captioned as 20 is the same overstatement as an N=20 row
+    captioned N=100. The honest fix upstream is a root-*mission* claim counter;
+    until one exists, this keeps the derivation exact where it is sound instead
+    of loosening the bound everywhere.
+
     Returns ``None`` for an artifact that predates the root-split fields (the
     2026-08-07 era has ``done_reports`` only), because an absent measurement is
-    not a zero. Raises rather than reporting an impossible corpus, on
-    ``done_probe.py``'s rule: the impossible number is the one that gets quoted.
+    not a zero. Still raises for a NON-succession episode, on ``done_probe.py``'s
+    rule: the impossible number is the one that gets quoted.
     """
-    first = first_accepted = later = later_accepted = 0
+    first = first_accepted = later = later_accepted = excluded = 0
     measured = False
     for i, ep in enumerate(per_episode):
         claims, rejected = ep.get("done_reports_root"), ep.get("done_rejected_root")
         if claims is None or rejected is None:
             return None
         measured = True
+        # A missing field is not a "no succession" — but the 2026-08-07 era that
+        # lacks it is already returned above, so absent here means a corpus that
+        # records successions and had none. Strict is the right default anyway.
+        if ep.get("succession_events"):
+            excluded += 1
+            continue
         accepted = claims - rejected
         if accepted not in (0, 1):
             raise ClaimOrdinalError(
-                f"episode {i}: {claims} root claims, {rejected} rejected — every DONE is "
-                "answered exactly once and at most one root claim per episode is confirmed, "
-                "so this artifact is a broken measurement rather than a strange policy"
+                f"episode {i}: {claims} root claims, {rejected} rejected, no succession — "
+                "every DONE is answered exactly once and, with the root held by one soldier "
+                "for the whole episode, at most one root claim is confirmed, so this artifact "
+                "is a broken measurement rather than a strange policy"
             )
         if not claims:
             continue
@@ -311,6 +341,9 @@ def root_claim_ordinal(per_episode: list[dict]) -> dict | None:
         # many of those episodes went on to close by a root claim anyway
         "first_rejected": first - first_accepted,
         "closed_after_rejected_first": later_accepted,
+        # succession episodes the root-sender proxy cannot split; printed, so the
+        # split is never read as covering episodes it was not derived from
+        "excluded": excluded,
     }
 
 
@@ -358,6 +391,9 @@ def format_claim_ordinal(o: dict) -> tuple[str, str | None]:
     ):
         if den:
             parts.append(f"{label} {num}/{den} = {num / den:.3f}")
+    if excluded := o.get("excluded", 0):
+        # never a bare split: the reader must see it is over a subset, and why
+        parts.append(f"({excluded} succession ep{'s' if excluded > 1 else ''} not splittable)")
     burn_den, burn_num = o["first_rejected"], o["closed_after_rejected_first"]
     burn = (
         f"{burn_num}/{burn_den} = {burn_num / burn_den:.3f}   "
