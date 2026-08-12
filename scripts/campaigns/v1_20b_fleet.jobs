@@ -1,0 +1,47 @@
+# v1.20b FLEET RETRAIN — the same eight, against a tree that charts correctly.
+#
+# This supersedes scripts/campaigns/v1_20_fleet.jobs, which was stopped after
+# four members because the tree it was training against was defective.
+#
+# WHAT WENT WRONG. #42 added a guarded `parent.subordinate_ids.append(successor.id)`
+# to core/units.py::_fill_vacancy and thereby made the pre-existing
+# `successor.subordinate_ids.append(promoted.id)` redundant — but that older line
+# had no `not in` guard, so both fired and the backfilled agent was linked into
+# its new leader TWICE. It triggers on the commonest succession in the game: kill
+# SL1 in `squad` and TL1's chart reads ['TL2', 'RFN1', 'RFN1']. Since
+# living_subordinates is what observations.py writes into the four subordinate
+# slots and what actions.py indexes with order_slot, the promoted root observed a
+# phantom subordinate and carried two distinct ORDER indices addressing one agent
+# — inside the very fix meant to make the promoted branch observable and
+# orderable. Fixed in da24b42; found by the #49 investigation.
+#
+# The four members trained against the defective tree — fireteam_v10,
+# fireteam_defend_v21, squad_v16, squad_recon_v9, plus a killed partial
+# squad_screen_v12 — are KEPT, not deleted. They are the evidence behind
+# squad_v16's mute-commander finding and they are the only corpus measuring what
+# the double-link cost. None of them may become a baseline member.
+#
+# Same scenarios, same step budgets, same seed 12 as the v1.19 members, so the
+# only thing differing from the shipping fleet is the tree. Sequential in one
+# nohup'd queue: ~8 runs x 25-45 min.
+#
+# THE OPEN QUESTION THIS FLEET ANSWERS. squad_v16 trained to a mute commander —
+# 0 root claims in 1,865 admissible root steps, closed_on_root_report_rate 0.000,
+# gate FAIL — while its matched v1.19-tree arm squad_v15_bonus1 (same seed, same
+# steps, identical prices) filed 196 at 0.866. The double-link CANNOT close the
+# DONE channel on its own: is_root_opord_claim and is_done_admissible never read
+# subordinates. So squad here is the measurement — if squad_v17 reports normally,
+# the defect explains it; if it is mute again, something else is silencing the
+# commander and root_done_bonus=1.0 is back under question.
+#
+# After this lands: publish_baseline.py at N=100, then baseline.py --seal, then
+# results_table.py --write. The v1.19 members stay in place until their
+# replacements beat them; a MISS supersedes nothing without an ask.
+fireteam_v11          --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v22   --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_v17             --scenario squad           --total-steps 3000000 --seed 12
+squad_recon_v10       --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v13      --scenario squad_screen    --total-steps 2500000 --seed 12
+patrol_brique_v7      --scenario patrol_brique   --total-steps 3000000 --seed 12
+defend_brique_v16     --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v7            --scenario platoon         --total-steps 3000000 --seed 12
