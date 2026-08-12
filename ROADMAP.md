@@ -23,7 +23,13 @@ replacement against its incumbent → `baseline.py --seal` → `results_table.py
 --write` → `/boards`. Watch two things in particular: whether the #42 chart fix
 moves succession-heavy scenarios (platoon most of all), and whether
 `closed_on_root_report_rate` clears its new 0.5 floor everywhere — the gate is
-new, so its first fleet is also its first real test.
+new, so its first fleet is also its first real test. **Read that floor at BOTH
+checkpoints** (`(assurance, #48)`): on the v1.19 fleet two of eight members are
+mute at `ckpt_best` — `patrol_brique_v6` 0.000 and `platoon_v6` 0.021, both
+reporting normally at FINAL — and the publish path reads gates from
+`behavior_final.json` only, so nothing would have said so. Whether a mute `best`
+should be *refused* is an open owner decision, and the landing fleet is the
+measurement it is waiting on.
 
 **Job 1 of 8 (`fireteam_v10`) landed clean and took the digest with it — fixed,
 tooling only.** The run is PUBLISHABLE (final 95%, best-final gap 5 pts,
@@ -6511,6 +6517,20 @@ deliberately deferred (`docs/vision.md` §2c).
   policy, so every number above is unaffected, but a `best`-selected checkpoint
   would ship a mute commander, and `ckpt_best` is selected on success alone.
 
+  **⚑ RESCOPED 2026-08-12 (assurance, #48) — this is not a cost of `rdb=1.0`.**
+  The shipped price does the same thing: `squad_v10b` (rdb=**3.0**, seed 13, one
+  of the two arms this whole comparison is anchored on) files **0 root claims in
+  100 episodes at `ckpt_best` against 307 at FINAL** — closed-on-root **0.000 vs
+  0.784** on its own committed corpora. Mute-at-`best` occurs under 3.0, 0 and
+  1.0 alike, so as written this paragraph charged the challenger on an axis the
+  incumbent is not graded on. The like-for-like reading is unchanged: the two
+  prices are indistinguishable at `best` and separated only at FINAL, which is
+  where the project publishes. What survives — and it is a **checkpoint-selection**
+  property, not a pricing one — is the other clause: a `ckpt_best` chosen on
+  success alone can silently discard the completion report. See the
+  `(assurance, #48)` entry at the end of this log for the full ten-arm table,
+  what v1.20's lexicographic `best_save_gate` closes, and the one gap it does not.
+
 - **2026-08-12 — v1.20 OPENED: four `cohort/` changes landed together, the
   fleet is retraining.** The owner accepted all three recommendations, so the
   breaking window the last four entries were waiting for is open. Everything
@@ -6572,3 +6592,100 @@ deliberately deferred (`docs/vision.md` §2c).
   the only thing that differs from the shipping fleet is the tree. The v1.19
   members stay in `runs/BASELINE.json` until their replacements beat them;
   publishing a MISS over an incumbent is still an ask.
+
+- **2026-08-12 (assurance, #48)** — **Mute-at-`ckpt_best` was charged to the
+  challenger; the incumbent does it too, and the digest never printed the axis.**
+  The note in the four-seed entry above scoped near-mute `ckpt_best` as a thing
+  to watch about `root_done_bonus=1.0`. It is not: the SHIPPED price does it on
+  its own committed corpora. Every cell below was re-read here from
+  `behavior.json` / `behavior_final.json` (all N=100, seed 123, greedy=False),
+  not copied from the report:
+
+      arm                  seed  rdb   root claims       closed-on-root
+                                       best -> final     best -> final
+      squad_v10             12   3.0    170 ->  178      0.869 -> 0.837
+      squad_v10b            13   3.0      0 ->  307      0.000 -> 0.784
+      squad_v14_nobonus     12   0        43 ->  157     0.125 -> 0.908
+      squad_v14b_nobonus    13   0         2 ->    0     0.011 -> 0.000
+      squad_v14c_nobonus    14   0         0 ->    0     0.000 -> 0.000
+      squad_v14d_nobonus    15   0       131 ->  139     0.758 -> 0.919
+      squad_v15_bonus1      12   1.0     255 ->  196     0.726 -> 0.866
+      squad_v15b_bonus1     13   1.0       0 ->  169     0.000 -> 0.866
+      squad_v15c_bonus1     14   1.0       3 ->  273     0.010 -> 0.825
+      squad_v15d_bonus1     15   1.0       0 ->  175     0.000 -> 0.857
+
+  Below the 0.5 floor at `ckpt_best`: **1 of 2 at rdb=3.0, 3 of 4 at rdb=0, 3 of
+  4 at rdb=1.0** — the same failure at all three prices, and 1/2 against 3/4 is
+  no separation at all. So the arc's verdict is untouched (it was decided at
+  FINAL, where the two prices do separate) and the paragraph that scoped this to
+  the new price is rescoped in place rather than deleted.
+
+  **What did and did not reproduce, stated because the report is the evidence.**
+  The root-claim counts reproduce **exactly**, all ten arms, both checkpoints.
+  Two figures do not. (a) The report gives `squad_v10b` closed-on-root **0.043 →
+  0.818**; the committed corpora say **0.000 → 0.784** — same verdict, and 0.784
+  is the number `metrics.py` already cites as the weakest non-mute corpus on
+  record. 0.043 is also not derivable from a corpus with zero root claims: on a
+  completable root `endex_on_root_report` is set only by a truthful root-*mission*
+  COMPLETE, so the rate cannot be positive where the claim count is 0 — unless
+  the two counters are split by the #46 root-sender/root-mission distinction,
+  which is the one mechanism that could produce it and is not what the committed
+  aggregation does. (b) The aside that `squad_v8` filed "1 root claim at `best`
+  while succeeding 97 times" reads **0 claims** at 0.97 success in
+  `runs/squad_v8/behavior.json` — the point is if anything stronger.
+  **A caution for anyone reading the claim column as the gate**: on the defend
+  family they are different quantities. `fireteam_defend_v20` and
+  `defend_brique_v15` file **0** root DONE claims at both checkpoints and read
+  closed-on-root 1.000 and 0.990, because a continuous-posture root closes the
+  window with a SITREP and has MISSION COMPLETE masked shut.
+
+  **The actionable clause, against the current tree — v1.20 closes most of it.**
+  The report was measured against v1.19 (`cohort_tree = ef52c421`), where
+  `ckpt_best` really was selected on rolling success alone. On `HEAD` it is not:
+  `best_save_gate` is **lexicographic and thresholded**, not a tie-break — a
+  window is "reporting" iff `root_report_close_rolling >= ROOT_REPORT_CLOSE_FLOOR`
+  (0.5), a reporting window supersedes a mute best whatever the success numbers
+  say, and once the best is reporting a mute window may never take it back. That
+  is the report's option 1, and it was in the v1.20 bundle before the report
+  arrived. Two things it deliberately does not do: it is a **preference, not a
+  veto** (a run that never reports still writes a mute `ckpt_best` — a veto left
+  a 120k smoke run with none at all, which fails `baseline.py`'s "every
+  checkpoint loadable"), and it selects on the **rolling training window**, which
+  is a stochastic on-policy estimate and not the N=100 evaluation, so a `best`
+  chosen as reporting can still evaluate under the floor.
+
+  **The residual gap is exactly the report's option 2, and it is unimplemented.**
+  `publish_baseline.py` scores BOTH checkpoints and `evaluate.py` now writes the
+  `closed_on_root_report_rate` gate into both artifacts — but nothing on the
+  publish path reads the `best` one. `baseline.py::_run_facts` takes
+  `gates_failed` from `behavior_final.json` only (`behavior.json` is checked for
+  its episode count and nothing else); `results_table.py`'s gate cell is the
+  final artifact's; `fleet_status.py` sets `head = final or best`, so on any run
+  with a final evaluation the best artifact's gates are never surfaced. A mute
+  `ckpt_best` will therefore record its own failed gate and still pass the fleet
+  audit.
+
+  **Owner's call, with the cost measured rather than asserted.** On the v1.19
+  fleet as published, **two of eight members are mute at `ckpt_best`** —
+  `patrol_brique_v6` 0.000 (1 root claim / 100 eps) and `platoon_v6` 0.021 (10) —
+  while both report normally at FINAL (0.808 and 0.930). A publish gate that
+  refused a mute `best` would refuse those two today. **Recommendation: decide it
+  when the v1.20 campaign lands, not now.** That fleet is the first ever trained
+  under lexicographic selection, so it supplies the one datum the decision is
+  missing — whether preferring a reporting window at training time already lifts
+  `ckpt_best` over the floor fleet-wide. If it does, the refusal costs nothing
+  and is pure insurance; if it does not, the choice is a real one between
+  shipping mute peaks and blocking members, and it should be made with those
+  numbers in hand. Either way it changes what is allowed to ship, so nothing was
+  applied here.
+
+  **Shipped: the digest prints the axis now, at both checkpoints.** The reason
+  this scoping error was available to make is that `run_report.py` — "the ONLY
+  thing the big model reads" — printed `report_precision`, `report_recall` and
+  `false_complete_rate` but never `closed_on_root_report_rate`, the quantity the
+  v1.20 default was chosen on and the one it is now gated on. Same fix as
+  `human_death_rate` got for #22: one row in `_BEHAVIOR_ROWS`, so it prints under
+  both the `ckpt_best` and FINAL blocks and `--vs` carries it as a delta at both.
+  `tests/test_run_report_root_report.py` pins it against these corpora, including
+  the best/final split that started this. Tooling only, **no `cohort/` change** —
+  the v1.20 campaign's tree is untouched.
