@@ -2,21 +2,49 @@
 
 ## ⟳ Session handoff — resume here (2026-08-12, **v1.20 is open and retraining**)
 
-**State**: `multi-agent-dev`; tag still v1.18.0. **833 tests green, 0 skipped**
-(the three deferred patches all landed — there are no skips left), ruff clean,
-spaces **Discrete(228)/Box(220)** frozen.
+**State**: `multi-agent-dev`; tag still v1.18.0. **849 tests green, 0 skipped**,
+ruff clean, spaces **Discrete(228)/Box(220)** frozen.
 
-**⚑ `cohort/` HAS MOVED AND THE FLEET IS RETRAINING.** The owner accepted the
-squad-arc recommendations, so the v1.20 breaking window opened and everything
-held for it went in together: `root_done_bonus` **3.0 → 1.0**, the
-`_fill_vacancy` chart fix (**#42 — this moves action masks**), lexicographic
-`ckpt_best` selection, a `closed_on_root_report_rate` gate, plus #39 and #40.
-`scripts/campaigns/v1_20_fleet.jobs` is training all eight scenarios at the
-v1.19 step budgets and seed. **`runs/BASELINE.json` still names the v1.19
-members and `baseline.py` will FAIL against the new tree until the campaign
-lands and is re-sealed — that is expected, not a regression.** The v1.19
-members keep their place until their replacements beat them; publishing a MISS
-over an incumbent is still an ask.
+**⚑ THE FIRST v1.20 FLEET WAS VOID AND HAS BEEN RELAUNCHED — read this before
+reading anything else about v1.20.** `#42`'s `_fill_vacancy` change added a
+guarded `parent.subordinate_ids.append(successor.id)` and thereby made the
+pre-existing `successor.subordinate_ids.append(promoted.id)` redundant — but
+that older line had **no `not in` guard, so both fired** and the backfilled
+agent was linked into its new leader twice. It triggers on the commonest
+succession in the game: kill SL1 in `squad` and TL1's chart reads
+**`['TL2', 'RFN1', 'RFN1']`**. `living_subordinates` is what
+`observations.py` writes into the four subordinate slots and what
+`actions.py` indexes with `order_slot`, so the promoted root observed a
+phantom subordinate and carried **two distinct ORDER indices addressing one
+agent** — inside the very fix meant to make the promoted branch observable and
+orderable. Found by the `#49` investigation, fixed in `da24b42`.
+
+`scripts/campaigns/v1_20_fleet.jobs` was **stopped after four members** and is
+superseded by **`scripts/campaigns/v1_20b_fleet.jobs`**, now training all eight
+against the corrected tree at the same budgets and seed 12. **`fireteam_v10`,
+`fireteam_defend_v21`, `squad_v16`, `squad_recon_v9` and the killed partial
+`squad_screen_v12` trained against the defective tree and MAY NOT BECOME
+BASELINE MEMBERS.** They are kept, not deleted — they are the only corpus
+measuring what the double-link cost, and `squad_v16`'s finding below rests on
+one of them.
+
+**`runs/BASELINE.json` still names the v1.19 members and `baseline.py` will
+FAIL against the new tree until the new campaign lands and is re-sealed — that
+is expected, not a regression.** The v1.19 members keep their place until their
+replacements beat them; publishing a MISS over an incumbent is still an ask.
+
+**⚠ THE OPEN QUESTION THE NEW FLEET IS THE MEASUREMENT FOR: `squad_v16` trained
+to a mute commander.** 0 root claims in **1,865 admissible root steps**,
+`closed_on_root_report_rate` **0.000**, gate **FAIL** at both checkpoints —
+while success was excellent (1.00 ± 0.00 at FINAL, 0 root deaths). Its matched
+arm `squad_v15_bonus1` — same scenario, same seed 12, same budget, and the
+digest's own economics block confirms *prices identical* — filed **196 root
+claims at 0.866** on the v1.19 tree. **The double-link cannot be the whole
+story**: `is_root_opord_claim` and `is_done_admissible` never read
+subordinates, which is exactly consistent with 1,865 admissible steps. So if
+`squad_v17` reports normally the defect explains it; **if `squad_v17` is mute
+too, something else is silencing the commander and `root_done_bonus=1.0` is
+back under question.** Do not read the new squad member as a routine landing.
 
 **When the campaign lands**: `publish_baseline.py` at N=100 → compare each
 replacement against its incumbent → `baseline.py --seal` → `results_table.py
@@ -31,8 +59,9 @@ reporting normally at FINAL — and the publish path reads gates from
 should be *refused* is an open owner decision, and the landing fleet is the
 measurement it is waiting on.
 
-**Job 1 of 8 (`fireteam_v10`) landed clean and took the digest with it — fixed,
-tooling only.** The run is PUBLISHABLE (final 95%, best-final gap 5 pts,
+**The first fleet's job 1 (`fireteam_v10`) took the digest with it — fixed,
+tooling only.** (The run itself is void per the ⚑ above.) It was PUBLISHABLE
+(final 95%, best-final gap 5 pts,
 ckpt_best 1.00 ± 0.00 at N=20), but `run_report.py` raised `ClaimOrdinalError`
 on its own artifact: ep19 carries 4 root claims, 2 rejected and **2
 successions**, with `endex_on_root_report` still 1. That is the limit
