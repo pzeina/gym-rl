@@ -167,6 +167,43 @@ def test_rolling_best_gate_requires_full_window_turnover():
     assert best_save_gate(episodes_seen, window.maxlen, rolling(), best)
 
 
+def test_rolling_best_gate_refuses_a_mute_commander(tmp_path):
+    """v1.20: winning is not sufficient to be a run's ``ckpt_best``.
+
+    Measured across six squad arms, ``ckpt_best`` sat at a closed-on-root-report
+    of 0.00-0.01 while the FINAL policy of the same run reported normally
+    (0.82-0.92): the completion report is learned LATE, so selecting on rolling
+    success alone reliably picks the window before the commander starts
+    reporting. Published numbers were never affected — the project quotes the
+    FINAL policy — but ``ckpt_best`` is what ``cohort.play`` and every
+    spot-check load by default.
+    """
+    from cohort.training.train import best_save_gate
+
+    # Selection is lexicographic, not a veto. A mute run still records a best —
+    # a veto leaves runs with NO ckpt_best, which fails baseline.py's
+    # "every checkpoint loadable" (verified on a 120k-step smoke run).
+    assert best_save_gate(100, 100, 1.0, -1.0, 0.0, False)
+    assert best_save_gate(100, 100, 1.0, -1.0, None, False)
+
+    # The inversion this exists to prevent: a mute 0.95 recorded early must not
+    # lock out the reporting 0.90 that follows it. Reporting always supersedes.
+    assert best_save_gate(100, 100, 0.90, 0.95, 0.82, best_was_reporting=False)
+
+    # …and once the best is reporting, a mute window may never take it back,
+    # however well it scores.
+    assert not best_save_gate(100, 100, 1.0, 0.90, 0.0, best_was_reporting=True)
+    assert not best_save_gate(100, 100, 1.0, 0.90, None, best_was_reporting=True)
+
+    # among windows of the same kind, higher rolling success still wins
+    assert best_save_gate(100, 100, 0.95, 0.90, 0.82, best_was_reporting=True)
+    assert not best_save_gate(100, 100, 0.85, 0.90, 0.82, best_was_reporting=True)
+
+    # and it composes with D4 rather than replacing it: a reporting commander
+    # still may not save before the window has turned over
+    assert not best_save_gate(99, 100, 1.0, -1.0, 0.9)
+
+
 def test_trainer_counts_episodes_for_the_best_gate(tmp_path):
     """The Trainer wires the D4 gate: episodes_seen tracks completed episodes
     and no ckpt_best exists while the window has not fully turned over."""

@@ -160,21 +160,31 @@ def test_squad_v10s_pool_describes_neither_ordinal_and_inverts_across_the_checkp
 def test_a_pooled_precision_cannot_price_the_rule_the_split_can():
     """The EV arithmetic, with ``done_true`` in it — the term the entries dropped.
 
-    ``rewards.py`` states both break-evens itself: 1/9 with the bonus on the
-    table, 1/3 once the slot is spent. Anything that reproduces 0.143 or 0.400
-    has dropped ``done_true``, and at the pooled rate that error flips the sign
-    of the whole pre-registration.
+    ``rewards.py`` states both break-evens itself. **At the v1.20 default
+    (``root_done_bonus`` 3.0 -> 1.0) the first-claim break-even moves 1/9 ->
+    1/5**; the spent-slot one is 1/3 either way, because the bonus is not in it.
+    That move is the point of the v1.20 change: it is what un-funds the
+    later-claim farming while leaving the opening report +EV.
+
+    Dropping ``done_true`` used to show up as 0.143/0.400. At a bonus of 1.0 it
+    shows up as **1/3 for the first claim** — numerically the spent-slot value —
+    so the two assertions below only separate a correct derivation from that
+    error when read together: a dropped-``done_true`` implementation makes both
+    lines read 1/3, and the first line's 1/5 is what refuses it.
     """
     cfg = RewardConfig()
-    assert -cfg.done_false / (cfg.done_true + cfg.root_done_bonus - cfg.done_false) == pytest.approx(1 / 9)
+    assert -cfg.done_false / (cfg.done_true + cfg.root_done_bonus - cfg.done_false) == pytest.approx(1 / 5)
     assert -cfg.done_false / (cfg.done_true - cfg.done_false) == pytest.approx(1 / 3)
 
     pooled, later = 77 / 178, 27 / 86
 
-    # a later claim under the first-claim rule: the bonus is gone, done_true is not
+    # a later claim under the first-claim rule: the bonus is gone, done_true is
+    # not — so neither of these moved with the v1.20 default
     assert _claim_ev(pooled, cfg, bonus=False) == pytest.approx(+0.139, abs=0.001)
     assert _claim_ev(later, cfg, bonus=False) == pytest.approx(-0.039, abs=0.001)
     assert pooled > 1 / 3 > later, "the pool and the ordinal fall on opposite sides of break-even"
 
-    # and the honest first report stays worth filing on this corpus, burn included
-    assert _claim_ev(50 / 92, cfg, bonus=True, burn=27 / 42) == pytest.approx(+1.055, abs=0.001)
+    # and the honest first report stays worth filing on this corpus, burn
+    # included: +1.055 at a bonus of 3.0, +0.555 at 1.0 — smaller, still open,
+    # which is the property the value was chosen for
+    assert _claim_ev(50 / 92, cfg, bonus=True, burn=27 / 42) == pytest.approx(+0.555, abs=0.001)

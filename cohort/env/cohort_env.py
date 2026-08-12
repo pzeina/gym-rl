@@ -197,6 +197,22 @@ class CohortEnv(ParallelEnv):
         return self._episode_outcome
 
     @property
+    def root_close_step(self) -> int | None:
+        """Step at which the root's own report closed the operation, or None.
+
+        Set by a truthful root-mission MISSION COMPLETE (``_report_done``) or,
+        on a continuous-posture root where the claim is masked shut, by the
+        SITREP that reported the end state (the terminal check). None means the
+        grace window simply expired — the operation ended because the world
+        said so, not because anyone reported it.
+
+        Public since v1.20 so training can watch it: ``ckpt_best`` is selected
+        on rolling success, and a policy that wins without ever reporting must
+        not be selected as a run's best work (``best_save_gate``).
+        """
+        return self._root_close_step
+
+    @property
     def transmissions_last_step(self) -> int:
         """Learned transmissions actually emitted during the last ``step()``
         (CONTACT / SITREP / DONE / agent-issued orders; auto-traffic and

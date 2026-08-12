@@ -162,14 +162,6 @@ def test_succession_formatters():
     )
 
 
-@pytest.mark.skip(reason="needs cohort/core/language.py, frozen while the "
-                         "baseline retrain campaign is in flight — train.py imports "
-                         "the tree that exists when a job starts, so an edit under "
-                         "cohort/ today would train the later fleet members against a "
-                         "different environment than the earlier ones, and it would "
-                         "date every best/final pair in the fleet as mixed-era under "
-                         "publish_audit.era_gap. Patch is written out in ROADMAP.md's "
-                         "2026-08-11 #40 entry; unskip when it lands.")
 def test_a_succession_message_says_which_act_it_performs():
     """The durable half of #40: two acts share ``MessageKind.TAKING_COMMAND``.
 

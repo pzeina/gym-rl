@@ -1,11 +1,29 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-12, the squad regression is solved)
+## ⟳ Session handoff — resume here (2026-08-12, **v1.20 is open and retraining**)
 
-**State**: `multi-agent-dev`; tag still v1.18.0. **827 tests green, 3 skipped**,
-ruff clean, spaces **Discrete(228)/Box(220)** frozen. `baseline.py` green, seal
-`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **Nothing training** —
-the squad pricing arc is finished at four seeds per arm.
+**State**: `multi-agent-dev`; tag still v1.18.0. **833 tests green, 0 skipped**
+(the three deferred patches all landed — there are no skips left), ruff clean,
+spaces **Discrete(228)/Box(220)** frozen.
+
+**⚑ `cohort/` HAS MOVED AND THE FLEET IS RETRAINING.** The owner accepted the
+squad-arc recommendations, so the v1.20 breaking window opened and everything
+held for it went in together: `root_done_bonus` **3.0 → 1.0**, the
+`_fill_vacancy` chart fix (**#42 — this moves action masks**), lexicographic
+`ckpt_best` selection, a `closed_on_root_report_rate` gate, plus #39 and #40.
+`scripts/campaigns/v1_20_fleet.jobs` is training all eight scenarios at the
+v1.19 step budgets and seed. **`runs/BASELINE.json` still names the v1.19
+members and `baseline.py` will FAIL against the new tree until the campaign
+lands and is re-sealed — that is expected, not a regression.** The v1.19
+members keep their place until their replacements beat them; publishing a MISS
+over an incumbent is still an ask.
+
+**When the campaign lands**: `publish_baseline.py` at N=100 → compare each
+replacement against its incumbent → `baseline.py --seal` → `results_table.py
+--write` → `/boards`. Watch two things in particular: whether the #42 chart fix
+moves succession-heavy scenarios (platoon most of all), and whether
+`closed_on_root_report_rate` clears its new 0.5 floor everywhere — the gate is
+new, so its first fleet is also its first real test.
 
 **⚑ READ THIS FIRST — the squad pricing arc reversed twice today, and it now
 has an answer and a recommendation.** Four findings, in the order they must be
@@ -55,25 +73,21 @@ read:
    0.185 vs 0.206, p = 0.57, once all four seeds are pooled against both
    shipped seeds rather than two against `squad_v10` alone.
 
-**⇒ THE RECOMMENDATION, awaiting the owner: set
-`RewardConfig.root_done_bonus = 1.0`.** It is a reward default, so it
-invalidates `runs/BASELINE.json` and retrains the fleet — pair it with the
-`_fill_vacancy` patch (⚑ below) in the **v1.20 window**, since the two cost one
-campaign together and two apart. Nothing has been applied: `squad_v10` is still
-the member, the seal is untouched, every v13/v14/v15 arm exists only under
-`--reward`. **Both arms are now at four seeds** and the confirmation held: 0/4
-mute at 1.0, including the paired flip on seed 14 (0 root claims at `rdb=0`,
-0.825 at 1.0). Full numbers — and three corrections to earlier two-seed claims
-— in the five 2026-08-12 progress entries at the bottom.
+**⇒ ACCEPTED AND APPLIED (2026-08-12): `RewardConfig.root_done_bonus = 1.0`,
+bundled with `_fill_vacancy` into the v1.20 window.** Both arms reached four
+seeds and the confirmation held: 0/4 mute at 1.0, including the paired flip on
+seed 14 (0 root claims at `rdb=0`, 0.825 at 1.0). Full numbers — and three
+corrections to earlier two-seed claims — in the six 2026-08-12 progress entries
+at the bottom.
 
-**⚠ A gate hole found on the way, independent of how the price lands**:
+**⚠ A gate hole found on the way — ACCEPTED AND CLOSED in v1.20**:
 `successes_announced_rate` reads **1.00 for a commander that never claims** —
-it counts the ENDEX, not who claimed it, and has now passed a mute policy
-twice (v11, v14b). `closed_on_root_report_rate` already measures the real
-thing and is committed on every corpus. Making it a gate term is a decision
-about what may ship, so it is the owner's — noted with its measurement. Either way the *decision* is not pre-authorised; the arms are.
+it counts the ENDEX, not who claimed it, and passed a mute policy three times
+(v11, v14b, v14c). `closed_on_root_report_rate` is now a regression gate at a
+floor of 0.5.
 
-**What shipped.** `runs/BASELINE.json` names one run per doctrine scenario and
+**What shipped (v1.19 — still the published fleet until v1.20 lands).**
+`runs/BASELINE.json` names one run per doctrine scenario and
 `scripts/baseline.py` passes on it: **one `cohort/` tree (5f848fb6), no
 `--reward` overrides, every headline the FINAL policy at N=100, every gate
 green, every give-back under the bar, every checkpoint loadable, every win
@@ -6474,3 +6488,65 @@ deliberately deferred (`docs/vision.md` §2c).
   claiming behaviour arrives late in training. The project publishes the FINAL
   policy, so every number above is unaffected, but a `best`-selected checkpoint
   would ship a mute commander, and `ckpt_best` is selected on success alone.
+
+- **2026-08-12 — v1.20 OPENED: four `cohort/` changes landed together, the
+  fleet is retraining.** The owner accepted all three recommendations, so the
+  breaking window the last four entries were waiting for is open. Everything
+  that needed it went in at once, because each change alone invalidates
+  `runs/BASELINE.json` and a campaign freezes `cohort/`:
+
+  1. **`RewardConfig.root_done_bonus` 3.0 → 1.0.** The named cause of the squad
+     regression, on the evidence in the entries above. The `rewards.py` block
+     now carries the four-seed table, the paired seed-14 flip, and why 1.0
+     rather than 0 — an accepted root claim still pays `done_true` 1.0 + 1.0 =
+     2.0 against a rejected −0.5, so the first claim breaks even at p = 0.20 and
+     the channel stays open, while the +0.903 later-claim farming that 3.0
+     funded is gone. The v1.16 note that "one knob controls both failure modes
+     and cannot be set to avoid both" is annotated, not deleted: it is right
+     about `done_true` and was wrongly generalised to the whole pricing axis.
+  2. **`_fill_vacancy` links the successor into its new superior's chart
+     (#42).** The one-statement patch that has been written and unapplied since
+     2026-08-11. **It moves action masks** — the promoted branch becomes
+     orderable, observable and devolvable-to — so it changes every rollout,
+     which is exactly why it needed this window. The exhaustive sweep goes from
+     **1,928 of 5,040** death orderings reaching a state with nobody in command
+     to **0**, and `test_a_promoted_leader_is_on_the_chart_of_the_superior_it_
+     reports_to` is unskipped and green.
+  3. **`ckpt_best` is no longer selected on success alone.** `best_save_gate`
+     is now lexicographic: a reporting window always supersedes a mute best
+     whatever the success numbers say, a mute window may never take a reporting
+     best back, and among windows of the same kind higher rolling success wins.
+     `CohortEnv.root_close_step` is public so training can watch it, and
+     `root_report_close_rolling` is a new `metrics.csv` column.
+
+     **It is deliberately NOT a veto, and that was found by testing rather than
+     reasoning.** The first implementation refused every mute save outright; a
+     120k-step smoke run then produced **no `ckpt_best` at all**, which fails
+     `baseline.py`'s "every checkpoint loadable" and makes `publish_baseline`
+     report a missing artifact. A veto also creates its own inversion: a mute
+     0.95 recorded early would lock out the reporting 0.90 that follows it.
+     Training prefers; the *gate* refuses.
+  4. **`closed_on_root_report_rate` is a regression gate**, floor 0.5, and
+     unconditional — muteness is a third axis, not a collapse shape, so a run
+     that wins everything and never reports must be able to fail on it alone.
+     0.5 sits in a band nothing has ever occupied: every non-mute corpus on
+     record is ≥ 0.784, every mute one ≤ 0.01. It exists because
+     `successes_announced_rate` counts the ENDEX and not who claimed it, and so
+     read **1.00 for three mute policies in one day** (`squad_v11`,
+     `squad_v14b`, `squad_v14c` — zero root claims across 100 episodes each,
+     passing every gate on the board at 0.93–0.98 success).
+
+  **Also landed, because they were held for the same window and each changes
+  the tree hash:** #40 (`parse_succession`, the succession formatters' inverse,
+  so the four hand-written matchers for "did command actually pass" can collapse
+  to one) and #39 (`eval_commit` in every evaluation artifact, via a new
+  `cohort/training/provenance.py` that `train.py` and `evaluate.py` now share;
+  `publish_audit.evaluation_era` prefers it and keeps the git fallback for the
+  artifacts already on disk). Both tests unskipped. **The suite has no skips
+  left: 827 → 833 passed, 0 skipped**, ruff clean.
+
+  **Campaign launched**: `scripts/campaigns/v1_20_fleet.jobs` — all eight
+  scenarios, same step budgets and same seed as their v1.19 counterparts, so
+  the only thing that differs from the shipping fleet is the tree. The v1.19
+  members stay in `runs/BASELINE.json` until their replacements beat them;
+  publishing a MISS over an incumbent is still an ask.

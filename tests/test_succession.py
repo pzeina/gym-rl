@@ -3,8 +3,6 @@
 import itertools
 import re
 
-import pytest
-
 from cohort.core.missions import Mission, MissionType
 from cohort.core.ranks import Rank
 from cohort.core.units import Roster, Soldier
@@ -49,15 +47,6 @@ def test_leader_death_promotes_senior_subordinate_recursively():
     assert len(events) == 2
 
 
-@pytest.mark.skip(
-    reason="refs #42 — the fix is one statement in cohort/core/units.py::_fill_vacancy and "
-    "cohort/ is FROZEN until the baseline campaign lands (squad_screen_v11 in flight): "
-    "train.py imports the tree that exists when a job starts, so an edit now would train "
-    "the last fleet member against a different environment than the other seven and destroy "
-    "the baseline's provenance. It also moves action masks, so it is a v-cycle change, not a "
-    "patch. Diagnosis, measurements and the exact patch: ROADMAP, '2026-08-11 (assurance, "
-    "#42)'. Unskip when it lands."
-)
 def test_a_promoted_leader_is_on_the_chart_of_the_superior_it_reports_to():
     """Succession must not orphan the branch it promotes.
 

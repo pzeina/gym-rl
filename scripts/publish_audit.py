@@ -95,14 +95,24 @@ def evaluation_era(path: Path) -> str | None:
     ``behavior.json`` records the checkpoint (``checkpoint_sha256``, refs #28),
     the seed, N and the sampling mode — everything about the measurement except
     *when* it was taken, which is the one field that decides whether two
-    evaluations can be differenced at all. Adding it means changing the writer
-    under ``cohort/``; until that lands, git already knows when each artifact
-    entered the repository, and that bounds the era from above: an artifact
-    cannot have been written after the commit that committed it.
+    evaluations can be differenced at all.
+
+    **Since v1.20 the artifact says it itself**: ``evaluate.py`` stamps
+    ``eval_commit`` with HEAD at scoring time, which is the exact quantity —
+    git's answer only ever bounded it from above, and only while the file
+    stayed committed and unmoved. The git fallback is kept, and will be needed
+    for as long as the artifacts written before v1.20 are on disk, none of
+    which will ever carry the field.
 
     Returns a sha, ``WORKTREE`` for an artifact that is not committed yet, or
     None when git could not answer — which is *unknown*, not agreement.
     """
+    try:
+        stamped = json.loads(path.read_text()).get("eval_commit")
+    except (OSError, json.JSONDecodeError):
+        stamped = None
+    if stamped:
+        return str(stamped)
     out = _git(["log", "-1", "--format=%H", "--", str(path)])
     if out is None:
         return None

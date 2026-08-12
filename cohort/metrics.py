@@ -173,6 +173,36 @@ TIMEOUT_RATE_CEILING: float = 0.5
 #: the point — the two shapes want opposite fixes.
 SUCCESS_RATE_FLOOR: float = 0.5
 
+#: Command-report gate (v1.20, owner's decision 2026-08-12): a floor on
+#: ``closed_on_root_report_rate`` — the share of won episodes whose ENDEX came
+#: from the commander's own truthful MISSION COMPLETE.
+#:
+#: It exists because ``successes_announced_rate`` does NOT measure this and was
+#: read as though it did. That metric counts the ENDEX, not who claimed it, so
+#: it reads a flat **1.00 for a commander that never transmits at all** — and
+#: it did, three times in one day: ``squad_v11``, ``squad_v14b_nobonus`` and
+#: ``squad_v14c_nobonus`` each filed ZERO root claims across 100 episodes
+#: (0 in ~11k admissible agent-steps) and passed every gate on the board while
+#: scoring 0.96-0.98. A chain-of-command project cannot call that a win: the
+#: operation ended because the world said so, not because anyone reported it.
+#:
+#: 0.5 sits in a wide empty band. Every non-mute corpus on record is at or
+#: above 0.784 (``squad_v10b``, the weakest); every mute one is at 0.000-0.01.
+#: Nothing has ever been measured between 0.01 and 0.78, so the floor is not
+#: separating close cases — it is refusing a regime. Deliberately NOT set near
+#: the fleet's realised 0.81-1.00, because this must catch silence, not police
+#: the difference between a good reporter and a very good one.
+#:
+#: Unlike SUCCESS_RATE_FLOOR this is not conditioned on ``timeout_rate``: it is
+#: a third, independent axis rather than a collapse shape. A run can win
+#: everything and still be mute — that is exactly the case it is here to fail —
+#: so it must be able to fail alone, and on a run that also stalled it simply
+#: reports a second true thing.
+#:
+#: ``None`` (no ENDEX was ever sent, so there is no denominator) stays ``None``
+#: through ``_gate``: unmeasured is not passed.
+ROOT_REPORT_CLOSE_FLOOR: float = 0.5
+
 #: SITREP freshness interval for a trace recorded before the scenario's own
 #: was written into it (refs issue #35). Read off ``RewardConfig`` rather than
 #: restated, because it is the live price: a report at least this many steps
@@ -1495,6 +1525,16 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     # leaves the shape unknown, so the gate is skipped rather than guessed.
     if timeout_rate is not None and timeout_rate <= TIMEOUT_RATE_CEILING:
         gates.append(_gate("success_rate", agg.get("success_rate"), SUCCESS_RATE_FLOOR, "min"))
+    # refs v1.20: unconditional, because muteness is not a collapse shape — a
+    # run can pass every other gate and still never have reported anything.
+    gates.append(
+        _gate(
+            "closed_on_root_report_rate",
+            agg.get("closed_on_root_report_rate"),
+            ROOT_REPORT_CLOSE_FLOOR,
+            "min",
+        )
+    )
     if agg.get("root_mission") != MissionType.DEFEND.name:
         return gates
     return [

@@ -285,10 +285,40 @@ class RewardConfig:
     # Raising this above ~0.41 re-creates the stall basin on fireteam_defend
     # and test_defend_terminal_scaling_preserves_dominance will say so.
     defend_survivor_scale: float = 0.35
-    root_done_bonus: float = 3.0      # the root transmitted a truthful root-mission
+    root_done_bonus: float = 1.0      # the root transmitted a truthful root-mission
     #                                   DONE inside the completion-report grace window
     #                                   (one-shot, paid with the terminal reward — not
     #                                   farmable per-step, so terminal dominance holds)
+    #
+    # ⚑ v1.20 (owner's decision, 2026-08-12): 3.0 -> 1.0. THE SQUAD REGRESSION
+    # WAS THIS PRICE. `squad_v10`/`v10b` came in at 0.92/0.88 against the
+    # previous era's 0.98/0.97 (pooled 180/200 vs 195/200, p = 0.0031) and three
+    # cycles chased the claim spam for it — `done_false=-2.0` (v11), the
+    # first-claim flag (v12/v12b), a zero-price probe (v13/v13b) — before the
+    # single-variable arm found the cause. At four seeds each, FINAL policy,
+    # N=100:
+    #
+    #     rdb=3.0 (shipped)  180/200 = 0.900              mute 0/2
+    #     rdb=0              388/400 = 0.970   p=0.00074  mute 2/4
+    #     rdb=1.0            389/400 = 0.9725  p=0.00030  mute 0/4
+    #     previous era       195/200 = 0.975
+    #
+    # 1.0 is a null against the previous era (p = 1.000) and indistinguishable
+    # from 0 on success (p = 1.000). WHAT SEPARATES THEM IS THE REPORT: at 0,
+    # two of four commanders go absolutely mute — 0 root claims in ~11k
+    # admissible steps — while all four at 1.0 close 0.825-0.866 of their wins
+    # on their own report. The decisive evidence is paired: seed 14 files ZERO
+    # root claims at 0 and 0.825 at 1.0, same seed, same tree, one price apart.
+    # (0-of-4 vs 2-of-4 is only p = 0.43 on counts; the paired flip and the
+    # absoluteness of the zeros are what carry it. Said plainly because the
+    # two-seed reading of this overstated two other axes — see ROADMAP.)
+    #
+    # WHY 1.0 AND NOT LESS: the claim must stay worth filing. At 1.0 an accepted
+    # root claim pays done_true 1.0 + 1.0 = 2.0 against a rejected -0.5, so the
+    # first claim breaks even at p = 0.20 — the channel stays open — while the
+    # +0.903 later-claim farming that 3.0 funded (break-even 0.111) is gone.
+    # This is the knob the v1.16 note below called impossible to set for both
+    # failure modes at once; it was, from `done_true`. From the bonus it is not.
 
     # v1.15: the bonus is on the table for the episode's FIRST root claim only,
     # and **the first claim consumes it whether or not it is accepted** — a
@@ -323,6 +353,13 @@ class RewardConfig:
     # p = 0.20 while measured later-claim acceptance is 0.279, so probing returns
     # to +0.198/claim. One knob controls both failure modes, in opposite
     # directions; it cannot be set to avoid both.
+    #
+    # ⚑ Superseded in part by v1.20: that conclusion is correct about
+    # `done_true` and was wrongly generalised to "the pricing axis". Moving the
+    # BONUS instead does separate the two failure modes — 3.0 -> 1.0 keeps the
+    # first claim +EV at p = 0.20 while removing the later-claim farming, and
+    # measured across four seeds it neither spams nor mutes. The numbers are in
+    # the `root_done_bonus` block above.
     #
     # WHAT IT PRICES. v1.14 reopened MISSION COMPLETE to horizon-DEFEND roots
     # and defend_brique_v11/ckpt_latest immediately filed 321 root claims in 100
