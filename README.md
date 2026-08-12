@@ -61,18 +61,26 @@ vacancy the successor leaves behind is filled the same way, recursively, and eac
 promotion is announced on the net (`I AM ASSUMING COMMAND`). A rifleman can end up
 commanding a squad — and the action mask expands with the acting rank.
 
-> ⚠️ **Scope, honestly (#42).** Devolution is complete only for a slot's *first*
-> succession. A promoted leader takes its predecessor's superior, but that superior's
-> own subordinate list is never re-pointed at it — so the promoted branch drops off
-> the commander's chart: unorderable, absent from the commander's observation, and
-> when the commander falls in turn, never devolved to and never announced. On the
-> **squad** chart 4,080 of the 5,040 possible orders of death leave a living agent off
-> its commander's list and 1,928 reach a state with nobody in command at all; the
-> **fireteam** chart is exempt (0/24 — its successors report to HQ, which has no list).
-> Realised on the shipped fleet at sampled actions, 660 episodes: 44 with a broken
-> chart, 1 with no commander. Diagnosis, measurements and the one-statement patch:
-> ROADMAP, `2026-08-11 (assurance, #42)` — deferred behind the baseline-campaign
-> freeze, because it moves action masks and therefore every rollout.
+> ⚠️ **Scope, honestly (#42, #49).** Devolution used to be complete only for a slot's
+> *first* succession: a promoted leader took its predecessor's superior, but that
+> superior's own subordinate list was never re-pointed at it, so the promoted branch
+> dropped off the commander's chart — unorderable, absent from the commander's
+> observation, and never devolved to when the commander fell in turn. On the **squad**
+> chart 4,080 of the 5,040 possible orders of death left a living agent off its
+> commander's list and 1,928 reached a state with nobody in command at all. **#42
+> landed in v1.20** (it moves action masks, so it waited for a breaking window): both
+> counts are now 0/5,040.
+>
+> What remains is an *ordering* effect, not a chart bug, and it is announced like
+> everything else. When two leaders on the same limb fall in the **same tick**, the
+> casualty loop devolves them one at a time against alive-flags that already count
+> both deaths, so the lower leader's successor inherits a superior who is already
+> gone: 30 of the 252 same-step death batches on the squad chart leave a live element
+> under a dead commander, 2 leave no commander at all (pre-#42: 58 and 6). No
+> commander ever changes without a broadcast — that is checked structurally — but a
+> transcript-only replay of those broadcasts can land on a chart that differs from
+> state in *either* direction. Full answer, both cases, and what a net-only monitor
+> should do about them: [`docs/succession-on-the-net.md`](docs/succession-on-the-net.md).
 
 **Humans in the ranks**: by default the root commander is a *human* embodied in the sim
 (`ScenarioSpec.root_human`) — marked with a gold ring in every view, observable to
