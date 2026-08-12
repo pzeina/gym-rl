@@ -249,21 +249,59 @@ def test_committed_evaluations_carry_at_most_one_confirmed_root_claim_per_episod
     writing, ``defend_brique_v13``/final among them (100 episodes, 321 root
     claims, 94 confirmed). This keeps it holding — and would fail loudly on any
     future evaluation whose root attribution drops or duplicates a claim.
+
+    **Scoped to episodes with no succession, because that is exactly as far as
+    the proxy is exact** (found by ``squad_v14d_nobonus``, 2026-08-12, the two
+    episodes that made this fail). The invariant is about the root's *OPORD*
+    claim: ``cohort_env._report_done`` closes the operation only when
+    ``is_root_opord_claim`` holds. But ``metrics._done_traffic`` counts
+    ``done_reports_root`` as *any* DONE whose sender held the root at that step
+    — deliberately, per its own comment. The two agree while the root is one
+    soldier for the whole episode, and diverge the moment a successor is
+    promoted: the promoted commander still carries its personal SEIZE/ADVANCE
+    mission and may truthfully complete **that**, which is confirmed by
+    ``is_complete`` and counted here, while the operation correctly runs on.
+    Both failing episodes were succession episodes with a dead commander
+    (``squad_v14d_nobonus``: 3 confirmed over 2 successions, and 2 over 1).
+
+    So this is a limit of the recorded quantity, not of the invariant, and the
+    env-level form above — which drives a real episode and reads the actual
+    close — is unaffected and still exact. The honest fix in the corpus would
+    be a root-*mission* claim counter; until one exists, excluding succession
+    episodes keeps the guard strict where it is sound rather than loosening the
+    bound everywhere. The exclusions are asserted to stay rare, so a regression
+    that starts orphaning roots cannot hide inside the exemption.
     """
     corpora = list(_behavior_corpora())
     if not corpora:
         pytest.skip("no committed evaluation in this working copy carries the root split")
 
+    def _succeeded_mid_episode(ep):
+        return bool(ep.get("succession_events"))
+
     violations = [
         (str(path.relative_to(ROOT)), i, ep["done_reports_root"], ep["done_rejected_root"])
         for path, episodes in corpora
         for i, ep in enumerate(episodes)
-        if ep["done_reports_root"] - ep["done_rejected_root"] not in (0, 1)
+        if not _succeeded_mid_episode(ep)
+        and ep["done_reports_root"] - ep["done_rejected_root"] not in (0, 1)
     ]
     assert not violations, f"episodes with a second confirmed root claim: {violations[:10]}"
 
-    checked = sum(len(episodes) for _, episodes in corpora)
+    checked = sum(
+        1 for _, episodes in corpora for ep in episodes if not _succeeded_mid_episode(ep)
+    )
     assert checked >= 100, f"only {checked} episodes checked — the corpora went missing"
+
+    # The exemption must stay an exemption. If succession episodes ever became
+    # the majority of the corpus, this test would be asserting almost nothing —
+    # and a chart-orphaning regression (the `_fill_vacancy` defect, ⚑ in
+    # ROADMAP) is precisely a change that would drive successions up.
+    total = sum(len(episodes) for _, episodes in corpora)
+    assert checked >= total // 2, (
+        f"only {checked} of {total} episodes are succession-free — the proxy's "
+        "sound domain has shrunk to where this guard no longer says much"
+    )
 
 
 def test_the_anchor_corpus_still_shows_the_split_the_early_close_reading_rests_on():

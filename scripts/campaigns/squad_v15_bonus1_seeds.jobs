@@ -1,0 +1,11 @@
+# Bring root_done_bonus=1.0 to the same seed depth as rdb=0 before the default
+# moves. rdb=0 is now measured at four seeds and the mute commander is 2 of 4
+# (seeds 13 and 14 file zero root claims; 12 and 15 claim healthily) -- a coin
+# flip, with success spread 0.93-0.99. rdb=1.0 is 2 for 2 healthy with
+# closed-on-root-report 0.866/0.866 and success 0.97/0.97, but on two seeds.
+#
+# Applying the change retrains the entire fleet, so the recommended value
+# should not rest on half the evidence of the value it is being recommended
+# over. Seeds 14 and 15 match rdb=0's set exactly.
+squad_v15c_bonus1   --scenario squad --total-steps 3000000 --seed 14 --reward root_done_bonus=1.0
+squad_v15d_bonus1   --scenario squad --total-steps 3000000 --seed 15 --reward root_done_bonus=1.0
