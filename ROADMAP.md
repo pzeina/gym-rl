@@ -4,9 +4,8 @@
 
 **State**: `multi-agent-dev`; tag still v1.18.0. **827 tests green, 3 skipped**,
 ruff clean, spaces **Discrete(228)/Box(220)** frozen. `baseline.py` green, seal
-`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **`squad_v15c/v15d_bonus1`
-training** (~1.8h) — confirmation seeds 14/15 at the recommended `rdb=1.0`;
-`/train-status` to check.
+`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **Nothing training** —
+the squad pricing arc is finished at four seeds per arm.
 
 **⚑ READ THIS FIRST — the squad pricing arc reversed twice today, and it now
 has an answer and a recommendation.** Four findings, in the order they must be
@@ -29,16 +28,32 @@ read:
    and significant at once.
 
 4. **And the value to set it to is `1.0`. The two candidates tie on success;
-   the reporting decides.** At four seeds `rdb=0` pools to 388/400 = 0.970 and
-   `rdb=1.0` to 194/200 = 0.970 — identical, both a null against the previous
-   era. But **`rdb=0` leaves 2 of 4 commanders completely mute** (seeds 13 and
-   14 file zero root claims; seed 14 also drops to 0.93 with 7 timeouts), while
-   `rdb=1.0` is 0 of 2 mute with closed-on-root-report **0.866 / 0.866**,
-   identical across seeds. Every other axis also improves over the shipped
-   default on both 1.0 seeds: false-COMPLETE 0.459/0.531 (vs 0.560/0.805),
-   recall 0.896/0.957 (vs 0.795/0.848), commander-survival-within-successes
-   0.165/0.134 (vs 0.250). For a project whose claim is doctrine-valid C2
-   traffic, a mute commander is not a tiebreak — it is the decision.
+   the reporting decides.** Four seeds each, FINAL policy at N=100:
+
+       shipped rdb=3.0   180/200 = 0.900              mute 0/2
+       rdb=0             388/400 = 0.970   p=0.00074  mute 2/4
+       rdb=1.0           389/400 = 0.9725  p=0.00030  mute 0/4
+       previous era      195/200 = 0.975
+
+   Both candidates are a null against the previous era (p = 0.801 and
+   **p = 1.000**) and **indistinguishable from each other on success
+   (p = 1.000)**. The separator is the completion report: `rdb=0` leaves two of
+   four commanders **absolutely mute** — 0 root claims in 11,973 and 10,112
+   admissible steps, a regime and not a low rate — while all four `rdb=1.0`
+   seeds claim, in a tight band (closed-on-root **0.866 / 0.866 / 0.825 /
+   0.857**). Report recall is uniformly better than shipped (0.874–0.957 vs
+   0.795–0.848) and pooled false-COMPLETE improves (0.581 vs 0.693).
+
+   **Stated honestly, because two earlier claims here did not survive four
+   seeds**: 0-of-4 versus 2-of-4 is Fisher **p = 0.43** — the mute difference
+   is *not* significant on seed counts alone. What carries it is that the zeros
+   are absolute, that 1.0 lands in a 0.83–0.87 band every time, and above all
+   the **paired flip on seed 14, which files zero root claims at `rdb=0` and
+   0.825 at `rdb=1.0`**. Also corrected: false-COMPLETE is better pooled but
+   *mixed per seed* (0.459/0.531/0.655/0.623 against 0.560/0.805), and
+   commander-survival-within-successes is a **null**, not an improvement —
+   0.185 vs 0.206, p = 0.57, once all four seeds are pooled against both
+   shipped seeds rather than two against `squad_v10` alone.
 
 **⇒ THE RECOMMENDATION, awaiting the owner: set
 `RewardConfig.root_done_bonus = 1.0`.** It is a reward default, so it
@@ -46,11 +61,10 @@ invalidates `runs/BASELINE.json` and retrains the fleet — pair it with the
 `_fill_vacancy` patch (⚑ below) in the **v1.20 window**, since the two cost one
 campaign together and two apart. Nothing has been applied: `squad_v10` is still
 the member, the seal is untouched, every v13/v14/v15 arm exists only under
-`--reward`. **Two confirmation seeds (14, 15) are training at 1.0** to match
-`rdb=0`'s depth before a change this expensive; if either goes mute the
-recommendation weakens to "better than 0, still not safe" and the honest move
-becomes a masking/claim-API fix rather than a price. Full numbers in the four
-2026-08-12 progress entries at the bottom.
+`--reward`. **Both arms are now at four seeds** and the confirmation held: 0/4
+mute at 1.0, including the paired flip on seed 14 (0 root claims at `rdb=0`,
+0.825 at 1.0). Full numbers — and three corrections to earlier two-seed claims
+— in the five 2026-08-12 progress entries at the bottom.
 
 **⚠ A gate hole found on the way, independent of how the price lands**:
 `successes_announced_rate` reads **1.00 for a commander that never claims** —
@@ -6401,3 +6415,62 @@ deliberately deferred (`docs/vision.md` §2c).
   so in succession episodes it includes a commander's personal completions. The
   effect is 2 episodes in 400 here and changes nothing, but the corpus wants a
   root-*mission* claim counter before that column is ever quoted finely.
+
+- **2026-08-12 — the arc closes at four seeds per arm. `root_done_bonus=1.0`
+  is the recommendation, on narrower grounds than two seeds suggested.**
+  `squad_v15c_bonus1` (seed 14) and `squad_v15d_bonus1` (seed 15) landed,
+  matching `rdb=0`'s seed set exactly. FINAL policy, N=100 each:
+
+      run                  seed  success  closed-on-root  false-COMPLETE  recall
+      -- rdb=0 --
+      squad_v14_nobonus      12   0.98        0.908           0.508        0.908
+      squad_v14b_nobonus     13   0.98        0.000            --          0.927   MUTE
+      squad_v14c_nobonus     14   0.93        0.000           0.789        0.889   MUTE
+      squad_v14d_nobonus     15   0.99        0.919           0.552        0.921
+      -- rdb=1.0 --
+      squad_v15_bonus1       12   0.97        0.866           0.459        0.896
+      squad_v15b_bonus1      13   0.97        0.866           0.531        0.957
+      squad_v15c_bonus1      14   0.97        0.825           0.655        0.874
+      squad_v15d_bonus1      15   0.98        0.857           0.623        0.929
+
+      shipped rdb=3.0   180/200 = 0.900               mute 0/2
+      rdb=0             388/400 = 0.970    p=0.00074  mute 2/4
+      rdb=1.0           389/400 = 0.9725   p=0.00030  mute 0/4
+      previous era      195/200 = 0.975
+
+  **The two candidates are indistinguishable on success (p = 1.000)** and both
+  null against the previous era. The whole case for 1.0 is the completion
+  report, and the strongest single piece of it is **paired**: seed 14 files
+  *zero* root claims at `rdb=0` and 0.825 at `rdb=1.0` — same seed, same tree,
+  one price apart. Alongside it, the two `rdb=0` failures are absolute zeros
+  over ~11k admissible steps each (a regime, not a low rate), and all four
+  `rdb=1.0` seeds land in a 0.825–0.866 band.
+
+  **Three claims from the two-seed entries above are corrected here, because
+  four seeds did not support them:**
+  1. **0-of-4 vs 2-of-4 mute is Fisher p = 0.43** — not significant on seed
+     counts. The evidence is the paired flip and the absoluteness of the zeros,
+     not the contingency table. Said plainly rather than quietly dropped.
+  2. **false-COMPLETE is mixed per seed**, not uniformly better than shipped:
+     0.459 / 0.531 / 0.655 / 0.623 against `squad_v10`'s 0.560 and `v10b`'s
+     0.805. Pooled it does improve (0.581 vs 0.693).
+  3. **Commander survival within successes is a null**, not an improvement:
+     0.185 vs 0.206, **p = 0.57**, pooling all four seeds against both shipped
+     seeds. The earlier "0.165/0.134 vs 0.250" compared two seeds against
+     `squad_v10` alone and read as a gain that is not there.
+
+  Report recall is the one secondary axis that holds uniformly: 0.874–0.957
+  across all four, against shipped 0.795–0.848.
+
+  **The recommendation stands and its grounds are now exactly this**: at
+  `rdb=1.0` the squad scenario recovers the previous era's success (p = 1.000,
+  four seeds) and the commander keeps reporting the mission complete on every
+  seed tried, including the one that goes silent without it. `rdb=0` buys the
+  same success and loses the report half the time. Nothing else separates them.
+
+  **One pattern worth a look before the retrain**, visible on three of the four
+  1.0 seeds and both late `rdb=0` ones: `ckpt_best` is often near-mute
+  (closed-on-root 0.01, 0.00) while the FINAL policy claims normally — the
+  claiming behaviour arrives late in training. The project publishes the FINAL
+  policy, so every number above is unaffected, but a `best`-selected checkpoint
+  would ship a mute commander, and `ckpt_best` is selected on success alone.
