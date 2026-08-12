@@ -260,6 +260,14 @@ class Roster:
         if AUTHORITY[vacated.effective_rank] > successor.effective_authority:
             successor.acting_rank = vacated.effective_rank
         successor.leader_id = vacated.leader_id
+        # The superior inherits the successor in the slot it just filled. Without
+        # this the promoted agent is unreachable from above: unorderable (masks
+        # read living_subordinates), unobserved, and — when the superior falls —
+        # not devolved to, which is how an operation ends up with no root (#42).
+        if successor.leader_id is not None:
+            parent = self.by_id[successor.leader_id]
+            if successor.id not in parent.subordinate_ids:
+                parent.subordinate_ids.append(successor.id)
         successor.deputy_id = None
         new_subs = [i for i in vacated.subordinate_ids if i != successor.id and self.by_id[i].alive]
         successor.subordinate_ids = new_subs

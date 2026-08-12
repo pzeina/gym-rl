@@ -77,14 +77,15 @@ def test_the_acceptance_count_says_which_ordinal_collected_it():
         "later_accepted": 1,   # the 3-claim episode closed on a later claim
         "first_rejected": 2,
         "closed_after_rejected_first": 1,
+        "excluded": 0,         # no episode here saw a succession
     }
 
 
 def test_an_episode_that_never_claims_is_not_a_rejected_first_claim():
     """A silent root has no ordinal at all — it must not inflate any denominator."""
     assert root_claim_ordinal(_episodes((0, 0), (0, 0))) == {
-        "claims": 0, "first": 0, "first_accepted": 0, "later": 0,
-        "later_accepted": 0, "first_rejected": 0, "closed_after_rejected_first": 0,
+        "claims": 0, "first": 0, "first_accepted": 0, "later": 0, "later_accepted": 0,
+        "first_rejected": 0, "closed_after_rejected_first": 0, "excluded": 0,
     }
 
 
@@ -103,6 +104,50 @@ def test_two_confirmed_root_claims_in_one_episode_raise_rather_than_report():
     """The impossible corpus is the one that gets quoted, so refuse to count it."""
     with pytest.raises(ClaimOrdinalError, match="episode 1"):
         root_claim_ordinal(_episodes((1, 0), (3, 1)))
+
+
+def test_a_succession_episode_is_excluded_rather_than_impossible():
+    """Two confirmed root claims are only impossible while the root is one soldier.
+
+    ``metrics._done_traffic`` counts ``done_reports_root`` by *sender-held-root*;
+    the operation closes only on a root-*OPORD* claim. A promoted successor still
+    carries its personal mission and may truthfully complete it, so a succession
+    episode can carry a second confirmation with the operation correctly running
+    on. Found by ``fireteam_v10`` ep19 (4 claims, 2 rejected, 2 successions,
+    ``endex_on_root_report`` 1) — the first member of the v1.20 fleet, whose
+    ``_fill_vacancy`` chart fix (#42) is precisely a change that drives
+    successions up. ``test_confirmed_claim_is_last`` took this exclusion on
+    2026-08-12 off ``squad_v14d_nobonus``; the digest had not, so it crashed on
+    an artifact its own guard test considers sound.
+    """
+    episodes = _episodes((1, 0), (4, 2), (2, 1))
+    episodes[1]["succession_events"] = 2
+
+    split = root_claim_ordinal(episodes)
+    # counted over the two splittable episodes only, and the exclusion is carried
+    assert split["claims"] == 3 and split["first"] == 2 and split["excluded"] == 1
+    assert split["first_accepted"] == 1 and split["later_accepted"] == 1
+
+    # and it is never printed as a bare split over the whole corpus
+    assert "(1 succession ep not splittable)" in format_claim_ordinal(split)[0]
+
+
+def test_the_exclusion_is_scoped_to_succession_and_does_not_soften_the_guard():
+    """An impossible NON-succession episode must still raise, and a quiet one not.
+
+    The exclusion is a limit of the proxy, not a licence to stop checking: a
+    corpus that starts orphaning roots without a succession to explain it is
+    still a broken measurement, and an episode that merely *had* a succession
+    while claiming legally is not one.
+    """
+    impossible = _episodes((1, 0), (3, 1))
+    impossible[1]["succession_events"] = 0
+    with pytest.raises(ClaimOrdinalError, match="no succession"):
+        root_claim_ordinal(impossible)
+
+    ordinary = _episodes((1, 0), (2, 1))
+    ordinary[1]["succession_events"] = 1
+    assert root_claim_ordinal(ordinary)["excluded"] == 1
 
 
 def test_the_digest_line_carries_its_own_denominators():
@@ -131,19 +176,37 @@ def test_squad_v10s_pool_describes_neither_ordinal_and_inverts_across_the_checkp
     """The measurement the #46 correction rests on, at BOTH checkpoints.
 
     Reading one checkpoint here produces a confident wrong finding in either
-    direction: the FINAL policy says first claims are the precise ones (0.543 vs
-    0.314) and ``ckpt_best`` says the opposite (0.474 vs 0.547).
+    direction: the FINAL policy says first claims are the precise ones (0.588 vs
+    0.311) and ``ckpt_best`` says the opposite (0.458 vs 0.681).
+
+    **The split counts moved on 2026-08-12 and the finding did not.** Succession
+    episodes are now excluded from the ordinal derivation — 31 of 100 here, 27 at
+    ``ckpt_best`` — because ``done_reports_root`` is a root-*sender* proxy and a
+    promoted successor's personal-mission completion is not an ordinal of the
+    root's OPORD channel (see ``root_claim_ordinal``). The gap widens on both
+    checkpoints, +0.230 -> +0.277 and -0.073 -> -0.223: the ordinals were being
+    diluted toward each other by episodes the proxy could not attribute, so the
+    correction strengthens #46's conclusion rather than qualifying it.
+
+    The **pooled** 0.433 is untouched, and is asserted here off the corpus totals
+    rather than off the split — that is what was actually pre-registered, and it
+    must not drift with a change to the ordinal derivation.
     """
     final = root_claim_ordinal(_squad_v10("behavior_final.json"))
     best = root_claim_ordinal(_squad_v10("behavior.json"))
 
-    assert (final["claims"], final["first_accepted"], final["first"]) == (178, 50, 92)
-    assert (final["later_accepted"], final["later"]) == (27, 86)
-    assert (best["claims"], best["first_accepted"], best["first"]) == (170, 45, 95)
-    assert (best["later_accepted"], best["later"]) == (41, 75)
+    assert (final["claims"], final["first_accepted"], final["first"]) == (129, 40, 68)
+    assert (final["later_accepted"], final["later"]) == (19, 61)
+    assert (best["claims"], best["first_accepted"], best["first"]) == (119, 33, 72)
+    assert (best["later_accepted"], best["later"]) == (32, 47)
+    assert (final["excluded"], best["excluded"]) == (31, 27)
 
-    pooled_final = (final["first_accepted"] + final["later_accepted"]) / final["claims"]
-    assert pooled_final == pytest.approx(0.433, abs=0.001)   # the pre-registered number
+    # the pre-registered number, from the pool it was pre-registered from
+    episodes = _squad_v10("behavior_final.json")
+    claims = sum(ep["done_reports_root"] for ep in episodes)
+    accepted = claims - sum(ep["done_rejected_root"] for ep in episodes)
+    assert (accepted, claims) == (77, 178)
+    assert accepted / claims == pytest.approx(0.433, abs=0.001)
 
     def gap(o):
         return o["first_accepted"] / o["first"] - o["later_accepted"] / o["later"]
@@ -153,28 +216,38 @@ def test_squad_v10s_pool_describes_neither_ordinal_and_inverts_across_the_checkp
     # what a spent first claim would forgo: episodes whose opening probe was
     # rejected and which closed by a later root claim anyway (rewards.py's P)
     assert final["closed_after_rejected_first"] / final["first_rejected"] == pytest.approx(
-        0.643, abs=0.001
+        0.679, abs=0.001
     )
 
 
 def test_a_pooled_precision_cannot_price_the_rule_the_split_can():
     """The EV arithmetic, with ``done_true`` in it — the term the entries dropped.
 
-    ``rewards.py`` states both break-evens itself: 1/9 with the bonus on the
-    table, 1/3 once the slot is spent. Anything that reproduces 0.143 or 0.400
-    has dropped ``done_true``, and at the pooled rate that error flips the sign
-    of the whole pre-registration.
+    ``rewards.py`` states both break-evens itself. **At the v1.20 default
+    (``root_done_bonus`` 3.0 -> 1.0) the first-claim break-even moves 1/9 ->
+    1/5**; the spent-slot one is 1/3 either way, because the bonus is not in it.
+    That move is the point of the v1.20 change: it is what un-funds the
+    later-claim farming while leaving the opening report +EV.
+
+    Dropping ``done_true`` used to show up as 0.143/0.400. At a bonus of 1.0 it
+    shows up as **1/3 for the first claim** — numerically the spent-slot value —
+    so the two assertions below only separate a correct derivation from that
+    error when read together: a dropped-``done_true`` implementation makes both
+    lines read 1/3, and the first line's 1/5 is what refuses it.
     """
     cfg = RewardConfig()
-    assert -cfg.done_false / (cfg.done_true + cfg.root_done_bonus - cfg.done_false) == pytest.approx(1 / 9)
+    assert -cfg.done_false / (cfg.done_true + cfg.root_done_bonus - cfg.done_false) == pytest.approx(1 / 5)
     assert -cfg.done_false / (cfg.done_true - cfg.done_false) == pytest.approx(1 / 3)
 
     pooled, later = 77 / 178, 27 / 86
 
-    # a later claim under the first-claim rule: the bonus is gone, done_true is not
+    # a later claim under the first-claim rule: the bonus is gone, done_true is
+    # not — so neither of these moved with the v1.20 default
     assert _claim_ev(pooled, cfg, bonus=False) == pytest.approx(+0.139, abs=0.001)
     assert _claim_ev(later, cfg, bonus=False) == pytest.approx(-0.039, abs=0.001)
     assert pooled > 1 / 3 > later, "the pool and the ordinal fall on opposite sides of break-even"
 
-    # and the honest first report stays worth filing on this corpus, burn included
-    assert _claim_ev(50 / 92, cfg, bonus=True, burn=27 / 42) == pytest.approx(+1.055, abs=0.001)
+    # and the honest first report stays worth filing on this corpus, burn
+    # included: +1.055 at a bonus of 3.0, +0.555 at 1.0 — smaller, still open,
+    # which is the property the value was chosen for
+    assert _claim_ev(50 / 92, cfg, bonus=True, burn=27 / 42) == pytest.approx(+0.555, abs=0.001)

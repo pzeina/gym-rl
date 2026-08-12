@@ -29,6 +29,8 @@ from cohort.env.actions import N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
+from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR
+from cohort.training import provenance
 from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update
 
 METRIC_FIELDS = [
@@ -78,6 +80,10 @@ METRIC_FIELDS = [
     # anyone evaluates a checkpoint.
     "messages_per_agent_step",
     "timeout_rate_rolling",
+    # refs v1.20: did the COMMANDER close the operation, or did the grace
+    # window expire? ckpt_best is selected partly on this now (best_save_gate),
+    # and the property is learned late, so the curve is worth having on record.
+    "root_report_close_rolling",
     # lightweight behavioral tracking (B2), over the episodes completed this
     # iteration: fraction whose human root died (issue #9: rolling success is
     # blind to exposure re-learning), and rejected DONE / total DONE claims
@@ -93,7 +99,23 @@ METRIC_FIELDS = [
 ]
 
 
-def best_save_gate(episodes_seen: int, window: int, rolling: float, best_so_far: float) -> bool:
+def is_reporting(root_report_close: float | None) -> bool:
+    """Is the commander closing its own operations in this window?
+
+    None — no ENDEX inside the window — is *unmeasured*, and unmeasured is not
+    reporting. It is also not a refusal: see ``best_save_gate``.
+    """
+    return root_report_close is not None and root_report_close >= ROOT_REPORT_CLOSE_FLOOR
+
+
+def best_save_gate(
+    episodes_seen: int,
+    window: int,
+    rolling: float,
+    best_so_far: float,
+    root_report_close: float | None = None,
+    best_was_reporting: bool = False,
+) -> bool:
     """Should the rolling-best checkpoint be (re)written this iteration?
 
     D4 fix (the fine-tune degeneracy): ``ckpt_best`` may only be written once
@@ -105,8 +127,46 @@ def best_save_gate(episodes_seen: int, window: int, rolling: float, best_so_far:
     on fireteam_v4d and squad_v3d/v3e — see ROADMAP D4/A4). Requiring full
     turnover means every eligible save reflects a full window of episodes
     played under *this* run's training, at its statistical resolution.
+
+    **v1.20 (owner's decision): success alone may not select the checkpoint.**
+    ``ckpt_best`` was chosen on ``success_rate_rolling`` and nothing else, and
+    on this environment the completion report is learned LATE — measured across
+    six squad arms, ``ckpt_best`` sat at a closed-on-root-report of 0.00-0.01
+    while the FINAL policy of the same run reported normally (0.82-0.92). The
+    project publishes the FINAL policy, so no shipped number was ever wrong,
+    but ``ckpt_best`` is what ``cohort.play`` and every spot-check load by
+    default, and what an outside reader would reasonably take as the run's best
+    work. Selecting a mute commander as "best" is the same overstatement the
+    gates elsewhere exist to refuse.
+
+    **Selection is lexicographic, not a veto**, because a veto is too brittle to
+    ship: refusing every mute save outright leaves a run that never learns to
+    report with NO ``ckpt_best`` at all, which fails ``baseline.py``'s
+    "every checkpoint loadable" and makes ``publish_baseline`` report a missing
+    artifact. Verified on a 120k-step smoke run, which wrote none. So:
+
+    * a reporting window ALWAYS supersedes a mute best, whatever the success
+      numbers say — otherwise a mute 0.95 recorded early would lock out the
+      reporting 0.90 that follows it, which is the exact inversion this is
+      here to prevent;
+    * once the best is reporting, a mute window may never take it back, however
+      well it scores;
+    * among windows of the same kind, higher rolling success wins, as before.
+
+    A run that never reports still gets a ``ckpt_best`` — and is then caught
+    where it should be, by ``metrics.regression_gates``'
+    ``closed_on_root_report_rate`` at evaluation time. Training prefers; the
+    gate refuses.
+
+    ``root_report_close`` is None until the window contains an episode that
+    actually sent an ENDEX; unmeasured counts as not-reporting for ordering.
     """
-    return episodes_seen >= window and rolling > best_so_far
+    if episodes_seen < window:
+        return False
+    reporting = is_reporting(root_report_close)
+    if reporting != best_was_reporting:
+        return reporting  # the first reporting window wins; a mute one cannot
+    return rolling > best_so_far
 
 
 def _load_compatible(net: PolicyNet, state: dict) -> list[str]:
@@ -190,8 +250,15 @@ class Trainer:
         self.env_steps = 0
         self.iteration = 0
         self.recent_outcomes: deque[str] = deque(maxlen=100)
+        # refs v1.20: did the commander's own report close the operation? Same
+        # definition as metrics._endex_close — denominator is episodes that
+        # actually sent an ENDEX, so success drift does not move it.
+        self.recent_root_closed: deque[bool] = deque(maxlen=100)
         self.episodes_seen = 0  # episodes completed since training start (D4 best-gate)
         self.best_rolling_success = -1.0
+        # refs v1.20: whether the recorded ckpt_best came from a window whose
+        # commander was reporting. A mute window may never take it back.
+        self.best_was_reporting = False
         self._ep_return = [0.0] * cfg.n_envs
         self._ep_len = [0] * cfg.n_envs
 
@@ -328,9 +395,13 @@ class Trainer:
                     self.episodes_seen += 1
                     # B2 behavioral tracking, from state already in memory
                     human_deaths += any(s.human and not s.alive for s in env.roster.soldiers)
+                    sent_endex = False
                     for m in env.transcript.messages:
                         done_claims += m.kind.value == "done"
                         done_rejected += m.kind.value == "done_reject"
+                        sent_endex |= m.kind.value == "endex"
+                    if sent_endex:
+                        self.recent_root_closed.append(env.root_close_step is not None)
                     self._ep_return[e] = 0.0
                     self._ep_len[e] = 0
                     obs0, _ = env.reset()
@@ -358,6 +429,14 @@ class Trainer:
                 sum(o == "success" for o in self.recent_outcomes) / len(self.recent_outcomes)
                 if self.recent_outcomes
                 else 0.0
+            ),
+            # refs v1.20: the share of closed operations the COMMANDER closed.
+            # Blank (nan) until an ENDEX has been sent inside the window —
+            # unmeasured, which best_save_gate treats as "does not block".
+            "root_report_close_rolling": (
+                sum(self.recent_root_closed) / len(self.recent_root_closed)
+                if self.recent_root_closed
+                else float("nan")
             ),
             # refs #18: the same window, asking how the episodes were LOST.
             # A rising clock-expiry rate is the stall signature at training
@@ -438,13 +517,21 @@ class Trainer:
                     f"sps {sps:>5.0f} | {elapsed:>5.0f}s"
                 )
             self.save_checkpoint("ckpt_latest.pt")
+            root_close = (
+                sum(self.recent_root_closed) / len(self.recent_root_closed)
+                if self.recent_root_closed
+                else None
+            )
             if best_save_gate(
                 self.episodes_seen,
                 self.recent_outcomes.maxlen or 0,
                 stats["success_rate_rolling"],
                 self.best_rolling_success,
+                root_close,
+                self.best_was_reporting,
             ):
                 self.best_rolling_success = stats["success_rate_rolling"]
+                self.best_was_reporting = is_reporting(root_close)
                 self.save_checkpoint("ckpt_best.pt")
         if self.writer is not None:
             self.writer.close()
@@ -504,18 +591,14 @@ def load_policy(checkpoint: str | Path, device: str = "cpu") -> tuple[PolicyNet,
 
 
 def _git_commit() -> str | None:
-    """HEAD at launch, so a run dir can be tied back to the code that made it."""
-    import subprocess
+    """HEAD at launch, so a run dir can be tied back to the code that made it.
 
-    try:
-        out = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=5, check=False,
-            cwd=Path(__file__).resolve().parent.parent.parent,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    return out.stdout.strip() or None
+    Re-exported from :mod:`cohort.training.provenance` since #39, which needed
+    the same thing in ``evaluate.py``. Kept under this name because
+    ``economics.json:git_commit`` means "the tree this RUN trained against" and
+    that meaning must not drift when the helper moves.
+    """
+    return provenance.git_commit()
 
 
 def _spec_economics(scenario: str) -> dict:

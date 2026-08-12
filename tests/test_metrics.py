@@ -12,6 +12,7 @@ import numpy as np
 
 from cohort.env.cohort_env import make_env
 from cohort.metrics import (
+    ROOT_REPORT_CLOSE_FLOOR,
     SUCCESS_RATE_FLOOR,
     TraceRecorder,
     aggregate_behavior,
@@ -549,10 +550,15 @@ def test_positional_gate_fails_the_v7_disposition():
     assert [g["name"] for g in gates] == [
         "timeout_rate",
         "success_rate",
+        "closed_on_root_report_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
     ]
-    positional = [g for g in gates if g["name"] not in ("timeout_rate", "success_rate")]
+    positional = [
+        g
+        for g in gates
+        if g["name"] not in ("timeout_rate", "success_rate", "closed_on_root_report_rate")
+    ]
     assert [g["passed"] for g in positional] == [False, False]
     assert "FAIL" in format_gate_report(positional)
     assert "PASS" not in format_gate_report(positional)
@@ -560,8 +566,17 @@ def test_positional_gate_fails_the_v7_disposition():
 
 def test_positional_gate_passes_a_prepared_defense():
     # fireteam_defend_v5 / defend_brique_v1 shape: on cover, on the position.
+    # These synthetic traces send no ENDEX, so the v1.20 command-report gate has
+    # no denominator and reads None — unmeasured, which is deliberately not a
+    # pass. Nothing may FAIL; that is the claim this test makes.
     gates = regression_gates(_defend_agg(cover=True, dist_from_obj=2))
-    assert all(g["passed"] for g in gates)
+    assert [g["passed"] for g in gates if g["name"] != "closed_on_root_report_rate"] == [
+        True,
+        True,
+        True,
+        True,
+    ]
+    assert not any(g["passed"] is False for g in gates)
     assert "PASS" in format_gate_report(gates)
 
 
@@ -572,7 +587,11 @@ def test_positional_gate_applies_to_defend_roots_only():
     # success axis (issue #21), both root-mission-agnostic.
     seize = _defend_agg(cover=False, dist_from_obj=9)
     seize["root_mission"] = "SEIZE"
-    assert [g["name"] for g in regression_gates(seize)] == ["timeout_rate", "success_rate"]
+    assert [g["name"] for g in regression_gates(seize)] == [
+        "timeout_rate",
+        "success_rate",
+        "closed_on_root_report_rate",
+    ]
     assert format_gate_report([]) == ""
 
 
@@ -749,11 +768,46 @@ def test_success_axis_is_silent_on_a_genuine_stall():
     """
     agg = _shape_agg(0, 0, 30, root_mission="SEIZE")  # SEIZE: no positional gate in play
     gates = regression_gates(agg)
-    assert [g["name"] for g in gates] == ["timeout_rate"]
+    # the command-report gate is unconditional (it is an axis, not a shape), but
+    # a run that never won sends no ENDEX, so it reads unmeasured here
+    assert [g["name"] for g in gates] == ["timeout_rate", "closed_on_root_report_rate"]
     assert gates[0]["passed"] is False
+    assert gates[1]["passed"] is None
     report = format_gate_report(gates)
     assert "FAIL" in report
     assert "success_rate" not in report
+
+
+def test_the_command_report_gate_fails_a_mute_commander_that_wins_everything():
+    """v1.20's gate, on the exact corpora that motivated it.
+
+    ``successes_announced_rate`` counts the ENDEX, not who claimed it, so it
+    reads 1.00 for a commander that never transmits — and did, on three runs in
+    one day. Each won 0.93-0.98 of its episodes and filed ZERO root claims:
+    ``squad_v11``, ``squad_v14b_nobonus``, ``squad_v14c_nobonus``. Every other
+    gate on the board passes them. This one must not.
+    """
+    for realised in (0.0, 0.01):  # the two mute values ever measured
+        agg = _shape_agg(98, 1, 1, root_mission="SEIZE")
+        agg["closed_on_root_report_rate"] = realised
+        gates = {g["name"]: g for g in regression_gates(agg)}
+        assert gates["success_rate"]["passed"] is True, "the run wins — that is the point"
+        assert gates["timeout_rate"]["passed"] is True
+        assert gates["closed_on_root_report_rate"]["passed"] is False
+        assert "FAIL" in format_gate_report(list(gates.values()))
+
+    # and the weakest non-mute corpus on record still passes: squad_v10b, 0.784
+    agg = _shape_agg(88, 10, 2, root_mission="SEIZE")
+    agg["closed_on_root_report_rate"] = 0.784
+    gates = {g["name"]: g for g in regression_gates(agg)}
+    assert gates["closed_on_root_report_rate"]["passed"] is True
+
+
+def test_command_report_bound_sits_in_the_empty_band():
+    # Nothing has ever been measured between the mute regime (0.000-0.01) and
+    # the weakest reporting corpus on file (squad_v10b, 0.784). The floor
+    # refuses a regime; it does not police good-vs-better.
+    assert 0.01 < ROOT_REPORT_CLOSE_FLOOR < 0.784
 
 
 def test_success_axis_bound_sits_in_the_measured_gap():

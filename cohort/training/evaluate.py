@@ -32,6 +32,7 @@ import torch
 
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.rewards import RewardConfig
+from cohort.training import provenance
 
 
 def _file_sha256(path: str | Path, chunk: int = 1 << 20) -> str | None:
@@ -227,6 +228,13 @@ def evaluate(
             sha = _file_sha256(checkpoint) if checkpoint is not None else None
             if sha is not None:
                 payload["checkpoint_sha256"] = sha
+            # When, not just what: a score is only comparable to another score
+            # taken against the same tree (refs #39). train.py already records
+            # HEAD per RUN; an evaluation can be re-run at any later commit
+            # against weights trained long before, so it needs its own.
+            commit = provenance.git_commit()
+            if commit is not None:
+                payload["eval_commit"] = commit
             payload |= {
                 "scenario": scenario,
                 "episodes": episodes,

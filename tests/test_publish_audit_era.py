@@ -145,12 +145,6 @@ def test_era_gap_dates_the_artifacts_not_the_repository(runs, monkeypatch):
     assert publish_audit.era_gap(d / "behavior.json", d / "behavior_final.json") == 0
 
 
-@pytest.mark.skip(reason="needs cohort/training/evaluate.py, frozen while the "
-                         "baseline retrain campaign is in flight — train.py imports "
-                         "the tree that exists when a job starts, so an edit under "
-                         "cohort/ today would train the later fleet members against a "
-                         "different environment than the earlier ones. Patch is written "
-                         "out in ROADMAP.md's 2026-08-11 #39 entry; unskip when it lands.")
 def test_an_evaluation_records_the_tree_it_was_measured_against(tmp_path):
     """The durable half of #39: git provenance dates an artifact only from
     *outside*, and only while it stays committed and unmoved. The artifact

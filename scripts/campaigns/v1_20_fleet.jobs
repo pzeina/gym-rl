@@ -1,0 +1,33 @@
+# v1.20 FLEET RETRAIN — the whole shipping baseline, against the new tree.
+#
+# Four cohort/ changes landed together, and every one of them invalidates
+# runs/BASELINE.json, which is why they were held for one window:
+#
+#   1. RewardConfig.root_done_bonus 3.0 -> 1.0 (owner's decision 2026-08-12).
+#      The named, replicated cause of the squad regression. Four seeds each:
+#      3.0 -> 180/200, 0 -> 388/400 with 2/4 commanders mute, 1.0 -> 389/400
+#      with 0/4 mute and closed-on-root 0.825-0.866.
+#   2. core/units.py::_fill_vacancy now links the promoted successor into its
+#      new superior's subordinate_ids (#42). This MOVES ACTION MASKS — the
+#      promoted branch becomes orderable and observable — so it changes every
+#      rollout. The structural sweep goes 1928/5040 orderings-with-no-commander
+#      to 0/5040.
+#   3. best_save_gate prefers a REPORTING commander lexicographically, so
+#      ckpt_best is no longer selected on success alone.
+#   4. metrics.regression_gates adds closed_on_root_report_rate (floor 0.5).
+#
+# Same scenarios, same step budgets and same seed as the v1.19 members, so the
+# only thing that differs from the shipping fleet is the tree. Sequential in one
+# nohup'd queue: ~8 runs x 25-45 min.
+#
+# After this lands: publish_baseline.py at N=100, then baseline.py --seal, then
+# results_table.py --write. squad_v10 and the other seven members stay in place
+# until their replacements beat them; a MISS supersedes nothing without an ask.
+fireteam_v10          --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v21   --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_v16             --scenario squad           --total-steps 3000000 --seed 12
+squad_recon_v9        --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v12      --scenario squad_screen    --total-steps 2500000 --seed 12
+patrol_brique_v7      --scenario patrol_brique   --total-steps 3000000 --seed 12
+defend_brique_v16     --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v7            --scenario platoon         --total-steps 3000000 --seed 12

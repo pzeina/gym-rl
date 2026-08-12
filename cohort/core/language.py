@@ -406,6 +406,44 @@ def format_assuming_position(new_cs: str, of_cs: str) -> str:
     return f"ALL STATIONS, THIS IS {new_cs}: ASSUMING {of_cs}'S POSITION. OUT."
 
 
+@dataclass(frozen=True)
+class Succession:
+    """One succession move, as the net reports it (refs #40)."""
+
+    successor: str
+    replaced: str
+    #: True: the root appointment, command passed to `successor`.
+    #: False: `successor` backfilled the slot `replaced` vacated moving up.
+    assumes_command: bool
+
+
+_TAKING_COMMAND_RE = re.compile(
+    r"THIS IS (?P<successor>[A-Za-z]{2,3}\d+): "
+    r"(?P<replaced>[A-Za-z]{2,3}\d+) IS DOWN\. I AM ASSUMING COMMAND"
+)
+_ASSUMING_POSITION_RE = re.compile(
+    r"THIS IS (?P<successor>[A-Za-z]{2,3}\d+): "
+    r"ASSUMING (?P<replaced>[A-Za-z]{2,3}\d+)'S POSITION"
+)
+
+
+def parse_succession(text: str) -> Succession | None:
+    """Inverse of the two succession formatters: which act, and by whom.
+
+    ``MessageKind.TAKING_COMMAND`` carries two different acts — the root
+    appointment (the command passes) and the backfill of the slot the successor
+    just vacated (it does not) — with the same kind and the same pair of
+    callsigns, so only the prose separates them (refs #40). Every consumer used
+    to write its own matcher for that; this is the formatter's inverse, shipped
+    once, which is the contract this repo states for every other act on the net.
+    """
+    if (m := _TAKING_COMMAND_RE.search(text)) is not None:
+        return Succession(m["successor"], m["replaced"], assumes_command=True)
+    if (m := _ASSUMING_POSITION_RE.search(text)) is not None:
+        return Succession(m["successor"], m["replaced"], assumes_command=False)
+    return None
+
+
 #: Machine-readable shape of an OPORD (issue #12): the task statement is read
 #: by ``_ORDER_RE`` below, these pick out what is specific to an OPORD — that
 #: it IS one, plus each of its two time clauses if the line carries them.
