@@ -158,9 +158,47 @@ the moment it takes command the new **root** spends an observation slot on a
 duplicate and carries two distinct ORDER action indices addressing the same
 agent. Reached in 4 of 50 `patrol_brique` episodes under random play.
 
-The fix is one line in `cohort/core/units.py`, which is frozen for the v1.20
-campaign; `test_a_backfilled_agent_is_linked_into_its_new_leader_exactly_once`
-is a strict `xfail` so the marker has to come out with the fix.
+The fix is one line in `cohort/core/units.py`, landed as `da24b42` once the
+v1.20 campaign was stopped; `test_a_backfilled_agent_is_linked_into_its_new_leader_exactly_once`
+was a strict `xfail` precisely so the marker had to come out with the fix.
+
+### What the defect cost, measured from the net (#50)
+
+The assurance layer priced it on **fixed policies**, which isolates the
+environment change with no training confound — the four voided runs cannot do
+this, because they confound the defect with the training that happened under it.
+The same sixteen `squad_v14*`/`v15*` checkpoints, tapped three times at seed
+123, N=100, both checkpoints:
+
+| tree | order mismatches | rate |
+|---|---|---|
+| v1.19, pre-#42 | 255 / 21,786 | 1.17% |
+| v1.20, double-linked | 596 / 22,324 | **2.67%** |
+| v1.20b, corrected (`da24b42`) | 266 / 21,861 | **1.22%** |
+
+Double-linked against corrected is **z = 11.04, p = 2.4e-28**; corrected against
+pre-#42 is **p = 0.656**, indistinguishable. The defect roughly doubled the rate
+and the one-line fix put it back exactly where it stood before #42.
+
+The statistic is the succession chart's acceptance test and is **net-only**: a
+commander orders its own subordinates, so an ORDER whose sender is not the
+recipient's current leader is a chart disagreement — transcript against briefing
+org chart plus succession broadcasts, no state access. The mechanism shows up
+exactly as described above: **100% of mismatches, in all three trees, come from
+a sender that had itself been promoted**, and the twice-promoted riflemen are
+the sharpest cell, `RFN*` senders going **2 → 24 → 2** across the three trees.
+
+It also confirms empirically what `b9a3426` argued structurally — flat charts
+immune, depth-2+ exposed. `squad` is depth 2, and the defect is plainly visible
+in its traffic and plainly gone after the fix.
+
+**And it calibrates the residual.** The surviving ~1.2% is 100% post-succession
+senders and does not move between v1.19 and the corrected v1.20 — the
+fingerprint of the §3a ordering effect, not a reader bug: a replay must consume
+messages in order while `step` devolves a tick's deaths against alive-flags that
+already count all of them, so a net-only monitor is necessarily optimistic on
+same-tick cascades. That makes ~1.2% a measured floor for net-only
+reconstruction on this scenario, and **excursions above it are detections**.
 
 ## 5. What is not decided here
 
