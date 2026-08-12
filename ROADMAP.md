@@ -33,8 +33,29 @@ FAIL against the new tree until the new campaign lands and is re-sealed — that
 is expected, not a regression.** The v1.19 members keep their place until their
 replacements beat them; publishing a MISS over an incumbent is still an ask.
 
+**Which scenarios the defect could actually reach — read the landing fleet
+through this.** The removed line only ran inside the *recursive* `_fill_vacancy`,
+which needs the successor to have had a team of its own. So chart depth decides
+it, and three of eight scenarios were structurally immune:
+
+    depth 1, no non-root commanders — IMMUNE
+      fireteam, fireteam_defend, defend_brique
+    depth 2, TL1/TL2 below the root — exposed
+      squad, squad_recon, squad_screen, patrol_brique
+    depth 3, six non-root commanders — most exposed
+      platoon
+
+Confirmed rather than argued: `fireteam_v11` reproduces the void `fireteam_v10`
+to three decimals (`beh_success` 1.000, `final_success` 0.900, rolling 0.954),
+which is the positive control for the fix being a no-op where the chart is flat.
+So on the depth-1 members, movement against their first-campaign counterparts is
+noise; on the depth-2/3 members it is the defect. **`platoon_v7` is where it
+should show most.** Note this does NOT make the first campaign's depth-1 runs
+usable — provenance is the `cohort/` tree and a baseline must be one system —
+but it does mean their retrain is a formality rather than a rescue.
+
 **⚠ THE OPEN QUESTION THE NEW FLEET IS THE MEASUREMENT FOR: `squad_v16` trained
-to a mute commander.** 0 root claims in **1,865 admissible root steps**,
+to a mute commander.** (`squad` is depth 2, so the defect *was* live in it.) 0 root claims in **1,865 admissible root steps**,
 `closed_on_root_report_rate` **0.000**, gate **FAIL** at both checkpoints —
 while success was excellent (1.00 ± 0.00 at FINAL, 0 root deaths). Its matched
 arm `squad_v15_bonus1` — same scenario, same seed 12, same budget, and the
