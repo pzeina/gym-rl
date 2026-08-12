@@ -4,9 +4,9 @@
 
 **State**: `multi-agent-dev`; tag still v1.18.0. **827 tests green, 3 skipped**,
 ruff clean, spaces **Discrete(228)/Box(220)** frozen. `baseline.py` green, seal
-`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **2 of 4 campaign jobs
-still training** (`squad_v14c/v14d_nobonus`, ~1.8h) — they characterise the
-rejected `rdb=0` option and choose nothing; `/train-status` to check.
+`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **`squad_v15c/v15d_bonus1`
+training** (~1.8h) — confirmation seeds 14/15 at the recommended `rdb=1.0`;
+`/train-status` to check.
 
 **⚑ READ THIS FIRST — the squad pricing arc reversed twice today, and it now
 has an answer and a recommendation.** Four findings, in the order they must be
@@ -28,14 +28,17 @@ read:
    previous era. First result in the arc that is single-variable, replicated
    and significant at once.
 
-4. **And the value to set it to is `1.0`, replicated on both seeds.**
-   `rdb=0` fixes success but leaves the reporting a coin flip (seed 12 best on
-   record, seed 13 mute). **`rdb=1.0` fixes both**: 194/200 success (p = 0.0073
-   vs shipped, p = 1.000 vs the previous era) and closed-on-root-report
-   **0.866 / 0.866 — identical across seeds**. Every axis improves over the
-   shipped default on both seeds: false-COMPLETE 0.459/0.531 (vs 0.560/0.805),
-   recall 0.896/0.957 (vs 0.795/0.848), and commander-survival-within-successes
-   0.165/0.134 against `squad_v10`'s 0.250.
+4. **And the value to set it to is `1.0`. The two candidates tie on success;
+   the reporting decides.** At four seeds `rdb=0` pools to 388/400 = 0.970 and
+   `rdb=1.0` to 194/200 = 0.970 — identical, both a null against the previous
+   era. But **`rdb=0` leaves 2 of 4 commanders completely mute** (seeds 13 and
+   14 file zero root claims; seed 14 also drops to 0.93 with 7 timeouts), while
+   `rdb=1.0` is 0 of 2 mute with closed-on-root-report **0.866 / 0.866**,
+   identical across seeds. Every other axis also improves over the shipped
+   default on both 1.0 seeds: false-COMPLETE 0.459/0.531 (vs 0.560/0.805),
+   recall 0.896/0.957 (vs 0.795/0.848), commander-survival-within-successes
+   0.165/0.134 (vs 0.250). For a project whose claim is doctrine-valid C2
+   traffic, a mute commander is not a tiebreak — it is the decision.
 
 **⇒ THE RECOMMENDATION, awaiting the owner: set
 `RewardConfig.root_done_bonus = 1.0`.** It is a reward default, so it
@@ -43,7 +46,11 @@ invalidates `runs/BASELINE.json` and retrains the fleet — pair it with the
 `_fill_vacancy` patch (⚑ below) in the **v1.20 window**, since the two cost one
 campaign together and two apart. Nothing has been applied: `squad_v10` is still
 the member, the seal is untouched, every v13/v14/v15 arm exists only under
-`--reward`. Full numbers in the three 2026-08-12 progress entries at the bottom.
+`--reward`. **Two confirmation seeds (14, 15) are training at 1.0** to match
+`rdb=0`'s depth before a change this expensive; if either goes mute the
+recommendation weakens to "better than 0, still not safe" and the honest move
+becomes a masking/claim-API fix rather than a price. Full numbers in the four
+2026-08-12 progress entries at the bottom.
 
 **⚠ A gate hole found on the way, independent of how the price lands**:
 `successes_announced_rate` reads **1.00 for a commander that never claims** —
@@ -6309,3 +6316,88 @@ deliberately deferred (`docs/vision.md` §2c).
   they no longer choose anything — 1.0 is the candidate — but they turn "one
   seed each way" into a rate for the mute commander, which is what the record
   needs to say *why* 0 was not taken.
+
+- **2026-08-12 — `rdb=0` at four seeds: the mute commander is 2 of 4, and the
+  two prices are tied on success. The reporting is the whole difference.**
+  `squad_v14c_nobonus` (seed 14) and `squad_v14d_nobonus` (seed 15) landed and
+  were scored at N=100. The `rdb=0` arm now reads, FINAL policy:
+
+      run                  seed  success  closed-on-root  root claims  false-COMPLETE
+      squad_v14_nobonus      12   0.98        0.908           157          0.508
+      squad_v14b_nobonus     13   0.98        0.000             0          --      MUTE
+      squad_v14c_nobonus     14   0.93        0.000             0          0.789   MUTE
+      squad_v14d_nobonus     15   0.99        0.919           139          0.552
+
+  **Two of four commanders never file a completion claim** — 0 root claims in
+  11,973 and 10,112 admissible steps respectively. It is a coin flip, not a bad
+  seed, and seed 14 pays for it in outcome as well: 0.93 with **7 timeouts**,
+  the weakest arm since the regression itself. Success spread across the four
+  seeds is 0.93–0.99.
+
+  **Pooled, the two candidate prices are indistinguishable on success:**
+
+      rdb=3.0 SHIPPED   180/200 = 0.900
+      rdb=0             388/400 = 0.970   p = 0.0007 vs shipped, p = 0.801 vs prev era
+      rdb=1.0           194/200 = 0.970   p = 0.0073 vs shipped, p = 1.000 vs prev era
+      prev era (v8+v9)  195/200 = 0.975
+
+  Identical to three decimals. **The entire difference between them is whether
+  the commander still reports the mission complete** — 2-of-4 mute at 0, 0-of-2
+  at 1.0 with an identical 0.866 both times. For a project whose claim is
+  doctrine-valid C2 traffic, that is not a tiebreak, it is the decision, and it
+  points at **1.0**. The recommendation is unchanged and now rests on why the
+  alternative was refused rather than on success alone.
+
+  **Launched** (`scripts/campaigns/squad_v15_bonus1_seeds.jobs`):
+  `squad_v15c_bonus1` / `squad_v15d_bonus1`, seeds 14 and 15 at `rdb=1.0` —
+  matching `rdb=0`'s seed set exactly. Applying this changes a reward default
+  and retrains the whole fleet; the recommended value should not rest on half
+  the evidence of the value it is recommended over. If either of seeds 14/15
+  goes mute at 1.0, the recommendation weakens to "better than 0, still not
+  safe" and the honest move is a masking/claim-API fix instead of a price.
+
+  **Unrelated, and worth knowing before it wastes someone's morning:** the
+  training-end monitor reported `squad_nomask_v1` — an August-11 ablation run —
+  as having just ended, because its stale `.job.json` records pid 69953 and
+  today's campaign drew 70830, so a bare liveness check on the old pid flipped.
+  The run directory is untouched and git-clean. `scripts/train.sh` already
+  documents this exact hazard and `train_status.py --is-running` guards it by
+  checking the pid actually carries `--run-name`; the monitor does not.
+
+- **2026-08-12 — `squad_v14d_nobonus` turned the #33 negative control red, and
+  the invariant was right: the *proxy* conflates two predicates, and succession
+  is where they split.** Two episodes carried `done_reports_root -
+  done_rejected_root` of 2 and 3 — "a second confirmed root claim", which
+  `tests/test_confirmed_claim_is_last.py` calls structurally impossible and
+  therefore "a broken measurement, not a strange policy". It is neither.
+
+  **The two quantities are not the same quantity.** The invariant is about the
+  root's **OPORD** claim: `cohort_env._report_done` closes the operation only
+  when `is_root_opord_claim` holds (`cohort_env.py:1247`). But
+  `metrics._done_traffic` counts `done_reports_root` as *any* DONE whose sender
+  held the root at that step — deliberately, and its own comment says so
+  (`metrics.py:801`, "the claim that matters is the one made BY whoever held
+  the root"). Those agree while one soldier is root for the whole episode and
+  **diverge the moment a successor is promoted**: the promoted commander still
+  carries its personal SEIZE/ADVANCE mission, may truthfully complete *that* —
+  confirmed by `is_complete`, counted here — while the operation correctly runs
+  on to its real close.
+
+  Both failing episodes are succession episodes with a dead commander (3
+  confirmed over 2 successions; 2 over 1), which is what pointed at the cause,
+  and the **env-level form of the test — which drives a real episode and reads
+  the actual close — passes untouched.** So: no `cohort/` defect, no broken
+  measurement, and the v14d numbers stand.
+
+  **Fixed in the test, scoped rather than loosened.** The data-level assertion
+  now runs on succession-free episodes, where the proxy is exact, and asserts
+  that those remain at least half the corpus — so a regression that starts
+  orphaning roots (the `_fill_vacancy` defect, ⚑) cannot hide inside the
+  exemption instead of tripping it. 827 tests green again. **No `cohort/`
+  change**, seal `5f848fb6` untouched.
+
+  **Small honesty note on numbers quoted above and in the two prior entries:**
+  every `root claims` / `false_complete_rate_root` figure counts sender-is-root,
+  so in succession episodes it includes a commander's personal completions. The
+  effect is 2 episodes in 400 here and changes nothing, but the corpus wants a
+  root-*mission* claim counter before that column is ever quoted finely.
