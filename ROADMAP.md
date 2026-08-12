@@ -1,42 +1,53 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-12, the pricing axis closed)
+## ⟳ Session handoff — resume here (2026-08-12, the squad regression has a cause)
 
 **State**: `multi-agent-dev`; tag still v1.18.0. **827 tests green, 3 skipped**,
 ruff clean, spaces **Discrete(228)/Box(220)** frozen. `baseline.py` green, seal
-`5f848fb6` untouched. **`squad_v14_nobonus` + `squad_v14b_nobonus` are
-training** (campaign pid in `runs/*/.job.json`; `/train-status` to check).
+`5f848fb6` untouched, `runs/BASELINE.json` unchanged. **A 4-job campaign is
+training** (`squad_v15_bonus_axis.jobs`, ~3.7h); `/train-status` to check.
 
-**⚑ READ THIS FIRST — the squad pricing arc did not end where the entry below
-it says.** The zero-price probe (`squad_v13_zeroprice` / `squad_v13b_zeroprice`,
-both scored at N=100) came back and reversed the framing of the whole arc:
+**⚑ READ THIS FIRST — the squad pricing arc reversed twice today, and it now
+has an answer.** Three findings, in the order they must be read:
 
-1. **Its pre-registered question answers NO.** Claim volume did not survive its
-   EV going to zero — it went **4.5× and 6.5×** the shipped rate, on both
-   seeds, with strictly −EV non-root claims going 1.47 → 8.67 and 9.84 per
-   episode. The claiming is action-mass, not economics. **The pricing axis is
-   closed**; the remedy belongs in masking or the claim API.
-2. **The squad regression closes under it, and both seeds agree** — 192/200
-   against the shipped 180/200 (p = 0.0295) and a **clean null against the
-   previous era** (195/200, p = 0.57). First arm in the arc to do either.
-3. **So claim volume was never the regression's signature.** `squad_v8` and
-   `squad_v10` have *identical* claim rates (0.0060) and differ by six points
-   of success. Every fix in this arc was aimed at the wrong quantity.
+1. **The claiming is not EV-driven.** The zero-price probe (v13/v13b, N=100)
+   answered its pre-registered question NO: claim volume did not survive its EV
+   going to zero, it went **4.5× and 6.5×** the shipped rate on both seeds,
+   with strictly −EV non-root claims going 1.47 → 8.67 and 9.84 per episode.
+   **The pricing axis is closed as an explanation of the spam**; the remedy
+   belongs in masking or the claim API.
+2. **Claim volume was never the regression's signature at all.** `squad_v8` and
+   `squad_v10` have *identical* claim rates (0.0060) and differ by six points of
+   success. Every fix in the v11/v12/v12b arc was aimed at the wrong quantity.
+3. **The regression's actual cause is one price, and it replicates:
+   `root_done_bonus=3.0`.** `squad_v14_nobonus`/`v14b` set it to 0 alone,
+   single-variable, both seeds landing on **exactly 98/100** — pooled 196/200
+   against the shipped 180/200 (**p = 0.0011**) and **p = 1.000** against the
+   previous era. First result in the arc that is single-variable, replicated
+   and significant at once.
 
-**Nothing shipped and no default moved**, for three reasons that all still
-hold: the recovery is CONFOUNDED (three prices moved at once), it costs
-**false-COMPLETE 0.844 / 0.897** against `squad_v10`'s 0.560, and a run needing
-a `--reward` override cannot be a baseline member by CLAUDE.md's own rule —
-*a scenario that needs an override to work is a finding about the defaults*.
-`squad_v10` stays the member. Full numbers, the #47 root-death read (n.s.,
-p = 0.109) and the reasoning are in the 2026-08-12 progress entry at the bottom.
+**Nothing shipped and no default moved.** The success finding is solid; the
+*behaviour* is not. At `rdb=0` seed 12 gives the best completion reporting on
+record (closes 0.908 of wins on the commander's own report vs the shipped
+0.837, first-claim precision 0.619) while **seed 13 is `squad_v11` again — zero
+root claims in 100 episodes, closed-on-root-report 0.000**. Commander survival
+split the same way, opposite direction. *The only quantity that replicates is
+success itself*, which is exactly the shape that must not ship on two seeds.
 
-**Next**: `squad_v14*` isolates `root_done_bonus=0` alone against
-`squad_v10`/`v10b`, same tree, same seeds. If the recovery survives it, the
-regression has a named cause and it is a **default** — the owner's call, and it
-wants the v1.20 window that `_fill_vacancy` (⚑ below) already forces a fleet
-retrain for. If not, the recovery is in `done_true`/`done_false` and needs its
-own split. Either way the *decision* is not pre-authorised; the arms are.
+**Next**: the running campaign settles both halves — `root_done_bonus=1.0` on
+seeds 12/13 (does a smaller bonus keep the claim without the regression?) and
+`rdb=0` on seeds 14/15 (how often is the commander mute?). **Then the decision
+is the owner's**: lowering `root_done_bonus` is a reward default, so it
+invalidates the baseline and retrains the fleet — the v1.20 window
+`_fill_vacancy` (⚑ below) already forces. Full numbers in the two 2026-08-12
+progress entries at the bottom.
+
+**⚠ A gate hole found on the way, independent of how the price lands**:
+`successes_announced_rate` reads **1.00 for a commander that never claims** —
+it counts the ENDEX, not who claimed it, and has now passed a mute policy
+twice (v11, v14b). `closed_on_root_report_rate` already measures the real
+thing and is committed on every corpus. Making it a gate term is a decision
+about what may ship, so it is the owner's — noted with its measurement. Either way the *decision* is not pre-authorised; the arms are.
 
 **What shipped.** `runs/BASELINE.json` names one run per doctrine scenario and
 `scripts/baseline.py` passes on it: **one `cohort/` tree (5f848fb6), no
@@ -78,18 +89,17 @@ moves action masks and therefore every rollout: **applying it invalidates this
 baseline and requires the fleet to be retrained.** That is the v1.20 cycle.
 
 **Also open, in order:**
-1. **The squad regression — still open, but the claim-spam mechanism is dead.**
-   `squad_v10` 0.92 / `squad_v10b` 0.88 against the previous era's 0.98/0.97
-   (pooled p = 0.0031) stands, and so does the rejection of both pricing fixes
-   (v11 mutes the honest report; `first_claim_only` pools to a null at p = 0.86).
-   What did NOT survive is the account of *why*: the zero-price probe showed
-   claim volume is action-mass rather than economics, and — reading the corpora
-   adjacently for the first time — `squad_v8` and `squad_v10` share a claim rate
-   of 0.0060 while differing by six points of success, so **claim volume never
-   was the regression's signature.** The zero-price arm nonetheless erases the
-   regression (p = 0.57 vs the previous era) by an unidentified route;
-   `squad_v14*` is splitting the three prices to name it. Launching an arm is
-   pre-authorised; changing any default is not.
+1. **The squad regression — CAUSE FOUND (`root_done_bonus=3.0`), fix not yet
+   safe.** Removing it alone restores success to the previous era exactly
+   (196/200 vs 195/200, p = 1.000; p = 0.0011 vs the shipped 180/200), both
+   seeds at 98/100 — replicated and single-variable. But the completion
+   reporting it buys does not replicate (seed 12 best-on-record, seed 13 mute),
+   so the default cannot move on this evidence. The running `squad_v15*`
+   campaign tests an intermediate bonus and two more seeds. The claim-spam
+   account of the regression is dead on two counts: volume is action-mass, not
+   economics, and `squad_v8`/`squad_v10` share a claim rate (0.0060) while
+   differing by six points of success. Launching arms is pre-authorised;
+   changing the reward default is not — and it retrains the fleet.
 2. **Three deferred `cohort/` patches** from the assurance cycle, each with its
    exact diff and a skipped test: #39 (`eval_commit` in the artifact), #40
    (`parse_succession`, the formatter's inverse), #42 (above). All three want
@@ -6177,3 +6187,78 @@ deliberately deferred (`docs/vision.md` §2c).
   call and wants the v1.20 window that `_fill_vacancy` (⚑) already forces a
   fleet retrain for. If it does not, the recovery is in `done_true`/
   `done_false` and needs its own split.
+
+- **2026-08-12 — the squad regression has a cause, it is one price, and it
+  replicates: `root_done_bonus=3.0`. The behaviour that price was buying does
+  NOT replicate, so no default moves.** `squad_v14_nobonus` (seed 12) and
+  `squad_v14b_nobonus` (seed 13) ran `root_done_bonus=0` **alone** —
+  single-variable against `squad_v10`/`v10b`, same tree (`5f848fb6`), same 3M
+  steps — and were scored at N=100 on both checkpoints.
+
+  **Success: the strongest and cleanest result of the whole arc.**
+
+      previous era (v8+v9)        195/200 = 0.975
+      shipped v1.19 (v10+v10b)    180/200 = 0.900    <- the regression
+      zero price (v13+v13b)       192/200 = 0.960    p = 0.0295 vs shipped
+      no bonus  (v14+v14b)        196/200 = 0.980    p = 0.0011 vs shipped
+
+  Against the previous era, **p = 1.000** — not merely a null, the same number.
+  Both seeds landed on **exactly 98/100**. After v11 (one seed), v12/v12b (split
+  on every axis) and v13/v13b (confounded by three prices), this is the first
+  thing in the arc that is single-variable, replicated and significant at once.
+  `root_done_bonus=3.0` is what costs the squad scenario its 7.5 points.
+
+  **And it retires the zero-price result as the explanation.** v13's recovery
+  was real but confounded; the bonus carries it. The claim-spam explosion in
+  v13 was `done_false=0` removing the penalty, not the bonus — because removing
+  the bonus alone moves claim volume the *other* way (rate 0.0050 on seed 12
+  against `squad_v10`'s 0.0060, and 0.0000 on seed 13).
+
+  **What does not replicate is everything else.** Side by side, FINAL at N=100:
+
+      axis                        seed 12 (v14)    seed 13 (v14b)   squad_v10
+      success                        0.98             0.98            0.92
+      claim rate / admissible        0.0050           0.0000          0.0060
+      closed on root's report        0.908            0.000           0.837
+      false-COMPLETE                 0.508            n/a (1 claim)   0.560
+      first-claim precision          0.619            --              0.543
+      report recall                  0.908            0.927           0.795
+      root death in success          0.367            0.224           0.250
+      root claims / 100 eps          157              0               178
+
+  Seed 12 is the wanted policy outright — the best completion reporting on
+  record, closing 91% of its wins on the commander's own report against the
+  shipped 84%, with the best first-claim precision the squad family has
+  produced. **Seed 13 is `squad_v11` again**: the root files *zero* claims in
+  100 episodes and closes 0.000 of its wins on its own report. The
+  `successes_announced` gate reads 1.00 on both, because ENDEX is still sent —
+  the gate counts announcement, not *who claimed it*, and this is the second
+  time a mute commander has passed it. Commander survival split the same way
+  and in the opposite direction (0.367 vs 0.224, seed 12 the bad one), so it
+  is not a property of the change either.
+
+  **The only quantity that replicates is success itself.** Removing the bonus
+  reliably restores the mission and reliably does nothing predictable to the
+  reporting — which is exactly the shape that must not be shipped on two seeds.
+  `squad_v10` stays the member; `runs/BASELINE.json` untouched; the seal
+  (`5f848fb6`) untouched; these arms need a `--reward` override to exist and so
+  are findings about the defaults, not candidates for the fleet.
+
+  **Launched, not decided** (`scripts/campaigns/squad_v15_bonus_axis.jobs`, 4
+  jobs): `squad_v15_bonus1`/`v15b_bonus1` put `root_done_bonus=1.0` on seeds 12
+  and 13 — an accepted root claim then pays `done_true` 1.0 + 1.0 = 2.0 against
+  a rejected −0.5, break-even p = 0.20, keeping the claim worth filing while
+  removing the +0.903 later-claim farming that 3.0 funds; and
+  `squad_v14c/v14d_nobonus` add seeds 14 and 15 at `rdb=0` to turn "one seed
+  each way" into a rate for the mute commander. **The decision this is
+  evidence for — lowering `root_done_bonus` in `RewardConfig` — is the owner's,
+  and it invalidates the baseline: it is a reward default, so the fleet
+  retrains. That is the v1.20 window `_fill_vacancy` (⚑) already forces.**
+
+  **One thing worth fixing regardless of how the price lands**, because it is a
+  gate hole and not a tuning question: `successes_announced_rate` is 1.00 for a
+  commander that never claims. `closed_on_root_report_rate` already measures the
+  real thing (0.908 / 0.000 / 0.837 above) and is already committed on every
+  corpus. Whether it becomes a gate term is a decision about what may ship —
+  owner's call, noted here with its measurement, alongside the identical
+  open question from #47 on root-death-within-successes.

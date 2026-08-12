@@ -1,0 +1,27 @@
+# The squad regression has a named single-variable cause: root_done_bonus=3.0.
+# squad_v14/v14b (rdb=0, seeds 12/13) restored success to 196/200 -- p = 0.0011
+# against the shipped 180/200 and p = 1.000 against the previous era's 195/200,
+# with BOTH seeds at exactly 98/100. First thing in this arc to replicate.
+#
+# What did NOT replicate is the behaviour it buys. Seed 12 claims well (rate
+# 0.0050, closed-on-root-report 0.908, false-COMPLETE 0.508 -- best on record);
+# seed 13 goes MUTE (0 root claims in 100 episodes, closed-on-root-report
+# 0.000), which is squad_v11's failure mode exactly. Commander survival split
+# the same way and in the opposite direction (0.367 vs 0.224), so the only
+# quantity that replicates is success itself.
+#
+# Two questions, both needed before the default can move -- and moving it is
+# the owner's call, not this campaign's:
+#
+#   A. Is there a bonus that restores success WITHOUT risking the mute
+#      commander? rdb=1.0 keeps the claim worth filing (accepted root claim
+#      pays done_true 1.0 + 1.0 = 2.0 vs rejected -0.5, break-even p = 0.20)
+#      while removing the +0.903 later-claim farming that 3.0 funds.
+#   B. How OFTEN is the commander mute at rdb=0? Two seeds gave one each way.
+#      Seeds 14 and 15 turn 1-of-2 into a rate.
+#
+# Same tree (5f848fb6), same 3M steps, single-variable against squad_v10/v10b.
+squad_v15_bonus1    --scenario squad --total-steps 3000000 --seed 12 --reward root_done_bonus=1.0
+squad_v15b_bonus1   --scenario squad --total-steps 3000000 --seed 13 --reward root_done_bonus=1.0
+squad_v14c_nobonus  --scenario squad --total-steps 3000000 --seed 14 --reward root_done_bonus=0
+squad_v14d_nobonus  --scenario squad --total-steps 3000000 --seed 15 --reward root_done_bonus=0
