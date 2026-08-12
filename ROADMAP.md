@@ -6689,3 +6689,77 @@ deliberately deferred (`docs/vision.md` §2c).
   `tests/test_run_report_root_report.py` pins it against these corpora, including
   the best/final split that started this. Tooling only, **no `cohort/` change** —
   the v1.20 campaign's tree is untouched.
+
+- **2026-08-12 (assurance, #49)** — **No, there is no silent reattachment path —
+  and the residual is almost certainly the monitor's own missing rule.** #49 asks
+  whether a soldier can acquire a new commander with no radio act, and what
+  happens to a vacated branch when no eligible successor exists. Both halves are
+  answerable by reading code, and now by test:
+  `tests/test_succession_silence.py`, write-up `docs/succession-on-the-net.md`.
+  **Documentation and tests only — no `cohort/` change**, the v1.20 campaign's
+  tree is untouched.
+
+  **The structural answer.** `leader_id` — the only representation of "who
+  commands me" — is assigned in exactly **two statements in the whole package**,
+  both inside `Roster._fill_vacancy`, both between `_pick_successor` returning a
+  successor and `events.append(...)`, i.e. on the branch `CohortEnv.step` turns
+  into a `TAKING_COMMAND` broadcast. That is asserted with an AST sweep rather
+  than by enumerating paths, so a third write site fails the suite. Exhaustively:
+  over all 5,040 death orderings plus every same-step pair and triple, the parent
+  map rebuilt from the announcements alone equals the parent map in state, and a
+  chart that did not move produces no traffic.
+
+  **The no-successor case.** `_pick_successor` returns `None` only when the
+  vacated leader has no living *direct* subordinate, so the branch is empty by
+  construction and `_fill_vacancy` returns without touching the roster. Nothing
+  is re-homed onto the grandparent — living descendants under an already-dead
+  direct subordinate stay where they are. Kill SL1, TL1 and TL2 in one tick and
+  four of seven soldiers stand under a dead squad leader with `root()` None.
+
+  **The two divergences, both reachable in one tick of `squad`, neither silent.**
+  Measured against `cohort.probe.NetPredictor`, this repo's own transcript-only
+  reconstruction. (i) *A real orphan the net hides*: the casualty loop devolves a
+  tick's deaths one at a time against alive-flags that already count all of them,
+  so SL1+TL1 together leaves RFN1 under the dead SL1 — while a replay, which must
+  consume messages in sequence, has not yet heard TL1's CASUALTY when it replays
+  TL2's succession, sweeps TL1 up to TL2, and reports the chain intact. (ii) *A
+  false orphan the net invents*: `_assume` re-points a vacated slot's downward
+  edges but never files the successor under its new superior, which is exactly
+  the link #42 added to state — so TL2+SL1 together leaves state **whole** (RFN3
+  swept up to TL1) while the net leaves RFN3 hanging off the dead SL1.
+
+  **(ii) is the shape of an orphaned-branch residual**, it needs no new radio
+  act, and the fix is one rule on the monitor's side: *a successor joins the
+  subordinate list of the slot it assumed.* "Takes the vacated slot" has to be
+  read in both directions. Whether the genuinely headless branch of (i) should
+  get a line on the net is a vocabulary/semantics decision and stays the
+  owner's; nothing here changes what is transmitted.
+
+  **#42's own footprint, since it is the code under suspicion.** It introduced no
+  silent transition — the link it adds is the upward half of a move the broadcast
+  already describes. It did change *who* succeeds in same-step cascades (17 of
+  the 252 ordered pairs/triples differ from the pre-#42 tree, including one where
+  a twice-promoted rifleman takes the squad ahead of an intact team leader, since
+  `_pick_successor` breaks the authority tie on `-id` and an acting-TL ties a
+  real TL), and it halved the damage without closing it (same-step batches
+  leaving a headless branch 58 → 30, leaving no root 6 → 2). README's #42 scope
+  box was still describing the pre-fix world; corrected with the new counts.
+
+  **⚑ A defect #42 introduced, found on the way — one line, `cohort/` frozen.**
+  `_fill_vacancy` links the backfilled agent into its new leader's
+  `subordinate_ids` **twice**: once at #42's `parent.subordinate_ids.append`,
+  once at the pre-existing `successor.subordinate_ids.append(promoted.id)` that
+  #42 made redundant (the `not in` guard runs first, so it does not help). The
+  commonest succession in the game triggers it — SL1 falls, TL1 takes the squad,
+  RFN1 backfills, TL1's chart reads `[TL2, RFN1, RFN1]`. `living_subordinates` is
+  what `env/observations.py` writes into the four subordinate slots and what
+  `env/actions.py` indexes with `order_slot`, so from the moment it takes command
+  the new **root** spends an observation slot on a duplicate and carries two
+  distinct ORDER action indices addressing the same agent. Hit in 4 of 50
+  `patrol_brique` episodes under random play; pre-#42 the same cascade produced
+  `[TL2, RFN1]`. Pinned by a strict `xfail` so the marker must come out with the
+  fix. **Not fixed here**: it is a `cohort/` change and the v1.20 fleet is
+  mid-campaign, so it belongs to the next breaking window — and it is a live
+  candidate explanation for post-#42 behaviour changes on succession-heavy
+  scenarios, since it corrupts the root's observation and order-slot mapping
+  exactly when the root is a promoted agent.
