@@ -290,9 +290,14 @@ class Roster:
                 deputy_id=None,
                 mission=old_mission,
             )
-            promoted = self._fill_vacancy(placeholder, events)
-            if promoted is not None:
-                successor.subordinate_ids.append(promoted.id)
+            # No append here, and none needed: `placeholder.leader_id` is
+            # `successor.id`, so the recursive call's own #42 block already files
+            # the promoted teammate under `successor`, guarded by `not in`. The
+            # unguarded append this replaces double-linked the commonest
+            # succession in the game — SL1 falls, TL1's chart reads
+            # [TL2, RFN1, RFN1], and the promoted root then observes a phantom
+            # subordinate and carries two ORDER slots addressing one agent.
+            self._fill_vacancy(placeholder, events)
         return successor
 
 

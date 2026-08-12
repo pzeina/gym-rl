@@ -55,8 +55,6 @@ import itertools
 import pathlib
 from dataclasses import replace
 
-import pytest
-
 from cohort.core.missions import Mission, MissionType
 from cohort.core.ranks import Rank
 from cohort.core.units import Roster, Soldier
@@ -471,17 +469,6 @@ def test_a_net_replay_that_drops_the_upward_link_invents_an_orphan():
 # --------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "#42 defect, found while answering #49: _fill_vacancy links the "
-        "backfilled agent into its new leader's subordinate_ids TWICE — once at "
-        "the general `parent.subordinate_ids.append` #42 added, once at the "
-        "pre-existing `successor.subordinate_ids.append(promoted.id)` that #42 "
-        "made redundant. Fix is one line in cohort/core/units.py, which is "
-        "frozen for the v1.20 campaign; remove this marker with the fix."
-    ),
-)
 def test_a_backfilled_agent_is_linked_into_its_new_leader_exactly_once():
     """The commonest succession in the game duplicates a subordinate slot.
 
