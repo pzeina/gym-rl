@@ -97,10 +97,24 @@ PUBLISH_STABILITY_POINTS = 10
 #: behavior run and printed by `evaluate`'s own table, but this digest — "the
 #: ONLY thing the big model reads" — dropped it, so the pre-registered primary
 #: could not be read from the artifact the verdict is written against.
+#:
+#: ``closed_on_root_report_rate`` is here for the same reason and was found the
+#: same way (refs #48). It is the axis the v1.20 `root_done_bonus` default was
+#: chosen on and the axis `metrics.regression_gates` now refuses runs on (floor
+#: 0.5) — and this digest printed report precision, recall and false-DONE while
+#: never printing it. The cost of the omission is on the record: a handoff note
+#: scoped near-mute `ckpt_best` as a property of the challenger price when the
+#: SHIPPED one does it too (`squad_v10b`, 0.000 at `ckpt_best` against 0.784 at
+#: FINAL, 0 root claims in 100 episodes against 307), which is exactly the
+#: comparison a row printed under both blocks makes at a glance. Note it is NOT
+#: the root-claim count: on a continuous-posture root the window closes on a
+#: SITREP and MISSION COMPLETE is masked shut, so the whole defend family reads
+#: ~1.00 here on zero claims.
 _BEHAVIOR_ROWS: tuple[tuple[str, str, str], ...] = (
     ("obedience_latency_mean", "obedience latency", "{:.2f}"),
     ("report_precision", "report precision", "{:.2f}"),
     ("report_recall", "report recall", "{:.2f}"),
+    ("closed_on_root_report_rate", "closed on root report", "{:.3f}"),
     ("doctrine_preference_rate", "doctrine preference", "{:.3f}"),
     ("doctrine_allowed_rate", "doctrine containment", "{:.3f}"),
     ("orders_per_episode", "orders / episode", "{:.2f}"),
