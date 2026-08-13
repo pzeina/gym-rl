@@ -22,6 +22,7 @@ from cohort.metrics import (
     format_order_task_mix,
     format_root_claim_shape,
     regression_gates,
+    split_gates,
 )
 from cohort.training.evaluate import evaluate, run_episode
 
@@ -1355,3 +1356,15 @@ def test_recorder_records_the_freshness_interval_it_was_played_under():
     assert agg["root_sitreps"] >= 0
     # every root SITREP is either on cadence or off it, and never both
     assert agg["root_sitreps_off_cadence"] <= agg["root_sitreps"]
+
+
+def test_split_gates_keeps_unmeasured_out_of_the_failures():
+    gates = [
+        {"name": "timeout_rate", "value": 1.0, "bound": 0.5, "direction": "max", "passed": False},
+        {"name": "success_rate", "value": 0.9, "bound": 0.5, "direction": "min", "passed": True},
+        {"name": "closed_on_root_report_rate", "value": None, "bound": 0.5,
+         "direction": "min", "passed": None},
+    ]
+    failed, unmeasured = split_gates(gates)
+    assert failed == ["timeout_rate"]
+    assert unmeasured == ["closed_on_root_report_rate"]

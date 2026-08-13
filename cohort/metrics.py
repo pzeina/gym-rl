@@ -1586,6 +1586,22 @@ def _gate(name: str, value: float | None, bound: float, direction: str) -> dict[
     return {"name": name, "value": value, "bound": bound, "direction": direction, "passed": passed}
 
 
+def split_gates(gates: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """Gate names that FAILED, and those that were never measured.
+
+    ``_gate`` emits ``passed=None`` for a metric this run never produced, and
+    the distinction is the whole point: unmeasured is not passed, and it is
+    not failed either. Every reader that reduced the tri-state with a plain
+    ``not g["passed"]`` silently filed the unmeasured ones under failures —
+    ``squad_v21_seed16`` never completed an episode, so
+    ``closed_on_root_report_rate`` had nothing to measure, and it was the run
+    that surfaced this. Callers that need one bucket should say which.
+    """
+    failed = [g["name"] for g in gates if g.get("passed") is False]
+    unmeasured = [g["name"] for g in gates if g.get("passed") is None]
+    return failed, unmeasured
+
+
 def format_gate_report(gates: list[dict[str, Any]]) -> str:
     """Human-readable gate verdicts; empty string when nothing gates."""
     if not gates:

@@ -44,6 +44,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from cohort.metrics import split_gates  # noqa: E402
 from scripts import baseline  # noqa: E402
 from scripts.publish_audit import audit_run  # noqa: E402
 
@@ -73,9 +74,13 @@ def row(scenario: str, run: str) -> str:
     peak = best.get("success_ci95") or "—"
     peak_n = f" (N={best['episodes']})" if best.get("episodes") else ""
     gates = final.get("gates") or []
-    failed = [g["name"] for g in gates if not g.get("passed", True)]
-    gate_cell = "pass" if gates and not failed else ("**" + ", ".join(failed) + "**" if failed
-                                                    else "—")
+    failed, unmeasured = split_gates(gates)
+    if failed:
+        gate_cell = "**" + ", ".join(failed) + "**"
+    elif unmeasured:
+        gate_cell = f"pass ({len(unmeasured)} unmeasured)" if len(gates) > len(unmeasured) else "—"
+    else:
+        gate_cell = "pass" if gates else "—"
     announced = m.get("successes_announced")
     successes = m.get("successes")
     ann_cell = "—" if announced is None or not successes else f"{announced}/{successes}"

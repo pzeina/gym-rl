@@ -196,10 +196,19 @@ def _meter(rate: float | None, ci: float | None, *, idle: bool = False) -> str:
 
 def _gate_cell(row: dict) -> str:
     gates, failed = row["gates"], row["gates_failed"]
+    unmeasured = row["gates_unmeasured"]
     if not gates:
         return '<span class="chip">none</span>'
     if not failed:
-        return f'<span class="chip ok">{len(gates)}/{len(gates)} pass</span>'
+        # "n/n pass" must not count a gate that had nothing to read.
+        scored = len(gates) - len(unmeasured)
+        if unmeasured:
+            tip = html.escape(", ".join(unmeasured))
+            return (
+                f'<span class="chip ok">{scored}/{scored} pass</span>'
+                f'<span class="chip" title="{tip}">{len(unmeasured)} unmeasured</span>'
+            )
+        return f'<span class="chip ok">{scored}/{scored} pass</span>'
     short = failed[0].replace("_under_threat", "").replace("mean_distance_from_objective", "distance")
     extra = f" +{len(failed) - 1}" if len(failed) > 1 else ""
     return f'<span class="chip bad" title="{html.escape(", ".join(failed))}">✕ {html.escape(short)}{extra}</span>'
@@ -217,7 +226,10 @@ def _tip(row: dict) -> str:
     if row["best_ci95"]:
         bits.append(f"best ckpt {row['best_ci95']} (N={row['best_episodes']})")
     for g in row["gates"]:
-        mark = "pass" if g.get("passed") else "FAIL"
+        if g.get("passed") is None:
+            bits.append(f"{g['name']} unmeasured ({g['direction']} {g['bound']:g})")
+            continue
+        mark = "pass" if g["passed"] else "FAIL"
         bits.append(f"{g['name']} {g['value']:.3g} ({g['direction']} {g['bound']:g}) {mark}")
     if row["overrides"]:
         bits.append("rewards: " + ", ".join(row["overrides"]))
