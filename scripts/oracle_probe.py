@@ -56,6 +56,14 @@ class Accum:
         self.threat_cover = Counter()    # role -> ...of which in cover
         self.threat_dist = Counter()     # role -> sum of dist to root objective
         self.threat_mission: Counter[str] = Counter()   # mission name under threat
+        # The ROOT alone (refs #52). "human" pools every commander and the
+        # mission-mix rows only name the root's task implicitly, so a root that
+        # stops going forward was visible in this probe but never stated. The
+        # root is counted here IN ADDITION to its human/leader bucket, and it
+        # follows succession: whoever holds the root role that step.
+        self.root_steps = 0              # living-root agent-steps, threatened or not
+        self.root_dist_all = 0.0         # ...sum of dist to the root objective
+        self.root_at_objective = 0       # ...of which within the in-position radius
         self.deaths_at_objective = 0
         self.deaths_in_the_open = 0
         self.human_deaths = 0
@@ -124,6 +132,8 @@ def probe(
             acc.steps += 1
 
             living_enemy_pos = [e["pos"] for e in snap["enemies"] if e["alive"]]
+            root_now = env.roster.root()
+            root_cs = root_now.callsign if root_now is not None else None
             for sd in snap["soldiers"]:
                 if not sd["alive"]:
                     # death accounting, once, on the transition
@@ -138,6 +148,15 @@ def probe(
                     continue
 
                 role = _role(sd, human_cs)
+                is_root = root_cs is not None and sd["cs"] == root_cs
+                if is_root and obj_pos is not None:
+                    # Every living step, not only threatened ones: "hung back"
+                    # is a claim about where the commander spent the episode.
+                    d_root = dist(sd["pos"], obj_pos)
+                    acc.root_steps += 1
+                    acc.root_dist_all += d_root
+                    if d_root <= radius:
+                        acc.root_at_objective += 1
                 if in_prep:
                     acc.prep_agent_steps += 1
                     if (
@@ -155,18 +174,19 @@ def probe(
                 )
                 if not threatened:
                     continue
-                acc.threat[role] += 1
-                acc.threat["team"] += 1
+                buckets = [role, "team"] + (["root"] if is_root else [])
+                for b in buckets:
+                    acc.threat[b] += 1
                 if sd["fired"]:
-                    acc.threat_fired[role] += 1
-                    acc.threat_fired["team"] += 1
+                    for b in buckets:
+                        acc.threat_fired[b] += 1
                 if sd["cover"]:
-                    acc.threat_cover[role] += 1
-                    acc.threat_cover["team"] += 1
+                    for b in buckets:
+                        acc.threat_cover[b] += 1
                 if obj_pos is not None:
                     d = dist(sd["pos"], obj_pos)
-                    acc.threat_dist[role] += d
-                    acc.threat_dist["team"] += d
+                    for b in buckets:
+                        acc.threat_dist[b] += d
                 acc.threat_mission[sd["mission"] or "NONE"] += 1
 
             if in_prep:
@@ -206,10 +226,10 @@ def report(acc: Accum, name: str, other: Accum | None, other_name: str | None) -
     print("-" * len(hdr))
 
     print("UNDER THREAT (a living enemy in weapon range with LOS)")
-    for role in ("team", "human", "leader", "rifleman"):
+    for role in ("team", "human", "leader", "rifleman", "root"):
         a, b = pair(lambda x, r=role: x.rate(x.threat_fired, r))
         print(_row(f"fire rate [{role}]", a, b))
-    for role in ("team", "human"):
+    for role in ("team", "human", "root"):
         a, b = pair(lambda x, r=role: x.rate(x.threat_cover, r))
         print(_row(f"cover occupancy [{role}]", a, b))
     a, b = pair(
@@ -218,6 +238,27 @@ def report(acc: Accum, name: str, other: Accum | None, other_name: str | None) -
     print(_row("dist from root OBJ", a, b, "{:.2f}"))
     a, b = pair(lambda x: x.threat["team"] / x.episodes if x.episodes else None)
     print(_row("threatened steps/ep", a, b, "{:.1f}"))
+
+    # refs #52: the commander's own war, stated rather than inferred from the
+    # mission mix. A root that never closes on the objective it was ordered to
+    # take cannot report taking it — and reads as "safe" on every team row.
+    print("THE ROOT ITSELF (whoever holds the role, across succession)")
+    a, b = pair(
+        lambda x: (x.threat["root"] / x.threat["team"]) if x.threat["team"] else None
+    )
+    print(_row("share of team's contact", a, b))
+    a, b = pair(
+        lambda x: (x.threat_dist["root"] / x.threat["root"]) if x.threat["root"] else None
+    )
+    print(_row("dist from OBJ (threatened)", a, b, "{:.2f}"))
+    a, b = pair(
+        lambda x: (x.root_dist_all / x.root_steps) if x.root_steps else None
+    )
+    print(_row("dist from OBJ (all steps)", a, b, "{:.2f}"))
+    a, b = pair(
+        lambda x: (x.root_at_objective / x.root_steps) if x.root_steps else None
+    )
+    print(_row("time within OBJ radius", a, b))
 
     print("MISSION MIX UNDER THREAT (share of threatened agent-steps)")
     names = sorted(
@@ -305,6 +346,9 @@ def main() -> None:
             "threat_fired": dict(acc.threat_fired),
             "threat_cover": dict(acc.threat_cover),
             "threat_mission": dict(acc.threat_mission),
+            "root_steps": acc.root_steps,
+            "root_dist_all": acc.root_dist_all,
+            "root_at_objective": acc.root_at_objective,
             "deaths_at_objective": acc.deaths_at_objective,
             "deaths_in_the_open": acc.deaths_in_the_open,
             "human_deaths": acc.human_deaths,
