@@ -260,14 +260,9 @@ class Roster:
         if AUTHORITY[vacated.effective_rank] > successor.effective_authority:
             successor.acting_rank = vacated.effective_rank
         successor.leader_id = vacated.leader_id
-        # The superior inherits the successor in the slot it just filled. Without
-        # this the promoted agent is unreachable from above: unorderable (masks
-        # read living_subordinates), unobserved, and — when the superior falls —
-        # not devolved to, which is how an operation ends up with no root (#42).
-        if successor.leader_id is not None:
-            parent = self.by_id[successor.leader_id]
-            if successor.id not in parent.subordinate_ids:
-                parent.subordinate_ids.append(successor.id)
+        # EXPERIMENT ARM ONLY — the #42 chart block is removed here on purpose,
+        # restoring `_fill_vacancy` to its pre-56ada9a shape. See the branch
+        # message. This tree must never be merged.
         successor.deputy_id = None
         new_subs = [i for i in vacated.subordinate_ids if i != successor.id and self.by_id[i].alive]
         successor.subordinate_ids = new_subs
@@ -290,14 +285,14 @@ class Roster:
                 deputy_id=None,
                 mission=old_mission,
             )
-            # No append here, and none needed: `placeholder.leader_id` is
-            # `successor.id`, so the recursive call's own #42 block already files
-            # the promoted teammate under `successor`, guarded by `not in`. The
-            # unguarded append this replaces double-linked the commonest
-            # succession in the game — SL1 falls, TL1's chart reads
-            # [TL2, RFN1, RFN1], and the promoted root then observes a phantom
-            # subordinate and carries two ORDER slots addressing one agent.
-            self._fill_vacancy(placeholder, events)
+            # Restored with the block above removed: with no #42 path filing the
+            # promoted teammate under the successor, this append is once again
+            # the only thing that does it. Together these two edits reproduce
+            # the tree squad_v15c/v15d trained against — state A, not the
+            # double-linked state B that da24b42 fixed.
+            promoted = self._fill_vacancy(placeholder, events)
+            if promoted is not None:
+                successor.subordinate_ids.append(promoted.id)
         return successor
 
 
