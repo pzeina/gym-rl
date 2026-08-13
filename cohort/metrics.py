@@ -1183,9 +1183,25 @@ def _traffic(trace: dict) -> dict[str, Any]:
 
     * ``messages`` — every message on the transcript, learned or automatic;
     * ``messages_command`` — orders and EXECUTE releases (``COMMAND_KINDS``);
-    * ``messages_voice`` — SYNC PROPOSE / GO (``VOICE_KINDS``), which cost no
-      airtime and are never net-arbitrated, so they are the one transmission
-      a policy with nothing to say can emit for free.
+    * ``messages_voice`` — SYNC PROPOSE / GO (``VOICE_KINDS``), which are never
+      net-arbitrated — shouting to the soldier beside you does not contend for
+      the net — but which **do** pay airtime like every other learned
+      transmission, and have since #18 closed exactly that hole (it was found
+      when ``squad_screen_v4/ckpt_latest`` poured 93% of its traffic into the
+      free channel, 1173 messages an episode, to run the clock out).
+
+      This bullet said "cost no airtime … the one transmission a policy with
+      nothing to say can emit for free" until 2026-08-13, years-of-the-project
+      after it stopped being true, and that stale sentence was read as current
+      fact off this docstring and used to diagnose ``patrol_brique_v7``. Two
+      consequences worth keeping in view when reading a voice count. **Voice
+      airtime is charged to the ``report`` component** (``cohort_env``
+      ``_sync_propose``: SYNC is speech between peers, not authority, and the
+      ``flat`` ablation arm must show command reward of exactly 0.0), so a
+      negative ``report`` component does NOT by itself mean reporting was
+      unfunded — a SYNC-heavy policy pays into that bucket while earning no
+      ``contact_new``. And a high voice count is a policy *spending* on
+      synchronisation, not helping itself to something free.
 
     ``ran_out_the_clock`` is the episode-level half of the signature: the
     environment scores ``timeout`` exactly when the step ceiling is reached

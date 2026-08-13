@@ -164,8 +164,11 @@ arbitrated and costed like an order.
 `SYNC_PROPOSE` / `SYNC_GO` are **spoken** — the manual's bond par binôme is
 commanded "à la voix ou aux gestes" (pp. 14-15). They carry `voice=True` on the
 transcript, reach only ~`voice_range` (6 cells; peers are registered at propose
-time), are never net-arbitrated, and cost no airtime. The frequency stays free
-while a binôme synchronizes its bound.
+time), and are never net-arbitrated — the frequency stays free while a binôme
+synchronizes its bound. They **do** pay airtime, though: `transmission_cost`
+like every other learned transmission, charged to the `report` component, since
+#18. (This paragraph claimed they "cost no airtime" until 2026-08-13; a speech
+act nobody pays for is an action sink, which is what #18 closed.)
 
 ### Dedup doctrine: the first accurate CONTACT wins
 
