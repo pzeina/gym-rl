@@ -55,7 +55,9 @@ behaves* while doing so, per evaluation run:
 * clock expiry + traffic composition — the share of episodes that ran the
   step ceiling out, and what the net carried while they did: total messages
   per episode split into command traffic (orders, EXECUTE) and voice traffic
-  (SYNC PROPOSE / GO, which is free and never net-arbitrated). Refs issue
+  (SYNC PROPOSE / GO, never net-arbitrated, and charged airtime since #18
+  closed that hole — the split is still worth keeping because the two
+  channels answer different questions, not because one is free). Refs issue
   #18: three collapsed checkpoints (`squad_recon_v6`, `squad_screen_v4`,
   `squad_screen_v5` at `ckpt_latest`) sat at the ceiling in 30/30 episodes
   while transmitting 2.5x *more* than their own successful `ckpt_best` —
@@ -224,10 +226,13 @@ UNSET_SITREP_CLOCK: int = -10_000
 #: policy decided it.
 COMMAND_KINDS: frozenset[str] = frozenset({"order", "execute"})
 
-#: Message kinds spoken by VOICE (A5-4): free, uncharged, never
-#: net-arbitrated. The only learned transmission a stalling policy can emit
-#: without paying for it, which is why it is counted separately rather than
-#: pooled into "the radio".
+#: Message kinds spoken by VOICE (A5-4): never net-arbitrated — shouting to the
+#: soldier beside you does not contend for the net — but charged airtime like
+#: every other learned transmission since #18. Counted separately because voice
+#: and radio answer different questions, NOT because voice is free: it was, and
+#: `squad_screen_v4/ckpt_latest` poured 93% of its traffic into it to run the
+#: clock out, which is what #18 closed. Do not reason from "the free channel"
+#: — `tests/test_voice_is_charged.py` fails if this comment goes stale again.
 VOICE_KINDS: frozenset[str] = frozenset({"sync_propose", "sync_go"})
 
 
@@ -929,7 +934,10 @@ def _root_sitreps(trace: dict) -> dict[str, int]:
       window* one the cadence would have produced anyway? This is the
       numerator of ``closed_on_cadence_report_rate``, and it is the cell that
       answers "is the policy timing anything at all", because it excludes the
-      reports bought as lottery tickets on a +3.0 ``root_done_bonus``.
+      reports bought as lottery tickets on the ``root_done_bonus`` (+3.0 when
+      this cell was built; **1.0 since v1.20**, which is exactly the change the
+      lottery-ticket reading was meant to survive — the cell asks whether the
+      SITREP channel is timing anything, at whatever the bonus happens to be).
 
     An operation closed by a confirmed MISSION COMPLETE rather than by a
     SITREP counts in that rate's denominator and not in its numerator, which

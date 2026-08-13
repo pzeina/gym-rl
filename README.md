@@ -967,7 +967,7 @@ cohort/
   viz/                 APP-6 frame renderer, GIF writer, training curves,
                        interactive dashboard (dashboard.py + dashboard.html)
   play.py              interactive commander console
-tests/                 282 tests: ranks, language, doctrine, succession, masking,
+tests/                 ~850 tests: ranks, language, doctrine, succession, masking,
                        PettingZoo API, rewards, combat, SUPPORT mechanics, humans,
                        rank-weighted casualties, completion reporting, comms range,
                        SITREP cadence, BRIQUE band + traps, behavioral metrics,

@@ -70,9 +70,15 @@ METRIC_FIELDS = [
     "n_episodes",
     "sps",
     "tx_per_agent_step",
-    # refs issue #18: tx counts CHARGED transmissions only — voice (SYNC
-    # PROPOSE/GO) is free by design, so a policy that stops commanding and
-    # starts talking reads as radio silence here while the net gets louder.
+    # refs issue #18: tx counts LEARNED transmissions — every call that reaches
+    # `_charge_transmission`, voice included, because #18 made SYNC PROPOSE/GO
+    # pay airtime like the rest. messages_per_agent_step counts everything on
+    # the transcript, learned or automatic; the pair is the composition.
+    #
+    # This comment said "voice is free by design, so a policy that stops
+    # commanding and starts talking reads as radio silence here" until
+    # 2026-08-13. That was the PRE-#18 world and it inverts the instrument: the
+    # stall #18 closed would now show up in tx as extra volume, not as silence.
     # messages_per_agent_step counts everything said; the pair is the
     # composition. timeout_rate_rolling is the stall itself, over the same
     # window as success_rate_rolling: a run whose episodes start ending at
