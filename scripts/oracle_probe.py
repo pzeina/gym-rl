@@ -37,6 +37,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cohort.core.missions import IN_POSITION_RADIUS
+from cohort.core.orders import MessageKind
 from cohort.core.world import dist
 from cohort.env.cohort_env import make_env
 from cohort.training.evaluate import _pick_actions
@@ -64,6 +65,23 @@ class Accum:
         self.root_steps = 0              # living-root agent-steps, threatened or not
         self.root_dist_all = 0.0         # ...sum of dist to the root objective
         self.root_at_objective = 0       # ...of which within the in-position radius
+        # refs #52: the rows above are positional by construction, so a root
+        # that arrives, stands on the objective, and never claims reads exactly
+        # like one that reports truthfully — both post a high in-position
+        # fraction. Split the same two quantities by whether THIS episode's
+        # root emitted at least one DONE, so "silent" and "reporting" are two
+        # populations on the sheet instead of one mean that cannot tell them
+        # apart. A checkpoint that never claims in any episode is not hidden
+        # by this split either: its silent cluster IS the whole block, now
+        # labelled as such instead of standing in as "the" root number.
+        self.root_claim_episodes = 0     # episodes where the root claimed >=1
+        self.root_claim_steps = 0
+        self.root_claim_dist_all = 0.0
+        self.root_claim_at_objective = 0
+        self.root_silent_episodes = 0    # episodes where the root never claimed
+        self.root_silent_steps = 0
+        self.root_silent_dist_all = 0.0
+        self.root_silent_at_objective = 0
         self.deaths_at_objective = 0
         self.deaths_in_the_open = 0
         self.human_deaths = 0
@@ -124,10 +142,31 @@ def probe(
         acc.episodes += 1
         acc.enemies_total += env.spec_cfg.n_enemies
 
+        # refs #52: buffered per-episode, then routed once the episode's
+        # claim status is known — see the note on Accum's root_claim_*/
+        # root_silent_* fields.
+        ep_root_steps = 0
+        ep_root_dist_all = 0.0
+        ep_root_at_objective = 0
+        ep_root_claimed = False
+
         while env.agents:
             in_prep = env._in_preparation()
             actions = _pick_actions(env, obs, net, rng, greedy=greedy)
+            # Root resolved BEFORE the step, and matched against only the
+            # traffic THIS step appends — never through a step number, which
+            # is the keying that lost done_probe.py's last-step claims (see
+            # tests/test_confirmed_claim_is_last.py). Succession is why this
+            # is re-resolved every step rather than once at reset.
+            root_pre = env.roster.root()
+            root_id_pre = root_pre.id if root_pre is not None else None
+            msgs_before_step = len(env.transcript.messages)
             obs, _, term, trunc, _ = env.step(actions)
+            if not ep_root_claimed and root_id_pre is not None:
+                ep_root_claimed = any(
+                    m.kind is MessageKind.DONE and m.sender_id == root_id_pre
+                    for m in env.transcript.messages[msgs_before_step:]
+                )
             snap = env.oracle()
             acc.steps += 1
 
@@ -155,8 +194,11 @@ def probe(
                     d_root = dist(sd["pos"], obj_pos)
                     acc.root_steps += 1
                     acc.root_dist_all += d_root
+                    ep_root_steps += 1
+                    ep_root_dist_all += d_root
                     if d_root <= radius:
                         acc.root_at_objective += 1
+                        ep_root_at_objective += 1
                 if in_prep:
                     acc.prep_agent_steps += 1
                     if (
@@ -193,6 +235,17 @@ def probe(
                 acc.prep_steps += 1
             if all(term.values()) or all(trunc.values()):
                 break
+
+        if ep_root_claimed:
+            acc.root_claim_episodes += 1
+            acc.root_claim_steps += ep_root_steps
+            acc.root_claim_dist_all += ep_root_dist_all
+            acc.root_claim_at_objective += ep_root_at_objective
+        else:
+            acc.root_silent_episodes += 1
+            acc.root_silent_steps += ep_root_steps
+            acc.root_silent_dist_all += ep_root_dist_all
+            acc.root_silent_at_objective += ep_root_at_objective
 
         acc.outcomes[env.outcome or "timeout"] += 1
         acc.enemy_kills += sum(1 for e in env.enemies if not e.alive)
@@ -259,6 +312,41 @@ def report(acc: Accum, name: str, other: Accum | None, other_name: str | None) -
         lambda x: (x.root_at_objective / x.root_steps) if x.root_steps else None
     )
     print(_row("time within OBJ radius", a, b))
+
+    # refs #52: the two rows above are positional and cannot tell "never
+    # arrived" from "arrived, stood on the objective, declined to claim" —
+    # both post a high in-position fraction. Split by whether THIS episode's
+    # root emitted >=1 DONE, so a present-but-silent root shows up in its own
+    # cluster instead of reading as healthy inside the pooled mean.
+    print("...SPLIT BY WHETHER THE ROOT CLAIMED THAT EPISODE (refs #52)")
+    a, b = pair(lambda x: x.root_claim_episodes)
+    print(_row("episodes root claimed", a, b, "{:.0f}"))
+    a, b = pair(lambda x: x.root_silent_episodes)
+    print(_row("episodes root silent", a, b, "{:.0f}"))
+    a, b = pair(
+        lambda x: (x.root_claim_dist_all / x.root_claim_steps)
+        if x.root_claim_steps
+        else None
+    )
+    print(_row("dist from OBJ [claimed eps]", a, b, "{:.2f}"))
+    a, b = pair(
+        lambda x: (x.root_silent_dist_all / x.root_silent_steps)
+        if x.root_silent_steps
+        else None
+    )
+    print(_row("dist from OBJ [silent eps]", a, b, "{:.2f}"))
+    a, b = pair(
+        lambda x: (x.root_claim_at_objective / x.root_claim_steps)
+        if x.root_claim_steps
+        else None
+    )
+    print(_row("time within OBJ [claimed eps]", a, b))
+    a, b = pair(
+        lambda x: (x.root_silent_at_objective / x.root_silent_steps)
+        if x.root_silent_steps
+        else None
+    )
+    print(_row("time within OBJ [silent eps]", a, b))
 
     print("MISSION MIX UNDER THREAT (share of threatened agent-steps)")
     names = sorted(
@@ -349,6 +437,15 @@ def main() -> None:
             "root_steps": acc.root_steps,
             "root_dist_all": acc.root_dist_all,
             "root_at_objective": acc.root_at_objective,
+            # refs #52
+            "root_claim_episodes": acc.root_claim_episodes,
+            "root_claim_steps": acc.root_claim_steps,
+            "root_claim_dist_all": acc.root_claim_dist_all,
+            "root_claim_at_objective": acc.root_claim_at_objective,
+            "root_silent_episodes": acc.root_silent_episodes,
+            "root_silent_steps": acc.root_silent_steps,
+            "root_silent_dist_all": acc.root_silent_dist_all,
+            "root_silent_at_objective": acc.root_silent_at_objective,
             "deaths_at_objective": acc.deaths_at_objective,
             "deaths_in_the_open": acc.deaths_in_the_open,
             "human_deaths": acc.human_deaths,
