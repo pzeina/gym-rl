@@ -67,6 +67,22 @@ subordinates, which is exactly consistent with 1,865 admissible steps. So if
 too, something else is silencing the commander and `root_done_bonus=1.0` is
 back under question.** Do not read the new squad member as a routine landing.
 
+**⇒ THAT QUESTION IS NOW ANSWERED (2026-08-14, refs #52) — it was the chart
+block, and `root_done_bonus=1.0` is exonerated.** `squad_v17` (seed 12) reports
+normally at **0.959**, so the fleet member is not mute; but seeds 14 and 15 on
+the same tree are (`squad_v10c` 0.000, `squad_v20_seed15` 0.000). A single-
+variable branch with `56ada9a`'s 8-line chart block removed and everything else
+held flips **both** of them back — 0.000 → **0.825** and 0.000 → **0.857** at
+N=100, and 0.052 → 0.835 / 0.000 → 0.811 at `ckpt_best` — while success stays a
+null (p = 0.08, 0.68). The mechanism is positional: with the block the root sits
+at **2.2× the distance** from its objective (41 vs 19.5) and never takes the
+ground it would report. Seed 16 fails on both trees, so this is not a universal
+explanation of squad failure. **The cost of removing it is the commander's life
+— 0.22–0.24 deaths/episode against 0.00–0.03** — so which way to go is an
+owner's decision and is written up with three options in the 2026-08-14 progress
+entry at the bottom. Nothing was applied.
+
+
 **When the campaign lands**: `publish_baseline.py` at N=100 → compare each
 replacement against its incumbent → `baseline.py --seal` → `results_table.py
 --write` → `/boards`. Watch two things in particular: whether the #42 chart fix
@@ -6813,3 +6829,82 @@ deliberately deferred (`docs/vision.md` §2c).
   candidate explanation for post-#42 behaviour changes on succession-heavy
   scenarios, since it corrupts the root's observation and order-slot mapping
   exactly when the root is a promoted agent.
+
+- **2026-08-14 (refs #52)** — **#42's chart block is what silences the squad
+  commander, and the mechanism is positional: with the block, the root stops
+  going to the objective.** Two paired seeds, single-variable, N=100 at *both*
+  checkpoints, plus a control seed that fails on both trees.
+
+  **The design.** Branch `exp/pre42-chart-link` (`cd23d44`, never merged) is
+  current HEAD minus `56ada9a`'s 8-line block in `_fill_vacancy` — tree state
+  **A**. Everything else is held: `root_done_bonus=1.0`, both new gates,
+  lexicographic `ckpt_best` selection, all measurement code. Tree **C** is HEAD.
+  Ordering matters and the first design of this probe had it wrong: `56ada9a`
+  introduced the block, `da24b42` only corrected the double-link inside it, so
+  reverting `da24b42` alone lands in the middle state B, where `squad_v16` is
+  *also* mute. B is not a control; A is.
+
+  **The result — FINAL policy, N=100, seed-paired.**
+
+        seed 14   squad_v23_pre42_seed14 (A)   vs  squad_v10c (C)
+          closed-on-root        0.825   vs  0.000      eps w/ root claim  97 vs 0
+          success               0.970   vs  0.900      Fisher p = 0.0818, CIs overlap
+          mean obj distance     19.56   vs  41.68
+          commander death       0.240   vs  0.000      successions  36 vs 10
+
+        seed 15   squad_v22_pre42_seed15 (A)   vs  squad_v20_seed15 (C)
+          closed-on-root        0.857   vs  0.000      eps w/ root claim  97 vs 2
+          success               0.980   vs  0.960      Fisher p = 0.6827, CIs overlap
+          mean obj distance     19.54   vs  40.52
+          commander death       0.220   vs  0.030      successions  33 vs 9
+
+  `ckpt_best` says the same thing and is not a weaker version of it: 0.835 vs
+  0.052 on seed 14, 0.811 vs 0.000 on seed 15. Tree C fails
+  `closed_on_root_report_rate` at both checkpoints on both seeds; tree A fails
+  no gate anywhere.
+
+  **Success is a null; the reporting channel is the entire effect.** Neither
+  seed separates on success (p = 0.08 and 0.68, CIs overlapping), which is the
+  point — on tree C the squad still takes the objective at 90–96%, it just takes
+  it without the commander, who sits at **2.2× the distance** and therefore has
+  no truthful DONE to file.
+
+  **The branch is the historical tree, confirmed rather than asserted.**
+  `squad_v22`'s 0.857 and `squad_v23`'s 0.825 reproduce `squad_v15d_bonus1`
+  (0.8571) and `squad_v15c_bonus1` (0.8247) — the same seeds on the tree the
+  v1.19-era runs actually ran on — to three decimals. That is the positive
+  control for A being state A.
+
+  **The control that keeps this honest: seed 16 fails on BOTH trees.**
+  `squad_v24_pre42_seed16` is 0/100 with `timeout_rate` 1.000, exactly like
+  `squad_v21_seed16` on HEAD. The block does not explain every squad failure and
+  seed 16 is a bad draw, not a tree effect.
+
+  **#52's new rows earned their place immediately.** Probing the mute policy
+  (`squad_v20_seed15`, tree C, 40 eps) with the claim-split added in `e19589b`:
+  silent-episode occupancy **0.002**, inside the assurance layer's own *absent*
+  band (≤ 0.004). So this root is the **never-arrives** mechanism, not the
+  present-but-silent one their 8 arms populate. The two mechanisms are now
+  distinguishable on the digest instead of pooled.
+
+  **What this does NOT settle.** Seeds 12 and 13 report normally on tree C
+  (`squad_v17` 0.959, `squad_v18` 0.889), so muteness is a regime the block makes
+  *reachable* on some seeds, not a universal consequence of it. Whether tree A is
+  uniformly reporting is being measured now by `squad_v25_pre42_seed12` and
+  `squad_v26_pre42_seed13`.
+
+  **⇒ OWNER'S DECISION, not taken here.** #42 fixed a structural defect — 4,080
+  of 5,040 squad death orderings orphan a branch, 1,928 reach `root() is None` —
+  and this says removing it buys the commander's voice back at **0.22–0.24
+  commander deaths per episode against 0.00–0.03**, with successions 3–4× up and
+  12–15 of them unrecovered. That is trading a structural defect for a
+  behavioural one, in both directions. Three options, none applied:
+  (1) keep #42, accept a mute squad commander on some seeds, and revisit whether
+  `closed_on_root_report_rate`'s 0.5 floor should block a member that wins
+  silently; (2) revert the chart block and take the casualties; (3) keep #42 and
+  address *why* a fully-charted root stops advancing — the reward question, which
+  wants an oracle diagnosis before any price moves. The measurement that would
+  most cheaply separate (1) from (3) is whether the seed-12/13 A-arms also show
+  the commander forward at ~19.5 with the same casualty cost, i.e. whether the
+  distance/survival trade is intrinsic to the block or specific to the seeds that
+  go mute.
