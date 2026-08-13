@@ -8,9 +8,10 @@ claim is accepted at 0.543 and the later ones at 0.314. Worse, the split
 INVERTS across the checkpoint (0.474 / 0.547 at ``ckpt_best``), so a precision
 read off one policy does not describe the other. This is the third instance of
 one shape in this project — ``done_reports`` without ``done_admissible``, order
-share without availability, ``tx/agent-step`` blind to the uncharged voice
-channel: **the missing quantity is the one the existing metric cannot
-represent.**
+share without availability, and the ``report`` component pooling SYNC airtime
+with reporting payoff (which read as "reporting went net-negative" on
+``patrol_brique_v7`` when it was a SYNC-heavy policy paying into that bucket):
+**the missing quantity is the one the existing metric cannot represent.**
 
 So the split is now measured by the digest (``run_report.root_claim_ordinal``)
 rather than by whoever remembers to, and pinned here against the committed
