@@ -189,3 +189,60 @@ def test_the_board_leads_with_the_baseline_not_with_the_directory_listing(tmp_pa
 def test_version_order_is_numeric_not_lexical():
     names = ["squad_v10", "squad_v2", "squad_v9"]
     assert sorted(names, key=fleet_board._nat) == ["squad_v2", "squad_v9", "squad_v10"]
+
+
+def test_an_unmeasured_gate_neither_crashes_nor_reads_as_a_failure(tmp_path, loadable):
+    """A run that never completed an episode has nothing to read for some gates.
+
+    `squad_v21_seed16` trained 3M steps at 0% success, so
+    `closed_on_root_report_rate` was emitted with `value=None, passed=None`
+    per `regression_gates`' contract. `_tip` formatted that value
+    unconditionally and took the whole board refresh down with a TypeError —
+    every landing run re-renders the boards, so one such run blocked all three.
+    """
+    _run(
+        tmp_path,
+        "squad_v21_seed16",
+        scenario="squad",
+        final={
+            "episodes": 100,
+            "success_ci95": "0.00 ± 0.00",
+            "gates": [
+                {"name": "timeout_rate", "value": 1.0, "bound": 0.5,
+                 "direction": "max", "passed": False},
+                {"name": "closed_on_root_report_rate", "value": None, "bound": 0.5,
+                 "direction": "min", "passed": None},
+            ],
+        },
+        best=None,
+    )
+    (row,) = fleet_status.collect(tmp_path)
+    assert row["gates_failed"] == ["timeout_rate"]
+    assert row["gates_unmeasured"] == ["closed_on_root_report_rate"]
+
+    html = fleet_board.render([row])  # the crash
+    assert "unmeasured" in html
+
+
+def test_an_all_pass_row_does_not_count_an_unmeasured_gate_as_passing(tmp_path, loadable):
+    _run(
+        tmp_path,
+        "squad_v30",
+        scenario="squad",
+        final={
+            "episodes": 100,
+            "success_ci95": "0.95 ± 0.04",
+            "gates": [
+                {"name": "timeout_rate", "value": 0.02, "bound": 0.5,
+                 "direction": "max", "passed": True},
+                {"name": "mean_distance_from_objective_under_threat", "value": None,
+                 "bound": 5.0, "direction": "max", "passed": None},
+            ],
+        },
+        best=None,
+    )
+    (row,) = fleet_status.collect(tmp_path)
+    html = fleet_board.render([row])
+    assert "2/2 pass" not in html
+    assert "1/1 pass" in html
+    assert "1 unmeasured" in html

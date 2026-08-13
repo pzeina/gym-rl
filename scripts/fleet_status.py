@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cohort.env.actions import N_ACTIONS
 from cohort.env.observations import OBS_DIM
+from cohort.metrics import split_gates
 
 
 def _json(path: Path) -> dict:
@@ -165,7 +166,8 @@ def collect(runs_dir: Path) -> list[dict]:
                 "best_ci95": best.get("success_ci95"),
                 "best_episodes": best.get("episodes"),
                 "gates": gates,
-                "gates_failed": [g["name"] for g in gates if not g.get("passed")],
+                "gates_failed": split_gates(gates)[0],
+                "gates_unmeasured": split_gates(gates)[1],
                 "overrides": econ.get("reward_overrides") or [],
                 "env_steps": env_steps,
                 "obs_dim": meta.get("obs_dim"),

@@ -69,6 +69,7 @@ RUNS = ROOT / "runs"
 MANIFEST = RUNS / "BASELINE.json"
 sys.path.insert(0, str(ROOT))
 
+from cohort.metrics import split_gates  # noqa: E402
 from scripts.fleet_status import find_run  # noqa: E402
 from scripts.run_report import PUBLISH_STABILITY_POINTS  # noqa: E402
 
@@ -228,7 +229,7 @@ def _run_facts(run: str, sealed: dict | None = None) -> dict:
         facts["episodes"] = b.get("episodes", 0)
         facts["success"] = m.get("success_rate")
         facts["ci"] = b.get("success_ci95")
-        facts["gates_failed"] = [g["name"] for g in b.get("gates", []) if not g.get("passed", True)]
+        facts["gates_failed"], facts["gates_unmeasured"] = split_gates(b.get("gates", []))
         facts["successes"] = m.get("successes")
         facts["announced"] = m.get("successes_announced")
     else:
@@ -261,6 +262,11 @@ def _run_facts(run: str, sealed: dict | None = None) -> dict:
         facts["problems"].append(f"evaluated at N={facts.get('episodes', 0)}, needs {MIN_EPISODES}")
     if facts.get("gates_failed"):
         facts["problems"].append(f"gate failed: {', '.join(facts['gates_failed'])}")
+    # Still a problem for a member — "every gate green" cannot be claimed off a
+    # gate that never read anything — but it is a different problem, and saying
+    # "failed" for it would be the overstatement this gate exists to prevent.
+    if facts.get("gates_unmeasured"):
+        facts["problems"].append(f"gate unmeasured: {', '.join(facts['gates_unmeasured'])}")
 
     ann, succ = facts.get("announced"), facts.get("successes")
     if ann is not None and succ is not None and ann < succ:
