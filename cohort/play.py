@@ -6,14 +6,8 @@ agents transmit them to each other; trained policies drive every soldier.
     python -m cohort.play --checkpoint runs/fireteam_v4/ckpt_best.pt
     python -m cohort.play --scenario squad --as SL1
 
-Console commands:
-    TL1, seize obj bravo       inject an order (any command-language line)
-    <enter> or s [n]           advance n steps (default 5)
-    m                          show the map
-    net [n]                    show the last n radio messages (default 15)
-    status                     roster: rank, position, health, mission
-    help                       this list
-    q                          quit
+The console command list is the ``HELP`` constant below, appended to this
+docstring at import — edit it there, not here (see #51).
 """
 
 from __future__ import annotations
@@ -26,7 +20,26 @@ from cohort.core.language import OrderParseError
 from cohort.env.cohort_env import make_env
 from cohort.training.evaluate import _pick_actions
 
-HELP = __doc__.split("Console commands:")[1]
+#: What the console's ``help`` prints. This string is **data**, and the
+#: docstring above is the copy of it — until #51 the arrow pointed the other
+#: way (``HELP = __doc__.split("Console commands:")[1]``), which made this
+#: module the one file in ``cohort/`` where a docstring sweep is not inert:
+#: rewording the prose silently rewrote what the console printed, and touching
+#: the marker line raised ``IndexError`` at import, thirty lines from its cause
+#: and at the end of a long import chain. Single-sourcing is kept; only the
+#: direction changed, so prose is now prose everywhere in the package.
+HELP = """
+    TL1, seize obj bravo       inject an order (any command-language line)
+    <enter> or s [n]           advance n steps (default 5)
+    m                          show the map
+    net [n]                    show the last n radio messages (default 15)
+    status                     roster: rank, position, health, mission
+    help                       this list
+    q                          quit
+"""
+
+if __doc__:  # absent under `python -OO`; the console text must not depend on it
+    __doc__ = f"{__doc__}\nConsole commands:{HELP}"
 
 
 def _print_status(env) -> None:
