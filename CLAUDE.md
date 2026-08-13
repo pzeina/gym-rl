@@ -6,7 +6,7 @@ obey, report, and issue doctrine-valid orders; all C2 traffic is NATO voice proc
 ## Commands
 
 ```bash
-.venv/bin/python -m pytest tests/ -q                  # 340 tests, ~6s
+.venv/bin/python -m pytest tests/ -q                  # ~850 tests, ~25s
 .venv/bin/python -m ruff check cohort/ tests/
 scripts/train.sh <run-name> --scenario fireteam --total-steps 1500000   # detached; see below
 scripts/train_queue.sh <jobs-file>                    # a whole campaign, detached
