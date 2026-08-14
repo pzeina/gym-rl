@@ -345,6 +345,10 @@ class TraceRecorder:
                     "cs": s.callsign,
                     "alive": s.alive,
                     "pos": list(s.pos),
+                    # effective, not nominal: an acting SL must count as an SL
+                    # here, or a promoted commander's orders land in the rank
+                    # bucket it no longer holds (`orders_by_rank`).
+                    "rank": s.effective_rank.name,
                     "mission": s.mission.type.name if s.mission is not None else None,
                     "since": s.mission.step_assigned if s.mission is not None else None,
                     # A5-2: is the standing order staged (AT MY COMMAND not yet
@@ -664,6 +668,7 @@ def _doctrine(trace: dict) -> dict[str, Any]:
     issued = 0
     tiers = dict.fromkeys(DOCTRINE_TIERS, 0)
     by_task: dict[str, dict[str, int]] = {}
+    by_rank: dict[str, dict[str, int]] = {}
     availability: dict[str, float] = {}
     matched = 0
     for i in range(1, len(steps)):
@@ -671,6 +676,9 @@ def _doctrine(trace: dict) -> dict[str, Any]:
         t = step["t"]
         prev = steps[i - 1]["soldiers"]
         cur: dict[str, str | None] = {rec["cs"]: rec["mission"] for rec in prev}
+        # the rank the issuer held when it acted, i.e. on the observation it
+        # acted on — same state `cur` and `offered` are read from
+        rank_of: dict[str, str] = {rec["cs"]: rec["rank"] for rec in prev if "rank" in rec}
         offered: dict[str, dict[str, int]] = {
             rec["cs"]: rec.get("order_opts") or {} for rec in prev
         }
@@ -703,6 +711,10 @@ def _doctrine(trace: dict) -> dict[str, Any]:
                 tiers[tier] += 1
                 bucket = by_task.setdefault(task.name, dict.fromkeys(DOCTRINE_TIERS, 0))
                 bucket[tier] += 1
+                issuer_rank = rank_of.get(msg["from"])
+                if issuer_rank is not None:
+                    rank_bucket = by_rank.setdefault(issuer_rank, dict.fromkeys(DOCTRINE_TIERS, 0))
+                    rank_bucket[tier] += 1
             recipient = _soldier_at(step, msg["to"])
             applied = (
                 recipient is not None
@@ -718,6 +730,10 @@ def _doctrine(trace: dict) -> dict[str, Any]:
         "orders_violating": tiers["violating"],
         "orders_underivable": tiers["underivable"],
         "orders_by_task": by_task,
+        # refs #52: `orders_by_task` is team-wide, so it cannot answer "how many
+        # orders did the ROOT itself issue" — the question the mute-commander
+        # diagnosis stalled on, since only re-tasks were rank-resolved.
+        "orders_by_rank": by_rank,
         "order_availability": availability,
         "orders_matched": matched,
     }
@@ -1303,6 +1319,13 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             dst = orders_by_task.setdefault(task, dict.fromkeys(DOCTRINE_TIERS, 0))
             for tier in DOCTRINE_TIERS:
                 dst[tier] += bucket.get(tier, 0)
+
+    orders_by_rank: dict[str, dict[str, int]] = {}
+    for ep in episodes:
+        for rank, bucket in ep.get("orders_by_rank", {}).items():
+            dst = orders_by_rank.setdefault(rank, dict.fromkeys(DOCTRINE_TIERS, 0))
+            for tier in DOCTRINE_TIERS:
+                dst[tier] += bucket.get(tier, 0)
     # refs #16: the matched availability control, pooled over the run. Stored
     # as a share (already divided by orders_matched) so behavior.json carries
     # something directly comparable to the task mix beside it.
@@ -1379,6 +1402,7 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "orders_violating": total("orders_violating"),
         "orders_underivable": total("orders_underivable"),
         "orders_by_task": orders_by_task,
+        "orders_by_rank": orders_by_rank,
         # refs #16: what the mask offered, for the same order decisions. A
         # task's share divided by its availability is the *selection lift* —
         # 1.00 is exactly the masked-random floor, and it is the only form of
@@ -1820,6 +1844,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         f"{rank} {b['priced']}p/{b['excepted']}e"
         for rank, b in sorted(agg.get("retasks_by_rank", {}).items())
     )
+    orders_by_rank = ", ".join(
+        f"{rank} {sum(b.values())} ({b.get('preferred', 0)} pref)"
+        for rank, b in sorted(agg.get("orders_by_rank", {}).items())
+    )
     task_mix = format_order_task_mix(agg)
     notes = {
         "obedience_latency_mean": (
@@ -1837,7 +1865,11 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         # refs #16: the same mix against what the mask offered, so a task
         # share is readable as a preference instead of as an opportunity count
         "orders_per_episode": (
-            f"share/avail: {avail}" if (avail := format_order_availability(agg)) else ""
+            (f"share/avail: {avail}" if (avail := format_order_availability(agg)) else "")
+            # refs #52: who issued them. The task mix is team-wide, so it cannot
+            # tell a commander that orders from the rear from one that advances
+            # with its element.
+            + (f"; by rank: {orders_by_rank}" if orders_by_rank else "")
         ),
         "doctrine_allowed_rate": (
             f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"

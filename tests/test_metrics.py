@@ -33,7 +33,7 @@ from cohort.training.evaluate import evaluate, run_episode
 
 def sold(
     cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(), comp=None, sees=(),
-    cover=False,
+    cover=False, rank=None,
 ):
     return {
         "cs": cs,
@@ -46,6 +46,7 @@ def sold(
         "comp": comp,
         "sees": list(sees),
         "cover": cover,
+        "rank": rank,
     }
 
 
@@ -607,6 +608,59 @@ def test_unmeasured_gate_is_not_a_pass():
     positional = [g for g in regression_gates(agg) if g["name"] not in ("timeout_rate", "success_rate")]
     assert positional and all(g["passed"] is None for g in positional)
     assert "FAIL" not in format_gate_report(positional)
+
+
+def test_orders_by_rank_separates_the_commander_from_its_team_leaders():
+    """refs #52: `orders_by_task` is team-wide, so two policies issuing the same
+    task mix are indistinguishable when one commands from the objective and the
+    other from the rear. The mute-commander diagnosis stalled exactly there —
+    only re-tasks were rank-resolved, and they said opposite things on the two
+    mute seeds. Rank is the issuer's EFFECTIVE rank, so a promoted TL holding
+    the squad counts as the SL it is acting as.
+    """
+    steps = [
+        step(0, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"], rank="SL"),
+                 sold("TL1", mission=None, auth=1, subs=["RFN1"], rank="TL"),
+                 sold("RFN1", rank="RFN")]),
+        step(1, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"], rank="SL"),
+                 sold("TL1", mission="SEIZE", since=1, auth=1, subs=["RFN1"], rank="TL"),
+                 sold("RFN1", rank="RFN")],
+             messages=[msg("order", "SL1", "TL1", "SEIZE")]),
+        step(2, [sold("SL1", mission="SEIZE", since=0, auth=2, subs=["TL1"], rank="SL"),
+                 sold("TL1", mission="SEIZE", since=1, auth=1, subs=["RFN1"], rank="TL"),
+                 sold("RFN1", mission="ADVANCE", since=2, rank="RFN")],
+             messages=[msg("order", "TL1", "RFN1", "ADVANCE")]),
+    ]
+    agg = aggregate_behavior([episode_behavior(trace(steps))])
+
+    by_rank = agg["orders_by_rank"]
+    assert sum(by_rank["SL"].values()) == 1
+    assert sum(by_rank["TL"].values()) == 1
+    assert "RFN" not in by_rank  # issued nothing
+
+    # the tier split survives the rank split: the SL's SEIZE is preferred off
+    # its own SEIZE, the TL's ADVANCE is merely allowed
+    assert by_rank["SL"]["preferred"] == 1
+    assert by_rank["TL"]["allowed"] == 1
+
+    # and the team-wide mix cannot make that distinction on its own
+    assert sum(sum(b.values()) for b in agg["orders_by_task"].values()) == 2
+
+
+def test_orders_by_rank_accounts_for_every_agent_issued_order():
+    """The invariant that makes the metric trustworthy on a real map: no order
+    is dropped or double-counted by the rank split. It also fails loudly if the
+    recorder ever stops writing `rank`, which would otherwise show up as a
+    silently empty dict beside a healthy `orders_issued`.
+    """
+    env = make_env("squad")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=5, rng=np.random.default_rng(5), recorder=rec)
+    assert all("rank" in s for st in rec.trace["steps"] for s in st["soldiers"])
+
+    agg = aggregate_behavior([episode_behavior(rec.trace)])
+    assert agg["orders_issued"] > 0
+    assert sum(sum(b.values()) for b in agg["orders_by_rank"].values()) == agg["orders_issued"]
 
 
 def test_recorder_records_cover_and_threat_radius():
