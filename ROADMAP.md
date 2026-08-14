@@ -77,10 +77,14 @@ N=100, and 0.052 → 0.835 / 0.000 → 0.811 at `ckpt_best` — while success st
 null (p = 0.08, 0.68). The mechanism is positional: with the block the root sits
 at **2.2× the distance** from its objective (41 vs 19.5) and never takes the
 ground it would report. Seed 16 fails on both trees, so this is not a universal
-explanation of squad failure. **The cost of removing it is the commander's life
-— 0.22–0.24 deaths/episode against 0.00–0.03** — so which way to go is an
-owner's decision and is written up with three options in the 2026-08-14 progress
-entry at the bottom. Nothing was applied.
+explanation of squad failure. **Across four seeds tree A sits in a 0.041-wide
+band (0.825–0.866) while tree C is bimodal — 0.937–0.959 or exactly zero** —
+and on the reporting seeds the two trees are near-identical in distance and
+casualties, so removing the block has **no measured cost**; what it removes is
+the availability of the mute regime. Which way to go is still an owner's
+decision — #42 fixed a real structural defect, and where tree C reports it
+reports *better* — written up with three options and the correction in the two
+2026-08-14 progress entries at the bottom. Nothing was applied.
 
 
 **When the campaign lands**: `publish_baseline.py` at N=100 → compare each
@@ -6908,3 +6912,46 @@ deliberately deferred (`docs/vision.md` §2c).
   the commander forward at ~19.5 with the same casualty cost, i.e. whether the
   distance/survival trade is intrinsic to the block or specific to the seeds that
   go mute.
+
+- **2026-08-14 (refs #52) — the seed-12/13 arms landed and CORRECT the cost
+  claim in the entry above: there is no measured casualty trade. The block does
+  not move the commander's mean behaviour, it makes a second regime reachable.**
+  Four seeds per tree, FINAL policy, N=100 each, matched (`squad_v18` re-scored
+  from N=20 to N=100 so every cell is like-for-like).
+
+        seed   closed-on-root        mean obj distance      commander death
+               A (no block)  C        A        C            A       C
+         12       0.866    0.959    19.28    19.97        0.180   0.120
+         13       0.866    0.937    19.89    20.57        0.150   0.270
+         14       0.825    0.000    19.56    41.68        0.240   0.000
+         15       0.857    0.000    19.54    40.52        0.220   0.030
+         16      collapse on both trees — 0/100 and 0/20, timeout 1.000
+
+  **Tree A's band is 0.825–0.866 across four seeds — 0.041 wide. Tree C is
+  bimodal: 0.937–0.959 or exactly zero.** Success is a null on every pair
+  (Fisher p = 1.00, 0.72, 0.08, 0.68).
+
+  **The correction.** The entry above reported the cost of removing the block as
+  "0.22–0.24 commander deaths against 0.00–0.03". Those numbers are right but the
+  attribution was wrong: 0.00–0.03 is what the *mute* seeds pay, not what tree C
+  pays. Where tree C lands in the same forward regime it pays **0.120 and
+  0.270** — overlapping tree A's 0.150–0.240. The casualties belong to the
+  regime, not to the tree: a commander that walks onto the objective and reports
+  it also dies there. **Removing the block has no measured cost on this
+  evidence.** What it removes is the availability of the alternative — a
+  commander that stays at 2.2× the distance, survives, says nothing, and still
+  wins 90–96% of the time because the squad takes the ground without it.
+
+  **Stated with its weakness, as the rdb arc taught.** 0-of-4 mute versus
+  2-of-4 is Fisher **p = 0.43** on seed counts alone — not significant. What
+  carries it is what carried the rdb=1.0 decision: the zeros are *absolute* (0
+  and 2 root claims in ~11k and ~10k admissible steps, not a low rate), the two
+  paired flips are exact and hold at both checkpoints, and the A band is tight
+  where the C band is not.
+
+  **One thing that runs the other way and should not be buried**: where tree C
+  reports, it reports *better* — 0.959 and 0.937 against A's 0.866 and 0.866.
+  The block helps on the seeds where it does not hurt. So option (3) — keep #42
+  and find why a fully-charted root sometimes stops advancing — is not the
+  consolation prize; it is the option that keeps both properties, and the oracle
+  diagnosis it needs has not been run.
