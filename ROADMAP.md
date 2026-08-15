@@ -7722,3 +7722,48 @@ deliberately deferred (`docs/vision.md` §2c).
   belongs to seed 16's zero-close case; seed 17 is a second regime — discovered,
   paid, and lost anyway — and a gate redesign has to survive both, because both
   read as the identical `closed_on_root_report_rate` 0.000.
+
+- **2026-08-16 — CORRECTION: `human_death_rate` is the COMMANDER's death rate,
+  and that re-reads seed 16 entirely. Plus: it is now a gate (owner's decision),
+  on branch `gate/human-death-rate`.**
+
+  I described this metric in-session as a protected human or civilian. It is
+  not. `train.py:403` counts `any(s.human and not s.alive ...)` and
+  `run_report.py:122` names it exactly: *the human root — the commander the
+  cohort exists to keep alive*. So `patrol_brique_v22_rdb3_seed16`'s 1.00 means
+  **the commander dies in every episode**, not that a bystander does.
+
+  **Which supplies the cause the seed-16 entry left open.** That entry showed
+  `v22`/`v23` trained to bit-identical weights because `root_done_bonus` never
+  fired, and established that no truthful root close ever occurred in 3M steps.
+  It did not say WHY none occurred. This does: a dead commander cannot close its
+  own mission. The chain is complete — commander dies in 100% of episodes → no
+  truthful close is ever available → the bonus is never paid → both prices are
+  literally the same reward function → identical policies. The bit-identical
+  finding stands; its cause is now named.
+
+  **So seed 16 is not a mute-commander observation at all** and must not be
+  pooled with seeds 13, 14 and 17 in the distribution estimate. Those have a
+  commander that lives and does not claim; seed 16 has no living commander to
+  claim. Three distinct regimes now reach `closed_on_root_report_rate` 0.000:
+  never discovered the close (seed 16's zero-close case, here caused by death),
+  discovered it and lost it (seed 17, paid on 48 of 2930 iterations), and — the
+  one the gate was built for — alive, winning, and simply silent.
+
+  **The gate.** `HUMAN_DEATH_RATE_CEILING = 0.5`, applied on every root mission,
+  conditioned on `timeout_rate` clearing its own ceiling. Verified over the
+  corpus before being written, not after: **62 runs PASS, 2 FAIL — exactly the
+  seed-16 pair — 2 stall-shaped runs out of scope, and all eight baseline
+  members clear it by at least 0.20.** The band it sits in is empty: the
+  shipping fleet runs 0.01–0.30, the worst non-pathological run in 66 is
+  `squad_v14_nobonus` at 0.38, the pathology is 1.00, and nothing is in between.
+  Conditioning on `timeout_rate` is load-bearing rather than decorative: the raw
+  rate improves when defeats (commander dies) become timeouts (nobody does), a
+  route documented on `squad_v12b` in #47, and above the clock ceiling the run
+  already fails on the clock.
+
+  **Not merged.** `cohort/metrics.py` is frozen while the campaign's remaining
+  jobs launch against the tree, and a mid-campaign change would apply the new
+  gate to some arm members and not others. Merge after the queue drains:
+  `git merge gate/human-death-rate`. The other pending branch,
+  `fix/best-save-success-floor`, is independent and merges the same way.
