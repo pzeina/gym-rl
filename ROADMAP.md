@@ -7641,3 +7641,60 @@ deliberately deferred (`docs/vision.md` §2c).
   same conflation at two levels. `cohort/metrics.py`'s
   `closed_on_root_report_rate` docstring is on the same blocked list (it should
   note the non-zero floor on a completable root, from #55).
+
+- **2026-08-15 — THE MUTE REGIME IS PRICE-INDEPENDENT BY CONSTRUCTION, and two
+  arms of this campaign proved it by training to BIT-IDENTICAL weights.**
+  `patrol_brique_v22_rdb3_seed16` (`root_done_bonus=3.0`) and
+  `patrol_brique_v23_rdb1_seed16` (1.0) are the same seed on the same tree at
+  the same budget, differing only in the price. Their `ckpt_latest.pt` files
+  differ in sha256 and are **identical in every tensor — 0 of 15 differ** — same
+  `iteration` 2930, same `env_steps`. The only difference in either checkpoint
+  is the embedded `reward_config` recording the price that never applied. Their
+  `behavior_final.json` differ in exactly two fields, the checkpoint path and
+  its hash; all **73 numeric metrics are identical**.
+
+  **Why, and it is a one-line mechanism.** `cohort_env.py:1066` adds
+  `cfg.root_done_bonus` to the ledger only under
+  `root_reported and self._root_close_callsign is not None and
+  self._root_close_earns_bonus`. No truthful root close, no term. Checked
+  rather than argued: `root_report_close_rolling` is **zero for all 2930
+  iterations of both runs** — the root never once closed in 3M steps — against
+  `patrol_brique_v21_rdb3_seed15`, which reports and is nonzero on 2512 of 2930.
+  So on every trajectory these two runs ever visited, `rdb=3.0` and `rdb=1.0`
+  are **the same reward function**, and identical training is not a coincidence
+  but the only possible outcome.
+
+  **WHAT THIS EXPLAINS.** The mute regime is self-reinforcing and the price
+  cannot touch it: no close → the bonus never fires → no gradient toward
+  closing → no close. The price acts only *through* a close that has already
+  happened, so it can shape whether closing is REINFORCED but not whether it is
+  DISCOVERED. Whether early exploration stumbles on a truthful close is the
+  draw — which is exactly the seed-determined channel this project has been
+  chasing since #42, through the occupancy account, the ADVANCE/SEIZE mix and
+  the chart block, all three of which died as mechanisms. This one is verified
+  at the source line and by identical weights.
+
+  **WHAT IT COSTS THE DESIGN.** At any seed where both arms go mute the two
+  arms are not independent observations — they are ONE run computed twice. A
+  concordant-mute pair therefore carries less than the "no paired information"
+  #56 assigned it: it is not a sample at all. The arms differ only at seeds
+  that report, which is precisely where the price is not inert. Had the
+  pre-registered stopping rule not already fired, this would have been the
+  fourth retraction in the same investigation.
+
+  **It reaches backwards too.** Every price comparison in this repo's history —
+  the `rdb` 0/1/2/3 arms, `done_false`, `root_done_bonus_first_claim_only` —
+  compares identical runs at any seed where the root never closed. Those arms
+  are not wrong, but a null between two prices at a mute seed is not evidence
+  that the price does nothing; it is arithmetic.
+
+  **RECOMMENDATION, not taken — re-scoping a campaign is the owner's call.**
+  The extension's 14 remaining jobs are seeds 17–23 × two prices, and at every
+  mute seed the pair is redundant. One arm per seed at the SHIPPED default
+  measures the thing the gate redesign actually needs — how often a seed
+  produces a commander that ever closes — for half the wall-clock, with the
+  twin run only at seeds that report, where the price is live. That is 7 runs
+  instead of 14. Left running as-is because the duplicates cost only idle CPU
+  and do re-verify the inertness at other seeds; say the word and it is one
+  edit to `scripts/campaigns/patrol_brique_incumbent_seeds_ext.jobs` plus a
+  relaunch.
