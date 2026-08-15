@@ -97,16 +97,34 @@ V19_SHAPE = [
 ]
 
 
-def test_a_thin_early_reporting_window_locks_the_checkpoint():
-    """The absorbing flag, which is what makes one iteration decide a whole run.
+def test_a_thin_early_reporting_window_no_longer_locks_the_checkpoint(monkeypatch):
+    """The absorbing flag used to make one iteration decide a whole run.
 
-    ``best_was_reporting`` is set by the first window at or above the floor and
-    no mute window may ever take the best back — so the 2%-success iteration is
-    the ONLY save, and the 100%-success policy that follows can never be
-    selected however long the run continues.
+    Pre-#57, ``best_was_reporting`` was set by the first window at or above
+    ``ROOT_REPORT_CLOSE_FLOOR`` and no mute window could take the best back — so
+    the 2%-success iteration was the ONLY save and the 100%-success policy that
+    followed could never be selected, however long the run continued.
+
+    Both halves are pinned here: the historical lock (with the success floor
+    disabled, which is exactly what the shipped rule was) and its absence now.
+    The defect is worth keeping executable — it is subtle, it survived a code
+    review, and nothing else in the suite would notice its return.
     """
+    from cohort.training import train as train_mod
+
+    monkeypatch.setattr(train_mod, "BEST_SAVE_SUCCESS_FLOOR", 0.0)
+    assert cs.replay(_rows(V19_SHAPE)) == [0], (
+        "with no success floor the thin early window must still lock — this is "
+        "the pre-#57 rule and the defect it caused"
+    )
+
+    monkeypatch.setattr(train_mod, "BEST_SAVE_SUCCESS_FLOOR", 0.5)
     saves = cs.replay(_rows(V19_SHAPE))
-    assert saves == [0], "the first reporting window was the run's only ckpt_best"
+    assert len(saves) > 1, "the floored gate must not stop at the thin window"
+    rows = _rows(V19_SHAPE)
+    assert cs.episodes_and_windows(rows)[saves[-1]][1] == 1.0, (
+        "the run's recorded best must end up on the policy that wins"
+    )
 
 
 def test_a_success_floor_releases_it_and_nothing_else_does():
@@ -177,7 +195,18 @@ def test_the_replay_is_checked_against_the_iteration_stamped_in_the_checkpoint(t
     iteration it was written at, so agreement is reported per run."""
     d = _run(tmp_path, "run", V19_SHAPE)
     (d / "ckpt_best.pt").write_bytes(b"not a real checkpoint")
-    monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 1, "env_steps": 1024})
+
+    # Derived from the replay rather than hardcoded: the shipped rule now
+    # carries a success floor, so the iteration this shape selects is a property
+    # of the current gate. Pinning the old literal would test the reader against
+    # a rule the tree no longer has.
+    rows = _rows(V19_SHAPE)
+    chosen = cs.replay(rows)[-1]
+    iteration = int(rows[chosen]["iteration"])
+
+    monkeypatch.setattr(
+        cs, "checkpoint_stamp", lambda path: {"iteration": iteration, "env_steps": 1024}
+    )
     assert cs.run_facts(d)["agrees"] is True
     monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 999, "env_steps": 1024})
     assert cs.run_facts(d)["agrees"] is False

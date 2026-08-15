@@ -105,6 +105,26 @@ METRIC_FIELDS = [
 ]
 
 
+#: Rolling success below which a window may not claim the REPORTING side of
+#: ``best_save_gate``'s lexicographic order (refs #57).
+#:
+#: The reporting rate's denominator is ENDEXes sent, and ``cohort_env`` sends
+#: ENDEX only on a WIN — so the sample is conditioned on success and is
+#: thinnest exactly where success is worst. At 2% rolling success it is a
+#: couple of episodes and reads 0.500 on a coin toss, which is
+#: ``ROOT_REPORT_CLOSE_FLOOR`` exactly. ``patrol_brique_v19_rdb3_seed13`` was
+#: selected that way at **iteration 25 of 2930** (0.9% of the run, window
+#: success 0.020) and, because ``best_was_reporting`` is absorbing, never
+#: replaced it: one save, 3M steps, a ``ckpt_best`` that fails four episodes in
+#: five against a final policy at 0.99.
+#:
+#: 0.5 rather than something higher because this must not become a second
+#: success gate: it only decides whether the reporting *comparison* is
+#: trustworthy enough to override success, and every scenario the fleet ships
+#: clears 0.5 long before it learns to report.
+BEST_SAVE_SUCCESS_FLOOR: float = 0.5
+
+
 def is_reporting(root_report_close: float | None) -> bool:
     """Is the commander closing its own operations in this window?
 
@@ -112,6 +132,23 @@ def is_reporting(root_report_close: float | None) -> bool:
     reporting. It is also not a refusal: see ``best_save_gate``.
     """
     return root_report_close is not None and root_report_close >= ROOT_REPORT_CLOSE_FLOOR
+
+
+def selects_on_reporting(rolling: float, root_report_close: float | None) -> bool:
+    """Reporting, AND winning often enough for that rate to mean anything.
+
+    ``best_save_gate`` orders windows lexicographically with reporting ahead of
+    success, so this is the predicate that decides which side of that order a
+    window sits on. Guarding it with the floor is what stops a two-episode
+    denominator from outranking a policy that actually wins — see
+    ``BEST_SAVE_SUCCESS_FLOOR``.
+
+    It is deliberately NOT a veto on saving: a run below the floor still gets a
+    ``ckpt_best`` through the success branch, so ``baseline.py``'s "every
+    checkpoint loadable" and ``publish_baseline``'s artifact both survive a run
+    that never learns to report. Training prefers; the gate refuses.
+    """
+    return rolling >= BEST_SAVE_SUCCESS_FLOOR and is_reporting(root_report_close)
 
 
 def best_save_gate(
@@ -166,10 +203,15 @@ def best_save_gate(
 
     ``root_report_close`` is None until the window contains an episode that
     actually sent an ENDEX; unmeasured counts as not-reporting for ordering.
+
+    **refs #57: the reporting side is floored on success.** Reporting only
+    outranks success while the reporting rate is measured over enough episodes
+    to mean anything, and its denominator is wins — see
+    ``BEST_SAVE_SUCCESS_FLOOR`` and ``selects_on_reporting``.
     """
     if episodes_seen < window:
         return False
-    reporting = is_reporting(root_report_close)
+    reporting = selects_on_reporting(rolling, root_report_close)
     if reporting != best_was_reporting:
         return reporting  # the first reporting window wins; a mute one cannot
     return rolling > best_so_far
@@ -537,7 +579,13 @@ class Trainer:
                 self.best_was_reporting,
             ):
                 self.best_rolling_success = stats["success_rate_rolling"]
-                self.best_was_reporting = is_reporting(root_close)
+                # Same predicate the gate just decided on — if this recorded a
+                # bare is_reporting() the absorbing flag would desynchronise
+                # from the ordering, and a below-floor window would set a flag
+                # the gate never honoured.
+                self.best_was_reporting = selects_on_reporting(
+                    stats["success_rate_rolling"], root_close
+                )
                 self.save_checkpoint("ckpt_best.pt")
         if self.writer is not None:
             self.writer.close()

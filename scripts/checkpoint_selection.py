@@ -8,14 +8,18 @@
 **The question this exists for** (refs assurance #57). `patrol_brique_v19_rdb3_seed13`
 ships a `ckpt_best` that succeeds in **17** episodes of 100 while its FINAL policy
 succeeds in **99** — and files 94 root MISSION COMPLETEs of which 92 are rejected,
-against the final policy's silence. `786ce93` already recorded that this is
-``best_save_gate`` working as designed rather than a selection bug: since v1.20 a
-reporting window supersedes a mute best lexicographically, whatever the success
-numbers say. What was missing is the size of that side effect across the corpus,
-and whether the two changes #57 proposes — a success floor before the reporting
-comparison, or reading *admitted* rather than *emitted* claims — would move
-anything. This is a READER: it launches nothing, evaluates nothing, and writes
-nothing. Both changes are `cohort/` decisions and stay the owner's.
+against the final policy's silence. `786ce93` recorded this as ``best_save_gate``
+working as designed rather than a selection bug, and `cdc5f9e` RETRACTED that:
+the window that selected it held about two episodes, and design intent does not
+make a coin toss a selection. **The success floor #57 asked for now ships** —
+``BEST_SAVE_SUCCESS_FLOOR``, owner's decision — so the shipped rule this reader
+replays already carries it, and `v19` is the one run in the corpus whose
+``ckpt_best`` the change moves (iteration 25 → 550, 1 save → 49).
+
+This is a READER: it launches nothing, evaluates nothing, and writes nothing.
+The other change #57 floated — reading *admitted* rather than *emitted* claims —
+was not made and would move nothing, because the gate's input is
+``root_close_step``, which only a truthful close sets.
 
 **The mechanism, which is not the one #57 names.** #57 reads the pathology as
 "reports is measured on claims emitted, not on claims admitted". The training
@@ -75,15 +79,20 @@ RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR  # noqa: E402
-from cohort.training.train import best_save_gate  # noqa: E402
+from cohort.training.train import (  # noqa: E402
+    best_save_gate,
+    selects_on_reporting,
+)
 from scripts.fleet_status import run_dirs  # noqa: E402
 from scripts.run_report import checkpoint_stamp, fnum, run_dir  # noqa: E402
 
-#: Success floors swept per run. 0.0 is the shipped rule — no floor — and is
-#: always first so every other row reads as a delta against what actually
-#: shipped. The rest are illustrative sample points for the v1.21 gate decision,
-#: NOT a proposal: which floor (if any) belongs under checkpoint selection is a
-#: `cohort/` default and the owner's call.
+#: Extra success floors swept per run, ON TOP of whatever the shipped gate
+#: already applies. 0.0 means "add nothing", so that row is the shipped rule of
+#: the tree this is run against — which since ``BEST_SAVE_SUCCESS_FLOOR`` landed
+#: is itself floored at 0.5, and the row is labelled `(shipped)` for exactly
+#: that reason rather than as a synonym for "no floor". The rest stay
+#: illustrative sample points; raising the shipped floor is a `cohort/` default
+#: and the owner's call.
 FLOORS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 0.9)
 
 #: The trainer's rolling-outcome window (``Trainer.recent_outcomes`` maxlen).
@@ -148,6 +157,19 @@ def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[i
     The comparison itself is never re-implemented — ``best_save_gate`` is called
     with a possibly-suppressed reporting rate, so if the shipped rule changes,
     this reader changes with it.
+
+    The absorbing flag is recorded with ``selects_on_reporting``, mirroring
+    ``Trainer.train``. Recording a bare ``is_reporting`` here desynchronises the
+    replay from the gate the moment the shipped rule carries a floor of its own:
+    the below-floor window saves on the success branch, sets a flag the gate
+    never honoured, and every later window is then refused. Caught replaying
+    ``patrol_brique_v19_rdb3_seed13`` against the floored gate, where it hid the
+    fix entirely — the sweep printed an unchanged shipped row.
+
+    ``floor`` therefore composes with, rather than replaces,
+    ``BEST_SAVE_SUCCESS_FLOOR``: the sweep suppresses the rate ON TOP of
+    whatever the shipped gate already does, so the row labelled shipped is the
+    shipped rule of the tree this is run against, not a fixed historical one.
     """
     saves: list[int] = []
     best_success, best_reporting = -1.0, False
@@ -155,7 +177,7 @@ def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[i
         rate = None if (floor > 0.0 and success < floor) else close
         if best_save_gate(seen, window, success, best_success, rate, best_reporting):
             best_success = success
-            best_reporting = rate is not None and rate >= ROOT_REPORT_CLOSE_FLOOR
+            best_reporting = selects_on_reporting(success, rate)
             saves.append(i)
     return saves
 
@@ -336,6 +358,14 @@ def print_fleet(rows: list[dict], floor: float) -> None:
     print(f"    {verified} of {len(replayable)} replays verified against the iteration in ckpt_best.pt")
     if disagree:
         print(f"    ⚠ {disagree} replays DISAGREE with the iteration stamped in ckpt_best.pt")
+        # Expected, and informative rather than alarming, for any run trained
+        # BEFORE BEST_SAVE_SUCCESS_FLOOR shipped: the artifact on disk was
+        # written under the old rule, so a disagreement names exactly the runs
+        # whose committed ckpt_best — and therefore whose behavior.json — the
+        # current rule would not have chosen. It is a reader fault only for a
+        # run trained after the floor landed.
+        print("      (a run trained before the floor shipped disagrees BY DESIGN — "
+              "it names a ckpt_best the current rule would not have picked)")
     print()
 
 

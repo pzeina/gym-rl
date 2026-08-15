@@ -204,6 +204,80 @@ def test_rolling_best_gate_refuses_a_mute_commander(tmp_path):
     assert not best_save_gate(99, 100, 1.0, -1.0, 0.9)
 
 
+def test_best_save_reporting_side_is_floored_on_success():
+    """refs #57 — a two-episode reporting rate may not outrank a winning policy.
+
+    ``closed_on_root_report_rate``'s denominator is ENDEXes sent and the env
+    sends ENDEX only on a WIN, so the reporting sample is conditioned on success
+    and is thinnest exactly where success is worst. At 2% rolling success it is
+    a couple of episodes and reads 0.500 — ``ROOT_REPORT_CLOSE_FLOOR`` exactly —
+    on a coin toss.
+
+    This is not hypothetical: ``patrol_brique_v19_rdb3_seed13`` was selected
+    that way at iteration 25 of 2930 and, because ``best_was_reporting`` is
+    absorbing, never replaced it. Its ``ckpt_best`` evaluates at 0.17 success
+    against a final policy at 0.99.
+    """
+    from cohort.training.train import (
+        BEST_SAVE_SUCCESS_FLOOR,
+        best_save_gate,
+        selects_on_reporting,
+    )
+
+    # THE REGRESSION, stated precisely. v19's actual selecting window (2%
+    # success, closed-on-root at the floor) still SAVES — selection is not a
+    # veto and this is the run's first checkpoint. What changes is that it no
+    # longer takes the REPORTING side of the order…
+    assert best_save_gate(100, 100, 0.02, -1.0, 0.500, best_was_reporting=False)
+    assert not selects_on_reporting(0.02, 0.500)
+
+    # …so it does not set the absorbing flag, and the later 100%-success window
+    # supersedes it. Under the old rule the flag went True here and locked
+    # ckpt_best at iteration 25 for the remaining 99.1% of the run: that is the
+    # whole defect, and this pair of asserts is the difference.
+    assert best_save_gate(100, 100, 1.0, 0.02, 0.0, best_was_reporting=False)
+    assert not best_save_gate(100, 100, 1.0, 0.02, 0.0, best_was_reporting=True)
+
+    # A coin-toss rate at the floor cannot outrank a winning policy, whatever
+    # the reporting number says.
+    assert not selects_on_reporting(0.02, 1.0)
+
+    # Still lexicographic above the floor: a reporting 0.60 beats a mute 0.95.
+    assert selects_on_reporting(0.60, 0.82)
+    assert best_save_gate(100, 100, 0.60, 0.95, 0.82, best_was_reporting=False)
+
+    # NOT a second success gate — a below-floor run still records a ckpt_best
+    # through the success branch, so baseline.py's "every checkpoint loadable"
+    # and publish_baseline's artifact both survive a run that never reports.
+    assert best_save_gate(100, 100, 0.02, -1.0, None, best_was_reporting=False)
+    assert best_save_gate(100, 100, 0.30, 0.02, 0.500, best_was_reporting=False)
+
+    # The floor is on rolling success, and it is inclusive.
+    assert selects_on_reporting(BEST_SAVE_SUCCESS_FLOOR, 0.82)
+    assert not selects_on_reporting(BEST_SAVE_SUCCESS_FLOOR - 0.01, 0.82)
+
+
+def test_trainer_records_the_flag_the_gate_actually_used():
+    """refs #57 — the absorbing flag must record ``selects_on_reporting``.
+
+    If the trainer recorded a bare ``is_reporting`` it would desynchronise from
+    the ordering the gate just applied: a below-floor window would save on the
+    success branch, then set ``best_was_reporting=True``, and every later
+    reporting window would be compared as if the best were already reporting.
+    """
+    import inspect
+
+    from cohort.training import train as train_mod
+
+    src = inspect.getsource(train_mod.Trainer.train)
+    assignment = [ln for ln in src.splitlines() if "self.best_was_reporting =" in ln]
+    assert assignment, "trainer no longer records best_was_reporting"
+    assert all("selects_on_reporting" in ln for ln in assignment), (
+        "best_was_reporting must be recorded with selects_on_reporting, not a "
+        "bare is_reporting — see refs #57"
+    )
+
+
 def test_trainer_counts_episodes_for_the_best_gate(tmp_path):
     """The Trainer wires the D4 gate: episodes_seen tracks completed episodes
     and no ckpt_best exists while the window has not fully turned over."""
