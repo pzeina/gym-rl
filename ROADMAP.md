@@ -47,8 +47,17 @@ there.
 
   **The falsifiable prediction v1.21 should test first, because it separates the
   levers in one campaign**: patrol_brique with the chart block REMOVED at
-  rdb=1.0 should report, the way squad does. If it stays mute, the price is the
-  whole story in that scenario and the block is not implicated there at all.
+  rdb=1.0 should report, the way squad does. If it stays mute, the block is not
+  implicated in that scenario. (`patrol_brique_v13_pre42_seed12` and
+  `..._v14_pre42_seed13` are training this now.)
+
+  **⚠ Read that prediction against the #54 correction below (2026-08-15).** The
+  wording "the price is the whole story" was a sufficiency claim and is
+  withdrawn: `patrol_brique_v5` is mute at `rdb = 3.0`, the price at which v6
+  files 103 claims, so the price does not settle this scenario on its own. The
+  mechanism is likewise restated — **no occupancy → no claim holds; occupancy →
+  claim does not.** So a mute result from the arms above rules the block out
+  here; it does not rule the price in.
 
 **⚑ THE FIRST v1.20 FLEET WAS VOID AND HAS BEEN RELAUNCHED — read this before
 reading anything else about v1.20.** `#42`'s `_fill_vacancy` change added a
@@ -7146,3 +7155,68 @@ deliberately deferred (`docs/vision.md` §2c).
   mute, the price is the whole story there and the two scenarios need different
   treatment — which is itself the answer to whether `RewardConfig` can stay
   scenario-independent.
+
+- **2026-08-15 (assurance, #54) — CORRECTION, twice over: "the root claims iff
+  it occupies" was too strong in BOTH directions, and "the price is the whole
+  story in patrol_brique" was a sufficiency claim I had no licence for.** #54
+  produces `patrol_brique_v5` as a counterexample and it holds. Investigated on
+  this repo's own artifacts; oracle probe at the standard `--episodes 30 --seed
+  500`, run against each checkpoint:
+
+        checkpoint      claim eps  silent eps   dist    OCCUPANCY   occ|claimed  occ|silent
+        v5 best             0          30      17.87     0.0110         —          0.0110
+        v5 latest           0          30      18.51     0.0208         —          0.0208
+        v6 best             0          30      30.72     0.0000         —          0.0000
+        v6 latest          23           7      22.78     0.0299       0.0408       0.0000
+
+  **What #54 gets right.** `patrol_brique_v5` files 0 root claims at
+  `root_done_bonus = 3.0`, the price at which v6 files 103. A sufficiency claim
+  dies to one counterexample and this is one: **3.0 does not buy reporting**, and
+  the entry of 2026-08-15 above overstated the rdb sweep, which only ever
+  licensed *lowering* the price causing silence. Corrected.
+
+  **And it breaks the mechanism's sufficiency too — on the quantity #54 chose not
+  to quote.** They argue from distance and say occupancy tracks the tree. On
+  occupancy their headline reading does not hold: the *vocal* v6-latest has the
+  highest occupancy of the four cells (0.0299) and the mute v6-best the lowest
+  (0.0000), so it is not true that the mute root occupies more. But v5 occupies
+  **0.011–0.021 and never claims, across 3M steps and both checkpoints** — it
+  reaches the objective and declines. That is their present-but-silent band, on
+  the better statistic, and it kills the *if* direction of my claim.
+
+  **What survives is the necessary direction, and it survives well.** Every
+  zero-occupancy cell is mute — v6-best, squad's `v10c`/`v20_seed15` (0.000–0.004),
+  and v6-latest's own silent episodes. The sharpest cell in the whole
+  investigation is **within one checkpoint**: v6-latest's 23 claiming episodes
+  occupy at **0.0408** and its 7 silent episodes at **exactly 0.0000** — same
+  policy, same seed, same tree, same price, split by whether the root claimed.
+  Nothing between-run can be that well matched.
+
+        RESTATED, and this is the version to attack next:
+          necessary      no occupancy -> no truthful claim        (well supported)
+          NOT sufficient occupancy > 0 does not produce a claim   (v5 refutes it)
+
+  **A confound in #54's pair that its own table does not flag.** v5 and v6 are
+  matched on `root_done_bonus` and `done_false`, but v5 ran at **lr 1e-4** and v6
+  at **3e-4** — a 3× difference — on **seeds 3 and 12**. The economics are
+  matched; the optimisation is not. That does not rescue the sufficiency claim
+  (a counterexample is a counterexample) but it does mean the pair cannot be
+  read as "the same setup flipping", and the third factor #54 invites us to look
+  for has two unflagged candidates sitting in `config.json`.
+
+  **Two provenance notes, both checked.** (i) The `cohort/` trees genuinely
+  differ (`0293107` vs `5f848fb`), and all 19 intervening commits touching
+  `cohort/` were walked: every substantive change is `DEFEND`/`DENY`-scoped or a
+  metrics/CLI addition, and `is_completable` / `is_root_opord_claim` /
+  `is_done_admissible` reduce to the identical test for a SEIZE root either side.
+  Reward mechanics are ruled out. (ii) **#54's derived rates for v5 are not
+  comparable to ours**: v5 was scored by a pre-ENDEX-generalization evaluator —
+  `endex_sent = 0` on a 99%-successful run is the fingerprint — so its
+  `closed_on_root_report_rate` is `None` here, not 0.020. The raw claim counts
+  (0 / 1 / 103) are unaffected and match exactly; the counting logic is unchanged
+  across the span. This is the `eval_commit` gap that `56ada9a` closed one day
+  after both runs were scored.
+
+  No code change: the masking and reward logic for a SEIZE-rooted
+  `patrol_brique` is provably unchanged across v5→v6, and stamping `eval_commit`
+  retroactively onto published artifacts would be fabrication, not repair.
