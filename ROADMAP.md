@@ -64,7 +64,15 @@ there.
   seed-selection policy would have to be declared PER SCENARIO**, because a seed
   that reports on squad says nothing about `patrol_brique` — agreement is at
   chance over eight matched pairs (`scripts/reporting_channel.py --pairs squad
-  patrol_brique`, and the last progress-log entry).
+  patrol_brique`, and the last progress-log entries).
+
+  **⚠ READ THE RUNNING `rdb3_seeds` CAMPAIGN DESCRIPTIVELY.** Its six runs can
+  produce a significant result on 1 of 64 outcomes and only if
+  `patrol_brique_v23` comes back mute; the paired reading cannot reject at five
+  pairs at all. The first mute `rdb=3.0` cell settles "3.0 splits too" with no
+  test, and a Fisher p from this design is not a null result
+  (`scripts/design_power.py`, and the last progress-log entry). An extension to
+  eight seeds is queued behind it.
 
   **⚠ (superseded) it split — see the 2026-08-15 entries at the bottom.**
   Seed 12 flips (0.000 → **0.825**, gate FAIL → pass, a clean paired flip) and
@@ -7402,3 +7410,51 @@ deliberately deferred (`docs/vision.md` §2c).
   directions are pinned in `tests/test_reporting_channel.py`. This does not touch
   the v1.20 gate, whose 0.5 floor is far above that artifact — the gate's problem
   is the one the retraction named, that the quantity is bimodal by seed.
+
+- **2026-08-15 — the `rdb3_seeds` campaign can reject on 1 of its 64 outcomes,
+  and it is the outcome its own evidence argues against (refs assurance #56).
+  Read the result descriptively; do NOT report a Fisher p from it as a null.**
+  The six-run design asks the right question and the disjunction is the right
+  decision rule, but the two readings it could be given are bounded before any
+  run lands. `scripts/design_power.py` enumerates every outcome the design can
+  produce and scores both:
+
+        design: 5 seeds, 6 pending cells, 64 possible outcomes, alpha = 0.05
+          unpaired (Fisher)   ceiling p = 0.0476   rejects on 1 of 64 outcomes
+          paired  (McNemar)   ceiling p = 0.1250   CANNOT REJECT
+
+  The ceiling is the *smallest p the design can attain*, best case, over every
+  outcome including perfect separation. So the paired reading cannot reject at
+  five pairs at all (0.0625 unconditionally; 0.125 here, because seed 14 already
+  reports at `rdb=1.0` and a concordant pair is not evidence), and the unpaired
+  reading rejects on exactly one outcome: `rdb=3.0` reporting at all five seeds
+  **and** `patrol_brique_v23` coming back mute. Seed 16's only `patrol_brique`
+  observation reports (`v17_pre42`, 0.794), so the branch that would vindicate
+  the gate is the one the design cannot supply.
+
+  **The other branch needs no test and that is the point.** "3.0 splits across
+  seeds too" is settled descriptively by the first mute `rdb=3.0` cell — one cell,
+  no inference. The jobs file's header names a "paired 5-vs-5 Fisher test"; that
+  phrase is what this entry corrects, because a p = 0.17 out of a design that
+  could never have gone below 0.17 is not a null result and will be read as one.
+  The header was left alone rather than rewritten: the queue reads that file line
+  by line while it runs.
+
+  **Sizing, for the next one.** Eight seeds is where both readings become
+  capable — `scripts/design_power.py --size 5 6 7 8` gives 0.0476/0.1250 at five,
+  0.0210/0.0625 at seven, 0.0070/0.0312 at eight, for 6/10/12 new runs. The
+  extension to eight (`scripts/campaigns/patrol_brique_incumbent_seeds_ext.jobs`,
+  six more runs) is chained behind the running queue. The Fisher column is not
+  monotone — six seeds is worse than five — because the assumed comparison count
+  rounds 1 → 2 there; that is an artifact of the assumption, not of the design.
+
+  **A rank test is not the cheap way out.** `closed_on_root_report_rate` reads a
+  floor of 0.020–0.104 on a wholly mute arm, so its low mode is instrument
+  artifact and a Mann-Whitney over it would be ranking noise. The quantity is
+  binary or it is nothing — which is why the label is a claim count (see the
+  entry above).
+
+  **What this does not say.** Nothing here asks for the campaign to be stopped.
+  Five new `rdb=3.0` seeds on one tree is an asset whatever the read-out can
+  certify, and the descriptive branch is exactly the one the disjunction was
+  built to settle.
