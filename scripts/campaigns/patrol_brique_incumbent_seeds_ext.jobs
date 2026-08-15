@@ -1,40 +1,69 @@
 # EXTENSION to patrol_brique_incumbent_rdb3_seeds.jobs — take both arms to
-# EIGHT seeds, because at five the test cannot reject on the branch that matters.
+# TWELVE seeds, and PRE-REGISTER the read-out before any of it is scored.
 #
-# WHY THIS EXISTS. Issue #56 sized the original six-run design and it is right:
-# at five seeds the campaign can produce a significant result on 1 of its 64
-# possible outcomes, and that one requires seed 16 to go MUTE at rdb=1.0.
+# WHY THIS EXISTS. Issue #56 sized the original six-run design: at five seeds it
+# can reject on 1 of its 64 outcomes, and that one needs seed 16 to go mute at
+# rdb=1.0 while seed 16's only observation reports (v17_pre42, 0.794). The
+# first extension took both arms to eight seeds. #56's follow-up then showed
+# that eight only works if the assumption behind it holds exactly:
 #
-#     v23 (seed 16, rdb=1.0)   rdb=1.0 arm   Fisher ceiling   rejecting outcomes
-#     MUTE                     1/5           0.0476           one: rdb3 = 5/5
-#     REPORTING                2/5           0.1667           none
+#     realized rdb=1.0 count at 8 seeds   Fisher    paired (McNemar)
+#         1                               0.0014    0.0156
+#         2  <- what the 8-seed size assumed  0.0070    0.0312
+#         3                               0.0256    0.0625  FAILS
+#         4                               0.0769    0.1250  FAILS
 #
-# Seed 16's only patrol_brique observation REPORTS (v17_pre42, 0.794), and
-# b08d806 retracted the claim that the chart block controls this channel — so
-# the seed-determined reading predicts v23 reports and the design lands in the
-# row that can never reject. The exact-McNemar ceiling on the paired reading is
-# 0.0625 at five pairs and 0.125 conditioned on the arm as measured, so pairing
-# does not rescue it either. The asymmetry is the point: "3.0 splits too" is
-# settled DESCRIPTIVELY by the first mute cell and needs no inference at all,
-# while "the price is real" is the branch that needs a test — and it was the
-# branch the five-seed design could not certify.
+# The paired reading survives only to b <= 2 — the assumed value itself, zero
+# margin. ONE extra reporter among the four unrun rdb=1.0 cells puts it back at
+# 0.0625, the identical failure the extension was bought to fix (~1 in 3 by the
+# Jeffreys predictive, which is a modelling statement, not a measurement).
 #
-# Eight seeds is where both readings become capable (Fisher ceiling 0.0070,
-# paired 0.0312). That is 12 new runs total: the original six plus these six.
+# scripts/design_power.py --size 8 10 12 14 --measured 2/4, i.e. sized against a
+# TRUE rdb=1.0 rate double the measured one:
 #
-#     arm       seeds 12-15      seed 16      seeds 17-19
-#     rdb=3.0   v18-v21 (new)    v22 (new)    v24,v25,v26  <- here
-#     rdb=1.0   v7,v10,v11,v12   v23 (new)    v27,v28,v29  <- here
+#     seeds  new runs  assumed  unpaired   paired
+#         8        12      4/8    0.0769     0.1250
+#        10        16     5/10    0.0325OK   0.0625
+#        12        20     6/12    0.0137OK   0.0312OK   <- first size that survives
 #
-# NOT a rank test: closed_on_root_report_rate reads a FLOOR of 0.020-0.104 on a
-# wholly mute arm, so its low mode is instrument artifact and Mann-Whitney would
-# be ranking noise. The quantity is binary or it is nothing.
+# Twelve seeds is where the primary reading still rejects if the comparison arm
+# turns out to report at HALF its seeds instead of a quarter. That is insurance
+# against the one assumption neither arm has ever tested — exchangeability of
+# seeds WITHIN a scenario (§12.146 tested transfer ACROSS scenarios, and found
+# none).
 #
-# Launched chained behind the original queue rather than in parallel: two live
-# queues contend for the same cores and both slow down.
+# ============ THE READ-OUT, FIXED NOW, BEFORE ANY CELL IS SCORED ============
+# PRIMARY: exact McNemar over the seeds present in BOTH arms. The design is
+#   paired by construction — seed is the nuisance variable being blocked — so
+#   the paired test is the one that matches it.
+# SECONDARY: Fisher, reported always and never as a rescue. Reporting whichever
+#   of the two happens to clear 0.05 is test-shopping, and this file exists
+#   because the project keeps having to retract underpowered readings.
+# NO TEST AT ALL if any rdb=3.0 cell comes back mute: "3.0 splits too" is
+#   settled descriptively by the first mute cell, and a Fisher p from this
+#   design would not be a null result.
+# LABELS come from scripts/reporting_channel.py (both checkpoints; a run whose
+#   checkpoints disagree is SPLIT and is dropped, not silently counted).
+# ===========================================================================
+#
+#     arm       12-15            16      17-19        20-23
+#     rdb=3.0   v18-v21 (queued) v22     v24,v25,v26  v30,v32,v34,v36
+#     rdb=1.0   v7,v10,v11,v12   v23     v27,v28,v29  v31,v33,v35,v37
+#
+# Chained behind the original queue, not launched beside it: two live queues
+# contend for the same cores. No cohort/ file is touched, so the freeze holds
+# and all twenty-four cells stay comparable.
 patrol_brique_v24_rdb3_seed17  --scenario patrol_brique --total-steps 3000000 --seed 17 --reward root_done_bonus=3.0
 patrol_brique_v25_rdb3_seed18  --scenario patrol_brique --total-steps 3000000 --seed 18 --reward root_done_bonus=3.0
 patrol_brique_v26_rdb3_seed19  --scenario patrol_brique --total-steps 3000000 --seed 19 --reward root_done_bonus=3.0
 patrol_brique_v27_rdb1_seed17  --scenario patrol_brique --total-steps 3000000 --seed 17
 patrol_brique_v28_rdb1_seed18  --scenario patrol_brique --total-steps 3000000 --seed 18
 patrol_brique_v29_rdb1_seed19  --scenario patrol_brique --total-steps 3000000 --seed 19
+patrol_brique_v30_rdb3_seed20  --scenario patrol_brique --total-steps 3000000 --seed 20 --reward root_done_bonus=3.0
+patrol_brique_v31_rdb1_seed20  --scenario patrol_brique --total-steps 3000000 --seed 20
+patrol_brique_v32_rdb3_seed21  --scenario patrol_brique --total-steps 3000000 --seed 21 --reward root_done_bonus=3.0
+patrol_brique_v33_rdb1_seed21  --scenario patrol_brique --total-steps 3000000 --seed 21
+patrol_brique_v34_rdb3_seed22  --scenario patrol_brique --total-steps 3000000 --seed 22 --reward root_done_bonus=3.0
+patrol_brique_v35_rdb1_seed22  --scenario patrol_brique --total-steps 3000000 --seed 22
+patrol_brique_v36_rdb3_seed23  --scenario patrol_brique --total-steps 3000000 --seed 23 --reward root_done_bonus=3.0
+patrol_brique_v37_rdb1_seed23  --scenario patrol_brique --total-steps 3000000 --seed 23

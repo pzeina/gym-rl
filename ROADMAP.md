@@ -60,6 +60,20 @@ there.
   cycle. The paragraph below is the superseded intermediate reading, kept
   because the entries reference it.**
 
+  **One of the three routes that leaves open is already narrowed: a DECLARED
+  seed-selection policy would have to be declared PER SCENARIO**, because a seed
+  that reports on squad says nothing about `patrol_brique` — agreement is at
+  chance over eight matched pairs (`scripts/reporting_channel.py --pairs squad
+  patrol_brique`, and the last progress-log entries).
+
+  **⚠ READ THE RUNNING `rdb3_seeds` CAMPAIGN DESCRIPTIVELY.** Its six runs can
+  produce a significant result on 1 of 64 outcomes and only if
+  `patrol_brique_v23` comes back mute; the paired reading cannot reject at five
+  pairs at all. The first mute `rdb=3.0` cell settles "3.0 splits too" with no
+  test, and a Fisher p from this design is not a null result
+  (`scripts/design_power.py`, and the last progress-log entry). An extension to
+  eight seeds is queued behind it.
+
   **⚠ (superseded) it split — see the 2026-08-15 entries at the bottom.**
   Seed 12 flips (0.000 → **0.825**, gate FAIL → pass, a clean paired flip) and
   seed 13 does not (0.000 → 0.000). So the block is implicated in
@@ -7346,3 +7360,101 @@ deliberately deferred (`docs/vision.md` §2c).
   restart at fixed seed** — if it is, it is a basin the optimiser falls into and
   (1) is tractable; if a rerun of the same seed lands differently, only (2) and
   (3) remain.
+
+- **2026-08-15 — route (2) would have to be declared PER SCENARIO: a reporting
+  seed does not transfer (refs assurance #55).** The route above says "train k
+  seeds and ship one that reports", and it only pays for itself if a seed is
+  *globally* good. It is not. The squad and `patrol_brique` cells already share
+  seeds at fixed arms, so this needed no new run —
+  `scripts/reporting_channel.py` labels every run on disk from
+  ``done_claim_episodes_root`` at BOTH published checkpoints, re-derives each
+  arm from `config.json`/`economics.json`, and pairs the two scenarios at a
+  fixed arm:
+
+        arm                     seed   squad       patrol_brique
+        rdb 1, chart absent      12    REPORTING   REPORTING
+        rdb 1, chart absent      13    REPORTING   mute
+        rdb 1, chart absent      14    REPORTING   mute
+        rdb 1, chart absent      15    REPORTING   mute
+        rdb 1, chart present     12    REPORTING   mute
+        rdb 1, chart present     13    REPORTING   mute
+        rdb 1, chart present     15    mute        mute
+        rdb 2, chart present     12    REPORTING   mute
+
+        rdb=1.0 only   agreement 2 of 7, 1.71 expected   McNemar p = 0.0625
+        every arm      agreement 2 of 8, 1.75 expected   McNemar p = 0.0312
+
+  **Agreement is at chance.** A seed carries no propensity to report that
+  survives a change of scenario, so a declared seed list is a per-scenario
+  artifact and route (2) costs a fleet per scenario rather than a fleet. #55
+  reported the `rdb=1.0` reading and this reproduces it exactly, run for run; the
+  eighth pair is the `rdb=2.0` cell (`squad_v19_rdb2` vs `patrol_brique_v9_rdb2`,
+  same seed, same tree), which #55's scope excluded and which is the cleanest
+  pair on the table. **The direction is not the claim** — six unanimous
+  discordant pairs is p = 0.0312, but seeds 12–15 are four seeds and this is 8
+  pairs, not 80. It is enough to say a global seed list is unsupported; it is not
+  enough to rank the scenarios.
+
+  **Ten runs are dropped rather than resolved, and that is the other half of the
+  method.** `squad_v10c` claims in 18 of 100 episodes at `ckpt_best` and 0 of 100
+  at `ckpt_latest`; no label describes that policy, and choosing the checkpoint
+  that suits the argument is how a 2-of-4 becomes a 4-of-4.
+
+  **The label is a claim count, never `closed_on_root_report_rate`, and the
+  script prints where the two disagree.** On the corpus as it stands that check
+  fires on 20 checkpoints — the whole defend family, which reads 0.97–1.00 on
+  **zero** root claims because a continuous-posture root closes the window with a
+  SITREP. #55 measured the same hazard in the other direction: a root SITREP
+  landing on the ENDEX step enters the numerator, so `patrol_brique` arms with no
+  claims at all read 0.020–0.104 and a 0.05 rate-cut calls them reporting. Both
+  directions are pinned in `tests/test_reporting_channel.py`. This does not touch
+  the v1.20 gate, whose 0.5 floor is far above that artifact — the gate's problem
+  is the one the retraction named, that the quantity is bimodal by seed.
+
+- **2026-08-15 — the `rdb3_seeds` campaign can reject on 1 of its 64 outcomes,
+  and it is the outcome its own evidence argues against (refs assurance #56).
+  Read the result descriptively; do NOT report a Fisher p from it as a null.**
+  The six-run design asks the right question and the disjunction is the right
+  decision rule, but the two readings it could be given are bounded before any
+  run lands. `scripts/design_power.py` enumerates every outcome the design can
+  produce and scores both:
+
+        design: 5 seeds, 6 pending cells, 64 possible outcomes, alpha = 0.05
+          unpaired (Fisher)   ceiling p = 0.0476   rejects on 1 of 64 outcomes
+          paired  (McNemar)   ceiling p = 0.1250   CANNOT REJECT
+
+  The ceiling is the *smallest p the design can attain*, best case, over every
+  outcome including perfect separation. So the paired reading cannot reject at
+  five pairs at all (0.0625 unconditionally; 0.125 here, because seed 14 already
+  reports at `rdb=1.0` and a concordant pair is not evidence), and the unpaired
+  reading rejects on exactly one outcome: `rdb=3.0` reporting at all five seeds
+  **and** `patrol_brique_v23` coming back mute. Seed 16's only `patrol_brique`
+  observation reports (`v17_pre42`, 0.794), so the branch that would vindicate
+  the gate is the one the design cannot supply.
+
+  **The other branch needs no test and that is the point.** "3.0 splits across
+  seeds too" is settled descriptively by the first mute `rdb=3.0` cell — one cell,
+  no inference. The jobs file's header names a "paired 5-vs-5 Fisher test"; that
+  phrase is what this entry corrects, because a p = 0.17 out of a design that
+  could never have gone below 0.17 is not a null result and will be read as one.
+  The header was left alone rather than rewritten: the queue reads that file line
+  by line while it runs.
+
+  **Sizing, for the next one.** Eight seeds is where both readings become
+  capable — `scripts/design_power.py --size 5 6 7 8` gives 0.0476/0.1250 at five,
+  0.0210/0.0625 at seven, 0.0070/0.0312 at eight, for 6/10/12 new runs. The
+  extension to eight (`scripts/campaigns/patrol_brique_incumbent_seeds_ext.jobs`,
+  six more runs) is chained behind the running queue. The Fisher column is not
+  monotone — six seeds is worse than five — because the assumed comparison count
+  rounds 1 → 2 there; that is an artifact of the assumption, not of the design.
+
+  **A rank test is not the cheap way out.** `closed_on_root_report_rate` reads a
+  floor of 0.020–0.104 on a wholly mute arm, so its low mode is instrument
+  artifact and a Mann-Whitney over it would be ranking noise. The quantity is
+  binary or it is nothing — which is why the label is a claim count (see the
+  entry above).
+
+  **What this does not say.** Nothing here asks for the campaign to be stopped.
+  Five new `rdb=3.0` seeds on one tree is an asset whatever the read-out can
+  certify, and the descriptive branch is exactly the one the disjunction was
+  built to settle.
