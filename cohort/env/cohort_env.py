@@ -176,6 +176,13 @@ class CohortEnv(ParallelEnv):
         #: re-task events of the last step (B5): issuer/recipient, priced or
         #: excepted (and why), same-anchor or rotation — metrics bookkeeping
         self._retask_log: list[dict] = []
+        #: order-payment events of the last step (refs #52): every agent-issued
+        #: order that reached adjudication, tagged with which of the three
+        #: outcomes it took — `fresh` (paid), `churn` (an identical reissue,
+        #: charged), or `retask` (replaced a standing order without being a
+        #: fresh tasking). Read-only bookkeeping; the sign of a commander's
+        #: command income is not otherwise recoverable from the trace.
+        self._order_pay_log: list[dict] = []
         #: formation shaping (A5-3): per-leader watermark of the best anchor
         #: distance reached under the current (mission, stance) — the bonus
         #: pays only on NEW closure, so it telescopes and cannot be farmed
@@ -228,6 +235,37 @@ class CohortEnv(ParallelEnv):
         charged. Read-only bookkeeping for metrics; fresh taskings of untasked
         subordinates and identical reissues are not re-tasks."""
         return list(self._retask_log)
+
+    def _log_order_pay(self, issuer, outcome: str, tier: str | None, pay: float) -> None:
+        """Record one adjudicated mission order (refs #52). Bookkeeping only —
+        it never decides anything, and it is called AFTER the ledger entry it
+        describes, so it cannot change what was charged. Stance orders are not
+        logged: they carry no mission and never enter ``orders_by_task``, so
+        including them would make the split incomparable with it."""
+        self._order_pay_log.append(
+            {
+                "issuer": issuer.callsign,
+                "rank": issuer.effective_rank.name,
+                "outcome": outcome,
+                "tier": tier,
+                "pay": pay,
+            }
+        )
+
+    @property
+    def order_pay_events_last_step(self) -> list[dict]:
+        """Order-payment events of the last ``step()`` (refs #52): issuer
+        callsign / rank, and which outcome the order took — ``fresh`` (a
+        tasking the issuer is paid for, at ``preferred``/``allowed``/nothing by
+        derivation quality), ``churn`` (an identical reissue, charged
+        ``order_churn``), or ``retask`` (replaced a standing order without
+        qualifying as a fresh tasking).
+
+        This exists because order VOLUME does not say whether commanding is
+        profitable: only fresh taskings pay, while reissues are charged. A
+        commander that orders constantly may be farming the channel or paying
+        to stay in it, and the two are opposite diagnoses."""
+        return list(self._order_pay_log)
 
     # ------------------------------------------------------------------ #
     # spaces
@@ -315,6 +353,7 @@ class CohortEnv(ParallelEnv):
         self._tx_count = 0
         self._element_casualty_step = {}
         self._retask_log = []
+        self._order_pay_log = []
         self._formation_watermark = {}
         self._sync_pending = {}
         self._sync_until = {}
@@ -642,6 +681,7 @@ class CohortEnv(ParallelEnv):
         ledger = RewardLedger()
         self.last_messages = []
         self._retask_log = []
+        self._order_pay_log = []
         present = list(self.agents)
 
         # --- timed-order release (A5-2): "AT T PLUS n" comes due ---
@@ -1567,6 +1607,7 @@ class CohortEnv(ParallelEnv):
             and bool(recipient.mission.awaiting_signal) == bool(spec.order_amc)
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
+            self._log_order_pay(soldier, "churn", None, cfg.order_churn)
             return
 
         standing = recipient.mission
@@ -1619,16 +1660,31 @@ class CohortEnv(ParallelEnv):
         fresh_tasking = standing is None or intent_changed
         if fresh_tasking:
             quality = derivation_quality(soldier.mission.type if soldier.mission else None, spec.order_mission)
+            # refs #52: `tier`/`pay` only accumulate what the ledger is charged
+            # below; they decide nothing. A fresh tasking whose task derives
+            # from nothing the issuer holds is logged as `unpaid` rather than
+            # dropped, or the unpaid share of a commander's traffic would read
+            # as if it had never been issued.
+            tier, pay = "unpaid", 0.0
             if quality >= 1.0:
                 ledger.add(soldier.callsign, "command", cfg.order_preferred)
+                tier, pay = "preferred", cfg.order_preferred
             elif quality > 0.0:
                 ledger.add(soldier.callsign, "command", cfg.order_allowed)
+                tier, pay = "allowed", cfg.order_allowed
             if (
                 obj_id is not None
                 and soldier.mission is not None
                 and soldier.mission.objective_id == obj_id
             ):
                 ledger.add(soldier.callsign, "command", cfg.order_objective_match)
+                pay += cfg.order_objective_match
+            self._log_order_pay(soldier, "fresh", tier, pay)
+        elif standing is not None:
+            # replaced a standing order without qualifying as a fresh tasking:
+            # the order channel pays nothing here, and the re-task price above
+            # is charged separately (see `retasks_by_rank`)
+            self._log_order_pay(soldier, "retask", None, 0.0)
 
         self._assign_mission(
             issuer_id=soldier.id,

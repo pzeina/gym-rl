@@ -214,6 +214,54 @@ def test_identical_reissue_stays_a_churn_noop_and_keeps_tenure():
     assert rfn1.mission.step_assigned == assigned, "no restamp: tenure is preserved"
 
 
+def test_order_pay_log_separates_the_paid_orders_from_the_charged_ones():
+    """refs #52: order VOLUME cannot say whether commanding is profitable —
+    only fresh taskings pay, identical reissues are charged, and a re-task that
+    is not a fresh tasking pays nothing at all. A commander issuing constantly
+    is either farming the channel or paying to sit in it, and the mute-commander
+    diagnosis could not tell those apart from any recorded quantity.
+
+    The logged `pay` is the order channel only: the re-task price is charged
+    separately, which is why the third order below logs 0.0 while the issuer's
+    actual command component for that step is negative.
+    """
+    env = _flat_env()
+    cfg = env.rewards_cfg
+    spec = _order_spec(MissionType.SEIZE)
+
+    _step_all(env, {"TL1": spec.index})
+    fresh = env.order_pay_events_last_step
+    assert [e["outcome"] for e in fresh] == ["fresh"]
+    assert fresh[0]["rank"] == "TL" and fresh[0]["tier"] == "preferred"
+    assert fresh[0]["pay"] == pytest.approx(cfg.order_preferred + cfg.order_objective_match)
+
+    _step_all(env, {"TL1": spec.index})
+    churn = env.order_pay_events_last_step
+    assert [e["outcome"] for e in churn] == ["churn"]
+    assert churn[0]["pay"] == pytest.approx(cfg.order_churn)
+    assert churn[0]["tier"] is None
+
+    *_, infos = _step_all(env, {"TL1": _order_spec(MissionType.CLEAR).index})
+    retask = env.order_pay_events_last_step
+    assert [e["outcome"] for e in retask] == ["retask"]
+    assert retask[0]["pay"] == 0.0
+    # the order channel paid nothing; the re-task price is charged elsewhere
+    assert infos["TL1"]["components"]["command"] < 0
+
+
+def test_order_pay_log_is_bookkeeping_and_never_moves_a_reward():
+    """The log is appended after the ledger entry it describes and decides
+    nothing, so the command component must equal what the pricing tests above
+    pin independently of whether anything is logged."""
+    env = _flat_env()
+    cfg = env.rewards_cfg
+    *_, infos = _step_all(env, {"TL1": _order_spec(MissionType.SEIZE).index})
+    logged = sum(e["pay"] for e in env.order_pay_events_last_step)
+    assert infos["TL1"]["components"]["command"] == pytest.approx(
+        logged + cfg.transmission_cost + cfg.coverage_gap
+    )
+
+
 def test_alternating_orders_are_priced_not_farmable():
     """The old alternation exploit under the new pricing: every flip between
     two valid orders is a priced re-task — strictly negative command."""
