@@ -663,6 +663,33 @@ def test_orders_by_rank_accounts_for_every_agent_issued_order():
     assert sum(sum(b.values()) for b in agg["orders_by_rank"].values()) == agg["orders_issued"]
 
 
+def test_order_pay_by_rank_accounts_for_every_order_and_agrees_with_the_rank_split():
+    """refs #52: the fresh/churn/re-task split must cover exactly the orders
+    `orders_by_rank` counts — every agent-issued mission order takes one of the
+    three outcomes. A drift between the two would mean one of them is reading a
+    channel the other is not, which is the failure that made `retasks_by_rank`
+    misleading for this question in the first place.
+    """
+    env = make_env("squad")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=5, rng=np.random.default_rng(5), recorder=rec)
+    agg = aggregate_behavior([episode_behavior(rec.trace)])
+
+    pay = agg["order_pay_by_rank"]
+    assert pay, "a squad episode issues orders"
+
+    # The identity is fresh + retask, NOT + churn: an identical reissue is
+    # charged `order_churn` and returns without `_say`, so it never reaches the
+    # transcript and no transcript-derived count can see it. Everything the
+    # record says about order volume therefore UNDERCOUNTS a commander that
+    # reissues, by exactly the quantity it is being charged for.
+    on_the_net = sum(b["fresh"] + b["retask"] for b in pay.values())
+    assert on_the_net == agg["orders_issued"]
+
+    for rank, bucket in pay.items():
+        assert bucket["fresh"] + bucket["retask"] == sum(agg["orders_by_rank"][rank].values())
+
+
 def test_recorder_records_cover_and_threat_radius():
     env = make_env("fireteam_defend")
     rec = TraceRecorder()

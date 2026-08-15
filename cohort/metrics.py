@@ -402,6 +402,7 @@ class TraceRecorder:
             # the environment's own adjudication (issuer rank, priced or
             # excepted and why, anchor rotation or same-anchor type change)
             "retasks": [] if initial else env.retask_events_last_step,
+            "order_pay": [] if initial else env.order_pay_events_last_step,
         }
 
 
@@ -768,6 +769,33 @@ def _retasks(trace: dict) -> dict[str, Any]:
         "retask_rotations": rotations,
         "retasks_by_rank": by_rank,
     }
+
+
+def _order_pay(trace: dict) -> dict[str, Any]:
+    """Command income, per issuer rank (refs #52).
+
+    Order volume alone cannot say whether commanding is profitable: only fresh
+    taskings are paid (``order_preferred`` / ``order_allowed``, and zero when
+    the ordered task derives from nothing the issuer holds), while identical
+    reissues are charged ``order_churn``. A commander that orders constantly is
+    either farming the channel or paying to sit in it, and those are opposite
+    diagnoses — the mute-commander investigation could not tell them apart,
+    which is why this exists.
+
+    ``pay`` sums the order-channel ledger entries only. It is NOT the issuer's
+    net command income: the re-task price is charged separately (see
+    ``retasks_by_rank``), so a rank can show positive ``pay`` here and still be
+    losing on command overall.
+    """
+    by_rank: dict[str, dict[str, Any]] = {}
+    for step in trace["steps"]:
+        for ev in step.get("order_pay", []):
+            bucket = by_rank.setdefault(
+                ev["rank"], {"fresh": 0, "churn": 0, "retask": 0, "pay": 0.0}
+            )
+            bucket[ev["outcome"]] += 1
+            bucket["pay"] += ev["pay"]
+    return {"order_pay_by_rank": by_rank}
 
 
 def _vocabulary(trace: dict) -> dict[str, Any]:
@@ -1262,6 +1290,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_staging(trace),
         **_doctrine(trace),
         **_retasks(trace),
+        **_order_pay(trace),
         **_reports(trace),
         **_false_complete(trace),
         **_done_opportunity(trace),
@@ -1326,6 +1355,15 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             dst = orders_by_rank.setdefault(rank, dict.fromkeys(DOCTRINE_TIERS, 0))
             for tier in DOCTRINE_TIERS:
                 dst[tier] += bucket.get(tier, 0)
+
+    order_pay_by_rank: dict[str, dict[str, Any]] = {}
+    for ep in episodes:
+        for rank, bucket in ep.get("order_pay_by_rank", {}).items():
+            dst = order_pay_by_rank.setdefault(
+                rank, {"fresh": 0, "churn": 0, "retask": 0, "pay": 0.0}
+            )
+            for key in ("fresh", "churn", "retask", "pay"):
+                dst[key] += bucket.get(key, 0)
     # refs #16: the matched availability control, pooled over the run. Stored
     # as a share (already divided by orders_matched) so behavior.json carries
     # something directly comparable to the task mix beside it.
@@ -1403,6 +1441,7 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "orders_underivable": total("orders_underivable"),
         "orders_by_task": orders_by_task,
         "orders_by_rank": orders_by_rank,
+        "order_pay_by_rank": order_pay_by_rank,
         # refs #16: what the mask offered, for the same order decisions. A
         # task's share divided by its availability is the *selection lift* —
         # 1.00 is exactly the masked-random floor, and it is the only form of
@@ -1848,6 +1887,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         f"{rank} {sum(b.values())} ({b.get('preferred', 0)} pref)"
         for rank, b in sorted(agg.get("orders_by_rank", {}).items())
     )
+    order_pay = ", ".join(
+        f"{rank} {b['fresh']}f/{b['churn']}c/{b['retask']}r {b['pay']:+.1f}"
+        for rank, b in sorted(agg.get("order_pay_by_rank", {}).items())
+    )
     task_mix = format_order_task_mix(agg)
     notes = {
         "obedience_latency_mean": (
@@ -1870,6 +1913,10 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             # tell a commander that orders from the rear from one that advances
             # with its element.
             + (f"; by rank: {orders_by_rank}" if orders_by_rank else "")
+            # refs #52: and whether issuing them pays. fresh/churn/retask counts
+            # with the order-channel total — order-channel only, the re-task
+            # price is charged elsewhere and is not netted in here.
+            + (f"; pay: {order_pay}" if order_pay else "")
         ),
         "doctrine_allowed_rate": (
             f"{agg.get('orders_allowed', 0)} allowed, {agg.get('orders_violating', 0)} violating"

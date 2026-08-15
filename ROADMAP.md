@@ -6955,3 +6955,45 @@ deliberately deferred (`docs/vision.md` §2c).
   and find why a fully-charted root sometimes stops advancing — is not the
   consolation prize; it is the option that keeps both properties, and the oracle
   diagnosis it needs has not been run.
+
+- **2026-08-15 (refs #52) — the two mute commanders have OPPOSITE order
+  economics, so no single reward lever explains them.** `order_pay_by_rank`
+  (`847acec`) splits every adjudicated mission order into fresh (paid) / churn
+  (charged) / re-task (order channel pays nothing), per issuer rank. Root (SL)
+  only, 30 episodes at seed 500 — the diagnosis protocol, not N=100:
+
+        policy          fresh  churn  retask   order-channel total   per episode
+        C mute  s14       528     66       7          +19.8             +0.66
+        A rep   s14        61     17      99           +1.4             +0.05
+        C mute  s15        60     67     190           −3.7             −0.12
+        A rep   s15        60     15      51           +6.1             +0.20
+
+  **Seed 14's mute root is farming the channel.** 528 fresh taskings — 17.6 an
+  episode, none of them doctrine-preferred — earning **+0.66/episode against a
+  `root_done_bonus` of 1.0 paid once**. Ordering from 40 units behind the
+  objective returns two thirds of the completion bonus it forgoes by never
+  arriving, every episode, at no risk: that root is never in contact and never
+  dies.
+
+  **Seed 15's mute root is doing the opposite — it PAYS to stay silent**, −3.7
+  over the same block, mostly 190 re-tasks and 67 churned reissues. Whatever
+  holds it off the objective, order income is not it.
+
+  **⇒ This argues against a pricing fix, and that is the useful part.** A cap or
+  tariff on the order channel would address seed 14 and leave seed 15 exactly
+  where it is — and the pricing axis has already been closed once on this
+  scenario (the zero-price probe, 2026-08-12). What the two mute policies share
+  is not economics but geometry: occupancy 0.000 and 0.004, zero SEIZE orders,
+  ~40 from the objective. The mechanism established on 2026-08-14 — *the root
+  claims iff the root occupies* — still holds and is still the only thing both
+  seeds obey.
+
+  **A defect in the record, found by the invariant test.** A churned reissue is
+  charged `order_churn` and then returns **without `_say`**, so it never reaches
+  the transcript: every transcript-derived order count in this repo undercounts
+  a reissuing commander by exactly the orders it is being charged for (6 of 198
+  on the pinned squad episode; 66 and 67 for the two mute roots above). Whether
+  a charged no-op should appear on the net is a vocabulary decision and stays
+  the owner's — but until it does, `orders_issued` is not a measure of what a
+  commander did, and `tests/test_metrics.py` now says so where someone will read
+  it.
