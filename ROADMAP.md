@@ -7698,3 +7698,27 @@ deliberately deferred (`docs/vision.md` §2c).
   and do re-verify the inertness at other seeds; say the word and it is one
   edit to `scripts/campaigns/patrol_brique_incumbent_seeds_ext.jobs` plus a
   relaunch.
+
+- **2026-08-15 — PRE-REGISTERED PREDICTION, written before the twin trains, and
+  a refinement the previous entry got slightly too clean.**
+  `patrol_brique_v24_rdb3_seed17` finishes MUTE at evaluation (claim-episodes
+  0/20, closed-on-root 0.000, success 1.00) — but its root **did** close during
+  training, on **48 of 2930 iterations**. Seed 16 closed on zero. So the bonus
+  was live at seed 17 and inert at seed 16, and the two seeds are different
+  cases wearing the same "mute" label.
+
+  **The prediction.** `patrol_brique_v27_rdb1_seed17` is three jobs away in the
+  queue. Because `root_done_bonus` was actually paid on those 48 iterations, the
+  two prices are NOT the same reward function on the trajectories this seed
+  visits, so the twin must **diverge**: different tensors, and its evaluation
+  free to differ. If it comes back bit-identical to `v24` the account in the
+  entry above is wrong and must be retracted — that is the test, and it is
+  written down before the run rather than after.
+
+  **The refinement.** "No close → no bonus → no gradient → no close" is right
+  for seed 16 and too strong in general. Seed 17 DISCOVERED the close and still
+  ended mute, so discovery is necessary and not sufficient: the reinforcement
+  has to take, and here it did not over 1.6% of iterations. The absorbing story
+  belongs to seed 16's zero-close case; seed 17 is a second regime — discovered,
+  paid, and lost anyway — and a gate redesign has to survive both, because both
+  read as the identical `closed_on_root_report_rate` 0.000.
