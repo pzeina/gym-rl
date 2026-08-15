@@ -177,9 +177,9 @@ def test_the_replay_is_checked_against_the_iteration_stamped_in_the_checkpoint(t
     iteration it was written at, so agreement is reported per run."""
     d = _run(tmp_path, "run", V19_SHAPE)
     (d / "ckpt_best.pt").write_bytes(b"not a real checkpoint")
-    monkeypatch.setattr(cs, "checkpoint_iteration", lambda path: 1)
+    monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 1, "env_steps": 1024})
     assert cs.run_facts(d)["agrees"] is True
-    monkeypatch.setattr(cs, "checkpoint_iteration", lambda path: 999)
+    monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 999, "env_steps": 1024})
     assert cs.run_facts(d)["agrees"] is False
 
 
@@ -187,7 +187,7 @@ def test_an_unreadable_checkpoint_is_unverified_not_a_disagreement(tmp_path):
     """A run still training is halfway through writing this file at any moment."""
     d = _run(tmp_path, "run", V19_SHAPE)
     (d / "ckpt_best.pt").write_bytes(b"truncated")
-    assert cs.checkpoint_iteration(d / "ckpt_best.pt") is None
+    assert cs.checkpoint_stamp(d / "ckpt_best.pt") is None
     assert cs.run_facts(d)["agrees"] is None
 
 

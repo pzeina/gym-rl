@@ -54,6 +54,35 @@ def rows_of(run: str) -> list[dict]:
         return list(csv.DictReader(f))
 
 
+#: How far below the run's final rolling success the window that WROTE
+#: ``ckpt_best`` may sit before the digest flags it. Not a gate and not a
+#: threshold on anything published — a digest line, because until #57 nothing
+#: printed where a run's "best work" came from and a checkpoint written at 0.9%
+#: of a 3M-step run went unremarked for a cycle.
+BEST_SELECTION_GAP = 0.10
+
+
+def checkpoint_stamp(path: Path) -> dict | None:
+    """The iteration and env_steps a checkpoint was written at, or None.
+
+    ``train.py::save_checkpoint`` stores both, so a digest can say WHERE in a
+    run its ``ckpt_best`` came from — the one thing ``best_save_gate`` decides
+    and nothing ever reported. Every failure mode gives the same answer: a live
+    run may be halfway through writing the file, an archived run may have had
+    its weights pruned, a pre-v1.x checkpoint may not carry the fields. None
+    means "cannot say", never "iteration zero".
+    """
+    if not path.exists():
+        return None
+    try:
+        import torch
+
+        ckpt = torch.load(path, map_location="cpu", weights_only=True)
+        return {"iteration": int(ckpt["iteration"]), "env_steps": int(ckpt["env_steps"])}
+    except Exception:  # unreadable is a report, not a crash
+        return None
+
+
 def fnum(row: dict, key: str) -> float | None:
     """Parse a metric cell; NaN (iterations with no completed episode) reads as missing."""
     try:
@@ -504,6 +533,38 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
     return m
 
 
+def best_selection_line(run: str, rows: list[dict], final_roll: float) -> str | None:
+    """Where ``ckpt_best`` came from, and on what window it was chosen.
+
+    ``ckpt_best`` is what ``cohort.play``, the gallery and every spot-check load
+    by default, and since v1.20 it is selected lexicographically on the
+    REPORTING channel before success. That makes the selecting window a fact
+    about the run, and it was invisible: `patrol_brique_v19_rdb3_seed13` wrote
+    its only ``ckpt_best`` at iteration 25 of 2930 — 25,600 of 3,000,320 steps —
+    on a window at 2% success, and shipped it as the run's best work (refs #57).
+
+    None when the checkpoint cannot be read (a live run mid-write) or its
+    iteration is not in this metrics.csv (a resumed or truncated corpus): a
+    digest line that cannot be trusted is worse than no digest line.
+    """
+    stamp = checkpoint_stamp(run_dir(run) / "ckpt_best.pt")
+    if stamp is None:
+        return None
+    row = next((r for r in rows if fnum(r, "iteration") == stamp["iteration"]), None)
+    if row is None:
+        return None
+    total = fnum(rows[-1], "env_steps") or 0
+    share = stamp["env_steps"] / total if total else 0.0
+    success, close = fnum(row, "success_rate_rolling"), fnum(row, "root_report_close_rolling")
+    line = (f"  ckpt_best  iteration {stamp['iteration']} / {stamp['env_steps']:,} steps "
+            f"({share:.0%} of the run)   that window: success "
+            f"{'—' if success is None else f'{success:.0%}'}, closed-on-root "
+            f"{'—' if close is None else f'{close:.3f}'}")
+    if success is not None and final_roll == final_roll and final_roll - success > BEST_SELECTION_GAP:
+        line += f"\n    ⚠ selected {final_roll - success:.0%} below the run's final window — see scripts/checkpoint_selection.py"
+    return line
+
+
 def report(run: str, show_components: bool) -> dict:
     rows = rows_of(run)
     cfg_path = run_dir(run) / "config.json"
@@ -518,6 +579,8 @@ def report(run: str, show_components: bool) -> dict:
     final_roll = mean(last, "success_rate_rolling")
     print(f"  curve   {curve(rows)}   best rolling {best:.0%}   final {final_roll:.0%}")
     print(f"  {stability(best, final_roll)}")
+    if selection := best_selection_line(run, rows, final_roll):
+        print(selection)
     if opt := optimizer_line(first, last):
         print(opt)
     print("  final decile vs first decile:")

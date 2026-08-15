@@ -77,7 +77,7 @@ sys.path.insert(0, str(ROOT))
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR  # noqa: E402
 from cohort.training.train import best_save_gate  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
-from scripts.run_report import fnum, run_dir  # noqa: E402
+from scripts.run_report import checkpoint_stamp, fnum, run_dir  # noqa: E402
 
 #: Success floors swept per run. 0.0 is the shipped rule — no floor — and is
 #: always first so every other row reads as a delta against what actually
@@ -160,24 +160,6 @@ def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[i
     return saves
 
 
-def checkpoint_iteration(path: Path) -> int | None:
-    """The ``iteration`` stamped into a checkpoint, or None if it cannot be read.
-
-    Every failure mode is the same answer: a run still training may be halfway
-    through writing this file, an archived run may have had its weights pruned,
-    and a pre-v1.x checkpoint may not carry the field. None means "cannot
-    verify", never "disagrees".
-    """
-    if not path.exists():
-        return None
-    try:
-        import torch
-
-        return int(torch.load(path, map_location="cpu", weights_only=True)["iteration"])
-    except Exception:  # unreadable is a report, not a crash
-        return None
-
-
 def _json(path: Path) -> dict:
     try:
         return json.loads(path.read_text())
@@ -237,7 +219,8 @@ def run_facts(run: Path) -> dict | None:
             "saves": len(saves),
         }
     shipped = sweep[0.0]
-    stamped = checkpoint_iteration(run / "ckpt_best.pt")
+    stamp = checkpoint_stamp(run / "ckpt_best.pt")
+    stamped = None if stamp is None else stamp["iteration"]
     return {
         "run": run.name,
         "rows": len(rows),
