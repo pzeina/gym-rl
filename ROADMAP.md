@@ -51,7 +51,16 @@ there.
   implicated in that scenario. (`patrol_brique_v13_pre42_seed12` and
   `..._v14_pre42_seed13` are training this now.)
 
-  **⚠ ANSWERED, and it split — see the two 2026-08-15 entries at the bottom.**
+  **⚠ ANSWERED AT FIVE SEEDS, AND THE ANSWER IS NO — the block does not control
+  this channel (`patrol_brique` 2/5 vs 1/4, Fisher p = 1.000; pooled with squad
+  over 17 runs, p = 0.347). Seed 14 reports WITH the block and is mute without
+  it, the exact mirror of seed 12. See the RETRACTION entry at the bottom, and
+  read the rest of this handoff's v1.21 framing through it: the reporting
+  channel is seed-determined, not lever-determined, and v1.21 is not a tuning
+  cycle. The paragraph below is the superseded intermediate reading, kept
+  because the entries reference it.**
+
+  **⚠ (superseded) it split — see the 2026-08-15 entries at the bottom.**
   Seed 12 flips (0.000 → **0.825**, gate FAIL → pass, a clean paired flip) and
   seed 13 does not (0.000 → 0.000). So the block is implicated in
   `patrol_brique` but removing it is neither necessary (`v5` reported with the
@@ -7280,3 +7289,60 @@ deliberately deferred (`docs/vision.md` §2c).
   comparison was confounded by. It also means **every single-seed claim about
   this channel in this scenario is worthless**, including several above, and that
   v1.21 cannot be decided by one arm per cell.
+
+- **2026-08-15 — RETRACTION: the chart block does not control the reporting
+  channel. After 17 runs the effect is not distinguishable from zero, and the
+  "clean paired flip" I reported is cancelled by its mirror image.** The
+  decisive cell finished at five seeds, all on one tree (`742b28a6`), `rdb=1.0`,
+  no overrides, N=100 on both checkpoints:
+
+        seed   block REMOVED                    block PRESENT
+         12    v13_pre42   0.825  REPORTS       patrol_brique_v7           0.000  mute
+         13    v14_pre42   0.000  mute          patrol_brique_v10_seed13   0.000  mute
+         14    v15_pre42   0.000  mute          patrol_brique_v11_seed14   0.878  REPORTS
+         15    v16_pre42   0.000  mute          patrol_brique_v12_seed15   0.000  mute
+         16    v17_pre42   0.794  REPORTS       —
+
+                          patrol_brique   2/5 vs 1/4   Fisher p = 1.000
+                          squad           4/4 vs 2/4   Fisher p = 0.429
+                          POOLED          6/9 vs 3/8   Fisher p = 0.347
+
+  **Seed 14 is the anti-flip.** It reports *with* the block (0.878) and is mute
+  *without* it (0.000) — the exact mirror of seed 12, which I reported earlier
+  today as evidence the block was implicated. Two paired flips in opposite
+  directions are no evidence at all. Success is unaffected everywhere (0.95–1.00
+  in all nine patrol_brique runs), so this was never about the mission.
+
+  **What this retracts.** The 2026-08-14 entry called the squad result "the first
+  version of this quantity that agrees with itself"; the 2026-08-15 entry called
+  seed 12 "a clean paired flip … the block IS implicated in `patrol_brique`".
+  Both were built on two- and four-seed patterns, and squad's own 4/4 vs 2/4 was
+  **p = 0.429 — never significant, as that entry itself said before leaning on it
+  anyway.** Pooled over both scenarios and 17 runs the block's effect is
+  **p = 0.347**. It is not established, and the honest description of every
+  block-vs-no-block table in this log is *a pattern in small n*.
+
+  **What actually survives, and it is a bigger finding than the one it
+  replaces.** The reporting channel is **seed-determined under every
+  configuration tested**: 3 of 9 patrol_brique runs report and 6 of 8 squad runs
+  do, spread across both trees and three prices, with success pinned near 1.00
+  throughout. Whether a commander ever learns to file a truthful completion is
+  currently a property of the optimisation path, not of the reward, the chart, or
+  the scenario. **`closed_on_root_report_rate`'s 0.5 floor is therefore rejecting
+  runs on a coin-flip**, which is exactly what happened to `patrol_brique_v7` and
+  what blocked the v1.20b fleet.
+
+  **⇒ v1.21 is not a tuning cycle, and should not be planned as one.** Three
+  routes, none taken here because each changes what the project claims:
+  (1) treat it as exploration / credit assignment — the DONE claim is a rare,
+  precisely-timed act whose reward arrives once, and nothing in training shapes
+  the approach to it; (2) accept the variance and **declare** a selection policy
+  — train k seeds per scenario and ship one that reports, which is seed-shopping
+  and must be stated in the README or it is exactly the overstatement
+  `publish_audit.py` exists to catch; (3) change the gate, on the argument that a
+  silent commander that wins is a real policy and the floor encodes a preference
+  that was never measured to be achievable. **The measurement that would decide
+  between (1) and (2) is whether the reporting/mute split is stable under a
+  restart at fixed seed** — if it is, it is a basin the optimiser falls into and
+  (1) is tractable; if a rerun of the same seed lands differently, only (2) and
+  (3) remain.
