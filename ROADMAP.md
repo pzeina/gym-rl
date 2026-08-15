@@ -51,13 +51,19 @@ there.
   implicated in that scenario. (`patrol_brique_v13_pre42_seed12` and
   `..._v14_pre42_seed13` are training this now.)
 
-  **⚠ Read that prediction against the #54 correction below (2026-08-15).** The
-  wording "the price is the whole story" was a sufficiency claim and is
-  withdrawn: `patrol_brique_v5` is mute at `rdb = 3.0`, the price at which v6
-  files 103 claims, so the price does not settle this scenario on its own. The
-  mechanism is likewise restated — **no occupancy → no claim holds; occupancy →
-  claim does not.** So a mute result from the arms above rules the block out
-  here; it does not rule the price in.
+  **⚠ ANSWERED, and it split — see the two 2026-08-15 entries at the bottom.**
+  Seed 12 flips (0.000 → **0.825**, gate FAIL → pass, a clean paired flip) and
+  seed 13 does not (0.000 → 0.000). So the block is implicated in
+  `patrol_brique` but removing it is neither necessary (`v5` reported with the
+  block present) nor sufficient (`v14` is mute without it). **`v13` and `v14`
+  differ only in the seed, and one reports at 0.825 while the other is
+  absolutely mute — so seed alone flips this channel, and no single-seed arm can
+  decide anything about it.** Plan v1.21's campaign at ≥3 seeds per cell or it
+  will produce another unreadable result. Two associations died here too: the
+  ADVANCE/SEIZE order mix does not track muteness (the mute arm orders SEIZE
+  0.98), and neither does occupancy magnitude (the mute arm occupies **twenty
+  times** the vocal one). The occupancy account is retired as a mechanism and
+  survives only as a within-policy, per-episode regularity.
 
 **⚑ THE FIRST v1.20 FLEET WAS VOID AND HAS BEEN RELAUNCHED — read this before
 reading anything else about v1.20.** `#42`'s `_fill_vacancy` change added a
@@ -7220,3 +7226,57 @@ deliberately deferred (`docs/vision.md` §2c).
   No code change: the masking and reward logic for a SEIZE-rooted
   `patrol_brique` is provably unchanged across v5→v6, and stamping `eval_commit`
   retroactively onto published artifacts would be fabrication, not repair.
+
+- **2026-08-15 — the patrol_brique block-removal arms SPLIT, and they kill two
+  more associations I had drawn. Pre-registered outcome three of three.** Both
+  arms trained on the branch with `56ada9a`'s chart block removed, `rdb=1.0`
+  default, no overrides, 3M steps, N=100 on both checkpoints:
+
+        seed   A (block removed)          C (fleet tree)             closed-on-root
+         12    patrol_brique_v13_pre42    patrol_brique_v7           0.825  vs  0.000
+         13    patrol_brique_v14_pre42    patrol_brique_v10_seed13   0.000  vs  0.000
+
+  **Seed 12 is a clean paired flip** — 154 root claims in 90 of 100 episodes
+  against zero, success 0.97 vs 0.96, and the gate goes from FAIL to pass. The
+  block IS implicated in `patrol_brique`. **Seed 13 does not move**: mute on both
+  trees, 0 claims either side. So removing the block is neither necessary
+  (v5 reported with it present) nor sufficient (v14 is mute without it). As
+  pre-registered: a split decides nothing on its own, and two arms is two arms.
+
+  **Association 1, dead: ADVANCE-dominance ↔ muteness.** The squad mute policies
+  were ADVANCE 0.69–0.93 with SEIZE ≈ 0, and I read the order mix as part of the
+  regime. Here it reverses cleanly. `v14` (mute) orders **SEIZE 0.98 / ADVANCE
+  0.01**; `v13` (vocal) orders **ADVANCE 0.88 / SEIZE 0.09**. A commander can
+  order nothing but SEIZE for a whole run and never claim one.
+
+  **Association 2, dead: occupancy magnitude ↔ claiming.** Oracle probe, 30 eps,
+  seed 500:
+
+        patrol_brique_v13_pre42_seed12   27/30 claiming episodes   occupancy 0.003
+        patrol_brique_v14_pre42_seed13    0/30 claiming episodes   occupancy 0.059
+
+  **The mute policy occupies twenty times more than the vocal one** — and 0.059
+  is the highest root occupancy measured anywhere in this investigation. #54
+  argued exactly this shape from `patrol_brique_v5` at 0.011–0.021; this is the
+  same finding at triple the effect, from a manipulation rather than an
+  observation. Occupancy does not order policies by whether they report.
+
+  **What is left of the mechanism, stated at its true strength.** Within a single
+  policy the per-episode split still holds everywhere it has been measured —
+  claiming episodes occupy at least as much as silent ones, `v13` 0.003 vs 0.000,
+  `v6-latest` 0.041 vs 0.000, and the squad arms likewise. Between policies it
+  predicts nothing. And the surviving cross-policy statement — *a root that never
+  enters the objective radius never files a truthful claim* — is close to
+  definitional for a SEIZE mission, not an explanation. **The occupancy account
+  is retired as a mechanism; it survives only as a within-policy regularity.**
+
+  **The one thing these arms establish positively, and it is worth more than
+  what they retire.** `v13` and `v14` differ in **the seed and nothing else** —
+  same tree, same `lr`, same price, same budget, same scenario — and one reports
+  at 0.825 while the other is absolutely mute. **Seed alone flips the reporting
+  channel in `patrol_brique`.** That makes the third factor #54 asked us to find
+  at least partly an optimisation-path property, not an economic or structural
+  one, and it independently supports the lr/seed pair its own v5-vs-v6
+  comparison was confounded by. It also means **every single-seed claim about
+  this channel in this scenario is worthless**, including several above, and that
+  v1.21 cannot be decided by one arm per cell.
