@@ -1,0 +1,50 @@
+# Is the INCUMBENT's reporting channel a seed draw too?
+#
+# v1.20b is blocked because patrol_brique_v7 scores closed_on_root_report_rate
+# 0.000 against patrol_brique_v6's 0.808. The five-seed arms then showed that at
+# the v1.20 default (root_done_bonus=1.0) this channel is decided by the SEED,
+# not by the chart block: 1/4 seeds report with the block, 2/5 without it,
+# Fisher p = 1.000 (see the 2026-08-15 RETRACTION in ROADMAP.md).
+#
+# That retraction leaves one question standing, and it decides what v1.21 is.
+# Every measurement of the incumbent config is a SINGLE seed — patrol_brique_v6
+# and patrol_brique_v8_rdb3 are both seed 12, both report (0.808 / 0.867). If
+# root_done_bonus=3.0 reports at every seed while 1.0 reports at one in five,
+# the gate is measuring a real and scenario-dependent price and v1.21 is a
+# reward-defaults cycle. If 3.0 splits across seeds the way 1.0 does, then the
+# incumbent's 0.808 is itself a draw, the gate is scoring luck at N=1 seed, and
+# v1.21 is a GATE cycle — closed_on_root_report_rate cannot stay a per-run
+# pass/fail bar over a bimodal quantity.
+#
+# THE DESIGN. Arm A is the incumbent config (rdb=3.0, the v1.19 shipped default)
+# at the same five seeds the rdb=1.0 cell already has. Seed 12 is re-run rather
+# than borrowed from patrol_brique_v8_rdb3 so all five sit on ONE tree, and it
+# doubles as a determinism control: 847acec added order-pay bookkeeping to
+# cohort_env.py and claims dynamics are unchanged, so v18 should reproduce
+# v8_rdb3's 0.867. If it does not, that is a finding of its own.
+#
+# Arm B is one run: seed 16 at the current default, the one cell missing from
+# the rdb=1.0 arm. It turns an unbalanced 5-vs-4 into a paired 5-vs-5 Fisher
+# test at the same five seeds, and seed 16 is exactly where the pre42 arm found
+# a REPORTS (v17_pre42, 0.794).
+#
+#     seed   rdb=3.0 (incumbent)          rdb=1.0 (v1.20 default)
+#      12    v18   [v8_rdb3: 0.867]       patrol_brique_v7          0.000  mute
+#      13    v19                          patrol_brique_v10_seed13  0.000  mute
+#      14    v20                          patrol_brique_v11_seed14  0.878  REPORTS
+#      15    v21                          patrol_brique_v12_seed15  0.000  mute
+#      16    v22                          v23
+#
+# The --reward override is deliberate and legal here: these are EXPERIMENT ARMS,
+# not baseline members. A member may not carry an override (that is what voided
+# patrol_brique_v8_rdb3 as a substitute); an arm that measures the price of a
+# default has to move it.
+#
+# Read with: scripts/run_report.py <run>, then the N=100 closed_on_root numbers.
+# Nothing here changes a default — the decision this informs is the owner's.
+patrol_brique_v18_rdb3_seed12  --scenario patrol_brique --total-steps 3000000 --seed 12 --reward root_done_bonus=3.0
+patrol_brique_v19_rdb3_seed13  --scenario patrol_brique --total-steps 3000000 --seed 13 --reward root_done_bonus=3.0
+patrol_brique_v20_rdb3_seed14  --scenario patrol_brique --total-steps 3000000 --seed 14 --reward root_done_bonus=3.0
+patrol_brique_v21_rdb3_seed15  --scenario patrol_brique --total-steps 3000000 --seed 15 --reward root_done_bonus=3.0
+patrol_brique_v22_rdb3_seed16  --scenario patrol_brique --total-steps 3000000 --seed 16 --reward root_done_bonus=3.0
+patrol_brique_v23_rdb1_seed16  --scenario patrol_brique --total-steps 3000000 --seed 16
