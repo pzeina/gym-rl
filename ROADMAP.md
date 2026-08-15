@@ -60,6 +60,12 @@ there.
   cycle. The paragraph below is the superseded intermediate reading, kept
   because the entries reference it.**
 
+  **One of the three routes that leaves open is already narrowed: a DECLARED
+  seed-selection policy would have to be declared PER SCENARIO**, because a seed
+  that reports on squad says nothing about `patrol_brique` — agreement is at
+  chance over eight matched pairs (`scripts/reporting_channel.py --pairs squad
+  patrol_brique`, and the last progress-log entry).
+
   **⚠ (superseded) it split — see the 2026-08-15 entries at the bottom.**
   Seed 12 flips (0.000 → **0.825**, gate FAIL → pass, a clean paired flip) and
   seed 13 does not (0.000 → 0.000). So the block is implicated in
@@ -7346,3 +7352,53 @@ deliberately deferred (`docs/vision.md` §2c).
   restart at fixed seed** — if it is, it is a basin the optimiser falls into and
   (1) is tractable; if a rerun of the same seed lands differently, only (2) and
   (3) remain.
+
+- **2026-08-15 — route (2) would have to be declared PER SCENARIO: a reporting
+  seed does not transfer (refs assurance #55).** The route above says "train k
+  seeds and ship one that reports", and it only pays for itself if a seed is
+  *globally* good. It is not. The squad and `patrol_brique` cells already share
+  seeds at fixed arms, so this needed no new run —
+  `scripts/reporting_channel.py` labels every run on disk from
+  ``done_claim_episodes_root`` at BOTH published checkpoints, re-derives each
+  arm from `config.json`/`economics.json`, and pairs the two scenarios at a
+  fixed arm:
+
+        arm                     seed   squad       patrol_brique
+        rdb 1, chart absent      12    REPORTING   REPORTING
+        rdb 1, chart absent      13    REPORTING   mute
+        rdb 1, chart absent      14    REPORTING   mute
+        rdb 1, chart absent      15    REPORTING   mute
+        rdb 1, chart present     12    REPORTING   mute
+        rdb 1, chart present     13    REPORTING   mute
+        rdb 1, chart present     15    mute        mute
+        rdb 2, chart present     12    REPORTING   mute
+
+        rdb=1.0 only   agreement 2 of 7, 1.71 expected   McNemar p = 0.0625
+        every arm      agreement 2 of 8, 1.75 expected   McNemar p = 0.0312
+
+  **Agreement is at chance.** A seed carries no propensity to report that
+  survives a change of scenario, so a declared seed list is a per-scenario
+  artifact and route (2) costs a fleet per scenario rather than a fleet. #55
+  reported the `rdb=1.0` reading and this reproduces it exactly, run for run; the
+  eighth pair is the `rdb=2.0` cell (`squad_v19_rdb2` vs `patrol_brique_v9_rdb2`,
+  same seed, same tree), which #55's scope excluded and which is the cleanest
+  pair on the table. **The direction is not the claim** — six unanimous
+  discordant pairs is p = 0.0312, but seeds 12–15 are four seeds and this is 8
+  pairs, not 80. It is enough to say a global seed list is unsupported; it is not
+  enough to rank the scenarios.
+
+  **Ten runs are dropped rather than resolved, and that is the other half of the
+  method.** `squad_v10c` claims in 18 of 100 episodes at `ckpt_best` and 0 of 100
+  at `ckpt_latest`; no label describes that policy, and choosing the checkpoint
+  that suits the argument is how a 2-of-4 becomes a 4-of-4.
+
+  **The label is a claim count, never `closed_on_root_report_rate`, and the
+  script prints where the two disagree.** On the corpus as it stands that check
+  fires on 20 checkpoints — the whole defend family, which reads 0.97–1.00 on
+  **zero** root claims because a continuous-posture root closes the window with a
+  SITREP. #55 measured the same hazard in the other direction: a root SITREP
+  landing on the ENDEX step enters the numerator, so `patrol_brique` arms with no
+  claims at all read 0.020–0.104 and a 0.05 rate-cut calls them reporting. Both
+  directions are pinned in `tests/test_reporting_channel.py`. This does not touch
+  the v1.20 gate, whose 0.5 floor is far above that artifact — the gate's problem
+  is the one the retraction named, that the quantity is bimodal by seed.

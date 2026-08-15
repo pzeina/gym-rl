@@ -43,6 +43,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from scripts.baseline import run_dir  # noqa: E402
+from scripts.exact_tests import fisher_two_sided as _fisher  # noqa: E402
 
 #: (run-name default, arm label, what the arm removes)
 ARMS = (
@@ -89,23 +90,6 @@ def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
     c = p + z * z / (2 * n)
     h = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n))
     return ((c - h) / d, (c + h) / d)
-
-
-def _fisher(a: int, b: int, c: int, d: int) -> float:
-    """Two-sided Fisher exact on [[a,b],[c,d]] — no scipy in this venv."""
-    from math import comb
-
-    n = a + b + c + d
-    row1, col1 = a + b, a + c
-
-    def prob(x: int) -> float:
-        return comb(row1, x) * comb(n - row1, col1 - x) / comb(n, col1)
-
-    observed = prob(a)
-    lo = max(0, col1 - (n - row1))
-    hi = min(row1, col1)
-    return min(1.0, sum(p for x in range(lo, hi + 1)
-                        if (p := prob(x)) <= observed * (1 + 1e-9)))
 
 
 def _facts(run: str) -> dict | None:
