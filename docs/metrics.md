@@ -239,6 +239,32 @@ reissues are not re-tasks) and the recorder copies its per-step event log
   doctrine, priced re-tasks should approach zero and higher ranks should
   re-task strictly more rarely than lower ones.
 
+#### Who issued them, and did it pay: `orders_by_rank` / `order_pay_by_rank` (refs #52)
+
+`orders_by_task` is team-wide, so a commander that orders from the objective
+and one that orders from 40 units behind it produce the same row.
+`orders_by_rank` (`{issuer effective rank: {preferred, allowed, violating,
+underivable}}`, keyed on the issuer's EFFECTIVE rank so a promoted TL holding
+the squad counts as the SL it is acting as) and `order_pay_by_rank`
+(`{issuer effective rank: {fresh, churn, retask, pay}}`, read from the
+environment's own order-payment ledger — see B5's fresh/churn/retask split
+below) answer that: how much a rank commanded, and by `pay`, whether it paid.
+
+**Both are raw per-run totals, and a raw total is not comparable across an
+arm that also changes episode length** (refs #53). On the mute-vs-reporting
+root comparison these two were built for, the mute root *survives* where its
+reporting counterpart dies — so its episodes time out instead of ending
+early, and it racks up ~3.4x the root's raw order volume while commanding at
+the SAME rate. `rank_alive_steps` — `{effective rank: (soldier, step) pairs
+alive}`, counted the same way `done_admissible` counts opportunity (every
+recorded state but the last) — is the denominator that removes it:
+`sum(orders_by_rank[rank].values()) / rank_alive_steps[rank]` is orders per
+step alive, comparable across arms whose episodes run different lengths; the
+raw sum on its own is not. `format_behavior_table` prints the rate beside the
+raw count and its denominator for exactly this reason (`SL 12/40a (0.30/step,
+9 pref)`). Episode count alone is not a sufficient normaliser here — episode
+*length* is itself part of the treatment on this comparison.
+
 ### False-COMPLETE rate
 
 Rejected DONE / total DONE transmitted. Every MISSION COMPLETE claim is
