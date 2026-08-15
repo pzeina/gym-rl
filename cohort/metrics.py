@@ -205,6 +205,46 @@ SUCCESS_RATE_FLOOR: float = 0.5
 #: through ``_gate``: unmeasured is not passed.
 ROOT_REPORT_CLOSE_FLOOR: float = 0.5
 
+#: Commander-survival gate (owner's decision 2026-08-16): a ceiling on
+#: ``human_death_rate`` — the rate at which the human root, the commander the
+#: cohort exists to keep alive, dies. Until now NO gate bounded it, which the
+#: program board said out loud rather than in a footnote ("the root's own death
+#: rate · no gate covers this", refs #24). `patrol_brique_v22_rdb3_seed16` is
+#: what closed that: the commander dies in **100 of 100 episodes** while the run
+#: still passes all three existing gates, because a dead commander's episodes
+#: are won by the rest of the cohort — success 0.75, timeout 0.15, and a
+#: `closed_on_root_report_rate` of 0.000 that reads as ordinary muteness beside
+#: seeds whose commander is alive and merely silent.
+#:
+#: The band is wide and empty, so the ceiling is not a judgement call. The
+#: SHIPPING fleet's final policies run 0.01-0.30 (`defend_brique_v15` 0.01,
+#: `patrol_brique_v6` 0.03, `squad_recon_v8` 0.07, `fireteam_defend_v20` 0.10,
+#: `fireteam_v9` 0.20, `platoon_v6` 0.21, `squad_screen_v11` 0.24, `squad_v10`
+#: 0.30); the worst run in the whole 66-run corpus that is not this pathology is
+#: `squad_v14_nobonus` at 0.38; and the pathology is 1.00. **Nothing anywhere
+#: sits between 0.38 and 1.00.** 0.5 is the middle of that empty band, matching
+#: how TIMEOUT_RATE_CEILING and SUCCESS_RATE_FLOOR were set, and it clears every
+#: baseline member by at least 0.20 — checked, because a gate that retroactively
+#: fails the fleet it ships is exactly how v1.20 stopped itself.
+#:
+#: **Conditioned on ``timeout_rate``, and that is not cosmetic.** The raw rate
+#: divides by every episode, so it improves when a policy converts DEFEATS —
+#: where the commander dies — into TIMEOUTS, where nobody does. Documented, not
+#: hypothetical: `squad_v12b` reads 0/100 root deaths partly by taking zero
+#: defeats and riding the clock (refs #47). Gating only once ``timeout_rate``
+#: has cleared its own ceiling means the clock-riding route to a clean death
+#: rate already fails on the clock, so this gate cannot be bought by declining
+#: the engagement — the same construction, and the same reason, as
+#: SUCCESS_RATE_FLOOR.
+#:
+#: What it deliberately does NOT do is police survival quality. `squad_v10`
+#: ships at 0.30 and is a baseline member; the conditioned measurement that
+#: separates good from very good is ``run_report.root_death_in_success``, which
+#: divides by wins and cannot be gamed the same way. This gate refuses a regime
+#: — the commander does not survive its own operation — and leaves the rest to
+#: the boards.
+HUMAN_DEATH_RATE_CEILING: float = 0.5
+
 #: SITREP freshness interval for a trace recorded before the scenario's own
 #: was written into it (refs issue #35). Read off ``RewardConfig`` rather than
 #: restated, because it is the live price: a report at least this many steps
@@ -1659,6 +1699,17 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     collapsed run fails exactly one of them, so the report always says which
     shape it was.
 
+    The commander-survival gate (owner's decision 2026-08-16) rides the same
+    condition as the success axis and closes a hole the program board had
+    already published rather than hidden: no gate bounded the root's own death
+    rate (refs #24). `patrol_brique_v22_rdb3_seed16` is why it now does — its
+    commander dies in 100 of 100 episodes and it passes all three other gates,
+    because the cohort wins 75% of those episodes without him and his silence
+    then reads as ordinary muteness. Conditioning it on ``timeout_rate`` is what
+    stops it rewarding the one documented way to buy a clean death rate:
+    converting defeats, where the commander dies, into timeouts, where nobody
+    does (refs #47).
+
     Gates whose metric is None (never measured this run) are reported with
     ``passed=None`` — unmeasured is not the same as passed.
     """
@@ -1670,6 +1721,19 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     # leaves the shape unknown, so the gate is skipped rather than guessed.
     if timeout_rate is not None and timeout_rate <= TIMEOUT_RATE_CEILING:
         gates.append(_gate("success_rate", agg.get("success_rate"), SUCCESS_RATE_FLOOR, "min"))
+        # Commander survival, on the same condition and for a sharper reason
+        # (refs #24, #47): the raw rate falls when a policy trades defeats for
+        # timeouts, so gating a stall-shaped run here would reward the trade.
+        # Above the clock ceiling the run already fails, and this gate stays
+        # silent rather than passing it a compliment it bought by not fighting.
+        gates.append(
+            _gate(
+                "human_death_rate",
+                agg.get("human_death_rate"),
+                HUMAN_DEATH_RATE_CEILING,
+                "max",
+            )
+        )
     # refs v1.20: unconditional, because muteness is not a collapse shape — a
     # run can pass every other gate and still never have reported anything.
     gates.append(

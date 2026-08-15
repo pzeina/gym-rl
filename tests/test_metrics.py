@@ -12,6 +12,7 @@ import numpy as np
 
 from cohort.env.cohort_env import make_env
 from cohort.metrics import (
+    HUMAN_DEATH_RATE_CEILING,
     ROOT_REPORT_CLOSE_FLOOR,
     SUCCESS_RATE_FLOOR,
     TraceRecorder,
@@ -552,6 +553,7 @@ def test_positional_gate_fails_the_v7_disposition():
     assert [g["name"] for g in gates] == [
         "timeout_rate",
         "success_rate",
+        "human_death_rate",
         "closed_on_root_report_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
@@ -559,7 +561,8 @@ def test_positional_gate_fails_the_v7_disposition():
     positional = [
         g
         for g in gates
-        if g["name"] not in ("timeout_rate", "success_rate", "closed_on_root_report_rate")
+        if g["name"]
+        not in ("timeout_rate", "success_rate", "human_death_rate", "closed_on_root_report_rate")
     ]
     assert [g["passed"] for g in positional] == [False, False]
     assert "FAIL" in format_gate_report(positional)
@@ -572,7 +575,11 @@ def test_positional_gate_passes_a_prepared_defense():
     # no denominator and reads None — unmeasured, which is deliberately not a
     # pass. Nothing may FAIL; that is the claim this test makes.
     gates = regression_gates(_defend_agg(cover=True, dist_from_obj=2))
-    assert [g["passed"] for g in gates if g["name"] != "closed_on_root_report_rate"] == [
+    # `human_death_rate` joins `closed_on_root_report_rate` as unmeasured here:
+    # these synthetic traces carry no human root, so the gate has nothing to
+    # divide and reads None. Unmeasured is deliberately not a pass.
+    unmeasured = ("closed_on_root_report_rate", "human_death_rate")
+    assert [g["passed"] for g in gates if g["name"] not in unmeasured] == [
         True,
         True,
         True,
@@ -592,6 +599,7 @@ def test_positional_gate_applies_to_defend_roots_only():
     assert [g["name"] for g in regression_gates(seize)] == [
         "timeout_rate",
         "success_rate",
+        "human_death_rate",
         "closed_on_root_report_rate",
     ]
     assert format_gate_report([]) == ""
@@ -605,7 +613,11 @@ def test_unmeasured_gate_is_not_a_pass():
     # success_rate IS measured here (outcome defaults to "success"), so it is
     # excluded alongside timeout_rate — this test is about the positional
     # gates (issue #11), which go unmeasured with no threat pairs.
-    positional = [g for g in regression_gates(agg) if g["name"] not in ("timeout_rate", "success_rate")]
+    positional = [
+        g
+        for g in regression_gates(agg)
+        if g["name"] not in ("timeout_rate", "success_rate", "human_death_rate")
+    ]
     assert positional and all(g["passed"] is None for g in positional)
     assert "FAIL" not in format_gate_report(positional)
 
@@ -1525,3 +1537,76 @@ def test_split_gates_keeps_unmeasured_out_of_the_failures():
     failed, unmeasured = split_gates(gates)
     assert failed == ["timeout_rate"]
     assert unmeasured == ["closed_on_root_report_rate"]
+
+
+def test_commander_survival_gate_refuses_the_seed16_regime():
+    """The hole this closes: no gate bounded the root's own death rate (refs #24).
+
+    `patrol_brique_v22_rdb3_seed16` is the run that closed it — commander dead in
+    100 of 100 episodes, and passing every other gate, because the cohort still
+    won 75% of those episodes without him and his resulting silence read as
+    ordinary muteness beside seeds whose commander is alive and merely quiet.
+    """
+    agg = {
+        "root_mission": "SEIZE",
+        "timeout_rate": 0.15,
+        "success_rate": 0.75,
+        "human_death_rate": 1.0,
+        "closed_on_root_report_rate": 0.0,
+    }
+    by_name = {g["name"]: g for g in regression_gates(agg)}
+    assert by_name["human_death_rate"]["passed"] is False
+    # the three that let it through before must still pass, or this test is
+    # measuring a different run than the one it names
+    assert by_name["timeout_rate"]["passed"] is True
+    assert by_name["success_rate"]["passed"] is True
+
+
+def test_commander_survival_gate_clears_every_baseline_member():
+    """A gate that retroactively fails the shipping fleet is how v1.20 stopped
+    itself. These are the v1.19 members' measured final-policy rates."""
+    shipping = {
+        "defend_brique_v15": 0.01,
+        "patrol_brique_v6": 0.03,
+        "squad_recon_v8": 0.07,
+        "fireteam_defend_v20": 0.10,
+        "fireteam_v9": 0.20,
+        "platoon_v6": 0.21,
+        "squad_screen_v11": 0.24,
+        "squad_v10": 0.30,
+    }
+    for run, rate in shipping.items():
+        agg = {
+            "root_mission": "SEIZE",
+            "timeout_rate": 0.05,
+            "success_rate": 0.95,
+            "human_death_rate": rate,
+        }
+        gate = next(g for g in regression_gates(agg) if g["name"] == "human_death_rate")
+        assert gate["passed"] is True, f"{run} at {rate} would be refused by the new gate"
+    # and the empty band the ceiling sits in: worst non-pathological run in the
+    # corpus is squad_v14_nobonus at 0.38, the pathology is 1.00, nothing between
+    assert max(shipping.values()) < 0.38 < HUMAN_DEATH_RATE_CEILING < 1.0
+
+
+def test_commander_survival_gate_cannot_be_bought_by_riding_the_clock():
+    """refs #47: the raw rate falls when defeats (commander dies) become timeouts
+    (nobody does), so gating a stall-shaped run would reward the trade. Above the
+    clock ceiling the gate stays silent and the run fails on the clock instead."""
+    stalled = {
+        "root_mission": "SEIZE",
+        "timeout_rate": 0.95,
+        "success_rate": 0.02,
+        "human_death_rate": 0.0,
+    }
+    names = [g["name"] for g in regression_gates(stalled)]
+    assert "human_death_rate" not in names, (
+        "a clock-riding run must not collect a survival PASS it bought by not fighting"
+    )
+    assert next(g for g in regression_gates(stalled) if g["name"] == "timeout_rate")["passed"] is False
+
+
+def test_commander_survival_unmeasured_is_not_a_pass():
+    agg = {"root_mission": "SEIZE", "timeout_rate": 0.05, "success_rate": 0.95}
+    gate = next(g for g in regression_gates(agg) if g["name"] == "human_death_rate")
+    assert gate["passed"] is None
