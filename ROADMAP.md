@@ -6997,3 +6997,41 @@ deliberately deferred (`docs/vision.md` §2c).
   the owner's — but until it does, `orders_issued` is not a measure of what a
   commander did, and `tests/test_metrics.py` now says so where someone will read
   it.
+
+- **2026-08-15 (assurance, #53) — the raw count WAS inflated by survival, the
+  metric is fixed, and on the corrected denominator the separation is real and
+  tighter than either party's numbers: 2.04× on both seeds.** Three denominators,
+  same four policies, 30 eps at seed 500, root only:
+
+        seed   raw per-episode   per root-alive-step   per root SITREP
+         14         3.34×              2.04×                0.81×
+         15         2.25×              2.04×                0.92×
+
+  **#53's critique is correct and the fix is in** (`1487461`): the mute root
+  survives (0.00–0.03 commander deaths against tree A's 0.22–0.24) and its
+  episodes run longer, so a raw per-episode count credits it for time rather
+  than for commanding. `orders_by_rank` and `order_pay_by_rank` now carry
+  `rank_alive_steps` beside them, and the printed table shows the rate.
+
+  **But their conclusion — "the mute root does not command more, it commands for
+  longer" — does not survive the internal denominator, and the reason is their
+  own instrument.** They normalised by root SITREPs, the only clock the net
+  exposes, and said so explicitly. On this repo's own artifacts the mute roots
+  emit **2.51× and 2.23× the SITREPs per alive-step**, at an off-cadence share of
+  **0.75 and 0.68** against 0.32 and 0.44. That denominator is a behaviour, not a
+  clock: divide the true 2.04× order rate by it and you get exactly the 0.81×
+  and 0.92× they report. The inversion is the SITREP rate, not the order rate.
+
+  **So the order-rate hypothesis is alive on its third reversal, and the
+  bookkeeping is worth stating plainly**: `retasks_by_rank` measured the wrong
+  channel (opposite signs on the two mute seeds); raw `orders_by_rank` measured
+  the wrong denominator (3.34× vs 2.25×, inconsistent); root-alive-steps gives
+  **2.04× on both seeds** — the first version of this quantity that agrees with
+  itself across the pair. A separator that lands on the same figure twice is
+  worth more than one that lands on two.
+
+  **What it still does not do is identify a cause.** Commanding twice as fast
+  per unit of its own life is a description of the mute regime, not a mechanism
+  for it, and the economics beneath it remain opposite (+19.8 against −3.7 on
+  the order channel). The falsifiable claim from 2026-08-14 is still the only
+  one both seeds obey: *the root claims iff the root occupies*.
