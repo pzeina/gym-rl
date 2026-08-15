@@ -690,6 +690,82 @@ def test_order_pay_by_rank_accounts_for_every_order_and_agrees_with_the_rank_spl
         assert bucket["fresh"] + bucket["retask"] == sum(agg["orders_by_rank"][rank].values())
 
 
+def test_orders_by_rank_rate_corrects_the_survival_artifact():
+    """refs #53: a raw `orders_by_rank` count is dominated by how long the
+    issuer lived, not by how it commanded — the exact confound that inverted
+    the mute-vs-reporting root comparison this metric was built for. There,
+    the mute root SURVIVES where its reporting counterpart dies, so its
+    episodes time out instead of ending early and it racks up ~3.4x the
+    root-order volume while issuing at the SAME rate (normalising by root
+    SITREPs put the ratio at 1.05x-2.29x, no longer monotonic with either
+    arm).
+
+    Root A dies after 3 steps having ordered twice; root C survives 20 steps
+    and orders three times — MORE in raw terms, but at a much lower rate.
+    The raw count reads C as commanding harder; `rank_alive_steps` (this
+    trace's own denominator, no SITREP needed) reads correctly that A does.
+    """
+    short_lived = [
+        step(0, [sold("CO1", mission="SEIZE", since=0, rank="CO")]),
+        step(
+            1,
+            [sold("CO1", mission="SEIZE", since=0, rank="CO")],
+            messages=[msg("order", "CO1", "TL1", "SEIZE")],
+        ),
+        step(
+            2,
+            [sold("CO1", mission="SEIZE", since=0, rank="CO")],
+            messages=[msg("order", "CO1", "TL1", "ADVANCE")],
+        ),
+        step(3, [sold("CO1", alive=False, rank="CO")]),
+    ]
+    long_lived = [step(0, [sold("CO1", mission="SEIZE", since=0, rank="CO")])]
+    for t in range(1, 21):
+        orders = [msg("order", "CO1", "TL1", "ADVANCE")] if t in (5, 12, 19) else []
+        long_lived.append(
+            step(t, [sold("CO1", mission="SEIZE", since=0, rank="CO")], messages=orders)
+        )
+
+    agg_a = aggregate_behavior([episode_behavior(trace(short_lived))])
+    agg_c = aggregate_behavior([episode_behavior(trace(long_lived))])
+
+    raw_a = sum(agg_a["orders_by_rank"]["CO"].values())
+    raw_c = sum(agg_c["orders_by_rank"]["CO"].values())
+    assert raw_c > raw_a, "the artifact: the survivor's raw count looks bigger"
+
+    rate_a = raw_a / agg_a["rank_alive_steps"]["CO"]
+    rate_c = raw_c / agg_c["rank_alive_steps"]["CO"]
+    assert rate_a > rate_c, "corrected: the short-lived root actually commands harder per step alive"
+
+    # and the corrected reading is what the printed table shows, not just the
+    # raw total — the display the reporter was misled by carries the fix too
+    assert f"{rate_a:.2f}/step" in format_behavior_table(agg_a)
+    assert f"{rate_c:.2f}/step" in format_behavior_table(agg_c)
+
+
+def test_rank_alive_steps_covers_every_rank_orders_by_rank_or_order_pay_names():
+    """The denominator must exist for every rank the two numerators can name,
+    or `format_behavior_table`'s `.get(rank, 0)` would silently divide by
+    zero on a real episode instead of catching a recorder regression — the
+    same failure mode `test_orders_by_rank_accounts_for_every_agent_issued_
+    order` guards for `rank` itself going missing.
+    """
+    env = make_env("squad")
+    rec = TraceRecorder()
+    run_episode(env, None, seed=5, rng=np.random.default_rng(5), recorder=rec)
+    agg = aggregate_behavior([episode_behavior(rec.trace)])
+
+    alive = agg["rank_alive_steps"]
+    assert alive, "a squad episode has agents alive"
+    for rank in agg["orders_by_rank"]:
+        assert alive.get(rank, 0) > 0
+    for rank in agg["order_pay_by_rank"]:
+        assert alive.get(rank, 0) > 0
+
+    table = format_behavior_table(agg)
+    assert "/step" in table  # the rate is on the printed line, not just the raw count
+
+
 def test_recorder_records_cover_and_threat_radius():
     env = make_env("fireteam_defend")
     rec = TraceRecorder()

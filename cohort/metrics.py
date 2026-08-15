@@ -734,10 +734,44 @@ def _doctrine(trace: dict) -> dict[str, Any]:
         # refs #52: `orders_by_task` is team-wide, so it cannot answer "how many
         # orders did the ROOT itself issue" — the question the mute-commander
         # diagnosis stalled on, since only re-tasks were rank-resolved.
+        #
+        # refs #53: this is a RAW count, and on a comparison that also changes
+        # episode length it is not comparable across arms — a root that
+        # survives (and times out instead of ending early) racks up more
+        # orders at the SAME rate as one that dies early. Pair with
+        # `rank_alive_steps` (below) before reading anything into a gap here.
         "orders_by_rank": by_rank,
         "order_availability": availability,
         "orders_matched": matched,
     }
+
+
+def _rank_alive_steps(trace: dict) -> dict[str, dict[str, int]]:
+    """(soldier, step) pairs alive under each effective rank tier (refs #53).
+
+    The opportunity denominator for every by-rank order metric —
+    `orders_by_rank` and `order_pay_by_rank` — both raw per-rank sums that a
+    longer-lived issuer inflates without commanding any harder. Verified on
+    the mute-vs-reporting root comparison this was built for: the mute root
+    survives where its reporting counterpart dies, so its episodes time out
+    instead of ending early and it racks up ~3.4x the root-order volume at
+    the SAME rate (orders per step alive), which the raw count cannot show
+    and the rate does. Episode count alone is not enough either — episode
+    LENGTH is itself part of the treatment on exactly this comparison.
+
+    Counted the same way :func:`_done_opportunity` counts admissible steps:
+    over every recorded state but the last, since the terminal state is
+    followed by no action and is not an opportunity anybody had. This mirrors
+    the window `_doctrine` reads issuer rank from (`prev = steps[i-1]`, for
+    `i` in ``range(1, len(steps))``), so an order's rank bucket and its
+    alive-step denominator are always drawn from the same states.
+    """
+    alive: dict[str, int] = {}
+    for step in trace["steps"][:-1]:
+        for rec in step["soldiers"]:
+            if rec["alive"] and rec.get("rank") is not None:
+                alive[rec["rank"]] = alive.get(rec["rank"], 0) + 1
+    return {"rank_alive_steps": alive}
 
 
 def _retasks(trace: dict) -> dict[str, Any]:
@@ -786,6 +820,13 @@ def _order_pay(trace: dict) -> dict[str, Any]:
     net command income: the re-task price is charged separately (see
     ``retasks_by_rank``), so a rank can show positive ``pay`` here and still be
     losing on command overall.
+
+    refs #53: ``fresh``/``churn``/``retask`` and ``pay`` are raw per-rank
+    totals, same as ``orders_by_rank``, and the same artifact applies — a
+    rank held by a longer-lived issuer accumulates more of all four without
+    commanding any harder or farming the channel any more. Divide by
+    ``rank_alive_steps`` before comparing this across runs whose episodes
+    run different lengths.
     """
     by_rank: dict[str, dict[str, Any]] = {}
     for step in trace["steps"]:
@@ -1289,6 +1330,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "obedience_by_task": obedience_by_task,
         **_staging(trace),
         **_doctrine(trace),
+        **_rank_alive_steps(trace),
         **_retasks(trace),
         **_order_pay(trace),
         **_reports(trace),
@@ -1364,6 +1406,16 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             )
             for key in ("fresh", "churn", "retask", "pay"):
                 dst[key] += bucket.get(key, 0)
+
+    # refs #53: the opportunity denominator for `orders_by_rank` and
+    # `order_pay_by_rank` above — both raw per-rank totals that a
+    # longer-lived issuer inflates without commanding any harder. Carried
+    # beside them rather than folded in, so `sum(bucket.values())` on either
+    # dict stays exactly the count it always was.
+    rank_alive_steps: dict[str, int] = {}
+    for ep in episodes:
+        for rank, n in ep.get("rank_alive_steps", {}).items():
+            rank_alive_steps[rank] = rank_alive_steps.get(rank, 0) + n
     # refs #16: the matched availability control, pooled over the run. Stored
     # as a share (already divided by orders_matched) so behavior.json carries
     # something directly comparable to the task mix beside it.
@@ -1442,6 +1494,12 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "orders_by_task": orders_by_task,
         "orders_by_rank": orders_by_rank,
         "order_pay_by_rank": order_pay_by_rank,
+        # refs #53: alive-steps per effective rank — the denominator that
+        # turns the two raw dicts above into a rate (orders or pay per step
+        # alive), comparable across arms whose episodes run different
+        # lengths. `sum(orders_by_rank[rank].values()) / rank_alive_steps[rank]`
+        # is the corrected reading; the raw sum on its own is not.
+        "rank_alive_steps": rank_alive_steps,
         # refs #16: what the mask offered, for the same order decisions. A
         # task's share divided by its availability is the *selection lift* —
         # 1.00 is exactly the masked-random floor, and it is the only form of
@@ -1883,12 +1941,20 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         f"{rank} {b['priced']}p/{b['excepted']}e"
         for rank, b in sorted(agg.get("retasks_by_rank", {}).items())
     )
+    # refs #53: both lines below carry their alive-steps denominator beside
+    # the raw count, and the rate it implies (per step alive) — the raw count
+    # alone is not comparable across arms whose episodes run different
+    # lengths (a longer-lived issuer racks up more of it at the SAME rate).
+    rank_alive = agg.get("rank_alive_steps", {})
     orders_by_rank = ", ".join(
-        f"{rank} {sum(b.values())} ({b.get('preferred', 0)} pref)"
+        f"{rank} {sum(b.values())}/{rank_alive.get(rank, 0)}a"
+        f" ({_ratio(sum(b.values()), rank_alive.get(rank, 0)) or 0.0:.2f}/step,"
+        f" {b.get('preferred', 0)} pref)"
         for rank, b in sorted(agg.get("orders_by_rank", {}).items())
     )
     order_pay = ", ".join(
-        f"{rank} {b['fresh']}f/{b['churn']}c/{b['retask']}r {b['pay']:+.1f}"
+        f"{rank} {b['fresh']}f/{b['churn']}c/{b['retask']}r/{rank_alive.get(rank, 0)}a"
+        f" {b['pay']:+.1f} ({_ratio(b['pay'], rank_alive.get(rank, 0)) or 0.0:+.3f}/step)"
         for rank, b in sorted(agg.get("order_pay_by_rank", {}).items())
     )
     task_mix = format_order_task_mix(agg)
