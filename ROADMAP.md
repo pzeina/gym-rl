@@ -14,6 +14,21 @@ running re-purposed as a distribution estimate for the gate redesign; the
 decision does not wait on it. Everything below this line predates that answer —
 read the v1.21 framing through it.
 
+**★★ AND THE SAME CONFLATION EXISTS ONE LEVEL DOWN, in `best_save_gate` (refs
+assurance #57).** `patrol_brique_v19_rdb3_seed13`'s `ckpt_best` was written at
+**iteration 25 of 2930 — 25,600 steps of 3,000,320 — on a window at 2% rolling
+success**, and was the run's only save. Not a bug: the reporting window is
+success-conditioned (`recent_root_closed` is appended only on episodes that sent
+an ENDEX, which `cohort_env` sends only on success), has no turnover
+requirement of its own, and sets an absorbing flag — so a handful of wins reads
+0.500, clears the floor, and locks the checkpoint against the 99%-success policy
+that follows. Replayed off `metrics.csv` and verified against the iteration
+stamped in `ckpt_best.pt`, 91 of 91 runs agreeing:
+`scripts/checkpoint_selection.py <run>`. **Fleet-wide it is one run wide** — of
+38 runs carrying the reporting axis, only `v19` selects differently under a 0.5
+success floor. The `cohort/` fix is the owner's call AND blocked by the live
+campaign; the digest line that would have caught it on the day has landed.
+
 **State**: `multi-agent-dev`; tag still v1.18.0. **925 tests green, 0 skipped**,
 ruff clean, spaces **Discrete(228)/Box(220)** frozen. **`runs/BASELINE.json`
 still names the v1.19 members and `scripts/baseline.py` prints BASELINE OK on
@@ -7541,3 +7556,73 @@ deliberately deferred (`docs/vision.md` §2c).
   working as designed — reporting beats success, lexicographically. The side
   effect is real (a `ckpt_best` that fails 4 episodes in 5) and belongs to the
   same v1.21 gate question, but it is a consequence of a decision, not a defect.
+
+- **2026-08-15 — that `ckpt_best` was decided at iteration 25 of 2930, on a
+  window at 2% success, and it was the run's ONLY save (refs assurance #57).**
+  The entry above is right that this is the lexicographic rule working as
+  designed, and stops one step short of the mechanism. `best_save_gate` reads
+  the *rolling training window*, not either evaluation, so neither of #57's two
+  columns can settle anything about it. `scripts/checkpoint_selection.py`
+  replays that window off each run's own `metrics.csv` — calling the shipped
+  `best_save_gate`, never a copy — and checks the answer against the `iteration`
+  stamped inside `ckpt_best.pt`. **91 of 91 replayable runs agree**, so what
+  follows is a reconstruction and not an inference:
+
+        patrol_brique_v19_rdb3_seed13, 2930 iterations, 31,233 episodes
+          ckpt_best written  iteration   25 /    25,600 steps  (0.9% of the run)
+            that window      success 0.020   closed-on-root 0.500   1 save, ever
+          last window        success 1.000   closed-on-root 0.000
+          with a success floor before the reporting comparison, ANY of 0.25/0.50/
+          0.75/0.90:         iteration  550 /   563,200 steps  success 1.000
+
+  So the shipped `ckpt_best` is a **25,600-step policy out of 3,000,320**,
+  written at the first iteration the D4 turnover check allowed and never
+  replaced across the remaining 2,905 iterations.
+
+  **The mechanism is a denominator, not the emitted/admitted split #57 names.**
+  The gate's reporting input is `root_report_close_rolling`, i.e.
+  `env.root_close_step is not None`, and `root_close_step` is set only by a
+  *truthful* close — so the input is already truth-conditioned and reading
+  admitted claims would not change it. The 92 rejected claims at `ckpt_best` are
+  real, visible on the net, and selected nothing. Three lines do the selecting:
+
+  1. `recent_root_closed` is appended once per episode **that sent an ENDEX**,
+     and `cohort_env` transmits ENDEX only in the success branch. The reporting
+     rate is therefore conditioned on winning, and its sample is thinnest
+     exactly where success is worst. `v19`'s window read **0.500 — the floor,
+     exactly** — which is what a handful of wins produces.
+  2. The two deques are **misaligned and only one has a turnover requirement**.
+     D4's check is `episodes_seen >= window` on `recent_outcomes`;
+     `recent_root_closed` has none, so the first eligible save can compare a
+     100-episode success window against a reporting window holding a few.
+  3. `best_was_reporting` is **absorbing**. Once set, no mute window may take the
+     best back at any success level — so one thin early window is final.
+
+  **Fleet-wide, this is one run wide, and that is the useful part.** Of 91
+  replayable runs (38 carry the reporting axis; 53 predate it; 69 more predate
+  the `n_episodes` column and cannot be replayed at all, which the reader reports
+  as NOT REPLAYABLE rather than as "never saved"), **exactly one selects a
+  different checkpoint under a 0.5 success floor** — `v19`, recovering +0.980
+  rolling success. Every other run's `ckpt_best` sits where a floor would leave
+  it. `patrol_brique_v18_rdb3_seed12`, the same price at the neighbouring seed,
+  chose iteration 876 at 30% of the run on a 100%-success window.
+
+  **Why nobody saw it.** No digest printed where `ckpt_best` came from.
+  `run_report.py`'s `stability` compares the best rolling window to the last one
+  — both ~1.0 here — so it called `v19` converged and PUBLISHABLE, correctly, of
+  a different object. The digest now prints the selecting iteration, its share of
+  the run, and that window's success and closed-on-root, and flags a selection
+  more than 10 points below the run's final window.
+
+  **No test is named over these arms**, per `8518f33`'s stopping rule: every
+  number above is a replay of runs on disk, one run against itself.
+
+  **What is NOT done, and why.** The `cohort/` change — a success floor under
+  the reporting comparison, or a minimum denominator under
+  `root_report_close_rolling`, or dropping the absorbing flag — is a training
+  default and the owner's decision, and it is **blocked** regardless: a campaign
+  is live and `train.py` imports the tree as it exists at each job's launch. It
+  belongs in the same window as the v1.21 gate decision, since both are about the
+  same conflation at two levels. `cohort/metrics.py`'s
+  `closed_on_root_report_rate` docstring is on the same blocked list (it should
+  note the non-zero floor on a completable root, from #55).
