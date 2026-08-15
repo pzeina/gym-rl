@@ -2,7 +2,19 @@
 
 ## ⟳ Session handoff — resume here (2026-08-15, **v1.20b is TRAINED, AUDITED and NOT SHIPPING; v1.21 is the open window**)
 
-**State**: `multi-agent-dev`; tag still v1.18.0. **878 tests green, 0 skipped**,
+**★ READ THE LAST ENTRY FIRST — the blocking question is ANSWERED and v1.21's
+shape is decided.** The incumbent price is a seed lottery too: `rdb=3.0` fails
+`closed_on_root_report_rate` at seed 13, **0.000 at both checkpoints, N=100**,
+with success 0.99 and not one root claim in 100 episodes. So
+`patrol_brique_v6`'s 0.808 is a draw, both prices flip on seed, and **v1.21 is a
+GATE cycle, not a tuning cycle** — a per-run pass/fail bar over a quantity
+bimodal in the seed scores the draw, not the policy. The pre-registered stopping
+rule fired: **no test is named over these arms.** The 12-seed campaign keeps
+running re-purposed as a distribution estimate for the gate redesign; the
+decision does not wait on it. Everything below this line predates that answer —
+read the v1.21 framing through it.
+
+**State**: `multi-agent-dev`; tag still v1.18.0. **925 tests green, 0 skipped**,
 ruff clean, spaces **Discrete(228)/Box(220)** frozen. **`runs/BASELINE.json`
 still names the v1.19 members and `scripts/baseline.py` prints BASELINE OK on
 them** — that is the shipping fleet and it is unchanged.
@@ -7458,3 +7470,74 @@ deliberately deferred (`docs/vision.md` §2c).
   Five new `rdb=3.0` seeds on one tree is an asset whatever the read-out can
   certify, and the descriptive branch is exactly the one the disjunction was
   built to settle.
+
+- **2026-08-15 — ANSWERED: the incumbent price is a seed lottery too. `rdb=3.0`
+  fails the gate at seed 13, 0.000 at BOTH checkpoints, N=100.** The question
+  that blocked v1.20b was whether `patrol_brique_v6`'s 0.808 is a property of
+  the incumbent config or a draw. It is a draw.
+
+        patrol_brique, rdb=3.0 (the incumbent price), N=100, current tree
+          seed 12  v18_rdb3_seed12   final 0.867 (92/100 claim-eps)  REPORTS
+          seed 12  v8_rdb3           final 0.867 (92/100)            REPORTS
+          seed 13  v19_rdb3_seed13   final 0.000 ( 0/100)            MUTE
+                                     best  0.000 (40/100 claim-eps)  gate FAIL
+
+  Seed 13's final policy succeeds at 0.99 and never once claims in 100 episodes.
+  This is the same gate, at the same N, that failed `patrol_brique_v7` and
+  stopped the fleet — so the price that was supposed to be the fix reproduces
+  the failure it was meant to explain.
+
+  **The headline does not rest on a labelling choice, and that is deliberate.**
+  `v19` is `SPLIT` under the both-checkpoint claim-share label (best claims in
+  40 episodes while closing none of them — #55's rate/claim divergence, in the
+  one cell where it decides something) and `mute` under a final-only label. It
+  does not matter: `closed_on_root_report_rate` reads **0.000 at both
+  checkpoints**, so under the project's own gate the incumbent price does not
+  report at seed 13 on any reading.
+
+  **Corroboration that was already on disk.** `patrol_brique_v5` (seed 3,
+  `rdb=3.0`) is mute at both checkpoints. An older tree, so it is support and
+  not proof — but the counterexample did not need a campaign to find.
+
+  **And the incumbent itself is SPLIT.** `patrol_brique_v6`'s published 0.808 is
+  its FINAL policy; its `ckpt_best` is mute at 0.000 (1/100 claim-episodes). The
+  incumbent the gate protects is half mute by the gate's own measure.
+
+  **WHAT THIS SETTLES — v1.21 IS A GATE CYCLE, NOT A TUNING CYCLE.** Both prices
+  flip on seed (`rdb=1.0` reports at 1 of 4 seeds; `rdb=3.0` at 2 of 3 measured
+  cells, and mute at one). A per-run pass/fail gate over a quantity that is
+  bimodal in the SEED scores the draw, not the policy — and it is what is
+  currently holding a fleet whose seven other members match their incumbents.
+  Whether `closed_on_root_report_rate` stops being a per-run gate, becomes a
+  fleet-level or median-over-k criterion, or keeps its role with a declared
+  per-scenario seed policy, is a decision about the project's claims and is the
+  owner's.
+
+  **THE PRE-REGISTERED STOPPING RULE FIRES: no test is named.** `8518f33` fixed
+  the read-out before any cell was scored — "NO TEST AT ALL if any `rdb=3.0`
+  cell comes back mute, because '3.0 splits too' is settled descriptively by the
+  first mute cell and a Fisher p from this design would not be a null result."
+  That cell arrived second. No McNemar, no Fisher, no p-value over these arms.
+
+  **The campaign keeps running, re-purposed and re-scoped.** Eighteen runs
+  remain (~15h, zero tokens). They are no longer a hypothesis test — they are a
+  DISTRIBUTION ESTIMATE: how often does each price report, across twelve seeds?
+  A gate redesign cannot pick a threshold or a k without that, so the runs are
+  worth more to v1.21 than they were to the test they were launched for. The
+  v1.21 decision no longer waits on them.
+
+  **AMENDMENT to the labelling, made after seeing the corpus and recorded as
+  such.** `8518f33` pre-registered labels from both checkpoints. That is
+  circular: `train.py::best_save_gate` selects `ckpt_best` **on the reporting
+  channel** (v1.20 — a reporting window lexicographically supersedes a mute one
+  whatever the success numbers say), so a both-checkpoint label partly measures
+  the selection rule rather than the price. Final-only is primary from here;
+  both-checkpoint stays as a reported sensitivity. This changes no conclusion
+  above — stated plainly because amending a pre-registration after seeing data
+  is exactly the move that needs to be visible.
+
+  Also corrected: `v19`'s `ckpt_best` scoring 0.17 success against its final
+  policy's 0.99 is NOT a checkpoint-selection bug. It is `best_save_gate`
+  working as designed — reporting beats success, lexicographically. The side
+  effect is real (a `ckpt_best` that fails 4 episodes in 5) and belongs to the
+  same v1.21 gate question, but it is a consequence of a decision, not a defect.
