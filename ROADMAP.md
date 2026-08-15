@@ -1,9 +1,54 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-12, **v1.20 is open and retraining**)
+## ⟳ Session handoff — resume here (2026-08-15, **v1.20b is TRAINED, AUDITED and NOT SHIPPING; v1.21 is the open window**)
 
-**State**: `multi-agent-dev`; tag still v1.18.0. **849 tests green, 0 skipped**,
-ruff clean, spaces **Discrete(228)/Box(220)** frozen.
+**State**: `multi-agent-dev`; tag still v1.18.0. **878 tests green, 0 skipped**,
+ruff clean, spaces **Discrete(228)/Box(220)** frozen. **`runs/BASELINE.json`
+still names the v1.19 members and `scripts/baseline.py` prints BASELINE OK on
+them** — that is the shipping fleet and it is unchanged.
+
+**⛔ v1.20b IS BLOCKED BY ITS OWN GATE — do not publish it.** All eight members
+trained, share one `cohort/` tree (`5fa24bad`), carry no `--reward` overrides,
+and were scored at N=100 on both checkpoints. Seven match their v1.19
+incumbents on success (every CI overlaps; give-backs 0.2–4.6 pts, bar is 10).
+**`patrol_brique_v7` fails `closed_on_root_report_rate` at BOTH checkpoints —
+0.000, zero root claims in 100 episodes — against an incumbent that reports at
+0.808.** The gate is new in v1.20, so v1.20 is stopped by the thing v1.20 added.
+No substitute exists and this was checked, not assumed: `patrol_brique_v8_rdb3`
+reports and is on the fleet's tree but carries a `--reward` override (forbidden
+in a member); `patrol_brique_v11_seed14` reports but is on a different tree; and
+a single-member retrain now lands on a third tree, because `8a7645c`/`847acec`
+moved `cohort/` after the campaign. **Any fix is a full eight-member retrain.**
+
+**⚑ WHAT v1.21 HAS TO DECIDE — two levers produce the same silence, and v1.20
+moved both at once.** The mute commander is the same regime everywhere it
+appears: ADVANCE-dominated orders with no SEIZE, the root far from its
+objective, never dying, never claiming. What differs is which lever put it
+there.
+
+    patrol_brique, current tree, seed 12, N=100 — THE PRICE
+      root_done_bonus 3.0   closed-on-root 0.867  (136 root claims)
+      root_done_bonus 2.0   closed-on-root 0.000  (0)
+      root_done_bonus 1.0   closed-on-root 0.000  (0)
+      and at 1.0 across seeds: 12, 13, 15 all mute; only seed 14 reports
+
+    squad, rdb=1.0 fixed, N=100 — THE CHART BLOCK
+      with #42's block      2 of 4 seeds mute (14, 15 at 0.000)
+      block removed          4 of 4 report (0.825–0.866, a 0.041-wide band)
+
+  `root_done_bonus` was cut 3.0 → 1.0 *because* 3.0 regressed squad. At 1.0 it
+  takes patrol_brique's commander mute. **The right price is scenario-dependent
+  and that is the finding, not a tuning detail.** The reading that fits both:
+  the root claims iff it occupies, and it occupies only while completing is
+  worth more than what it gets from not completing — ordering and surviving.
+  The chart block raises the alternative (more subordinates to order); cutting
+  the bonus lowers the completion side. Both shrink the same margin, and the
+  eight scenarios sit at different distances from the cliff.
+
+  **The falsifiable prediction v1.21 should test first, because it separates the
+  levers in one campaign**: patrol_brique with the chart block REMOVED at
+  rdb=1.0 should report, the way squad does. If it stays mute, the price is the
+  whole story in that scenario and the block is not implicated there at all.
 
 **⚑ THE FIRST v1.20 FLEET WAS VOID AND HAS BEEN RELAUNCHED — read this before
 reading anything else about v1.20.** `#42`'s `_fill_vacancy` change added a
@@ -7035,3 +7080,69 @@ deliberately deferred (`docs/vision.md` §2c).
   for it, and the economics beneath it remain opposite (+19.8 against −3.7 on
   the order channel). The falsifiable claim from 2026-08-14 is still the only
   one both seeds obey: *the root claims iff the root occupies*.
+
+- **2026-08-15 — v1.20b is measured and NOT SHIPPING: seven members match their
+  incumbents and `patrol_brique_v7` fails the gate v1.20 itself introduced.**
+  Owner's decision, taken on these numbers: hold v1.19, open v1.21. FINAL policy,
+  N=100 against N=100, every candidate on one tree (`5fa24bad`), no overrides:
+
+        scenario          candidate             incumbent          success        verdict
+        fireteam          fireteam_v11          fireteam_v9        94 vs 97       match
+        fireteam_defend   fireteam_defend_v22   fireteam_defend_v20 99 vs 98      match
+        squad             squad_v17             squad_v10          97 vs 92       match
+        squad_recon       squad_recon_v10       squad_recon_v8    100 vs 99       match
+        squad_screen      squad_screen_v13      squad_screen_v11  100 vs 98       match
+        patrol_brique     patrol_brique_v7      patrol_brique_v6   96 vs 99       BLOCKED
+        defend_brique     defend_brique_v16     defend_brique_v15 100 vs 100      match
+        platoon           platoon_v7            platoon_v6        100 vs 100      match
+
+  Every CI overlaps — no success regression anywhere — and give-backs run
+  0.2–4.6 points against a 10-point bar. **The blocker is the reporting channel,
+  not the mission**: `patrol_brique_v7` files **0 root claims in 100 episodes**,
+  `closed_on_root_report_rate` 0.000 at both checkpoints, where
+  `patrol_brique_v6` reports at 0.808. Its digest is the mute regime exactly as
+  the squad investigation described it — ADVANCE 0.96 / SEIZE 0.01, root death
+  rate 0.000, false-DONE 1.000, and a commander that never stands on the ground
+  it would report.
+
+  **No substitute member exists, and that was checked rather than assumed.**
+  `patrol_brique_v8_rdb3` reports (0.867) and sits on the fleet's own tree, but
+  it was trained with `--reward root_done_bonus=3.0` and a member may not carry
+  an override — what ships is what was trained. `patrol_brique_v11_seed14`
+  reports but resolves to a different tree (`c0f85409`). And a patrol_brique-only
+  retrain now lands on a *third* tree, since `8a7645c` and `847acec` moved
+  `cohort/` after the campaign closed. **The fleet is all-or-nothing from here.**
+
+  **⇒ The finding underneath, at N=100: `root_done_bonus` has no
+  scenario-independent value.**
+
+        patrol_brique, current tree, seed 12      rdb=3.0   0.867   (136 claims)
+                                                  rdb=2.0   0.000   (0)
+                                                  rdb=1.0   0.000   (0)
+        at rdb=1.0, seeds 12 / 13 / 15                      0.000, 0.000, 0.000
+        (seed 14 reports, 0.850, N=20 — the only one)
+
+  The cliff is between 3.0 and 2.0 and it is not a seed lottery: three of four
+  seeds are mute at 1.0. **3.0 is the price that was removed in v1.20 because it
+  regressed squad** — the arc that produced `rdb=1.0` was four squad seeds deep
+  and entirely squad. It never asked what the price does elsewhere, and in
+  patrol_brique it is the difference between a commander that reports and one
+  that never speaks.
+
+  **Two levers, one silence.** Squad's muteness moves with the chart block (2 of
+  4 seeds mute with it, 4 of 4 reporting without, band 0.041 wide);
+  patrol_brique's moves with the price on a fixed tree. The reading that covers
+  both is the mechanism already established: the root claims iff it occupies,
+  and it occupies only while completing is worth more than not completing.
+  The block raises what the root gets from *not* completing (more subordinates
+  to order); cutting the bonus lowers what it gets from completing. Both shrink
+  the same margin from opposite sides, and the scenarios sit at different
+  distances from the cliff — which is why one fleet-wide number for either lever
+  has now failed twice.
+
+  **v1.21's first campaign should be the one that separates them**: patrol_brique
+  with the chart block removed at rdb=1.0. If it reports, the block is
+  implicated in both scenarios and the price cut is survivable; if it stays
+  mute, the price is the whole story there and the two scenarios need different
+  treatment — which is itself the answer to whether `RewardConfig` can stay
+  scenario-independent.
