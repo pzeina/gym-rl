@@ -7557,6 +7557,21 @@ deliberately deferred (`docs/vision.md` §2c).
   effect is real (a `ckpt_best` that fails 4 episodes in 5) and belongs to the
   same v1.21 gate question, but it is a consequence of a decision, not a defect.
 
+  **⚠ THE PARAGRAPH ABOVE IS WRONG AND THE ENTRY BELOW SUPERSEDES IT.** "Working
+  as designed, not a defect" was written from the docstring, without replaying
+  what the gate actually did. Replayed, that `ckpt_best` was chosen at
+  **iteration 25 of 2930** on a window at **2% success** whose closed-on-root
+  read **0.500 — `is_reporting`'s floor exactly**, over a denominator of about
+  two episodes, and the absorbing `best_was_reporting` then locked it for the
+  remaining 99.1% of the run. Three lines conspire and each is a genuine hole:
+  the reporting denominator counts only ENDEX episodes and `cohort_env` sends
+  ENDEX only on a WIN, so the sample is conditioned on success and is thinnest
+  exactly where success is worst; that deque has no turnover requirement (D4's
+  check covers `recent_outcomes` alone); and the flag is absorbing. Design
+  intent does not make a coin toss on two episodes a selection. The narrower
+  half of my correction stands — the mechanism is not #57's emitted-vs-admitted
+  story either (see below) — but "not a defect" was mine and it was wrong.
+
 - **2026-08-15 — that `ckpt_best` was decided at iteration 25 of 2930, on a
   window at 2% success, and it was the run's ONLY save (refs assurance #57).**
   The entry above is right that this is the lexicographic rule working as
