@@ -7859,3 +7859,21 @@ deliberately deferred (`docs/vision.md` §2c).
   `patrol_brique_v6`'s `behavior_final.json` carries **no** `closed_on_root_report_rate`
   gate — it was evaluated before `ROOT_REPORT_CLOSE_FLOOR` existed. The 0.808
   incumbent was never scored by the gate its challenger failed.
+
+- **2026-08-16** — `patrol_brique_v29_rdb1_seed19` lands on the correlation line
+  where the entry above predicts it: report rate 0.750, false-DONE **0.500**
+  (30 root claims, 15 rejected), success 1.00, and it **passes all three gates**
+  with half its claims false. Nine reporting runs now, no exception:
+  0.808→0.223, 0.750→0.348, 0.750→0.500, 0.895→0.320, 0.867→0.375, 0.825→0.481,
+  0.794→0.503, 0.878→0.561, 1.000→0.750.
+
+  **The queue's own pre-registered stopping rule has fired, and eight runs
+  remain behind it.** `scripts/campaigns/patrol_brique_incumbent_seeds_ext.jobs`
+  fixes the read-out before scoring and says: *"NO TEST AT ALL if any rdb=3.0
+  cell comes back mute"*. Five have — seeds 13, 14, 16, 17, 19. So v30–v37
+  (~8h) cannot produce the McNemar or the Fisher the file was sized for; they
+  can only extend the descriptive distribution, which the 23 runs above have
+  already resolved to a bimodal report rate and a monotone spam correlation.
+  Left running rather than killed — it costs wall-clock and no tokens, and
+  stopping a pre-registered campaign early is a call for the owner, not a
+  session. Flagged because continuing to run it is now also a call.
