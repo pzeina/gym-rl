@@ -4,6 +4,8 @@
     scripts/reporting_channel.py                       # every run that can be labelled
     scripts/reporting_channel.py --scenario patrol_brique
     scripts/reporting_channel.py --pairs squad patrol_brique   # the transfer question
+    scripts/reporting_channel.py --arms 1.0 3.0                # the price question
+    scripts/reporting_channel.py --spam                        # does reporting mean lying?
 
 **The question this exists for** (refs assurance #55). The 2026-08-15 retraction
 left the reporting channel *seed-determined*: whether a commander ever files a
@@ -42,6 +44,14 @@ The cuts sit in a wide empty band — on the record the highest mute arm claims 
 2% of episodes and the lowest reporting arm in 18% — so any cut inside the gap
 gives the same table. What falls INSIDE the band is reported as `undecided`
 rather than rounded to the nearer mode.
+
+**Every reading here prints what it could have shown, not only what it did**
+(refs assurance #59). The matched tables carry the realized ceilings out of
+`design_power` — an exact test conditions on a statistic the runs decided, so a
+p of 1.0000 off four discordant pairs is not the same object as a p of 1.0000
+off a margin that could have reached 0.0070 — and `--spam` carries the
+leave-one-out range of its rank correlation, because the nine-run series it
+reads was called monotone after being sorted and before being measured.
 """
 
 from __future__ import annotations
@@ -56,8 +66,9 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
+from scripts import design_power  # noqa: E402
 from scripts.baseline import cohort_tree  # noqa: E402
-from scripts.exact_tests import mcnemar_two_sided  # noqa: E402
+from scripts.exact_tests import jackknife_rho, mcnemar_two_sided, spearman_rho  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 
 #: Share of episodes carrying at least one root MISSION COMPLETE, above which a
@@ -148,6 +159,7 @@ def checkpoint_facts(path: Path) -> dict | None:
         "label": ("REPORTING" if share >= REPORTING_CUT
                   else "mute" if share <= MUTE_CUT else "undecided"),
         "rate": metrics.get("closed_on_root_report_rate"),
+        "false": metrics.get("false_complete_rate_root"),
     }
 
 
@@ -243,21 +255,27 @@ def rate_disagreements(rows: list[dict]) -> list[tuple[str, str, dict]]:
     return out
 
 
-def cross_scenario_pairs(rows: list[dict], first: str, second: str) -> dict:
-    """Seeds carrying a definite label on BOTH scenarios at one fixed arm.
+def matched_pairs(rows: list[dict], held_of, side_of, first, second) -> dict:
+    """The generic matched design: hold ``held_of`` fixed, vary ``side_of``.
 
-    The pairing is matched — same seed, same price, same chart state — so the
-    direction question is McNemar's over the discordant pairs and not Fisher's;
-    Fisher on these counts would throw the pairing away and answer a question
-    nobody asked.
+    Two questions in this repo are the same arithmetic over different cuts —
+    "does a reporting seed transfer across scenarios" holds the arm and varies
+    the scenario, and "does the price buy the channel" holds the scenario and
+    varies `root_done_bonus` — so they share one implementation and one set of
+    rules about which cells are allowed to enter a table.
+
+    The pairing is matched by construction, so the primary reading is McNemar
+    over the discordant pairs. Fisher is computed too and reported beside it,
+    never instead of it: which one a design named PRIMARY is a property of the
+    design, and picking the one that clears afterwards is test-shopping.
     """
     by_cell: dict[tuple, list[dict]] = {}
     for row in rows:
-        if row["scenario"] in (first, second) and row["label"] in ("REPORTING", "mute"):
-            by_cell.setdefault((arm_of(row), row["seed"], row["scenario"]), []).append(row)
+        if side_of(row) in (first, second) and row["label"] in ("REPORTING", "mute"):
+            by_cell.setdefault((held_of(row), row["seed"], side_of(row)), []).append(row)
     pairs, ambiguous = [], []
-    for (arm, seed, scenario), members in sorted(by_cell.items(), key=lambda kv: str(kv[0])):
-        if scenario != first:
+    for (arm, seed, side), members in sorted(by_cell.items(), key=lambda kv: str(kv[0])):
+        if side != first:
             continue
         others = by_cell.get((arm, seed, second), [])
         if not others:
@@ -283,15 +301,48 @@ def cross_scenario_pairs(rows: list[dict], first: str, second: str) -> dict:
     reporting_second = sum(1 for p in pairs if p["second"]["label"] == "REPORTING")
     expected = (None if not n else
                 (reporting_first * reporting_second + (n - reporting_first) * (n - reporting_second)) / n**2 * n)
-    return {
+    result = {
         "pairs": pairs,
         "ambiguous": sorted(set(ambiguous), key=str),
         "agree": agree,
         "expected_agree": expected,
         "one_way": one_way,
         "other_way": other_way,
+        "reporting_first": reporting_first,
+        "reporting_second": reporting_second,
         "p": mcnemar_two_sided(one_way, other_way),
+        "realized": None,
     }
+    if n:
+        # Both p values AND what each could have attained on this table. A table
+        # is not a null until its own ceiling says it could have been one, and
+        # the two readings disagree about that more often than they disagree
+        # about p (refs assurance #59).
+        result["realized"] = design_power.realized(
+            [design_power.Pair(str(p["seed"]), p["first"]["label"] == "REPORTING",
+                               p["second"]["label"] == "REPORTING")
+             for p in pairs])
+    return result
+
+
+def cross_scenario_pairs(rows: list[dict], first: str, second: str) -> dict:
+    """Seeds carrying a definite label on BOTH scenarios at one fixed arm."""
+    return matched_pairs(rows, arm_of, lambda row: row["scenario"], first, second)
+
+
+def price_pairs(rows: list[dict], first: float, second: float) -> dict:
+    """Seeds carrying a definite label at BOTH prices, everything else held.
+
+    The `patrol_brique` `rdb=3.0` campaign's design. What is held is the
+    scenario, the chart-link state of the trained tree and any OTHER reward
+    override — everything ``arm_of`` holds except the price, which is the
+    treatment. A seed whose run at either price is SPLIT does not enter the
+    table, because the campaign pre-registered that rule before it was scored.
+    """
+    def held(row: dict) -> tuple:
+        return (row["scenario"], row["overrides"], row["chart_link"])
+
+    return matched_pairs(rows, held, lambda row: row["price"], first, second)
 
 
 def _checkpoint_cell(checkpoint: dict | None) -> str:
@@ -328,29 +379,126 @@ def print_rate_check(rows: list[dict]) -> None:
     print()
 
 
-def print_pairs(rows: list[dict], first: str, second: str) -> None:
-    result = cross_scenario_pairs(rows, first, second)
+def held_label(held: tuple) -> str:
+    """What `price_pairs` holds fixed: the scenario, the tree state, any other override."""
+    scenario, overrides, chart = held
+    extra = ("+" + ",".join(overrides)) if overrides else ""
+    return f"{scenario}, chart {chart}{extra}"
+
+
+def print_matched(result: dict, title: str, held: str, first: str, second: str,
+                  dropped: list[str], empty: str, label_of=arm_label) -> None:
+    """One matched table, both readings, and what each COULD have shown.
+
+    The last line is the one that stops a table being over-read: an exact test
+    conditions on a statistic the runs decided — Fisher on the margins, McNemar
+    on the discordant count — so p alone never says whether a null was measured
+    or merely permitted (refs assurance #59).
+    """
     pairs = result["pairs"]
-    print(f"does a reporting seed transfer? {first} vs {second}, matched on arm and seed\n")
+    print(f"{title}\n")
     if not pairs:
-        print("    no seed carries a definite label on both scenarios at one arm\n")
+        print(f"    {empty}\n")
         return
-    print(f"    {'arm':<34} {'seed':>4}  {first:<14} {second:<14} trees")
+    print(f"    {held:<34} {'seed':>4}  {first:<14} {second:<14} trees")
     for pair in pairs:
         trees = "one tree" if pair["first"]["tree"] == pair["second"]["tree"] else "TWO TREES"
         runs = " · ".join("/".join(side) for side in pair["runs"])
-        print(f"    {arm_label(pair['arm']):<34} {pair['seed']:>4}  "
+        print(f"    {label_of(pair['arm']):<34} {pair['seed']:>4}  "
               f"{pair['first']['label']:<14} {pair['second']['label']:<14} {trees:<9}  {runs}")
-    print(f"\n    agreement {result['agree']} of {len(pairs)}, "
+    print(f"\n    {first} {result['reporting_first']}/{len(pairs)} reporting, "
+          f"{second} {result['reporting_second']}/{len(pairs)}; "
+          f"agreement {result['agree']} of {len(pairs)}, "
           f"{result['expected_agree']:.2f} expected under independence")
     print(f"    discordant {result['one_way']} ({first} reports, {second} mute) "
-          f"vs {result['other_way']} (the other way), exact McNemar p = {result['p']:.4f}")
+          f"vs {result['other_way']} (the other way)")
+    realized = result["realized"]
+    for name, label, conditioned in (
+        ("paired", "exact McNemar (paired)", f"{realized['discordant']} discordant pairs"),
+        ("unpaired", "Fisher (unpaired)",
+         f"margin {realized['first'] + realized['second']}/{2 * len(pairs)} reporting"),
+    ):
+        record = realized[name]
+        verdict = ("rejects" if record["p"] < realized["alpha"] else
+                   f"a null WITH power — {conditioned} could have reached {record['ceiling']:.4f}"
+                   if record["capable"] else
+                   f"NOT A NULL — {conditioned} could not go below {record['ceiling']:.4f}")
+        print(f"    {label:<24} p = {record['p']:.4f}   {verdict}")
     if result["ambiguous"]:
         print(f"    {len(result['ambiguous'])} cells dropped as ambiguous (more than one run at the same arm and seed)")
-    dropped = [r["run"] for r in rows if r["scenario"] in (first, second) and r["label"] == "SPLIT"]
     if dropped:
         print(f"    {len(dropped)} runs dropped, checkpoints disagree: {', '.join(dropped)}")
     print()
+
+
+def spam_series(rows: list[dict], checkpoint: str = "final") -> dict:
+    """Does a policy that reports more also lie more? — as a measurement, not a sort.
+
+    The series is every checkpoint that REPORTS and carries
+    ``false_complete_rate_root``; a mute checkpoint has no rate, so the two
+    quantities are undefined exactly where the other is informative and the
+    correlation can only ever be read over the reporting mode.
+
+    Rho is taken over DISTINCT points, because a replicated cell (the same policy
+    trained twice at one seed and one arm) is one observation of the relation and
+    counting it twice inflates n without adding evidence. The leave-one-out range
+    is returned beside it and is not optional: this series' rho is +0.26 over
+    nine points and its jackknife straddles zero, which is what "monotone" was
+    read off before it was measured (refs assurance #59).
+    """
+    points, seen = [], set()
+    for row in sorted(rows, key=lambda r: r["run"]):
+        facts = row[checkpoint]
+        if facts is None or facts["label"] != "REPORTING" or facts["false"] is None \
+                or facts["rate"] is None:
+            continue
+        point = (facts["rate"], facts["false"])
+        points.append({"run": row["run"], "rate": point[0], "false": point[1],
+                       "replicate": point in seen})
+        seen.add(point)
+    distinct = sorted({(p["rate"], p["false"]) for p in points})
+    xs = [x for x, _ in distinct]
+    ys = [y for _, y in distinct]
+    return {"points": points, "distinct": distinct,
+            "rho": spearman_rho(xs, ys), "jackknife": jackknife_rho(xs, ys)}
+
+
+def print_spam(rows: list[dict], checkpoint: str = "final") -> None:
+    result = spam_series(rows, checkpoint)
+    points = result["points"]
+    print(f"is reporting monotone in lying? {checkpoint} checkpoints that REPORT, "
+          "close rate vs false-DONE rate\n")
+    if len(result["distinct"]) < 3:
+        print(f"    {len(result['distinct'])} distinct points — no relation to read\n")
+        return
+    for point in sorted(points, key=lambda p: p["rate"]):
+        mark = "  (replicate, not a second observation)" if point["replicate"] else ""
+        print(f"    {point['run']:<34} report {point['rate']:.3f} -> false {point['false']:.3f}{mark}")
+    low, high = result["jackknife"]
+    print(f"\n    Spearman rho = {result['rho']:+.3f} over {len(result['distinct'])} distinct "
+          f"points from {len(points)} checkpoints")
+    verdict = ("carried by single points — the sign flips on leave-one-out, so this is not a relation"
+               if low <= 0.0 <= high else "sign holds under leave-one-out")
+    print(f"    leave-one-out range {low:+.3f} to {high:+.3f}: {verdict}\n")
+
+
+def print_pairs(rows: list[dict], first: str, second: str) -> None:
+    print_matched(
+        cross_scenario_pairs(rows, first, second),
+        f"does a reporting seed transfer? {first} vs {second}, matched on arm and seed",
+        "arm", first, second,
+        [r["run"] for r in rows if r["scenario"] in (first, second) and r["label"] == "SPLIT"],
+        "no seed carries a definite label on both scenarios at one arm")
+
+
+def print_arms(rows: list[dict], first: float, second: float) -> None:
+    print_matched(
+        price_pairs(rows, first, second),
+        f"does root_done_bonus buy the channel? rdb {first:g} vs rdb {second:g}, "
+        "matched on scenario, chart state and seed",
+        "scenario, chart, other overrides", f"rdb {first:g}", f"rdb {second:g}",
+        [r["run"] for r in rows if r["price"] in (first, second) and r["label"] == "SPLIT"],
+        "no seed carries a definite label at both prices", held_label)
 
 
 def main() -> None:
@@ -362,6 +510,10 @@ def main() -> None:
                         help="restrict to arms trained at this root_done_bonus")
     parser.add_argument("--pairs", nargs=2, metavar=("FIRST", "SECOND"),
                         help="pair two scenarios by arm and seed, and test the transfer")
+    parser.add_argument("--arms", nargs=2, type=float, metavar=("FIRST", "SECOND"),
+                        help="pair two root_done_bonus values by seed, and test the price")
+    parser.add_argument("--spam", action="store_true",
+                        help="close rate against false-DONE rate over the reporting checkpoints")
     args = parser.parse_args()
 
     rows = collect(args.runs)
@@ -373,6 +525,10 @@ def main() -> None:
     print_rate_check(rows)
     if args.pairs:
         print_pairs(rows, *args.pairs)
+    if args.arms:
+        print_arms(rows, *args.arms)
+    if args.spam:
+        print_spam(rows)
 
 
 if __name__ == "__main__":

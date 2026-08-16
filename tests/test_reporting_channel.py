@@ -30,7 +30,8 @@ UNITS = Path(__file__).resolve().parent.parent / "cohort" / "core" / "units.py"
 
 
 def _run(root, name, *, scenario, seed, best, final, price=1.0, commit="deadbee",
-         episodes=100, rate_best=None, rate_final=None, overrides=()):
+         episodes=100, rate_best=None, rate_final=None, overrides=(),
+         false_best=None, false_final=None):
     """One run directory, as `train.py` + `evaluate` leave it behind."""
     d = root / name
     d.mkdir(parents=True, exist_ok=True)
@@ -39,14 +40,15 @@ def _run(root, name, *, scenario, seed, best, final, price=1.0, commit="deadbee"
         "git_commit": commit, "reward_overrides": list(overrides),
         "rewards": {"root_done_bonus": price},
     }))
-    for filename, claims, rate in (("behavior.json", best, rate_best),
-                                   ("behavior_final.json", final, rate_final)):
+    for filename, claims, rate, false in (("behavior.json", best, rate_best, false_best),
+                                          ("behavior_final.json", final, rate_final, false_final)):
         if claims is None:
             continue
         (d / filename).write_text(json.dumps({
             "episodes": episodes,
             "metrics": {"done_claim_episodes_root": claims,
-                        "closed_on_root_report_rate": rate},
+                        "closed_on_root_report_rate": rate,
+                        "false_complete_rate_root": false},
         }))
     return d
 
@@ -193,3 +195,132 @@ def test_the_marker_the_arm_resolver_greps_for_still_exists():
     it is reworded — the tables just quietly become one arm.
     """
     assert rc.classify_units_source(UNITS.read_text()) == "present"
+
+
+# --- the price question is the same matched design as the transfer question
+#
+# `--arms 1.0 3.0` holds the scenario, the chart-link state and any other reward
+# override, and varies `root_done_bonus`. It exists because assurance #59 read
+# that table off the close rate at one checkpoint and got eight pairs where the
+# campaign's own pre-registration ("SPLIT is dropped, not silently counted")
+# gives five.
+
+
+def test_the_price_table_pairs_by_seed_and_holds_everything_else(fleet):
+    for seed, cheap, dear in ((12, 0, 100), (14, 100, 0), (15, 0, 100),
+                              (18, 100, 100), (19, 100, 0)):
+        _run(fleet, f"rdb1_{seed}", scenario="patrol_brique", seed=seed,
+             best=cheap, final=cheap, price=1.0)
+        _run(fleet, f"rdb3_{seed}", scenario="patrol_brique", seed=seed,
+             best=dear, final=dear, price=3.0)
+
+    result = rc.price_pairs(rc.collect(fleet), 1.0, 3.0)
+
+    assert len(result["pairs"]) == 5
+    assert (result["reporting_first"], result["reporting_second"]) == (3, 3)
+    assert (result["one_way"], result["other_way"]) == (2, 2)
+    assert result["p"] == pytest.approx(1.0)
+
+
+def test_a_split_cell_at_either_price_drops_the_seed(fleet):
+    """The pre-registered rule, and it is what separates five pairs from eight."""
+    _run(fleet, "rdb1_12", scenario="patrol_brique", seed=12, best=0, final=0, price=1.0)
+    _run(fleet, "rdb3_12", scenario="patrol_brique", seed=12, best=100, final=100, price=3.0)
+    # seed 13's rdb=3.0 cell claims in 40 of 100 episodes at ckpt_best and none
+    # at ckpt_latest — `patrol_brique_v19_rdb3_seed13`, the real one.
+    _run(fleet, "rdb1_13", scenario="patrol_brique", seed=13, best=0, final=0, price=1.0)
+    _run(fleet, "rdb3_13", scenario="patrol_brique", seed=13, best=40, final=0, price=3.0)
+
+    result = rc.price_pairs(rc.collect(fleet), 1.0, 3.0)
+
+    assert [p["seed"] for p in result["pairs"]] == [12]
+
+
+def test_a_price_pair_needs_the_same_scenario_and_the_same_tree_state(fleet):
+    _run(fleet, "patrol_rdb1", scenario="patrol_brique", seed=12, best=0, final=0, price=1.0)
+    _run(fleet, "squad_rdb3", scenario="squad", seed=12, best=100, final=100, price=3.0)
+    _run(fleet, "patrol_rdb3_override", scenario="patrol_brique", seed=12,
+         best=100, final=100, price=3.0, overrides=("sitrep_bonus=0.5",))
+
+    assert rc.price_pairs(rc.collect(fleet), 1.0, 3.0)["pairs"] == []
+
+
+def test_the_matched_read_out_says_what_the_table_could_have_shown(fleet, capsys):
+    """Two p values of 1.0000 that mean opposite things (assurance #59)."""
+    for seed, cheap, dear in ((12, 0, 100), (14, 100, 0), (15, 0, 100),
+                              (18, 100, 100), (19, 100, 0)):
+        _run(fleet, f"rdb1_{seed}", scenario="patrol_brique", seed=seed,
+             best=cheap, final=cheap, price=1.0)
+        _run(fleet, f"rdb3_{seed}", scenario="patrol_brique", seed=seed,
+             best=dear, final=dear, price=3.0)
+
+    rc.print_arms(rc.collect(fleet), 1.0, 3.0)
+    out = capsys.readouterr().out
+
+    assert "NOT A NULL — 4 discordant pairs could not go below 0.1250" in out
+    assert "a null WITH power — margin 6/10 reporting could have reached 0.0476" in out
+
+
+def test_the_transfer_read_out_carries_the_same_ceiling(fleet, capsys):
+    """One implementation, so #55's table gained the reading #59 was missing."""
+    for seed in range(12, 17):
+        _run(fleet, f"squad_{seed}", scenario="squad", seed=seed, best=100, final=100)
+        _run(fleet, f"patrol_{seed}", scenario="patrol_brique", seed=seed, best=0, final=0)
+
+    rc.print_pairs(rc.collect(fleet), "squad", "patrol_brique")
+    out = capsys.readouterr().out
+
+    assert "exact McNemar (paired)   p = 0.0625" in out
+    assert "NOT A NULL — 5 discordant pairs could not go below 0.0625" in out, \
+        "five unanimous pairs is the direction #55 reported and never a rejection"
+
+
+def test_the_spam_series_reads_reporting_checkpoints_only(fleet):
+    """A mute checkpoint has no false-DONE rate, so the relation lives in one mode."""
+    _run(fleet, "reports", scenario="patrol_brique", seed=12, best=100, final=100,
+         rate_final=0.80, false_final=0.22)
+    _run(fleet, "mute_but_rated", scenario="patrol_brique", seed=13, best=0, final=0,
+         rate_final=0.04, false_final=1.0)
+    _run(fleet, "reports_more", scenario="patrol_brique", seed=14, best=100, final=100,
+         rate_final=1.00, false_final=0.75)
+    _run(fleet, "middling", scenario="patrol_brique", seed=15, best=100, final=100,
+         rate_final=0.90, false_final=0.32)
+
+    result = rc.spam_series(rc.collect(fleet))
+
+    assert [p["run"] for p in result["points"]] == ["middling", "reports", "reports_more"]
+    assert "mute_but_rated" not in [p["run"] for p in result["points"]], \
+        "a single rejected claim is not an observation of the reporting mode"
+
+
+def test_a_replicated_cell_is_one_observation_of_the_relation(fleet):
+    for name in ("twin_a", "twin_b"):
+        _run(fleet, name, scenario="patrol_brique", seed=12, best=100, final=100,
+             rate_final=0.867, false_final=0.375)
+    _run(fleet, "other", scenario="patrol_brique", seed=13, best=100, final=100,
+         rate_final=1.0, false_final=0.75)
+    _run(fleet, "third", scenario="patrol_brique", seed=14, best=100, final=100,
+         rate_final=0.75, false_final=0.348)
+
+    result = rc.spam_series(rc.collect(fleet))
+
+    assert len(result["points"]) == 4 and len(result["distinct"]) == 3
+    assert {p["run"] for p in result["points"] if p["replicate"]} == {"twin_b"}
+    assert rc.spam_series(rc.collect(fleet))["rho"] == pytest.approx(1.0), \
+        "and rho is taken over the three distinct points, not four rows"
+
+
+def test_the_spam_read_out_prints_the_leave_one_out_range(fleet, capsys):
+    """rho alone is what got 'monotone' written down; the range is what refutes it."""
+    for seed, (rate, false) in enumerate([(0.750, 0.348), (0.794, 0.503), (0.808, 0.223),
+                                          (0.825, 0.481), (0.867, 0.375), (0.878, 0.561),
+                                          (0.895, 0.320), (1.000, 0.750), (0.750, 0.500)]):
+        _run(fleet, f"r{seed}", scenario="patrol_brique", seed=seed, best=100, final=100,
+             rate_final=rate, false_final=false)
+
+    rc.print_spam(rc.collect(fleet))
+    out = capsys.readouterr().out
+
+    assert "Spearman rho = +0.259 over 9 distinct points from 9 checkpoints" in out
+    assert "leave-one-out range -0.060 to +0.515" in out
+    assert "the sign flips on leave-one-out, so this is not a relation" in out

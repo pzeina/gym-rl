@@ -7877,3 +7877,70 @@ deliberately deferred (`docs/vision.md` §2c).
   Left running rather than killed — it costs wall-clock and no tokens, and
   stopping a pre-registered campaign early is a call for the owner, not a
   session. Flagged because continuing to run it is now also a call.
+
+- **2026-08-16 — The price campaign's question IS answered, on the reading it
+  called secondary, and is still unanswerable on the one it called primary. And
+  the "monotone spam correlation" is retracted (refs assurance #59).**
+
+  #59's arithmetic reproduces exactly, on this repo's own instrument and its own
+  committed artifacts: 3 of 8 reporting either side, discordant 2/2, exact
+  McNemar **1.0000**, Fisher **1.0000**, and 1.0000 again under both of its
+  robustness cuts. Nothing below disputes a number in it.
+
+  **Under the pre-registration's own labelling rule the table is five pairs, not
+  eight, and the null survives.** The jobs file fixed that labels come from
+  `reporting_channel.py` at BOTH checkpoints and that a run whose checkpoints
+  disagree is SPLIT and dropped. Seeds 13, 16 and 17 have a SPLIT cell, so
+  `--arms 1.0 3.0` gives **3/5 vs 3/5, discordant 2/2, both tests 1.0000**. The
+  divergence is one instrument: `patrol_brique_v19_rdb3_seed13`'s `ckpt_best`
+  claims in **40 of 100** episodes at `closed_on_root_report_rate` **0.000**, so
+  a close-rate label reads it mute and a claim-count label reads it SPLIT. Three
+  checkpoints in the corpus disagree between the two instruments and all three
+  are cells of this table.
+
+  **What the issue omits is the realized ceiling, and it decides the headline.**
+  Both tests are conditional, and each conditions on a statistic the runs — not
+  the design — chose:
+
+  | reading | conditions on | landed | could have reached | verdict |
+  |---|---|---|---|---|
+  | Fisher (unpaired) | the margin | 6/16 reporting | **0.0070** | a null WITH power |
+  | McNemar (paired) | discordant pairs | **4** of 8 | **0.1250** | not a reading at all |
+
+  Four discordant pairs cannot go below 0.1250 however all four point, so the
+  campaign's **PRIMARY** reading measured nothing — and the reason is
+  concordance, not seed count. The four seeds where both arms agree are outside
+  McNemar's sample entirely. On the five-pair table Fisher's realized ceiling is
+  **0.0476**, capable by 0.002; restricted to the planned seeds 12–16 it is
+  **0.1667** against McNemar's 0.2500, so "both p = 1.0000 there" is two
+  non-readings rather than a robustness check.
+
+  So the honest statement is narrower than #59's and wider than `b1f30ba`'s:
+  **`root_done_bonus` does not control the reporting channel** — descriptively
+  over 8 seeds, and inferentially on the unpaired reading, which could have
+  separated and did not. The paired reading the campaign was sized for is not
+  available and v30–v37 will not make it so, for a stronger reason than the
+  stopping rule named: eight complete pairs already failed to produce it.
+
+  **RETRACTION — "a monotone spam correlation" (the entry above, and
+  `b1f30ba`).** Over the nine published points, Spearman **rho = +0.259**, and
+  the leave-one-out range is **−0.060 to +0.515**: drop `v28` at (1.000, 0.750)
+  and the sign flips. The ninth run, added as confirmation, cut rho from
+  **+0.381** to +0.259 and is itself the counterexample — two runs at report rate
+  **0.750** with false rates **0.348** and **0.500**. The series read as monotone
+  because it was written down sorted by the false rate. **The conclusion is
+  unchanged and stronger:** every reporting run still lies, the two quantities
+  are still undefined exactly where the other is informative, and near
+  independence is a better reason for a joint criterion than a correlation
+  would have been.
+
+  **Tooling, since each of these was a missing instrument rather than a slip.**
+  `design_power.realized()` answers "could this table have rejected" after the
+  runs land — `power()` minimises over the outcomes a design can still produce,
+  so on a finished design it reports the observed p under the name *ceiling*,
+  which reads as capable whenever it rejected and incapable whenever it did not.
+  `reporting_channel.py --arms A B` builds the price table from committed
+  artifacts under the pre-registered rule, and `--spam` regenerates the
+  correlation with its jackknife beside it; both matched tables now print what
+  they could have shown. `exact_tests` gains tie-corrected `spearman_rho` and
+  `jackknife_rho`. `cohort/` was not touched — the campaign is live.
