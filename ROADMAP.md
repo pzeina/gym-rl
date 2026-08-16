@@ -7767,3 +7767,60 @@ deliberately deferred (`docs/vision.md` §2c).
   gate to some arm members and not others. Merge after the queue drains:
   `git merge gate/human-death-rate`. The other pending branch,
   `fix/best-save-success-floor`, is independent and merges the same way.
+
+- **2026-08-16 — CORRECTION: the "empty band" under the commander-survival
+  ceiling is empty in one column of one half of the corpus. The scan that said
+  otherwise could not see `runs/archive/` (refs assurance #58).**
+
+  The entry above justifies `HUMAN_DEATH_RATE_CEILING = 0.5` as the middle of a
+  band where "nothing is in between" 0.38 and 1.00. Re-measured here, off the
+  committed `behavior*.json` and nothing else:
+
+  | corpus | at `ckpt_latest` | at `ckpt_best` |
+  |---|---|---|
+  | `runs/` (67 carry the metric) | 0 in (0.38, 1.00) | 0.98, 0.95, 0.95, 0.95, 0.85, 0.60 |
+  | `runs/archive/` (34 more) | 0.90, 0.61, 0.48, 0.46 | 0.77, 0.75, 0.55, 0.50, 0.45… |
+
+  So the claim holds exactly where it was measured — the final policies of the
+  unarchived fleet — and nowhere else. Two archived runs would FAIL the ceiling
+  at `ckpt_latest` and neither is the seed-16 pathology: `squad_screen_core_v1`
+  at **0.90** and `defend_brique_v4` at **0.61**. The nearest PASS is
+  `defend_brique_v5` at **0.48** — margin 0.02, not the 0.20 the entry claims —
+  and `defend_brique_v4`/best sits on **exactly 0.50**, passing only because
+  `_gate(…, "max")` compares with `<=`. The eight baseline members clear the
+  ceiling by at least 0.20 at their final policies and by **0.12** at
+  `ckpt_best`, where `squad_recon_v8` reads 0.38.
+
+  **Four runs flip the gate's verdict between their own two checkpoints**, and
+  not all in one direction: `patrol_brique_v19_rdb3_seed13` 0.98 → 0.01 and
+  `patrol_brique_v14_pre42_seed13` 0.60 → 0.01 fail at best and pass at final;
+  archived `defend_brique_v4` 0.50 → 0.61 and `squad_screen_core_v1` 0.05 → 0.90
+  do the reverse. **So the gate has to say which checkpoint it is computed on**,
+  and today the answer is "whichever was evaluated": `evaluate.py` writes gates
+  into the artifact it produces, and `fleet_status.collect` reads
+  `final or best`, so a run whose `ckpt_best` fails shows a PASS as soon as a
+  final evaluation exists. Whether the shipping checkpoint should be gated too
+  is a gate-semantics decision and is the owner's — the measurement that settles
+  it is above, and the branch is still unmerged, so it is cheap either way.
+
+  **What actually went wrong is a tool, and it is fixed.** The corpus scan the
+  README names for this —
+  `scripts/publish_audit.py --series human_death_rate` — enumerated `runs/`
+  directly, so from the day 96 generations were filed away it answered on 71 of
+  167 runs and said nothing about the other 96. The README's own instruction to
+  regenerate the `squad` root-death family from committed artifacts printed a
+  table missing `squad_v6`, `v7`, `v8` and `v9` — every row that table is built
+  from. Same shape in `program_board._family`, whose "earlier generations" band
+  was *narrowing* as the earlier generations were archived: platoon
+  0.584–0.612 over 2 runs was really 0.584–0.800 over 4, fireteam 0.345–0.576
+  over 3 was really 0.345–0.881 over 7. Both now enumerate through
+  `fleet_status.run_dirs`, `--series` prints the range at **each** checkpoint so
+  a bound cannot be read down one column by accident, and
+  `test_run_archive.py`'s guard — which caught `RUNS / name` but not
+  `for d in RUNS.iterdir()` — now catches enumeration as well, with a
+  `not-archive-aware:` waiver for the three scans that are deliberately
+  live-fleet-only.
+
+  **The gate branch's docstring still carries the overstatement** and must be
+  amended before `git merge gate/human-death-rate`: `cohort/metrics.py` is
+  frozen for the live campaign, so it was not touched here.

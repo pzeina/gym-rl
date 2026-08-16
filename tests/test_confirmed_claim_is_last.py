@@ -228,8 +228,14 @@ def _behavior_corpora():
     training run writing its evaluation while the suite runs is not a
     regression, and the count assertion below keeps that from hollowing the
     test out.
+
+    Enumerated through ``run_dirs`` so the archive counts (refs #58) — a
+    data-level invariant that stops seeing the older half of the corpus the day
+    it is filed away is not an invariant, it is a shrinking sample.
     """
-    for path in sorted((ROOT / "runs").glob("*/behavior*.json")):
+    from scripts.fleet_status import run_dirs
+
+    for path in sorted(p for d in run_dirs(ROOT / "runs") for p in d.glob("behavior*.json")):
         try:
             payload = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):

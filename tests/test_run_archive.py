@@ -119,6 +119,54 @@ def test_archiving_never_touches_a_manifest_run_or_a_live_one(fleet, monkeypatch
     assert [d.name for d in moving] == ["squad_v9"]
 
 
+def test_series_reports_an_archived_generation(tmp_path, monkeypatch, capsys):
+    """The corpus scan must see the corpus (refs #58).
+
+    ``publish_audit.py --series`` is the command the README names for
+    regenerating a metric's whole family from committed artifacts. It enumerated
+    ``runs/`` directly, so the day 96 generations were archived it began printing
+    the `squad` root-death family without `squad_v6`, `v7`, `v8` or `v9` — every
+    row the README's table is built from — and said nothing about it.
+    """
+    from scripts import publish_audit
+
+    monkeypatch.setattr(publish_audit, "RUNS", tmp_path)
+    for name, archived, value in (("squad_v10", False, 0.30), ("squad_v6", True, 0.45)):
+        d = _run(tmp_path, name, archived=archived)
+        (d / "behavior.json").write_text(json.dumps(
+            {"scenario": "squad", "episodes": 100, "metrics": {"human_death_rate": value}}))
+
+    assert publish_audit.series("human_death_rate") == 0
+    out = capsys.readouterr().out
+
+    assert "squad_v6" in out and "0.450" in out
+    # and the range is read off both, or a bound placed on it is a bound on
+    # whichever half the enumerator happened to walk
+    assert "max 0.450 (squad_v6)" in out
+
+
+def test_series_prints_the_range_at_each_checkpoint_separately(tmp_path, monkeypatch, capsys):
+    """Why #58 happened: the table carries both columns and the claim was read
+    down one. `patrol_brique_v19_rdb3_seed13` reads 0.98 at ``ckpt_best`` and
+    0.01 at ``ckpt_latest``, and a ceiling justified as "the middle of an empty
+    band" was placed using only the second."""
+    from scripts import publish_audit
+
+    monkeypatch.setattr(publish_audit, "RUNS", tmp_path)
+    d = _run(tmp_path, "patrol_brique_v19")
+    (d / "behavior.json").write_text(json.dumps(
+        {"scenario": "patrol_brique", "episodes": 100, "metrics": {"human_death_rate": 0.98}}))
+    (d / "behavior_final.json").write_text(json.dumps(
+        {"scenario": "patrol_brique", "episodes": 100, "metrics": {"human_death_rate": 0.01}}))
+
+    publish_audit.series("human_death_rate")
+    out = capsys.readouterr().out
+
+    assert "max 0.980 (patrol_brique_v19)" in out, "the ckpt_best range must be printed"
+    assert "max 0.010 (patrol_brique_v19)" in out, "the ckpt_latest range must be printed"
+    assert "widest best-vs-final disagreement: patrol_brique_v19 0.980 -> 0.010" in out
+
+
 def test_every_reader_goes_through_the_resolver():
     """The guard that keeps this true.
 
@@ -126,6 +174,14 @@ def test_every_reader_goes_through_the_resolver():
     tests and silently stops seeing archived runs. There is one legitimate
     direct use — ``runs/.boards.json``, which is fleet state rather than a run —
     so the check is for the run-name pattern specifically.
+
+    **Enumeration is the second shape** (refs #58). Resolving one run by name is
+    not the only way to lose the archive: ``for d in RUNS.iterdir()`` reads
+    every run and misses 96 of them, which is how ``publish_audit --series``
+    came to print a family without its own earlier generations and how the
+    program board's ``_family`` band narrowed as siblings were filed away. A
+    scan that is deliberately live-fleet-only (what to archive next, what is
+    training right now) says so on the line with ``not-archive-aware:``.
     """
     repo = Path(__file__).resolve().parents[1]
     offenders = []
@@ -138,16 +194,27 @@ def test_every_reader_goes_through_the_resolver():
     for path in sources:
         if path.name in {"fleet_status.py", "run_report.py", "test_run_archive.py"}:
             continue  # where the resolvers themselves live, and this guard
-        for i, line in enumerate(path.read_text().splitlines(), 1):
+        lines = path.read_text().splitlines()
+        for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if stripped.startswith("#") or "find_run(" in stripped:
                 continue  # a fallback INSIDE a resolver is the resolver
-            if "not-archive-aware:" in stripped:
-                continue  # deliberate, and the line has to say why
-            # Two shapes of the hazard, and only two. `RUNS / <var>` is the
-            # module-level constant indexed by a run name. `ROOT / "runs" /` is
-            # the repo's real runs directory reached by hand — as opposed to
+            # Deliberate, and it has to say why — on the line, or in the comment
+            # block immediately above it, because the reasons worth writing
+            # ("nothing archived is training") do not fit at the end of a line.
+            waiver = [stripped]
+            for above in reversed(lines[max(0, i - 4):i - 1]):
+                if not above.strip().startswith("#"):
+                    break
+                waiver.append(above)
+            if any("not-archive-aware:" in w for w in waiver):
+                continue
+            # Three shapes of the hazard. `RUNS / <var>` is the module-level
+            # constant indexed by a run name. `ROOT / "runs" /` is the repo's
+            # real runs directory reached by hand — as opposed to
             # `tmp_path / "runs"`, which is a fixture and reads nothing real.
+            # The third is ENUMERATION: walking `runs/` to read every run reads
+            # 71 of 167 and reports the result as the fleet (refs #58).
             # Fleet state (.boards.json, BASELINE.json) is not a run and is
             # allowed to be addressed directly.
             # Not runs: fleet state, and the boards' own output files.
@@ -157,6 +224,9 @@ def test_every_reader_goes_through_the_resolver():
                 any(h in stripped for h in ('RUNS / run', 'RUNS / name', 'RUNS / a['))
                 or ('ROOT / "runs" /' in stripped
                     and not any(f in stripped for f in fleet_state))
+                or any(h in stripped for h in
+                       ('RUNS.iterdir(', 'RUNS.glob(',
+                        'ROOT / "runs").iterdir(', 'ROOT / "runs").glob('))
             )
             if hazard:
                 offenders.append(f"{path.name}:{i}: {stripped}")

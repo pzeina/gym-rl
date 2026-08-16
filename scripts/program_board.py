@@ -820,11 +820,18 @@ def _family(spec: dict) -> dict:
     on this page read as regressions for exactly that reason. The band is read
     off disk like everything else here, so it widens by itself as runs land,
     and a thread that leads with a level can be checked against it on sight.
+
+    Enumerated through ``run_dirs`` (refs #58). Globbing ``runs/`` directly made
+    the band NARROW by itself as generations were archived, which is the exact
+    inverse of what it is for: the siblings that establish a level are the older
+    ones, and 96 of them now live in ``runs/archive/``.
     """
+    from scripts.fleet_status import run_dirs
+
     exclude = set(spec.get("exclude", ()))
     values = {}
-    for run in sorted((ROOT / "runs").glob(f"{spec['prefix']}*")):
-        if not run.is_dir() or run.name in exclude:
+    for run in sorted(run_dirs(ROOT / "runs"), key=lambda d: d.name):
+        if not run.name.startswith(spec["prefix"]) or run.name in exclude:
             continue
         m = _measure(run.name, spec["metric"], "best")
         if m and m.get("value") is not None:
