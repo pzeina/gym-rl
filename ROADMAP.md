@@ -7824,3 +7824,38 @@ deliberately deferred (`docs/vision.md` §2c).
   **The gate branch's docstring still carries the overstatement** and must be
   amended before `git merge gate/human-death-rate`: `cohort/metrics.py` is
   frozen for the live campaign, so it was not touched here.
+
+- **2026-08-16** — **`closed_on_root_report_rate` is monotone in claim spam, and
+  nothing gates the spam. The v1.20 gate, as written, prefers a policy that lies
+  to one that stays quiet.** The 12-seed `patrol_brique` campaign finished its
+  `rdb=1.0` arm, and the seed that scores *best* on the new gate is the worst
+  policy in the sweep. `patrol_brique_v28_rdb1_seed18`, N=20, final:
+  **`closed_on_root_report_rate` 1.000 — the only perfect score in 23 runs — off
+  76 root DONE claims in 20 episodes, of which 57 were rejected
+  (`false_complete_rate_root` 0.750).** It passes all three gates
+  (timeout 0.05 ≤ 0.5, success 0.95 ≥ 0.5, closed 1.000 ≥ 0.5).
+  `patrol_brique_v27_rdb1_seed17` — 1.00 success, zero false claims,
+  `doctrine_preference_rate` 0.98 — **fails**, on 0.000.
+
+  The pattern holds across the whole sweep, and it is not a threshold artifact:
+  every run that reports also lies, and the false rate rises with the report
+  rate. Final checkpoints, report rate → false-DONE rate: v6 0.808 → 0.223,
+  v21 0.895 → 0.320, v25 0.750 → 0.348, v8/v18 0.867 → 0.375, v13 0.825 → 0.481,
+  v17 0.794 → 0.503, v11 0.878 → 0.561, v28 1.000 → 0.750. The mute runs claim
+  nothing at all, so their `false_complete_rate_root` is `None` — **the two
+  quantities are undefined exactly where the other is informative, and neither
+  is a gate on its own.** `cohort/metrics.py` carries `ROOT_REPORT_CLOSE_FLOOR`
+  (0.5) and no ceiling anywhere on `false_complete_rate_root`.
+
+  This does not overturn the bimodality finding above — it names the second
+  axis it was missing. The report rate is bimodal (0.000, or 0.75–1.00, nothing
+  between, over 23 runs) *and* the reporting mode is a claim-spray mode whose
+  admissible claim lands. So the v1.21 gate cannot be repaired by moving the
+  bound: any threshold in (0.01, 0.74) is the same gate, and raising it selects
+  harder for spray. A joint criterion is required, and its shape is the owner's
+  decision.
+
+  One provenance note for the comparison v1.20b was stopped by:
+  `patrol_brique_v6`'s `behavior_final.json` carries **no** `closed_on_root_report_rate`
+  gate — it was evaluated before `ROOT_REPORT_CLOSE_FLOOR` existed. The 0.808
+  incumbent was never scored by the gate its challenger failed.
