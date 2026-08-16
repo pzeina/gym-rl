@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import pytest
 
-from scripts.exact_tests import fisher_two_sided, mcnemar_two_sided
+from scripts.exact_tests import (
+    fisher_two_sided,
+    jackknife_rho,
+    mcnemar_two_sided,
+    spearman_rho,
+)
 
 
 @pytest.mark.parametrize(("table", "expected"), [
@@ -72,3 +77,60 @@ def test_five_matched_pairs_can_never_reject_at_five_percent():
     """
     assert mcnemar_two_sided(5, 0) > 0.05
     assert mcnemar_two_sided(6, 0) < 0.05
+
+
+# --- rank correlation: the instrument the "monotone spam" claim never had
+#
+# ROADMAP's 2026-08-16 entry listed nine reporting `patrol_brique` runs as
+# "report rate -> false-DONE rate", sorted by false rate, and called the relation
+# monotone. Sorted by the OTHER coordinate it is rho = +0.26 whose leave-one-out
+# range straddles zero (refs assurance #59). The series is pinned here as
+# published; it regenerates with `reporting_channel.py --spam`.
+SPAM_SERIES = [(0.808, 0.223), (0.750, 0.348), (0.750, 0.500), (0.895, 0.320),
+               (0.867, 0.375), (0.825, 0.481), (0.794, 0.503), (0.878, 0.561),
+               (1.000, 0.750)]
+
+
+def test_the_published_spam_series_is_not_monotone():
+    xs = [x for x, _ in SPAM_SERIES]
+    ys = [y for _, y in SPAM_SERIES]
+
+    assert spearman_rho(xs, ys) == pytest.approx(0.2594, abs=5e-4)
+    low, high = jackknife_rho(xs, ys)
+    assert low == pytest.approx(-0.0599, abs=5e-4), "dropping the 1.000 endpoint flips the sign"
+    assert high == pytest.approx(0.5150, abs=5e-4)
+    assert low <= 0.0 <= high, "a relation carried by one point is not a relation"
+
+
+def test_the_ninth_run_weakened_the_claim_it_was_added_to():
+    """+0.381 over eight, +0.259 over nine — the run that 'confirmed' it cut it."""
+    eight = [p for p in SPAM_SERIES if p != (0.750, 0.500)]
+
+    assert spearman_rho([x for x, _ in eight], [y for _, y in eight]) \
+        == pytest.approx(0.3810, abs=5e-4)
+
+
+def test_a_tie_in_x_is_not_broken_by_input_order():
+    """Two runs at report rate 0.750 with false rates 0.348 and 0.500."""
+    forward = spearman_rho([0.750, 0.750, 0.900], [0.348, 0.500, 0.320])
+    reversed_rows = spearman_rho([0.750, 0.750, 0.900], [0.500, 0.348, 0.320])
+
+    assert forward == pytest.approx(reversed_rows)
+
+
+def test_a_perfect_monotone_series_reads_plus_one_and_a_reversed_one_minus_one():
+    assert spearman_rho([1, 2, 3, 4], [10, 20, 30, 40]) == pytest.approx(1.0)
+    assert spearman_rho([1, 2, 3, 4], [40, 30, 20, 10]) == pytest.approx(-1.0)
+    assert spearman_rho([1, 2, 3, 4], [1, 9, 25, 81]) == pytest.approx(1.0), \
+        "rank correlation, so any increasing transform is the same +1"
+
+
+def test_a_constant_column_has_no_rank_correlation():
+    from math import isnan
+
+    assert isnan(spearman_rho([1, 1, 1], [1, 2, 3]))
+
+
+def test_paired_inputs_of_different_length_are_refused():
+    with pytest.raises(ValueError):
+        spearman_rho([1, 2, 3], [1, 2])

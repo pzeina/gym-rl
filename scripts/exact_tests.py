@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""The two exact tests this repo argues from, written once.
+"""The small-sample statistics this repo argues from, written once.
 
 Every seed-count claim in ROADMAP.md is a handful of runs against a handful of
 runs, which is small-n territory: the normal approximations are wrong there and
@@ -25,6 +25,14 @@ The practical consequence, and the reason this module exists next to
 attain is 0.0625, over every outcome including perfect separation.** A five-pair
 paired design cannot reject at 0.05 no matter what it measures. Reach for
 ``design_power`` before a campaign, not after.
+
+``spearman_rho`` is the third and it is not an exact test — it is here because
+this repo wrote "a monotone spam correlation" into ROADMAP.md off an eyeballed
+sorted list of nine runs, and the list read as monotone because it had been
+sorted (refs assurance #59). A rank correlation at n = 9 is a weak instrument,
+so it is never quoted alone: the caller is expected to print the leave-one-out
+range beside it, and a rho whose sign flips when one run is dropped is not a
+relation.
 """
 
 from __future__ import annotations
@@ -73,3 +81,54 @@ def mcnemar_two_sided(one_way: int, other_way: int) -> float:
         return 1.0
     k = min(one_way, other_way)
     return min(1.0, 2 * sum(comb(n, i) for i in range(k + 1)) / 2 ** n)
+
+
+def _midranks(values: list[float]) -> list[float]:
+    """Ranks, with tied values sharing the average of the ranks they span.
+
+    Ties are the whole reason this is written out rather than sorted twice: the
+    series that prompted it carries two runs at a report rate of exactly 0.750
+    with false rates 0.348 and 0.500, and breaking that tie by input order would
+    let the row ordering decide the sign of the correlation.
+    """
+    order = sorted(range(len(values)), key=lambda i: values[i])
+    ranks = [0.0] * len(values)
+    start = 0
+    while start < len(order):
+        stop = start
+        while stop + 1 < len(order) and values[order[stop + 1]] == values[order[start]]:
+            stop += 1
+        shared = (start + stop) / 2 + 1
+        for i in order[start:stop + 1]:
+            ranks[i] = shared
+        start = stop + 1
+    return ranks
+
+
+def spearman_rho(xs: list[float], ys: list[float]) -> float:
+    """Tie-corrected Spearman rank correlation; ``nan`` when either side is constant."""
+    n = len(xs)
+    if n != len(ys):
+        raise ValueError(f"spearman_rho needs paired inputs, got {n} and {len(ys)}")
+    if n < 2:
+        return float("nan")
+    rx, ry = _midranks(list(xs)), _midranks(list(ys))
+    mx, my = sum(rx) / n, sum(ry) / n
+    covariance = sum((a - mx) * (b - my) for a, b in zip(rx, ry, strict=True))
+    spread = (sum((a - mx) ** 2 for a in rx) * sum((b - my) ** 2 for b in ry)) ** 0.5
+    return covariance / spread if spread else float("nan")
+
+
+def jackknife_rho(xs: list[float], ys: list[float]) -> tuple[float, float]:
+    """The smallest and largest rho over dropping each observation in turn.
+
+    The honest companion to a rank correlation at single-digit n. A relation
+    whose range straddles zero is carried by one point, and calling it monotone
+    is a statement about that point.
+    """
+    n = len(xs)
+    if n < 3:
+        return (float("nan"), float("nan"))
+    values = [spearman_rho([x for j, x in enumerate(xs) if j != i],
+                           [y for j, y in enumerate(ys) if j != i]) for i in range(n)]
+    return (min(values), max(values))
