@@ -157,11 +157,19 @@ def series(metric: str, scenario: str | None = None) -> int:
     load. Runs whose evaluation predates a metric simply do not appear for it,
     and a missing ``behavior_final.json`` prints as ``—`` rather than silently
     letting a ``ckpt_best`` number stand in for a final one.
+
+    **Enumerated through ``run_dirs``, which walks ``runs/archive/`` too**
+    (refs #58). This scan is the repository's answer to "what does the corpus
+    actually show", and for a while it answered on 71 of 167 runs: the archive
+    move filed 96 generations away and this walked ``runs/`` directly, so the
+    README's own instruction to regenerate the `squad` root-death family from
+    committed artifacts printed a table with `squad_v6`, `v7`, `v8` and `v9` —
+    every row that table is built from — silently missing. An enumerator that
+    quietly drops the older half of the evidence is worse than no enumerator,
+    because a bound read off it looks measured.
     """
     rows = []
-    for d in sorted(RUNS.iterdir()):
-        if not d.is_dir():
-            continue
+    for d in run_dirs(RUNS):
         cells = {}
         for tag, name in (("best", "behavior.json"), ("final", "behavior_final.json")):
             path = d / name
@@ -186,6 +194,7 @@ def series(metric: str, scenario: str | None = None) -> int:
             return "—"
         return f"{v[0]:.3f} (N={v[1]})"
 
+    rows.sort()   # run_dirs yields the fleet then the archive; read by generation
     print(f"\n{metric}, every generation, both checkpoints — from committed artifacts\n")
     for family in sorted({r[0] for r in rows}):
         print(f"  {family}")
@@ -193,7 +202,46 @@ def series(metric: str, scenario: str | None = None) -> int:
             print(f"    {run:<26}best {cell(best):>16}   final {cell(final):>16}")
     print("\na level the whole family shows is a property of the family, not a "
           "finding about one run")
+    _checkpoint_extremes(rows)
     return 0
+
+
+def _checkpoint_extremes(rows: list[tuple]) -> None:
+    """The metric's range at EACH checkpoint, and the widest disagreement.
+
+    Printed because the table above was read down one column (refs #58). The
+    commander-survival ceiling was placed "in the middle of an empty band" —
+    nothing between 0.38 and 1.00 — which is true of the `ckpt_latest` column of
+    the unarchived fleet and false of the table as a whole: `ckpt_best` carries
+    0.98, 0.95, 0.85 and 0.60, and four runs land on opposite sides of the 0.5
+    ceiling at their own two checkpoints. A bound is a claim about the corpus,
+    so the corpus prints its own extremes rather than leaving them to be
+    eyeballed off eighty rows.
+    """
+    got = {
+        tag: [(v[0], run) for _, run, best, final in rows
+              if (v := (best if tag == "best" else final)) and v[0] is not None]
+        for tag in ("best", "final")
+    }
+    if not any(got.values()):
+        return
+    print("\nrange at each checkpoint — a bound read off one column is not a bound "
+          "on the corpus:")
+    for tag, label in (("best", "ckpt_best"), ("final", "ckpt_latest")):
+        vals = got[tag]
+        if not vals:
+            print(f"  {label:<12} — (no run carries it here)")
+            continue
+        lo, hi = min(vals), max(vals)
+        print(f"  {label:<12} min {lo[0]:.3f} ({lo[1]})   max {hi[0]:.3f} ({hi[1]})"
+              f"   n={len(vals)}")
+    both = [(abs(best[0] - final[0]), run, best[0], final[0])
+            for _, run, best, final in rows
+            if best and final and best[0] is not None and final[0] is not None]
+    if both:
+        gap, run, b, f = max(both)
+        print(f"  widest best-vs-final disagreement: {run} {b:.3f} -> {f:.3f} "
+              f"({gap:.3f}, over {len(both)} paired runs)")
 
 
 def _era_label(gap: int | None) -> str:
@@ -261,6 +309,11 @@ def validate_gate() -> int:
     applies to A/B pairs (``run_report.code_diff``), applied to the audit
     itself; the headline correlation is now taken over same-commit pairs only,
     with the all-pairs figure printed underneath and labelled as confounded.
+
+    Enumerated through ``run_dirs`` so the archive counts (refs #58): the
+    give-back premise is a claim about every run that ever published, and the
+    runs that motivated it — ``squad_recon_v5``/``v6``, ``squad_v7`` — are all
+    filed under ``runs/archive/``.
     """
     import hashlib
 
@@ -291,9 +344,7 @@ def validate_gate() -> int:
     seen: dict[str, str] = {}
     rows = []
     ann: list[tuple[str, float | None, float | None]] = []
-    for d in sorted(RUNS.iterdir()):
-        if not d.is_dir():
-            continue
+    for d in run_dirs(RUNS):
         best, final = d / "behavior.json", d / "behavior_final.json"
         if not (best.is_file() and final.is_file()):
             continue

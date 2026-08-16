@@ -158,6 +158,9 @@ def line(s: dict) -> str:
 
 
 def overview(include_all: bool) -> None:
+    # not-archive-aware: this is the live/recent training board. Nothing in
+    # runs/archive/ is training, and parsing 96 finished metrics.csv to say so
+    # is the cost this whole check-in exists to avoid.
     runs = [summarize(d) for d in RUNS.iterdir() if d.is_dir()]
     live = [s for s in runs if s["state"] == "RUNNING"]
     recent = sorted(

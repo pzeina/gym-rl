@@ -52,6 +52,8 @@ def keep_set() -> dict[str, str]:
 def candidates() -> tuple[list[Path], dict[str, str], list[str]]:
     keep = keep_set()
     moving, live = [], []
+    # not-archive-aware: this picks what to MOVE out of the live fleet, so
+    # walking the archive would re-offer runs that are already filed.
     for d in sorted(RUNS.iterdir()):
         if not d.is_dir() or d.name == "archive" or not (d / "metrics.csv").is_file():
             continue

@@ -93,6 +93,8 @@ def test_is_running_needs_a_run_name():
 
 def test_job_files_on_disk_still_parse(tmp_path):
     """Guard the assumption the check rests on: .job.json carries a pid."""
+    # not-archive-aware: a .job.json is live-training state; an archived run has
+    # no job to check and its stale file says nothing about the assumption.
     for job_path in (ROOT / "runs").glob("*/.job.json"):
         job = json.loads(job_path.read_text())
         assert isinstance(job.get("pid"), int), job_path
