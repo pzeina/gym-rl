@@ -246,3 +246,67 @@ def test_an_all_pass_row_does_not_count_an_unmeasured_gate_as_passing(tmp_path, 
     assert "2/2 pass" not in html
     assert "1/1 pass" in html
     assert "1 unmeasured" in html
+
+
+# ------------------------------------------- the reporting-channel disclosure --
+
+
+def _reporting_fleet(tmp_path, monkeypatch, *, search=None, rates=None):
+    """A manifest plus the artifacts the disclosure is derived from."""
+    runs = {s: f"{s}_m" for s in baseline_module.DOCTRINE_SCENARIOS}
+    manifest = {"version": "test", "runs": runs}
+    if search:
+        manifest["seed_search"] = search
+    (tmp_path / "BASELINE.json").write_text(json.dumps(manifest))
+    names = set(runs.values()) | {r for rs in (search or {}).values() for r in rs}
+    for name in names:
+        d = tmp_path / name
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "config.json").write_text(json.dumps({"seed": (rates or {}).get(name, (12, 0.8))[0]}))
+        (d / "economics.json").write_text(json.dumps({"git_commit": "a" * 40,
+                                                      "reward_overrides": []}))
+        (d / "behavior_final.json").write_text(json.dumps({
+            "episodes": 100,
+            "metrics": {"closed_on_root_report_rate": (rates or {}).get(name, (12, 0.8))[1]},
+        }))
+    monkeypatch.setattr(baseline_module, "RUNS", tmp_path)
+    monkeypatch.setattr(baseline_module, "MANIFEST", tmp_path / "BASELINE.json")
+    return manifest
+
+
+def test_the_board_states_when_a_member_was_picked_from_several_seeds(tmp_path, monkeypatch):
+    """The disclosure gate A rests on.
+
+    A member chosen as the best of four and published as though it were the only
+    one is exactly the overstatement the manifest's declaration exists to
+    prevent — and a declaration nobody renders is not a disclosure.
+    """
+    rates = {"patrol_brique_s12": (12, 0.0), "patrol_brique_s18": (18, 0.8),
+             "patrol_brique_s19": (19, 0.75), "patrol_brique_s14": (14, 0.0)}
+    manifest = _reporting_fleet(
+        tmp_path, monkeypatch,
+        search={"patrol_brique": list(rates)}, rates=rates)
+    manifest["runs"]["patrol_brique"] = "patrol_brique_s18"
+    (tmp_path / "BASELINE.json").write_text(json.dumps(manifest))
+
+    html = fleet_board.reporting_channel(baseline_module.load())
+
+    assert "2 of 4 seeds report" in html
+    assert "seeds 12, 18, 19, 14" in html
+
+
+def test_an_unsearched_fleet_says_one_seed_rather_than_going_quiet(tmp_path, monkeypatch):
+    """Silence would read as robustness. Each scenario says which it is."""
+    _reporting_fleet(tmp_path, monkeypatch)
+    html = fleet_board.reporting_channel(baseline_module.load())
+    assert html.count("— one seed ·") == len(baseline_module.DOCTRINE_SCENARIOS)
+    assert "each scenario ran one seed" in html
+
+
+def test_a_mute_member_is_named_on_the_board(tmp_path, monkeypatch):
+    """The v1.20b shape — every other axis fine, the commander never reports —
+    must be legible to a reader who only looks at the board."""
+    rates = {f"{s}_m": (12, 0.8) for s in baseline_module.DOCTRINE_SCENARIOS}
+    rates["patrol_brique_m"] = (12, 0.0)
+    _reporting_fleet(tmp_path, monkeypatch, rates=rates)
+    assert "MUTE" in fleet_board.reporting_channel(baseline_module.load())
