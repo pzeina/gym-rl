@@ -315,6 +315,57 @@ def _archive(rows: list[dict]) -> str:
     )
 
 
+def reporting_channel(manifest: dict) -> str:
+    """The seed search behind each member, or the absence of one, as HTML.
+
+    The one claim on this board that a reader cannot check from the success
+    column. ``closed_on_root_report_rate`` is a per-run bar over a quantity
+    bimodal in the seed — across 14 matched ``patrol_brique`` runs the commander
+    reports in 6, at 0.750-1.000, and is silent in the other 8 at exactly 0.000 —
+    so where a scenario behaves that way the member is chosen from several
+    seeds. Publishing that member without saying how many were tried is the
+    overstatement the manifest's ``seed_search`` block exists to prevent, and a
+    declaration nobody renders is not a disclosure.
+
+    Every number is read from the members' committed evaluations through
+    ``baseline``; nothing here is kept by hand.
+    """
+    members = manifest.get("runs", {})
+    if not members:
+        return ""
+    lines = []
+    searched = False
+    for scenario in baseline.DOCTRINE_SCENARIOS:
+        member = members.get(scenario)
+        if not member:
+            continue
+        facts = baseline.seed_search_facts(manifest, scenario, member)
+        if facts is None:
+            passes = baseline._reporting_gate(member)
+            verdict = ("not measured" if passes is None
+                       else "reports" if passes else "MUTE")
+            cell = f'one seed · <span class="dim">{verdict}</span>'
+        else:
+            searched = True
+            seeds = ", ".join(str(r["seed"]) for r in facts["runs"])
+            cell = (f'<b>{facts["reporting"]} of {facts["total"]} seeds report</b> '
+                    f'<span class="dim">· seeds {html.escape(seeds)}</span>')
+        lines.append(f"<li>{html.escape(scenario)} — {cell}</li>")
+    note = (
+        "Where a scenario's commander is bimodal in the seed the member is chosen "
+        "from a declared search, and the count says how many were tried."
+        if searched else
+        "No member here was chosen from a seed search — each scenario ran one seed."
+    )
+    return (
+        '<div class="note"><div class="note-h">'
+        "<span>Does the commander close its own operations?</span></div>"
+        f"<p>Measured on the FINAL policy at a floor of "
+        f"{baseline.ROOT_REPORT_CLOSE_FLOOR:g}, the artifact this board publishes. "
+        f"{note}</p><ul>{''.join(lines)}</ul></div>"
+    )
+
+
 def render(rows: list[dict], *, now: datetime | None = None) -> str:
     stamp = (now or datetime.now()).strftime("%Y-%m-%d %H:%M")
     live = [r for r in rows if r["loadable"]]
@@ -379,7 +430,8 @@ def render(rows: list[dict], *, now: datetime | None = None) -> str:
         "shipped reward defaults, all scored on the FINAL policy. This is the fleet the "
         "README describes; everything below is the record of getting here.</p>"
         f'<div class="grid"><table>{COLS}<thead>{HEAD}</thead>'
-        f"<tbody>{base_rows}</tbody></table></div></section>"
+        f"<tbody>{base_rows}</tbody></table></div>"
+        f"{reporting_channel(baseline.load())}</section>"
         if base_rows
         else ""
     )

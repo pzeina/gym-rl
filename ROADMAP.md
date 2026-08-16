@@ -1,6 +1,89 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-15, **v1.20b is TRAINED, AUDITED and NOT SHIPPING; v1.21 is the open window**)
+## ⟳ Session handoff — resume here (2026-08-16, **the v1.21 gate is DECIDED and the fleet is TRAINING**)
+
+**★ THE TWO OPEN DECISIONS ARE CLOSED (owner, 2026-08-16).** The gate keeps its
+shape and changes its source; the campaign that could not answer anything more
+was killed.
+
+**1 — The gate.** `closed_on_root_report_rate` stays a **per-run pass/fail bar**
+at `ROOT_REPORT_CLOSE_FLOOR`, and it reads the **FINAL policy**
+(`behavior_final.json`). Which checkpoint it reads turned out to be the whole
+gate, and one table decides it — measured against the 0.5 floor, the **shipping
+v1.19 fleet fails its own new bar on `ckpt_best` in two members of eight**:
+
+    member                behavior_final   behavior(best)
+    patrol_brique_v6           0.808           0.000
+    platoon_v6                 0.930           0.021
+    squad_recon_v8             1.000           0.753
+    squad_screen_v11           0.980           0.794
+    the other four          0.837–1.000     0.869–1.000
+
+A bar that retroactively fails the fleet it was written to protect is reading
+the wrong artifact, not finding a defect. `baseline.py` already took its gates
+from `behavior_final.json` — that was the de facto rule, and nothing said so or
+pinned it. It is now named, tested, and rendered.
+
+Where a scenario's channel is **bimodal in the seed** the member may come from a
+**declared seed search**: `runs/BASELINE.json` gains a `seed_search` block
+listing the candidate runs, `baseline.py` checks the declaration against their
+committed artifacts (member must be among them, one `cohort/` tree, no reward
+overrides, unscored counts in neither direction), and the fleet board prints
+**"k of K seeds report"** — or "one seed" where no search happened, because
+silence there would read as robustness. Published as a **count, never a rate
+with an interval**: at K=4 an interval is a decoration over four coin flips.
+
+**2 — The queue is dead.** `patrol_brique_v34` was killed at 38% and v35–v37
+never launched. The price question is **answered, and the null has power**:
+matched on tree, chart state and seed, over both checkpoints with SPLITs
+dropped, **rdb=3.0 reports at 3/7 and rdb=1.0 at 3/7**. Exact McNemar 1.0000
+measured nothing (4 discordant pairs cannot go below 0.1250); Fisher 1.0000 is a
+real null (the 6/14 margin could have reached 0.0047). **`root_done_bonus` does
+not buy the reporting channel.** Pooled the commander reports at **6/14 = 0.43,
+Jeffreys CI 0.20–0.68**, bimodal with nothing between 0.000 and 0.750. What the
+remaining three runs would have bought was CI width 0.478 → 0.430; what they
+were costing was the `cohort/` freeze.
+
+**⚑ #57 IS FIXED** (`504e87b`, and it is the tree the fleet freezes).
+`recent_root_closed` is appended only on episodes that sent an ENDEX, which
+`cohort_env` sends only on success — so the reporting rate is conditioned on
+winning and its denominator shrinks as success collapses. `is_reporting` now
+takes the window's rolling success and refuses the reporting promotion below
+`SUCCESS_RATE_FLOOR`, reusing the project's own floor rather than inventing a
+second threshold. It is a floor and not a veto: the thin window still saves on
+success merit, it just no longer locks. Replayed over the corpus this **moves 1
+of 104 runs** — `patrol_brique_v19_rdb3_seed13`, from 0.020 @ iter 25 to 1.000 @
+iter 550. `root_report_close_n` now joins `metrics.csv` (the denominator was the
+one gate input the CSV never recorded), and `checkpoint_selection.py` grew
+`replay_pre_v121` so the pre-fix artifacts on disk verify as **"pre-#57
+artifact"** rather than reading as a broken reader: 103 verify, 1 stale, 0
+disagree.
+
+**▶ TRAINING NOW — `scripts/campaigns/v1_21_fleet.jobs`, 12 runs, launched
+2026-08-16 10:13.** Six scenarios at seed 12; `patrol_brique` at seeds 12, 18,
+19, 14 (12 for continuity, then every seed that has reported at the current
+default) and one `squad` spare at seed 13. Ordered so the cheap fleet completes
+first and the spares only cost what they are needed for. It also tests something
+no arm has: §12.146 found no transfer of the reporting seed ACROSS scenarios —
+whether it transfers WITHIN one, across a tree change, is untested, and seeds
+18/19 reported on `5a5e8bef` while 12 did not.
+
+**Next, when it lands**: `baseline.py` (the new reporting section prints k of K),
+then write `seed_search` into `runs/BASELINE.json` for `patrol_brique`,
+`publish_baseline.py` at N=100, `baseline.py --seal`, `results_table.py --write`,
+`/boards`. **A member is only a member if its FINAL policy clears the floor** —
+if all four `patrol_brique` seeds come back mute, that is a finding about the
+scenario and not a reason to soften the bar, and it goes to the owner.
+
+**State**: `multi-agent-dev` at `f65ba0d`; tag still v1.18.0. **987 tests green,
+0 skipped**, ruff clean, spaces **Discrete(228)/Box(220)** frozen.
+`runs/BASELINE.json` still names the v1.19 members and `baseline.py` still
+prints BASELINE OK on them — that is the shipping fleet and it is unchanged.
+Boards regenerated and **PUBLISH PENDING**.
+
+---
+
+## ⟳ Previous handoff (2026-08-15, **v1.20b is TRAINED, AUDITED and NOT SHIPPING; v1.21 is the open window**)
 
 **★ READ THE LAST ENTRY FIRST — the blocking question is ANSWERED and v1.21's
 shape is decided.** The incumbent price is a seed lottery too: `rdb=3.0` fails

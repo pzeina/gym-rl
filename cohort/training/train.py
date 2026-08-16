@@ -29,7 +29,7 @@ from cohort.env.actions import N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
-from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR
+from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR, SUCCESS_RATE_FLOOR
 from cohort.training import provenance
 from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update
 
@@ -90,6 +90,13 @@ METRIC_FIELDS = [
     # window expire? ckpt_best is selected partly on this now (best_save_gate),
     # and the property is learned late, so the curve is worth having on record.
     "root_report_close_rolling",
+    # refs assurance #57: and over HOW MANY episodes. The rate above is
+    # success-conditioned, so its denominator is the thing that made a 2%
+    # window look like a reporting one — and until now it was the one input to
+    # best_save_gate that metrics.csv did not record, which is why
+    # checkpoint_selection.py can replay the gate exactly but can only reason
+    # about the thin-sample edge as a mechanism.
+    "root_report_close_n",
     # lightweight behavioral tracking (B2), over the episodes completed this
     # iteration: fraction whose human root died (issue #9: rolling success is
     # blind to exposure re-learning), and rejected DONE / total DONE claims
@@ -105,13 +112,26 @@ METRIC_FIELDS = [
 ]
 
 
-def is_reporting(root_report_close: float | None) -> bool:
+def is_reporting(root_report_close: float | None, rolling: float) -> bool:
     """Is the commander closing its own operations in this window?
 
     None — no ENDEX inside the window — is *unmeasured*, and unmeasured is not
     reporting. It is also not a refusal: see ``best_save_gate``.
+
+    ``rolling`` is the window's rolling success, and a window below
+    ``SUCCESS_RATE_FLOOR`` cannot be reporting **whatever rate it shows**
+    (refs assurance #57). The reporting rate is conditioned on winning —
+    ``recent_root_closed`` is appended only on episodes that sent an ENDEX,
+    which ``cohort_env`` sends only in the success branch — so its denominator
+    shrinks exactly as success collapses, and a policy winning 2 episodes in
+    100 can read 0.500 off one or two of them. Reusing the project's own
+    success floor rather than inventing a second threshold keeps this one
+    statement: *a window that would not pass the run's own success gate does
+    not get to claim the reporting promotion.*
     """
-    return root_report_close is not None and root_report_close >= ROOT_REPORT_CLOSE_FLOOR
+    if root_report_close is None or rolling < SUCCESS_RATE_FLOOR:
+        return False
+    return root_report_close >= ROOT_REPORT_CLOSE_FLOOR
 
 
 def best_save_gate(
@@ -166,10 +186,22 @@ def best_save_gate(
 
     ``root_report_close`` is None until the window contains an episode that
     actually sent an ENDEX; unmeasured counts as not-reporting for ordering.
+
+    **v1.21 (refs assurance #57): the promotion requires a window that is
+    winning.** The rule above is lexicographic over a rate whose denominator is
+    success-conditioned, so as written it let a *collapsing* window outrank a
+    working policy: ``patrol_brique_v19_rdb3_seed13`` wrote its only
+    ``ckpt_best`` at iteration 25 of 2930 — 25,600 steps of 3,000,320 — off a
+    window at **2% rolling success**, whose handful of wins read 0.500, cleared
+    the floor, and then locked the absorbing flag against the 99%-success
+    policy that followed. ``is_reporting`` now refuses that comparison below
+    ``SUCCESS_RATE_FLOOR``. Replayed over the whole corpus with
+    ``scripts/checkpoint_selection.py``, this moves **1 of 104 runs** — that
+    one, from 0.020 @ iter 25 to 1.000 @ iter 550 — and no other.
     """
     if episodes_seen < window:
         return False
-    reporting = is_reporting(root_report_close)
+    reporting = is_reporting(root_report_close, rolling)
     if reporting != best_was_reporting:
         return reporting  # the first reporting window wins; a mute one cannot
     return rolling > best_so_far
@@ -444,6 +476,7 @@ class Trainer:
                 if self.recent_root_closed
                 else float("nan")
             ),
+            "root_report_close_n": len(self.recent_root_closed),
             # refs #18: the same window, asking how the episodes were LOST.
             # A rising clock-expiry rate is the stall signature at training
             # time — squad_screen_v4 and squad_recon_v6 each spent their last
@@ -537,7 +570,9 @@ class Trainer:
                 self.best_was_reporting,
             ):
                 self.best_rolling_success = stats["success_rate_rolling"]
-                self.best_was_reporting = is_reporting(root_close)
+                self.best_was_reporting = is_reporting(
+                    root_close, stats["success_rate_rolling"]
+                )
                 self.save_checkpoint("ckpt_best.pt")
         if self.writer is not None:
             self.writer.close()

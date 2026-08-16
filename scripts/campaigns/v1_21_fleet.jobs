@@ -1,0 +1,97 @@
+# v1.21 FLEET RETRAIN — the first fleet trained against a decided gate.
+#
+# WHY A RETRAIN AT ALL. v1.20b trained all eight members, matched its v1.19
+# incumbents on success everywhere (every CI overlapped), and was then blocked
+# by the one thing v1.20 added: `patrol_brique_v7` scores
+# closed_on_root_report_rate 0.000 — zero root claims in 100 episodes — against
+# an incumbent that reports at 0.808. No substitute existed on that tree, and
+# `8a7645c`/`847acec` have since moved `cohort/`, so a single-member retrain
+# would land on a third tree. Any fix was always a full eight-member retrain.
+#
+# WHAT THE CAMPAIGN BEFORE THIS ONE SETTLED, and it is not what it set out to.
+# 24 patrol_brique runs across two `root_done_bonus` arms and twelve seeds
+# asked whether the reporting channel is bought by the price. Matched on tree,
+# chart state and seed, over both checkpoints with SPLITs dropped:
+#
+#     rdb=3.0   3/7 reporting        seeds 12, 15, 18
+#     rdb=1.0   3/7 reporting        seeds 14, 18, 19
+#     exact McNemar p = 1.0000   (4 discordant pairs cannot go below 0.1250 —
+#                                 the PRIMARY reading measured nothing)
+#     Fisher     p = 1.0000   (the 6/14 margin could have reached 0.0047 —
+#                              this one IS a null, and it has power)
+#
+# The price does not buy the channel. Pooled, the commander reports at
+# 6/14 = 0.43 (Jeffreys 95% CI 0.20–0.68), and the distribution is bimodal with
+# nothing between the modes: reporting runs land 0.750–1.000, mute runs land
+# exactly 0.000. The remaining queue (v35–v37) was killed rather than run —
+# it could not revive either test, and it was holding the `cohort/` freeze.
+#
+# ======================= THE GATE, DECIDED (owner, v1.21) =======================
+# `closed_on_root_report_rate` stays a PER-RUN pass/fail bar at
+# ROOT_REPORT_CLOSE_FLOOR, and it reads the FINAL policy — `behavior_final.json`,
+# the artifact the project publishes.
+#
+# Which checkpoint it reads is the whole gate, and the evidence is one table.
+# Against the 0.5 floor, the SHIPPING v1.19 fleet fails its own new bar twice
+# over on ckpt_best and passes comfortably on the final policy:
+#
+#     member                behavior_final   behavior(best)
+#     patrol_brique_v6           0.808           0.000
+#     platoon_v6                 0.930           0.021
+#     squad_recon_v8             1.000           0.753
+#     squad_screen_v11           0.980           0.794
+#     the other four          0.837–1.000     0.869–1.000
+#
+# A bar that retroactively fails the fleet it was written to protect is reading
+# the wrong artifact, not finding a defect. `ckpt_best` was ALSO the checkpoint
+# selected by a rule that could latch on a 2%-success window (assurance #57,
+# fixed in 504e87b, which is the tree this campaign freezes).
+#
+# Where a scenario's channel is bimodal the member may be chosen from a SEED
+# SEARCH — and the search is declared, never laundered. The manifest records
+# every seed tried and the board prints the measured rate, because a member
+# picked as the best of four, published as though it were the only one, is
+# exactly the overstatement `publish_audit.py` exists to catch.
+#
+# ============================== THE SEED BUDGET ==============================
+# Six scenarios have never shown the pathology at the shipped config and run one
+# seed each. Two have, and carry spares — ordered so the cheap fleet completes
+# first and the spares only cost what they are needed for:
+#
+#   patrol_brique   0.43 reporting over 14 runs. FOUR seeds. 12 for continuity
+#     with the v1.19/v1.20b members, then 18, 19, 14 — every seed that has
+#     reported at the current default. P(at least one reports) = 0.89 if the
+#     draws are independent, and better if the seed carries.
+#   squad   2 of 4 seeds mute on tree c0f85409, but seeds 12 and 13 both report
+#     on the v1.20b tree (0.959 / 0.937). ONE spare, seed 13, last in the queue.
+#
+# That ordering makes the campaign self-truncating: if seed 12 reports for
+# patrol_brique the remaining three are a free distribution estimate rather than
+# a search, and squad's spare is never needed.
+#
+# AND IT TESTS SOMETHING NO ARM HAS. §12.146 found no transfer of the reporting
+# seed ACROSS scenarios. Whether it transfers WITHIN one, across a tree change,
+# is untested — and seeds 18/19 reported on 5a5e8bef while 12 did not. If they
+# report again here the seed carries; if they do not, the draw is re-rolled by
+# the tree and every seed search is a fresh 0.43. Either answer is worth having
+# and neither costs an extra run.
+#
+# Same scenarios, same step budgets and same seed 12 as the v1.20b members, so
+# the only thing differing from that fleet is the tree. Sequential in one
+# nohup'd queue: ~12 runs x 25-45 min.
+#
+# After this lands: publish_baseline.py at N=100, then baseline.py --seal, then
+# results_table.py --write. The v1.19 members stay in place until their
+# replacements beat them; a MISS supersedes nothing without an ask.
+fireteam_v12               --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v23        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_v27                  --scenario squad           --total-steps 3000000 --seed 12
+squad_recon_v11            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v14           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v17          --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v8                 --scenario platoon         --total-steps 3000000 --seed 12
+patrol_brique_v38_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v39_seed18   --scenario patrol_brique   --total-steps 3000000 --seed 18
+patrol_brique_v40_seed19   --scenario patrol_brique   --total-steps 3000000 --seed 19
+patrol_brique_v41_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
+squad_v28_seed13           --scenario squad           --total-steps 3000000 --seed 13

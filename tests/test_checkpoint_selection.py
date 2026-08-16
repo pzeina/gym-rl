@@ -77,6 +77,30 @@ def test_the_gate_is_called_not_reimplemented(monkeypatch):
     assert seen == [(100, 0.4, 0.8, False), (110, 0.6, None, False)]
 
 
+def test_the_absorbing_flag_is_is_reporting_not_a_local_copy():
+    """The half of the rule that is easy to re-implement, and was.
+
+    ``replay`` must decide ``best_was_reporting`` with the shipped
+    ``is_reporting``, not with its own ``rate >= FLOOR``. While it kept a local
+    copy, v1.21's fix reached ``best_save_gate`` and not the flag, and the
+    reader reported the PRE-fix selection under the POST-fix rule — a
+    disagreement invisible in every test because both were wrong together.
+    """
+    calls = []
+    real = cs.is_reporting
+
+    def spy(close, rolling):
+        calls.append((close, rolling))
+        return real(close, rolling)
+
+    original, cs.is_reporting = cs.is_reporting, spy
+    try:
+        cs.replay(_rows([(100, 0.02, ROOT_REPORT_CLOSE_FLOOR), (40, 1.0, 0.0)]))
+    finally:
+        cs.is_reporting = original
+    assert (ROOT_REPORT_CLOSE_FLOOR, 0.02) in calls, "the flag must go through is_reporting"
+
+
 def test_no_save_before_the_outcome_window_turns_over():
     """D4 composes with everything else: 99 episodes is never enough."""
     assert cs.replay(_rows([(99, 1.0, 1.0)])) == []
@@ -97,32 +121,44 @@ V19_SHAPE = [
 ]
 
 
-def test_a_thin_early_reporting_window_locks_the_checkpoint():
-    """The absorbing flag, which is what makes one iteration decide a whole run.
+def test_a_thin_early_reporting_window_locked_the_checkpoint_before_v121():
+    """The absorbing flag, which is what made one iteration decide a whole run.
 
-    ``best_was_reporting`` is set by the first window at or above the floor and
-    no mute window may ever take the best back — so the 2%-success iteration is
-    the ONLY save, and the 100%-success policy that follows can never be
-    selected however long the run continues.
+    Under the pre-v1.21 rule ``best_was_reporting`` was set by the first window
+    at or above the floor whatever its success, and no mute window could take
+    the best back — so the 2%-success iteration was the ONLY save, and the
+    100%-success policy that followed could never be selected however long the
+    run continued. Kept as the historical rule because every ``ckpt_best`` in
+    the corpus today was written by it.
     """
-    saves = cs.replay(_rows(V19_SHAPE))
+    saves = cs.replay_pre_v121(_rows(V19_SHAPE))
     assert saves == [0], "the first reporting window was the run's only ckpt_best"
 
 
-def test_a_success_floor_releases_it_and_nothing_else_does():
-    """#57's proposal, measured: the floor is what changes the selection.
+def test_the_shipped_rule_no_longer_locks_on_a_thin_window():
+    """v1.21's fix, measured on the shape that motivated it.
 
-    Below the floor a window may not claim the reporting side of the order, so
-    it is compared on success like any mute one — and the run's best work
-    becomes the policy that wins.
+    ``is_reporting`` refuses the reporting side of the order below
+    ``SUCCESS_RATE_FLOOR``, so the 2% window is compared on success like any
+    mute one — it still saves (nothing has beaten it yet, and selection is not
+    a veto), and is then superseded by the policy that actually wins.
     """
     rows = _rows(V19_SHAPE)
-    floored = cs.replay(rows, floor=0.5)
-    assert floored, "a floored replay must still select something"
-    assert cs.episodes_and_windows(rows)[floored[-1]][1] == 1.0
-    # and floor 0.0 is byte-for-byte the shipped rule, which is what makes the
-    # sweep readable as a delta rather than as a second implementation
-    assert cs.replay(rows, floor=0.0) == cs.replay(rows)
+    saves = cs.replay(rows)
+    assert len(saves) > 1, "the thin window must not be the run's only save"
+    assert cs.episodes_and_windows(rows)[saves[-1]][1] == 1.0
+
+
+def test_an_extra_floor_above_the_shipped_one_changes_nothing_on_this_shape():
+    """The sweep's meaning after v1.21: 0.0 already carries SUCCESS_RATE_FLOOR.
+
+    Before the fix this shape was the one run in 104 a floor moved. Now the
+    floor is inside the shipped rule, so sweeping a stricter one on top must be
+    inert here — otherwise the sweep is measuring the floor rather than a
+    pathology.
+    """
+    rows = _rows(V19_SHAPE)
+    assert cs.replay(rows, floor=0.5) == cs.replay(rows, floor=0.0) == cs.replay(rows)
 
 
 def test_a_floor_does_not_disturb_a_run_that_reports_while_winning():
@@ -177,10 +213,30 @@ def test_the_replay_is_checked_against_the_iteration_stamped_in_the_checkpoint(t
     iteration it was written at, so agreement is reported per run."""
     d = _run(tmp_path, "run", V19_SHAPE)
     (d / "ckpt_best.pt").write_bytes(b"not a real checkpoint")
-    monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 1, "env_steps": 1024})
+    selected = cs.replay(_rows(V19_SHAPE))[-1] + 1  # iterations are 1-based in _rows
+    monkeypatch.setattr(cs, "checkpoint_stamp",
+                        lambda path: {"iteration": selected, "env_steps": 1024})
     assert cs.run_facts(d)["agrees"] is True
     monkeypatch.setattr(cs, "checkpoint_stamp", lambda path: {"iteration": 999, "env_steps": 1024})
     assert cs.run_facts(d)["agrees"] is False
+
+
+def test_a_pre_v121_checkpoint_reads_as_stale_rather_than_as_a_broken_replay(tmp_path, monkeypatch):
+    """Every ``ckpt_best`` in the corpus predates the v1.21 fix.
+
+    On the shape the fix targets the two rules select different iterations, so
+    the artifact on disk cannot agree with the shipped replay — and reporting
+    that as REPLAY DISAGREES would read as a broken reader rather than as a
+    checkpoint written by the rule that has since been corrected.
+    """
+    d = _run(tmp_path, "run", V19_SHAPE)
+    (d / "ckpt_best.pt").write_bytes(b"not a real checkpoint")
+    legacy = cs.replay_pre_v121(_rows(V19_SHAPE))[-1] + 1
+    monkeypatch.setattr(cs, "checkpoint_stamp",
+                        lambda path: {"iteration": legacy, "env_steps": 1024})
+    facts = cs.run_facts(d)
+    assert facts["agrees"] is False, "the shipped rule selects a different window"
+    assert facts["agrees_pre_v121"] is True, "and the pre-fix rule selects the one on disk"
 
 
 def test_an_unreadable_checkpoint_is_unverified_not_a_disagreement(tmp_path):

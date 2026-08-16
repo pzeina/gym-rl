@@ -51,17 +51,22 @@ def test_the_shipped_manifest_covers_the_doctrine_scenarios():
 
 
 def _member(tmp_path, run: str, *, commit="a" * 40, overrides=(), episodes=100,
-            gates=(), successes=97, announced=97, peak_episodes=100):
+            gates=(), successes=97, announced=97, peak_episodes=100,
+            seed=12, close_rate=0.85):
     d = tmp_path / run
     d.mkdir(parents=True, exist_ok=True)
     (d / "economics.json").write_text(json.dumps({
         "git_commit": commit, "reward_overrides": list(overrides),
     }))
+    (d / "config.json").write_text(json.dumps({"seed": seed}))
+    metrics = {"success_rate": 0.97, "successes": successes,
+               "successes_announced": announced}
+    if close_rate is not None:
+        metrics["closed_on_root_report_rate"] = close_rate
     (d / "behavior_final.json").write_text(json.dumps({
         "episodes": episodes,
         "success_ci95": "0.97 ± 0.03",
-        "metrics": {"success_rate": 0.97, "successes": successes,
-                    "successes_announced": announced},
+        "metrics": metrics,
         "gates": [{"name": g, "passed": False} for g in gates],
     }))
     # The peak the README publishes. A member is not two files by accident: the
@@ -426,3 +431,119 @@ def test_the_headline_checkpoint_is_the_final_policy_not_the_best_window():
     """
     assert baseline.HEADLINE_CKPT == "ckpt_latest.pt"
     assert set(baseline.CHECKPOINTS) == {"ckpt_best.pt", "ckpt_latest.pt"}
+
+
+# ----------------------------------------------- the declared seed search --
+#
+# v1.21 made `closed_on_root_report_rate` a per-run bar read off the FINAL
+# policy, and allowed the member for a bimodal scenario to be chosen from
+# several seeds. That is a selection procedure, and the whole of what keeps it
+# honest is that the manifest declares it and the audit checks the declaration
+# against the committed artifacts. These tests are the check on the check.
+
+
+def _search(fleet, scenario, runs):
+    """Point one scenario's seed_search at ``runs`` and re-write the manifest."""
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest.setdefault("seed_search", {})[scenario] = runs
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+
+
+def test_a_declared_search_publishes_the_count_and_names_the_member(fleet, capsys):
+    """The number the board rests on: k of K, counted from the artifacts.
+
+    Not a rate with an interval — at K=4 an interval would be a decoration over
+    four coin flips.
+    """
+    for seed, rate in ((12, 0.0), (18, 0.80), (19, 0.75), (14, 0.0)):
+        _member(fleet, f"patrol_brique_seed{seed}", seed=seed, close_rate=rate)
+    _search(fleet, "patrol_brique", [f"patrol_brique_seed{s}" for s in (12, 18, 19, 14)])
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest["runs"]["patrol_brique"] = "patrol_brique_seed18"
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+
+    code, out = _audit(capsys)
+    assert code == 0, out
+    assert "2 of 4 seeds report" in out
+    assert "patrol_brique_seed18" in out and "<- member" in out
+
+
+def test_a_scenario_with_no_search_says_so_rather_than_going_quiet(fleet, capsys):
+    """"1 seed" and "1 of 4 seeds" are different claims.
+
+    A reader who only ever sees the count where it is flattering learns nothing
+    from its absence, so the unsearched scenarios are labelled too.
+    """
+    _, out = _audit(capsys)
+    assert out.count("1 seed, not searched") == len(baseline.DOCTRINE_SCENARIOS)
+
+
+def test_a_mute_member_is_named_in_the_reporting_section(fleet, capsys):
+    """The v1.20b shape: every other axis fine, the commander never reports."""
+    _member(fleet, "patrol_brique_v1", close_rate=0.0)
+    _, out = _audit(capsys)
+    assert "MUTE" in out
+
+
+def test_a_search_the_published_member_was_not_part_of_fails_the_fleet(fleet, capsys):
+    """The selection this is here to refuse: a count over runs that do not
+    include the one being shipped."""
+    _member(fleet, "patrol_brique_other", seed=18, close_rate=0.8)
+    _search(fleet, "patrol_brique", ["patrol_brique_other"])
+    code, out = _audit(capsys)
+    assert code == 1
+    assert "does not contain the member" in out
+
+
+def test_a_search_spanning_two_environments_fails_the_fleet(fleet, capsys):
+    """A reporting rate pooled over two trees is a rate over nothing — the same
+    provenance rule the fleet itself is held to."""
+    _member(fleet, "patrol_brique_v1", seed=12, close_rate=0.0)
+    _member(fleet, "patrol_brique_alt", seed=18, close_rate=0.8, commit="b" * 40)
+    _search(fleet, "patrol_brique", ["patrol_brique_v1", "patrol_brique_alt"])
+    code, out = _audit(capsys)
+    assert code == 1
+    assert "distinct cohort/ trees" in out
+
+
+def test_a_candidate_trained_with_an_override_fails_the_fleet(fleet, capsys):
+    """A seed that only reports at a price the fleet does not ship is not
+    evidence about the fleet."""
+    _member(fleet, "patrol_brique_v1", seed=12, close_rate=0.0)
+    _member(fleet, "patrol_brique_priced", seed=18, close_rate=0.8,
+            overrides=["root_done_bonus=3.0"])
+    _search(fleet, "patrol_brique", ["patrol_brique_v1", "patrol_brique_priced"])
+    code, out = _audit(capsys)
+    assert code == 1
+    assert "not the configuration the fleet ships" in out
+
+
+def test_an_unscored_candidate_counts_in_neither_direction(fleet, capsys):
+    """Unmeasured is not mute. A candidate with no measured rate would silently
+    deflate k/K if it were counted as a failure."""
+    _member(fleet, "patrol_brique_v1", seed=12, close_rate=0.8)
+    _member(fleet, "patrol_brique_unscored", seed=18, close_rate=None)
+    _search(fleet, "patrol_brique", ["patrol_brique_v1", "patrol_brique_unscored"])
+    facts = baseline.seed_search_facts(
+        json.loads((fleet / "BASELINE.json").read_text()), "patrol_brique", "patrol_brique_v1")
+    assert facts["reporting"] == 1 and facts["total"] == 2
+    code, out = _audit(capsys)
+    assert code == 1
+    assert "counts in neither direction" in out
+
+
+def test_the_reporting_gate_reads_the_final_policy_not_the_best_window(fleet):
+    """The v1.21 decision, pinned.
+
+    Measured against the 0.5 floor the shipping v1.19 fleet fails its own bar on
+    ``ckpt_best`` in two members of eight and passes on the final policy at a
+    minimum of 0.808 — so the artifact the gate reads is the one the project
+    publishes. A member whose peak is mute and whose final policy reports must
+    pass, which is the case that decides it.
+    """
+    d = _member(fleet, "squad_v1", close_rate=0.85)
+    (d / "behavior.json").write_text(json.dumps({
+        "episodes": 100, "success_ci95": "0.98 ± 0.03",
+        "metrics": {"success_rate": 0.98, "closed_on_root_report_rate": 0.0},
+    }))
+    assert baseline._reporting_gate("squad_v1") is True

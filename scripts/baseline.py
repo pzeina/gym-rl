@@ -69,7 +69,7 @@ RUNS = ROOT / "runs"
 MANIFEST = RUNS / "BASELINE.json"
 sys.path.insert(0, str(ROOT))
 
-from cohort.metrics import split_gates  # noqa: E402
+from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR, split_gates  # noqa: E402
 from scripts.fleet_status import find_run  # noqa: E402
 from scripts.run_report import PUBLISH_STABILITY_POINTS  # noqa: E402
 
@@ -288,6 +288,112 @@ HEADLINE_CKPT = "ckpt_latest.pt"  # the FINAL policy — what behavior_final.jso
 CHECKPOINTS = ("ckpt_best.pt", HEADLINE_CKPT)
 
 
+def _reporting_gate(run: str) -> bool | None:
+    """Does this run pass ``closed_on_root_report_rate`` on the FINAL policy?
+
+    v1.21 fixed which checkpoint the reporting gate reads, and the answer is the
+    artifact the project publishes. Measured against the 0.5 floor, the shipping
+    v1.19 fleet fails its own bar on ``ckpt_best`` in two members of eight —
+    ``patrol_brique_v6`` at 0.000, ``platoon_v6`` at 0.021 — and passes on the
+    final policy at a minimum of 0.808. A bar that retroactively fails the fleet
+    it was written to protect is reading the wrong artifact. ``ckpt_best`` was
+    also, until 504e87b, selected by a rule that could latch on a 2%-success
+    window (assurance #57).
+
+    ``None`` when the rate was never measured, which is not the same as failed.
+    """
+    data = _json_or_empty(run_dir(run) / "behavior_final.json")
+    rate = (data.get("metrics") or {}).get("closed_on_root_report_rate")
+    return None if rate is None else rate >= ROOT_REPORT_CLOSE_FLOOR
+
+
+def _json_or_empty(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def seed_search_facts(manifest: dict, scenario: str, member: str | None) -> dict | None:
+    """The declared seed search behind one member, or None if none was declared.
+
+    **Why this is in the manifest at all.** ``closed_on_root_report_rate`` is a
+    per-run bar over a quantity that is bimodal in the seed: across 14 matched
+    ``patrol_brique`` runs the commander reports in 6, and the two modes are
+    0.750-1.000 and exactly 0.000 with nothing between them. Where a scenario
+    behaves that way the member is necessarily chosen from several seeds — and a
+    member picked as the best of four, published as though it were the only one,
+    is precisely the overstatement this module exists to refuse. So the search is
+    declared: the manifest lists the candidate runs, and every number here is
+    derived from their committed artifacts rather than kept by hand.
+
+    The manifest holds only the run names. ``k of K`` is counted, and NOT
+    reported as a rate with an interval — at K=4 a confidence interval would be
+    a decoration over four coin flips, and the 0.43 the campaign measured comes
+    from a 14-run corpus, not from this fleet.
+    """
+    candidates = (manifest.get("seed_search") or {}).get(scenario)
+    if not candidates:
+        return None
+    rows = []
+    for run in candidates:
+        d = run_dir(run)
+        cfg = _json_or_empty(d / "config.json")
+        econ = _json_or_empty(d / "economics.json")
+        rows.append({
+            "run": run,
+            "exists": d.exists(),
+            "seed": cfg.get("seed"),
+            "tree": cohort_tree(econ.get("git_commit")),
+            "overrides": list(econ.get("reward_overrides") or []),
+            "reports": _reporting_gate(run),
+        })
+    reporting = sum(1 for r in rows if r["reports"] is True)
+    return {
+        "scenario": scenario,
+        "runs": rows,
+        "reporting": reporting,
+        "total": len(rows),
+        "member_searched": member is not None and any(r["run"] == member for r in rows),
+    }
+
+
+def _seed_search_problems(facts: dict, member: str | None) -> list[str]:
+    """What makes a declared search worth believing.
+
+    Each of these is a way the published ``k of K`` could be true of nothing:
+    a candidate that does not exist, one trained against a different environment
+    or at a price the fleet does not ship, one that was never scored — and a
+    member that is not among the seeds it was supposedly selected from.
+    """
+    problems = []
+    if not facts["member_searched"]:
+        problems.append(
+            f"seed_search[{facts['scenario']}] does not contain the member "
+            f"{member} — a search the published run was not part of"
+        )
+    trees = {r["tree"] for r in facts["runs"] if r["tree"]}
+    if len(trees) > 1:
+        problems.append(
+            f"seed_search[{facts['scenario']}]: {len(trees)} distinct cohort/ trees — "
+            "a reporting rate over runs that trained against different environments"
+        )
+    for r in facts["runs"]:
+        if not r["exists"]:
+            problems.append(f"seed_search[{facts['scenario']}]: no run directory for {r['run']}")
+        elif r["overrides"]:
+            problems.append(
+                f"seed_search[{facts['scenario']}]: {r['run']} carries "
+                f"{', '.join(r['overrides'])} — not the configuration the fleet ships"
+            )
+        elif r["reports"] is None:
+            problems.append(
+                f"seed_search[{facts['scenario']}]: {r['run']} has no measured "
+                "closed_on_root_report_rate, so it counts in neither direction"
+            )
+    return problems
+
+
 def _loadable(run: str) -> bool:
     """Do this member's checkpoints load under the current spaces?
 
@@ -395,6 +501,14 @@ def audit(check_loadable: bool = True) -> int:
         for p in f["problems"]:
             failures.append(f"{run}: {p}")
 
+    searches = {}
+    for scenario in DOCTRINE_SCENARIOS:
+        s = seed_search_facts(manifest, scenario, members.get(scenario))
+        if s is None:
+            continue
+        searches[scenario] = s
+        failures.extend(_seed_search_problems(s, members.get(scenario)))
+
     commits = {f["commit"] for _, _, f, _ in rows if f and f.get("commit")}
     trees = {f["cohort_tree"] for _, _, f, _ in rows if f and f.get("cohort_tree")}
     unknown = [run for _, run, f, _ in rows
@@ -424,6 +538,26 @@ def audit(check_loadable: bool = True) -> int:
         gap = f"{f['gap']:.1f}" if f.get("gap") is not None else "—"
         print(f"{scenario:<18}{run:<24}{f.get('episodes', 0):>5}"
               f"{f.get('ci') or '—'!s:>16}{gap:>7}  {status}")
+
+    # Printed for every member, not only the searched ones: "1 seed" and "1 of 4
+    # seeds" are different claims, and a reader who sees the second only where it
+    # is flattering learns nothing from its absence.
+    print("\nreporting channel — closed_on_root_report_rate on the FINAL policy, "
+          f"floor {ROOT_REPORT_CLOSE_FLOOR:g}")
+    for scenario in DOCTRINE_SCENARIOS:
+        s = searches.get(scenario)
+        if s is None:
+            member = members.get(scenario)
+            passes = _reporting_gate(member) if member else None
+            verdict = "—" if passes is None else "reports" if passes else "MUTE"
+            print(f"  {scenario:<18} 1 seed, not searched      {verdict}")
+            continue
+        seeds = ", ".join(str(r["seed"]) for r in s["runs"])
+        print(f"  {scenario:<18} {s['reporting']} of {s['total']} seeds report   (seeds {seeds})")
+        for r in s["runs"]:
+            mark = "  <- member" if r["run"] == members.get(scenario) else ""
+            verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
+            print(f"      seed {r['seed']!s:<4} {r['run']:<32} {verdict}{mark}")
 
     print()
     if trees:
