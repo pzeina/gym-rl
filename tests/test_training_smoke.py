@@ -204,6 +204,38 @@ def test_rolling_best_gate_refuses_a_mute_commander(tmp_path):
     assert not best_save_gate(99, 100, 1.0, -1.0, 0.9)
 
 
+def test_a_collapsing_window_may_not_claim_the_reporting_promotion():
+    """refs assurance #57: the reporting rate's denominator is success-conditioned.
+
+    ``recent_root_closed`` is appended only on episodes that sent an ENDEX, and
+    `cohort_env` sends one only on success — so as success collapses the rate is
+    computed over fewer and fewer episodes, and a policy winning 2 in 100 can
+    read 0.500 off one of them. Left unguarded that window took the absorbing
+    flag and locked ``ckpt_best`` against everything after it:
+    `patrol_brique_v19_rdb3_seed13` saved once, at iteration 25 of 2930, at 2%
+    rolling success, and shipped a checkpoint that succeeds in 17 episodes of
+    100 against its own final policy's 99.
+    """
+    from cohort.metrics import SUCCESS_RATE_FLOOR
+    from cohort.training.train import best_save_gate, is_reporting
+
+    # a window below the success floor is not reporting, whatever rate it shows
+    assert not is_reporting(1.0, SUCCESS_RATE_FLOOR - 0.01)
+    assert is_reporting(0.5, SUCCESS_RATE_FLOOR)
+
+    # so it cannot take the promotion — but it is not vetoed either: with
+    # nothing recorded yet it still saves, on success merit, like a mute window
+    assert best_save_gate(100, 100, 0.02, -1.0, 0.5, best_was_reporting=False)
+
+    # …and crucially does not lock: the winning policy that follows supersedes
+    # it, which is the whole of the v19 pathology
+    assert best_save_gate(100, 100, 1.00, 0.02, 0.0, best_was_reporting=False)
+
+    # a genuine reporting window — winning AND closing its own ops — still
+    # supersedes a mute best, so the v1.20 rule is intact where it applies
+    assert best_save_gate(100, 100, 0.90, 0.95, 0.82, best_was_reporting=False)
+
+
 def test_trainer_counts_episodes_for_the_best_gate(tmp_path):
     """The Trainer wires the D4 gate: episodes_seen tracks completed episodes
     and no ckpt_best exists while the window has not fully turned over."""

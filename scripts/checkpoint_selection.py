@@ -75,15 +75,21 @@ RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR  # noqa: E402
-from cohort.training.train import best_save_gate  # noqa: E402
+from cohort.training.train import best_save_gate, is_reporting  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 from scripts.run_report import checkpoint_stamp, fnum, run_dir  # noqa: E402
 
-#: Success floors swept per run. 0.0 is the shipped rule — no floor — and is
-#: always first so every other row reads as a delta against what actually
-#: shipped. The rest are illustrative sample points for the v1.21 gate decision,
-#: NOT a proposal: which floor (if any) belongs under checkpoint selection is a
-#: `cohort/` default and the owner's call.
+#: Success floors swept per run, applied ON TOP of the shipped rule. 0.0 is the
+#: shipped rule itself and is always first so every other row reads as a delta
+#: against it.
+#:
+#: **This changed meaning in v1.21.** When this reader was written the shipped
+#: gate had no success condition at all, so 0.0 meant "no floor" and the sweep
+#: asked what adding one would do. The answer — one run of 104 — is now IN
+#: ``is_reporting`` at ``SUCCESS_RATE_FLOOR``, so 0.0 already carries a floor of
+#: 0.5 and the rows at 0.25 and below can no longer move anything by
+#: construction. What the sweep still asks is whether a floor STRICTER than the
+#: shipped one would buy anything further.
 FLOORS: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 0.9)
 
 #: The trainer's rolling-outcome window (``Trainer.recent_outcomes`` maxlen).
@@ -139,15 +145,18 @@ def episodes_and_windows(rows: list[dict]) -> list[tuple[int, float, float | Non
 def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[int]:
     """Indices of the rows that would have written ``ckpt_best``, under one floor.
 
-    ``floor`` is #57's proposal, applied in the one place that makes it a floor
-    rather than a veto: a window whose rolling success is below it may not claim
-    the REPORTING side of the lexicographic order, so it is compared on success
-    like any mute window. At ``floor=0.0`` this is byte-for-byte the shipped
-    rule, which is what makes every other row of the sweep readable as a delta.
+    ``floor`` is applied in the one place that makes it a floor rather than a
+    veto: a window whose rolling success is below it may not claim the REPORTING
+    side of the lexicographic order, so it is compared on success like any mute
+    window. At ``floor=0.0`` this is byte-for-byte the shipped rule, which is
+    what makes every other row of the sweep readable as a delta.
 
-    The comparison itself is never re-implemented — ``best_save_gate`` is called
-    with a possibly-suppressed reporting rate, so if the shipped rule changes,
-    this reader changes with it.
+    Neither half of the comparison is re-implemented: ``best_save_gate`` decides
+    the save and ``is_reporting`` decides the absorbing flag, exactly as
+    ``Trainer`` wires them. That mattered more than it looked — while the flag
+    update WAS a local copy here, v1.21's fix to ``is_reporting`` reached the
+    gate but not the flag, and the reader reported the pre-fix selection under
+    the post-fix rule.
     """
     saves: list[int] = []
     best_success, best_reporting = -1.0, False
@@ -155,8 +164,34 @@ def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[i
         rate = None if (floor > 0.0 and success < floor) else close
         if best_save_gate(seen, window, success, best_success, rate, best_reporting):
             best_success = success
-            best_reporting = rate is not None and rate >= ROOT_REPORT_CLOSE_FLOOR
+            best_reporting = is_reporting(rate, success)
             saves.append(i)
+    return saves
+
+
+def replay_pre_v121(rows: list[dict], window: int = WINDOW) -> list[int]:
+    """The same replay under the gate as it stood BEFORE the v1.21 #57 fix.
+
+    A frozen historical copy, and the only rule in this reader that is written
+    out rather than imported — it no longer exists in ``cohort/`` to import.
+    It earns its place by making the artifact check honest: every ``ckpt_best``
+    on disk today was written by THIS rule, so a run whose stamped iteration
+    disagrees with the shipped replay but agrees with this one is not a broken
+    replay, it is a pre-fix artifact, and the printer says so.
+    """
+    saves: list[int] = []
+    best_success, best_reporting = -1.0, False
+    for i, (seen, success, close) in enumerate(episodes_and_windows(rows)):
+        if seen < window:
+            continue
+        reporting = close is not None and close >= ROOT_REPORT_CLOSE_FLOOR
+        if reporting != best_reporting:
+            if not reporting:
+                continue
+        elif not success > best_success:
+            continue
+        best_success, best_reporting = success, reporting
+        saves.append(i)
     return saves
 
 
@@ -219,9 +254,15 @@ def run_facts(run: Path) -> dict | None:
             "saves": len(saves),
         }
     shipped = sweep[0.0]
+    legacy_saves = replay_pre_v121(rows)
+    legacy_iter = (
+        None if not legacy_saves else int(fnum(rows[legacy_saves[-1]], "iteration") or 0)
+    )
     stamp = checkpoint_stamp(run / "ckpt_best.pt")
     stamped = None if stamp is None else stamp["iteration"]
     return {
+        "legacy_iteration": legacy_iter,
+        "agrees_pre_v121": None if stamped is None or legacy_iter is None else stamped == legacy_iter,
         "run": run.name,
         "rows": len(rows),
         "replayable": True,
@@ -268,6 +309,8 @@ def print_run(facts: dict) -> None:
     shipped = facts["sweep"][0.0]
     verify = ("unverified" if facts["agrees"] is None else
               "replay agrees" if facts["agrees"] else
+              f"pre-#57 artifact (ckpt_best.pt says iter {facts['stamped_iteration']}, "
+              f"which is what the pre-v1.21 gate selected)" if facts["agrees_pre_v121"] else
               f"REPLAY DISAGREES (ckpt_best.pt says iter {facts['stamped_iteration']})")
     print(f"{facts['run']}  —  {facts['rows']} iterations, {facts['episodes']:,} episodes, window {WINDOW}")
     if shipped is None:
@@ -310,7 +353,7 @@ def print_fleet(rows: list[dict], floor: float) -> None:
     print(f"{len(replayable)} runs replayed, floor {floor:g} against the shipped rule "
           f"(reporting floor {ROOT_REPORT_CLOSE_FLOOR:g})\n")
     print(f"    {'run':<38} {'shipped':>18}  {'with floor':>18}  {'delta':>7}  verify")
-    movers = disagree = verified = 0
+    movers = disagree = verified = pre_fix = 0
     for facts in replayable:
         shipped, floored = facts["sweep"][0.0], facts["sweep"].get(floor)
         era = "" if facts["has_reporting"] else "  pre-v1.20"
@@ -324,9 +367,12 @@ def print_fleet(rows: list[dict], floor: float) -> None:
             delta = floored["success"] - shipped["success"]
         moved = delta is not None and abs(delta) > 1e-9
         movers += moved
-        disagree += facts["agrees"] is False
+        stale = facts["agrees"] is False and facts["agrees_pre_v121"] is True
+        pre_fix += stale
+        disagree += facts["agrees"] is False and not stale
         verified += facts["agrees"] is True
-        verify = ("?" if facts["agrees"] is None else "ok" if facts["agrees"] else "DISAGREES")
+        verify = ("?" if facts["agrees"] is None else "ok" if facts["agrees"]
+                  else "pre-#57" if stale else "DISAGREES")
         mark = " <-" if moved else ""
         print(f"    {facts['run']:<38} {shipped['success']:.3f} @ {shipped['iteration']:>5}  "
               f"{cell:>18}  {'' if delta is None else f'{delta:+.3f}':>7}  {verify}{mark}{era}")
@@ -334,6 +380,9 @@ def print_fleet(rows: list[dict], floor: float) -> None:
     print(f"    {pre_v120} predate the reporting axis (no {REPORTING_COLUMN}), where no floor can move anything")
     print(f"    {skipped} runs not replayable (metrics.csv predates {REQUIRED[0]}), excluded from both counts")
     print(f"    {verified} of {len(replayable)} replays verified against the iteration in ckpt_best.pt")
+    if pre_fix:
+        print(f"    {pre_fix} carry a pre-#57 ckpt_best — the artifact on disk is the one the "
+              f"pre-v1.21 gate selected, and that replay verifies")
     if disagree:
         print(f"    ⚠ {disagree} replays DISAGREE with the iteration stamped in ckpt_best.pt")
     print()
