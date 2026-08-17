@@ -152,39 +152,93 @@ def test_an_unannounced_win_is_visible_as_a_fraction_not_a_dash(member, monkeypa
     assert cells[7] == "0/97"
 
 
-def test_a_claimless_root_shows_absent_not_a_hundred(member):
-    """Issue #61: `fireteam_defend_v23` and `defend_brique_v17` record
-    `closed_on_root_report_rate: 1.0` with `done_claim_episodes_root: 0` —
-    every close came from a SITREP landing on the final step, and the root
-    never filed a DONE claim. 100% in the root-reported column reads as a
-    completion channel working perfectly; the cell must say the claim record
-    is absent instead. Same misreading 8537c2c fixed on the board, one column
-    over."""
+def _patch_metrics(member, **metrics):
     path = member / "squad_v10" / "behavior_final.json"
     data = json.loads(path.read_text())
-    data["metrics"]["closed_on_root_report_rate"] = 1.0
-    data["metrics"]["done_claim_episodes_root"] = 0
+    data["metrics"].update(metrics)
     path.write_text(json.dumps(data))
 
-    cells = [c.strip() for c in results_table.row("squad", "squad_v10").strip("|").split("|")]
 
-    assert cells[8] == results_table.NO_CLAIMS
-    assert "100%" not in cells[8]
+def _root_reported_cell(member) -> str:
+    return [c.strip() for c in
+            results_table.row("squad", "squad_v10").strip("|").split("|")][8]
+
+
+def test_a_mute_completable_root_prints_its_measured_zero(member):
+    """Issue #62, correcting the guard #61 prescribed. On a completable root
+    (SEIZE/RECON/…) a DONE claim is the only counted close, so zero claims
+    *entails* a rate of exactly 0.000 — that zero is the mute-root finding,
+    the one the seed-carry work is about, and 26 SEIZE evaluations of it were
+    being replaced by a dash. A measured zero must print as a zero."""
+    _patch_metrics(member, root_mission="SEIZE",
+                   closed_on_root_report_rate=0.0, done_claim_episodes_root=0)
+
+    cell = _root_reported_cell(member)
+
+    assert cell == "0%"
+    assert results_table.NO_CLAIMS not in cell
+
+
+def test_a_defend_root_prints_the_sitrep_route_not_a_dash(member):
+    """On a DEFEND/DENY root the DONE claim is masked shut by doctrine, so
+    zero claims is a capability fact, not a behaviour — the SITREP route is
+    that root's only completion channel and the rate measures it. The cell
+    marks the route and quotes `closes_per_root_sitrep`, so a reader can tell
+    timed reports (`fireteam_defend_v23`, 0.035/sitrep: volume) from timing."""
+    _patch_metrics(member, root_mission="DEFEND",
+                   closed_on_root_report_rate=1.0, done_claim_episodes_root=0,
+                   closes_per_root_sitrep=0.035)
+
+    assert _root_reported_cell(member) == "100% (sitrep, 0.035/sitrep)"
+
+
+def test_the_two_defend_ends_of_the_metric_print_differently(member):
+    """The collapse #62 caught in one line: `fireteam_defend_v23` closes on
+    the root's report in every episode, `fireteam_defend_v18` in none — same
+    mission, same capability, opposite behaviour — and the #61 dash printed
+    the same cell for both. The column exists to measure that difference."""
+    _patch_metrics(member, root_mission="DEFEND",
+                   closed_on_root_report_rate=1.0, done_claim_episodes_root=0,
+                   closes_per_root_sitrep=0.035)
+    at_one = _root_reported_cell(member)
+
+    _patch_metrics(member, closed_on_root_report_rate=0.0,
+                   closes_per_root_sitrep=0.0)
+    at_zero = _root_reported_cell(member)
+
+    assert at_one != at_zero
+    assert at_zero.startswith("0%")
+    assert results_table.NO_CLAIMS not in (at_one, at_zero)
+
+
+def test_a_defend_root_without_the_per_sitrep_ratio_still_marks_the_route(member):
+    _patch_metrics(member, root_mission="DEFEND",
+                   closed_on_root_report_rate=1.0, done_claim_episodes_root=0)
+
+    assert _root_reported_cell(member) == "100% (sitrep)"
+
+
+def test_an_unclassifiable_claimless_rate_keeps_the_dash(member):
+    """The #61 guard survives only where the discriminator is unavailable: an
+    evaluation that recorded no `root_mission` cannot say which route fed the
+    rate, so a claimless 1.0 there still reads as a floor, not a measurement."""
+    _patch_metrics(member, closed_on_root_report_rate=1.0,
+                   done_claim_episodes_root=0)
+
+    cell = _root_reported_cell(member)
+
+    assert cell == results_table.NO_CLAIMS
+    assert "100%" not in cell
 
 
 def test_a_claiming_root_keeps_its_measured_rate(member):
-    """The dash is for absence only. With DONE claims on the record the rate
-    is a measurement and must survive — the gate (`ROOT_REPORT_CLOSE_FLOOR`)
-    keeps doing its job on the arms that do claim."""
-    path = member / "squad_v10" / "behavior_final.json"
-    data = json.loads(path.read_text())
-    data["metrics"]["closed_on_root_report_rate"] = 1.0
-    data["metrics"]["done_claim_episodes_root"] = 96
-    path.write_text(json.dumps(data))
+    """With DONE claims on the record the rate is a measurement and must
+    survive — the gate (`ROOT_REPORT_CLOSE_FLOOR`) keeps doing its job on the
+    arms that do claim."""
+    _patch_metrics(member, root_mission="SEIZE",
+                   closed_on_root_report_rate=1.0, done_claim_episodes_root=96)
 
-    cells = [c.strip() for c in results_table.row("squad", "squad_v10").strip("|").split("|")]
-
-    assert cells[8] == "100%"
+    assert _root_reported_cell(member) == "100%"
 
 
 def test_an_evaluation_predating_the_claim_counter_keeps_its_rate(member):
@@ -195,21 +249,30 @@ def test_an_evaluation_predating_the_claim_counter_keeps_its_rate(member):
     assert cells[8] == "62%"
 
 
-def test_the_no_claims_note_travels_with_the_dash_and_only_with_it(member, monkeypatch):
-    """The note says which reading the dash forbids, so it must appear when a
-    dash does and stay out of the table when every rate is a measurement."""
+def test_each_footnote_travels_with_its_cell_and_only_with_it(member, monkeypatch):
+    """A note explains a marking, so it must appear when the marking does and
+    stay out of the table when every cell is a plain measurement. And the
+    sitrep note must not assert a mechanism for rows it does not cover — the
+    #61 note claimed "every close came from a SITREP" under a table whose
+    SEIZE rows forbid that route (issue #62)."""
     monkeypatch.setattr(baseline, "load",
                         lambda: {"runs": {"squad": "squad_v10"}})
     monkeypatch.setattr(baseline, "DOCTRINE_SCENARIOS", ["squad"])
 
-    assert results_table.NO_CLAIMS not in results_table.table()
-
-    path = member / "squad_v10" / "behavior_final.json"
-    data = json.loads(path.read_text())
-    data["metrics"]["done_claim_episodes_root"] = 0
-    path.write_text(json.dumps(data))
     body = results_table.table()
+    assert results_table.NO_CLAIMS not in body
+    assert "(sitrep" not in body
 
+    _patch_metrics(member, root_mission="DEFEND",
+                   closed_on_root_report_rate=1.0, done_claim_episodes_root=0,
+                   closes_per_root_sitrep=0.035)
+    body = results_table.table()
+    assert "(sitrep" in body
+    assert "closes per root SITREP" in body  # the marking explains itself
+    assert results_table.NO_CLAIMS not in body
+
+    _patch_metrics(member, root_mission="(unrecorded)")
+    body = results_table.table()
     assert results_table.NO_CLAIMS in body
     assert "no DONE claim" in body  # the dash explains itself
 
