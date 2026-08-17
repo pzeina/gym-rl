@@ -48,15 +48,21 @@ owner-decided deliverable and nothing misses; (2) squad's `seed_search` block
 was NOT in the handoff plan (only patrol_brique was named) — added for
 disclosure since both candidates sit in `runs/` at the shipped config.
 
+**ALL SHIPPED (owner-approved, 2026-08-17)**: boards republished and current;
+`archive_runs.py --apply` moved 74 superseded runs into `runs/archive/`
+(`fca4330`); `main` fast-forwarded and tagged **v1.21.0** (the fleet) and
+**v1.21.1** (`a7e639e`, the #60 disclosure fix — which is where the retraction
+above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
+stays open for the assurance layer to verify and close — never close it here.
+
 **Still open**:
-- **`/boards` republish** (PUBLISH PENDING on all three).
-- **`archive_runs.py [--apply]`** — the v1.19 members and the 24-run rdb
-  campaign are superseded; archiving is a move, never a delete.
-- **Tag**: still v1.18.0. Merging `main` + tagging v1.21.0 is milestone-sized
-  and stays an explicit ask.
 - `fireteam_defend_v23` records `false_complete_rate: null` at N=100 (no DONE
   claims to measure precision over, root-closed 1.00) — benign, but the board
   should render it as "—" not 0; check before reading it as perfect.
+- §12.146 within-scenario seed-carry: OPEN (see retraction above). Answering it
+  needs runs trained across a `cohort/` transition that actually moves the
+  weights — a deliberate experiment, owner's call whether it is worth the runs.
+- `docs/next-cycles.md` for what the next cycle should be.
 
 **State**: `multi-agent-dev` at `d7b9374`, pushed. 987 tests green, ruff clean,
 spaces Discrete(228)/Box(220) frozen. README table regenerated from the
