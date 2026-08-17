@@ -1,6 +1,61 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-16, **the v1.21 gate is DECIDED and the fleet is TRAINING**)
+## ⟳ Session handoff — resume here (2026-08-17, **v1.21 SHIPPED on `multi-agent-dev`: the fleet is one system and its seed searches are declared**)
+
+**★ THE CAMPAIGN LANDED AND THE FLEET IS SEALED** (`d7b9374`). All 12 runs of
+`scripts/campaigns/v1_21_fleet.jobs` completed on one `cohort/` tree
+(`becc3ec4`, the #57 fix), every run converged and [PUBLISHABLE], and
+`baseline.py` prints **BASELINE OK on the v1.21 members** — N=100 on both
+checkpoints, gates green, sealed, committed, pushed.
+
+**The fleet.** Eight members, no member misses its incumbent on success (every
+CI overlaps; `squad_v27` beats outright: 0.97 vs 0.92, root-closed 0.96 vs
+0.84). All eight clear `ROOT_REPORT_CLOSE_FLOOR` on the **final policy** — the
+artifact the gate now reads, per the owner's decision:
+
+    fireteam          fireteam_v12              0.94 ± 0.05   root 0.91
+    fireteam_defend   fireteam_defend_v23       0.99 ± 0.02   root 1.00
+    squad             squad_v27                 0.97 ± 0.03   root 0.96
+    squad_recon       squad_recon_v11           1.00 ± 0.00   root 0.99
+    squad_screen      squad_screen_v14          1.00 ± 0.00   root 0.95
+    patrol_brique     patrol_brique_v41_seed14  0.98 ± 0.03   root 0.88
+    defend_brique     defend_brique_v17         1.00 ± 0.00   root 1.00
+    platoon           platoon_v8                1.00 ± 0.00   root 0.93
+
+**The seed searches are declared, and the seed CARRIES.** `patrol_brique`:
+**3 of 4 seeds report** (12 mute, 18/19/14 report — each seed repeating its
+draw from the `5a5e8bef` tree, five-for-five including squad's seed 13, so the
+reporting lottery is a property of the seed, not re-rolled per tree; §12.146's
+open question is answered WITHIN-scenario). Member is seed 14 — root-closed
+0.878 with false-DONE 0.372, over seed 18's 0.949 at 0.639: claim quality over
+claim volume. `squad` declares 2 of 2 (the spare ran; hiding it would be the
+quiet half of a search). Both blocks live in `runs/BASELINE.json.seed_search`,
+audited by `baseline.py`, rendered on the fleet board as counts, never rates.
+
+**Judgement calls a reviewer should know about** (reversible, flag if wrong):
+(1) `fireteam_v12` is a statistical tie, not a beat (0.94±0.05 vs 0.97±0.03,
+better claims: fD 0.42 vs 0.52) — swapped because the fleet-on-one-tree is the
+owner-decided deliverable and nothing misses; (2) squad's `seed_search` block
+was NOT in the handoff plan (only patrol_brique was named) — added for
+disclosure since both candidates sit in `runs/` at the shipped config.
+
+**Still open**:
+- **`/boards` republish** (PUBLISH PENDING on all three).
+- **`archive_runs.py [--apply]`** — the v1.19 members and the 24-run rdb
+  campaign are superseded; archiving is a move, never a delete.
+- **Tag**: still v1.18.0. Merging `main` + tagging v1.21.0 is milestone-sized
+  and stays an explicit ask.
+- `fireteam_defend_v23` records `false_complete_rate: null` at N=100 (no DONE
+  claims to measure precision over, root-closed 1.00) — benign, but the board
+  should render it as "—" not 0; check before reading it as perfect.
+
+**State**: `multi-agent-dev` at `d7b9374`, pushed. 987 tests green, ruff clean,
+spaces Discrete(228)/Box(220) frozen. README table regenerated from the
+committed evaluations.
+
+---
+
+## ⟳ Previous handoff (2026-08-16, **the v1.21 gate is DECIDED and the fleet is TRAINING**)
 
 **★ THE TWO OPEN DECISIONS ARE CLOSED (owner, 2026-08-16).** The gate keeps its
 shape and changes its source; the campaign that could not answer anything more
