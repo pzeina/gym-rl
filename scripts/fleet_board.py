@@ -315,6 +315,23 @@ def _archive(rows: list[dict]) -> str:
     )
 
 
+def _false_done(run: str) -> str:
+    """The member's false-DONE rate on the FINAL policy, or an honest dash.
+
+    ``fireteam_defend_v23`` records ``false_complete_rate: null`` at N=100 —
+    the policy filed no DONE claims, so there is no precision to measure.
+    Printing 0 there would read as a perfect claim record; the dash says
+    absent, and the tooltip says why.
+    """
+    metrics = baseline._json_or_empty(
+        baseline.run_dir(run) / "behavior_final.json").get("metrics") or {}
+    rate = metrics.get("false_complete_rate")
+    if rate is None:
+        return ('<span class="dim" title="no DONE claims at this N — '
+                'nothing to measure precision over">false-DONE —</span>')
+    return f'<span class="dim">false-DONE {rate:.2f}</span>'
+
+
 def reporting_channel(manifest: dict) -> str:
     """The seed search behind each member, or the absence of one, as HTML.
 
@@ -350,7 +367,8 @@ def reporting_channel(manifest: dict) -> str:
             seeds = ", ".join(str(r["seed"]) for r in facts["runs"])
             cell = (f'<b>{facts["reporting"]} of {facts["total"]} seeds report</b> '
                     f'<span class="dim">· seeds {html.escape(seeds)}</span>')
-        lines.append(f"<li>{html.escape(scenario)} — {cell}</li>")
+        lines.append(
+            f"<li>{html.escape(scenario)} — {cell} · {_false_done(member)}</li>")
     note = (
         "Where a scenario's commander is bimodal in the seed the member is chosen "
         "from a declared search, and the count says how many were tried."
@@ -362,7 +380,10 @@ def reporting_channel(manifest: dict) -> str:
         "<span>Does the commander close its own operations?</span></div>"
         f"<p>Measured on the FINAL policy at a floor of "
         f"{baseline.ROOT_REPORT_CLOSE_FLOOR:g}, the artifact this board publishes. "
-        f"{note}</p><ul>{''.join(lines)}</ul></div>"
+        f"{note} false-DONE is how often the member's MISSION COMPLETE claims "
+        "were wrong; — means it filed none, which is an absence of claims, not "
+        "a perfect record.</p>"
+        f"<ul>{''.join(lines)}</ul></div>"
     )
 
 

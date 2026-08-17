@@ -56,15 +56,29 @@ above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
 stays open for the assurance layer to verify and close — never close it here.
 
 **Still open**:
-- `fireteam_defend_v23` records `false_complete_rate: null` at N=100 (no DONE
-  claims to measure precision over, root-closed 1.00) — benign, but the board
-  should render it as "—" not 0; check before reading it as perfect.
-- §12.146 within-scenario seed-carry: OPEN (see retraction above). Answering it
-  needs runs trained across a `cohort/` transition that actually moves the
-  weights — a deliberate experiment, owner's call whether it is worth the runs.
+- ~~`fireteam_defend_v23`'s `false_complete_rate: null`~~ **DONE** (`8537c2c`,
+  2026-08-17): the fleet board's reporting-channel block now prints false-DONE
+  per member — the measured rate, or an em dash whose tooltip says "no DONE
+  claims at this N — nothing to measure precision over". `defend_brique_v17`
+  turned out to carry the same null. Board republished, test pinned.
+- §12.146 within-scenario seed-carry: still OPEN, and the call (2026-08-17) is
+  to answer it as a **rider on the next breaking cycle**, not with standalone
+  runs. A `cohort/` change made only to move the weights would be a design
+  decision and would confound the answer with itself; the 20 readable pairs
+  already sit at 10/20. When the next breaking cycle retrains the fleet,
+  retrain the declared search seeds beside it — `patrol_brique` 12/14/18/19
+  and `squad` 12/13, six runs riding a campaign already burning twelve — and
+  read the labels across the one transition that actually matters.
+  `patrol_brique` is squad-charted (`org="squad"`), so an order-edge-class
+  change moves it; and if the transition turns out NOT to move a scenario's
+  policy, `baseline.py`'s reproduction digests disclose the identity before a
+  carry claim can be written on it — the exact #60 failure mode, now gated.
+  If the labels carry, seed searches amortize across cycles; if they don't,
+  the manifest rule becomes: re-search bimodal scenarios every breaking cycle.
+  Recorded as a rider in `docs/next-cycles.md`.
 - `docs/next-cycles.md` for what the next cycle should be.
 
-**State**: `multi-agent-dev` at `d7b9374`, pushed. 987 tests green, ruff clean,
+**State**: `multi-agent-dev` at `8537c2c`, pushed. 993 tests green, ruff clean,
 spaces Discrete(228)/Box(220) frozen. README table regenerated from the
 committed evaluations.
 

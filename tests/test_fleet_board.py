@@ -310,3 +310,26 @@ def test_a_mute_member_is_named_on_the_board(tmp_path, monkeypatch):
     rates["patrol_brique_m"] = (12, 0.0)
     _reporting_fleet(tmp_path, monkeypatch, rates=rates)
     assert "MUTE" in fleet_board.reporting_channel(baseline_module.load())
+
+
+def test_a_member_with_no_done_claims_shows_a_dash_not_a_zero(tmp_path, monkeypatch):
+    """``fireteam_defend_v23`` records ``false_complete_rate: null`` at N=100 —
+    it filed no DONE claims, so there is nothing to measure precision over.
+    A 0 on the board would read as a perfect claim record; the board must say
+    absent, and say why, next to a member whose rate WAS measured."""
+    _reporting_fleet(tmp_path, monkeypatch)
+    absent = tmp_path / "fireteam_defend_m" / "behavior_final.json"
+    data = json.loads(absent.read_text())
+    data["metrics"]["false_complete_rate"] = None
+    absent.write_text(json.dumps(data))
+    measured = tmp_path / "squad_m" / "behavior_final.json"
+    data = json.loads(measured.read_text())
+    data["metrics"]["false_complete_rate"] = 0.372
+    measured.write_text(json.dumps(data))
+
+    html = fleet_board.reporting_channel(baseline_module.load())
+
+    assert "false-DONE —" in html
+    assert "false-DONE 0.37" in html
+    assert "false-DONE 0.00" not in html
+    assert "no DONE claims" in html  # the dash explains itself
