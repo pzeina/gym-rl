@@ -76,6 +76,18 @@
 # the tree and every seed search is a fresh 0.43. Either answer is worth having
 # and neither costs an extra run.
 #
+# CORRECTION (2026-08-17, assurance #60): this test never ran. All 12 runs of
+# this campaign reproduced an earlier run's checkpoints bit-for-bit — training
+# is bit-deterministic in (seed, scenario, steps, lr, price), and none of the
+# tree transitions into becc3ec4 touched any trajectory — so each "does it
+# report again" pair compared a checkpoint with an identical copy of itself and
+# "re-rolled" was unreachable by construction. The premise above is also wrong
+# on its facts: the only seed-12 patrol_brique run on 5a5e8bef is
+# v18_rdb3_seed12, which REPORTS (0.87 / 0.92) — at rdb=3.0, so not
+# price-matched to this fleet either. §12.146's within-scenario question stays
+# OPEN; baseline.py now digests manifest checkpoints against the corpus and
+# discloses reproductions before a claim can be written on one.
+#
 # Same scenarios, same step budgets and same seed 12 as the v1.20b members, so
 # the only thing differing from that fleet is the tree. Sequential in one
 # nohup'd queue: ~12 runs x 25-45 min.

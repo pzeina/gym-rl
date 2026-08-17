@@ -547,3 +547,120 @@ def test_the_reporting_gate_reads_the_final_policy_not_the_best_window(fleet):
         "metrics": {"success_rate": 0.98, "closed_on_root_report_rate": 0.0},
     }))
     assert baseline._reporting_gate("squad_v1") is True
+
+
+# ------------------------------------------- policy reproductions (issue #60) --
+#
+# Training is bit-deterministic in (seed, scenario, steps, lr, price), so a
+# re-launch across commits that never touch the trajectory reproduces its
+# predecessor exactly — all TWELVE v1.21 campaign runs did, and the campaign's
+# pre-registered seed-carry test therefore compared five checkpoints with
+# themselves. The audit now discloses such reproductions before any claim about
+# the pair can be written. A disclosure, never a gate: the sealed fleet it
+# happened to is honest, and a check that failed it would be firing at
+# determinism doing its job.
+
+
+def _stub_digests(monkeypatch):
+    """``policy_digest`` as a content read of stub files — no torch in the loop.
+
+    Two stub checkpoints "hold the same tensors" iff their text matches, which
+    is the only property the disclosure consumes.
+    """
+    monkeypatch.setattr("scripts.publish_audit.policy_digest",
+                        lambda p: p.read_text() if p.is_file() else None)
+
+
+def _checkpoints(fleet, run: str, *, best: str, latest: str):
+    d = fleet / run
+    d.mkdir(exist_ok=True)
+    (d / "ckpt_best.pt").write_text(best)
+    (d / "ckpt_latest.pt").write_text(latest)
+
+
+def test_a_member_reproducing_an_existing_policy_is_disclosed_not_failed(
+        fleet, capsys, monkeypatch):
+    """The fireteam_v12 shape: a member that is a bit-for-bit re-execution of a
+    run outside the manifest. Said out loud, exit still 0."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _checkpoints(fleet, "squad_v0", best="W1", latest="W2")  # earlier run, not in the manifest
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "BASELINE OK" in out
+    assert "policy reproductions" in out
+    assert "squad_v1" in out and "ckpt_best + ckpt_latest  ==  squad_v0" in out
+    assert "identity, not a measurement" in out
+
+
+def test_a_fleet_of_fresh_policies_prints_no_reproduction_section(fleet, capsys, monkeypatch):
+    """Silence means measured-and-new, so the section must not cry wolf."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _checkpoints(fleet, "squad_v0", best="X1", latest="X2")
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "policy reproductions" not in out
+
+
+def test_a_seed_search_candidate_reproducing_a_policy_is_disclosed_too(
+        fleet, capsys, monkeypatch):
+    """Where the v1.21 identity actually lived: four of the twelve reproductions
+    were seed_search candidates, not members, and the seed-carry claim was read
+    off exactly those runs."""
+    _stub_digests(monkeypatch)
+    for seed in (12, 18):
+        _member(fleet, f"patrol_brique_seed{seed}", seed=seed, close_rate=0.8)
+    _search(fleet, "patrol_brique", ["patrol_brique_seed12", "patrol_brique_seed18"])
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest["runs"]["patrol_brique"] = "patrol_brique_seed12"
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+    _checkpoints(fleet, "patrol_brique_seed18", best="OLD1", latest="OLD2")
+    _checkpoints(fleet, "patrol_brique_old", best="OLD1", latest="OLD2")
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "policy reproductions" in out
+    assert "patrol_brique_seed18" in out and "==  patrol_brique_old" in out
+
+
+def test_a_partial_reproduction_names_only_the_matching_checkpoint(fleet, capsys, monkeypatch):
+    """Same training, selection moved: ckpt_latest matches, ckpt_best does not.
+
+    The disclosure must say which checkpoint carries the identity, because
+    "same trajectory, different best window" and "same policy end to end" are
+    different findings (#60 §2 counts them separately)."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _checkpoints(fleet, "squad_v0", best="OTHER", latest="W2")
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    line = next(ln for ln in out.splitlines() if "==  squad_v0" in ln)
+    assert "ckpt_latest" in line and "ckpt_best" not in line
+
+
+def test_the_policy_identity_is_the_tensors_not_the_file(tmp_path):
+    """The instrument itself, against real checkpoints (#60 §3, the rdb seed-16
+    pair): one set of tensors under two `root_done_bonus` tags is ONE policy,
+    and a file-level hash would split it in two."""
+    torch = pytest.importorskip("torch")
+    from scripts.publish_audit import policy_digest
+
+    weights = {"pi.weight": torch.arange(6, dtype=torch.float32).reshape(2, 3)}
+    a, b, c = tmp_path / "a.pt", tmp_path / "b.pt", tmp_path / "c.pt"
+    torch.save({"model": weights, "reward_config": {"root_done_bonus": 3.0}}, a)
+    torch.save({"model": weights, "reward_config": {"root_done_bonus": 1.0}}, b)
+    torch.save({"model": {"pi.weight": weights["pi.weight"] + 1},
+                "reward_config": {"root_done_bonus": 3.0}}, c)
+
+    assert a.read_bytes() != b.read_bytes(), "the files differ — that is the point"
+    assert policy_digest(a) == policy_digest(b), "one policy, two price tags"
+    assert policy_digest(a) != policy_digest(c), "different tensors, different policy"
+    assert policy_digest(tmp_path / "absent.pt") is None, "absence, not a verdict"

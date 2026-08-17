@@ -52,6 +52,13 @@ over it, and the checks are the definition:
                    Complete by construction, so a miss here means the guarantee
                    broke, not that a policy got shy.
 
+One thing is disclosed and deliberately NOT gated on: any manifest run —
+member or ``seed_search`` candidate — whose model tensors reproduce another
+run's checkpoint bit-for-bit (assurance #60). Bit-deterministic training makes
+that honest and even expected; what it forbids is reading such a pair as an
+independent draw, which is how a pre-registered seed-carry test came to compare
+five checkpoints with themselves.
+
 Exit status is 0 only if every check passes on every member — this is meant to
 be run before publishing anything that calls itself the baseline.
 """
@@ -465,6 +472,64 @@ def _uncommitted(run: str) -> list[str]:
     return [n for n in present if n not in tracked]
 
 
+def _policy_reproductions(manifest: dict) -> list[tuple[str, str, list[str]]]:
+    """(run, other_run, checkpoints) wherever a manifest run's model tensors are
+    bit-identical to another run's on disk.
+
+    Assurance #60. Training is bit-deterministic in (seed, scenario, steps, lr,
+    price), so a re-launch across commits that never touch the trajectory
+    reproduces its predecessor exactly — and all TWELVE v1.21 campaign runs
+    did, spanning four prior ``cohort/`` trees. The runs were real and the seal
+    honest. What broke was a claim: the campaign pre-registered "if seeds
+    18/19/14 report again here the seed carries; if they do not, the draw is
+    re-rolled by the tree", and every one of the five cited comparisons was a
+    checkpoint against a bit-identical copy of itself. "Re-rolled" was
+    unreachable, so five-for-five was an identity, not a measurement.
+
+    Hence a DISCLOSURE, never a failure: reproducing a draw is what determinism
+    is for, and the sealed fleet it happened to is correct. The thing that must
+    not happen again is describing such a pair as evidence that anything
+    between the two launches moved — or spared — the weights, so the audit says
+    which manifest runs re-execute an existing policy *before* any claim about
+    them is written. Members AND ``seed_search`` candidates: the seed-carry
+    identity lived in the candidates, and four of the twelve were nothing else.
+
+    The identity is ``publish_audit.policy_digest`` — the model tensors, not
+    the file — shared with ``--validate``'s deduplication. A file hash splits
+    one policy in two whenever only the serialized price differs, which is
+    precisely the comparison a price experiment makes (#60 §3).
+    """
+    from scripts.fleet_status import run_dirs
+    from scripts.publish_audit import policy_digest
+
+    watched = list(dict.fromkeys(
+        [r for r in (manifest.get("runs") or {}).values() if r]
+        + [r for c in (manifest.get("seed_search") or {}).values() for r in c]))
+    if not any((run_dir(r) / n).is_file() for r in watched for n in CHECKPOINTS):
+        return []          # nothing to digest, and no torch import on the way out
+    holders: dict[str, list[str]] = {}          # digest -> runs carrying it
+    digests: dict[tuple[str, str], str] = {}    # (run, checkpoint) -> digest
+    for d in run_dirs(RUNS):
+        for name in CHECKPOINTS:
+            digest = policy_digest(d / name)
+            if digest:
+                digests[(d.name, name)] = digest
+                if d.name not in holders.setdefault(digest, []):
+                    holders[digest].append(d.name)
+    findings: list[tuple[str, str, list[str]]] = []
+    for run in watched:
+        matches: dict[str, list[str]] = {}
+        for name in CHECKPOINTS:
+            digest = digests.get((run, name))
+            if digest is None:
+                continue
+            for other in holders[digest]:
+                if other != run and name not in matches.setdefault(other, []):
+                    matches[other].append(name)
+        findings.extend((run, other, names) for other, names in sorted(matches.items()))
+    return findings
+
+
 def audit(check_loadable: bool = True) -> int:
     manifest = load()
     members = manifest.get("runs", {})
@@ -558,6 +623,23 @@ def audit(check_loadable: bool = True) -> int:
             mark = "  <- member" if r["run"] == members.get(scenario) else ""
             verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
             print(f"      seed {r['seed']!s:<4} {r['run']:<32} {verdict}{mark}")
+
+    # Disclosed, never gated on (assurance #60): a bit-deterministic re-run
+    # reproducing its predecessor is honest — but a comparison inside such a
+    # pair is a checkpoint against itself, and no seed-carry or tree-change
+    # claim can rest on one. Say so before the claim gets written.
+    if check_loadable:
+        repro = _policy_reproductions(manifest)
+        if repro:
+            print("\npolicy reproductions — model tensors bit-identical to another "
+                  "run's (assurance #60)")
+            for run, other, names in repro:
+                what = " + ".join(n.removesuffix(".pt") for n in names)
+                print(f"  {run:<26} {what}  ==  {other}")
+            print("  a re-executed draw is not a defect and gates on nothing; but "
+                  "any comparison\n  within such a pair is an identity, not a "
+                  "measurement — it can support no claim\n  about what changed "
+                  "between the two launches")
 
     print()
     if trees:
