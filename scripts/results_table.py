@@ -30,11 +30,15 @@ Columns, and why each one is there rather than success alone:
   v1.19; the column stays because a miss here means the guarantee broke.
 * **reported** — of those, the ones the ROOT closed itself rather than leaving to
   HQ. This is where the agent behaviour the announcement column used to carry
-  now lives, and it is the honest way to keep measuring it. The rate has a
-  second route into its numerator — a root SITREP landing on the final step
-  closes the episode with no DONE claim anywhere — so on a run whose root never
-  claims it reads a floor, not a zero. Where the claim record is empty the cell
-  says so instead of printing the floor (issue #61).
+  now lives, and it is the honest way to keep measuring it. The rate has two
+  routes into its numerator — a root DONE claim, and a root SITREP landing on
+  the final step — and *which* route is live is decided by the root's mission,
+  not by the claim count (issue #62, correcting the #61 guard): on a
+  completable root (SEIZE/RECON/…) the claim is the only counted close, so
+  0% with zero claims is the mute-root finding and prints as the measurement
+  it is; on a DEFEND/DENY root the claim is masked shut by doctrine, so the
+  cell prints the rate marked as the SITREP route, with ``closes_per_root_sitrep``
+  saying whether those closes were timed or bought with volume.
 """
 
 from __future__ import annotations
@@ -48,6 +52,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from cohort.core.missions import MissionType, is_completable  # noqa: E402
 from cohort.metrics import split_gates  # noqa: E402
 from scripts import baseline  # noqa: E402
 from scripts.publish_audit import audit_run  # noqa: E402
@@ -70,24 +75,45 @@ def _pct(v: float | None, places: int = 0) -> str:
 
 
 def _root_reported(m: dict) -> str:
-    """The root-reported cell — the rate where a claim record exists, else absent.
+    """The root-reported cell, classified by the root's mission (issue #62).
 
-    ``closed_on_root_report_rate`` counts closes by root DONE claim *and* closes
-    by a root SITREP landing on the final step, so on a run whose root files no
-    DONE claim at all the rate reads a floor, not a zero: ``fireteam_defend_v23``
-    and ``defend_brique_v17`` sit at 1.000 with ``done_claim_episodes_root: 0``.
-    Printing 100% there, next to ``announced 99/99``, reads as a completion
-    channel working perfectly when the root filed nothing — the same misreading
-    the fleet board's false-DONE dash forbids (8537c2c), one column over. Where
-    the claim record is empty the cell says so, and the note under the table
-    says which reading that forbids. Older evaluations that never recorded
-    ``done_claim_episodes_root`` keep their rate: absence of the counter is not
-    evidence of a mute root.
+    ``closed_on_root_report_rate`` has two routes into its numerator — a root
+    DONE claim, and a root SITREP landing on the final step — and the thing
+    that decides which route is live is the root's *mission*
+    (``is_completable``, the same predicate the env gates on), not the claim
+    count. The #61 guard keyed on ``done_claim_episodes_root == 0`` and so
+    dashed both ends of the metric at once: a SEIZE root's measured 0.000 (the
+    mute-root finding — on a completable root a claim is the only counted
+    close, so zero claims *entails* the zero) and a DEFEND root's 1.000 (the
+    claim is masked shut by doctrine, so the SITREP route is that root's only
+    completion channel, and ``fireteam_defend_v23`` at 1.000 vs
+    ``fireteam_defend_v18`` at 0.000 is exactly the difference the column
+    exists to measure).
+
+    So: completable root — print the rate, zero included. Non-completable root
+    (DEFEND/DENY) — print the rate marked as the SITREP route, with
+    ``closes_per_root_sitrep`` beside it so a reader can tell timed reports
+    from closes bought with SITREP volume (the #35 saturation point). Only an
+    evaluation whose mission went unrecorded falls back to the #61 dash, and
+    only when its claim record is empty — there the route cannot be
+    classified, and printing a floor as a rate is the misreading #61 caught.
     """
     rate = m.get("closed_on_root_report_rate")
-    if rate is not None and m.get("done_claim_episodes_root") == 0:
-        return NO_CLAIMS
-    return _pct(rate)
+    if rate is None:
+        return "—"
+    try:
+        mission = MissionType[str(m["root_mission"])]
+    except (KeyError, TypeError):
+        # Mission unrecorded (old or mixed-scenario evaluation): the route
+        # cannot be classified, so keep the #61 guard for the claimless case.
+        if m.get("done_claim_episodes_root") == 0:
+            return NO_CLAIMS
+        return _pct(rate)
+    if is_completable(mission):
+        return _pct(rate)
+    per_sitrep = m.get("closes_per_root_sitrep")
+    detail = "sitrep" if per_sitrep is None else f"sitrep, {per_sitrep:.3f}/sitrep"
+    return f"{_pct(rate)} ({detail})"
 
 
 def row(scenario: str, run: str) -> str:
@@ -141,13 +167,20 @@ def table() -> str:
              "Generated by `scripts/results_table.py`; `tests/test_results_table.py` "
              "fails if this table and the runs disagree." if tree else
              "\nGenerated by `scripts/results_table.py`.")
+    if any("(sitrep" in line for line in lines):
+        stamp += (
+            "\n\n`(sitrep, …)` in root-reported: a DEFEND/DENY root cannot file a "
+            "DONE claim — doctrine masks MISSION COMPLETE shut on a continuous "
+            "posture — so the SITREP route is that root's only counted way to "
+            "close the operation, and the rate measures it. The number beside it "
+            "is closes per root SITREP emitted: low means the closes were bought "
+            "with report volume rather than timing.")
     if any(NO_CLAIMS in line for line in lines):
         stamp += (
             f"\n\n`{NO_CLAIMS}` in root-reported: the run's root filed no DONE claim "
-            "in any episode — every close came from a SITREP landing on the final "
-            "step, a route that reads as a floor on a claimless root. The dash "
-            "forbids reading the cell as \"reports reliably\"; the operations "
-            "closed, but not because the root claimed them complete.")
+            "in any episode and the evaluation did not record the root's mission, "
+            "so the route behind the rate cannot be classified. The dash forbids "
+            "reading the cell as \"reports reliably\".")
     return "\n".join(lines) + "\n" + stamp
 
 
