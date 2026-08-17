@@ -55,6 +55,16 @@ disclosure since both candidates sit in `runs/` at the shipped config.
 above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
 stays open for the assurance layer to verify and close — never close it here.
 
+**IN FLIGHT (2026-08-17): the measurement campaign** —
+`scripts/campaigns/measurement_ablation_and_spread.jobs`, 13 runs, one queue,
+frozen v1.21 tree, seal untouched. Part 1: B3 ablation at 3 same-tree seeds
+per arm (found while planning: `squad_nomask_v1`/`squad_flat_v1` are
+v1.19-tree runs — manifest notes corrected — so both ablated arms retrain in
+full). Part 2: seed 13 under the six one-seed members, declared as spread
+measurements, NOT member candidates. **`cohort/` is frozen until the queue
+drains.** When it lands: per-seed aggregation in `ablation_report.py`, then
+read the ablation and the spread; `/train-status` to check in.
+
 **Still open**:
 - ~~`fireteam_defend_v23`'s `false_complete_rate: null`~~ **DONE** (`8537c2c`,
   2026-08-17): the fleet board's reporting-channel block now prints false-DONE
