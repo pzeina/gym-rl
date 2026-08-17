@@ -1,16 +1,28 @@
 {
-  "version": "v1.19",
+  "version": "v1.21",
   "commit": null,
-  "note": "One run per doctrine scenario, same commit, shipped defaults, seed 12. Sealed by scripts/baseline.py --seal once the fleet lands; audited by scripts/baseline.py.",
+  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults, seed 12 except where a declared seed_search chose the member. Sealed by scripts/baseline.py --seal once the fleet lands; audited by scripts/baseline.py.",
   "runs": {
-    "fireteam": "fireteam_v9",
-    "fireteam_defend": "fireteam_defend_v20",
-    "squad": "squad_v10",
-    "squad_recon": "squad_recon_v8",
-    "squad_screen": "squad_screen_v11",
-    "patrol_brique": "patrol_brique_v6",
-    "defend_brique": "defend_brique_v15",
-    "platoon": "platoon_v6"
+    "fireteam": "fireteam_v12",
+    "fireteam_defend": "fireteam_defend_v23",
+    "squad": "squad_v27",
+    "squad_recon": "squad_recon_v11",
+    "squad_screen": "squad_screen_v14",
+    "patrol_brique": "patrol_brique_v41_seed14",
+    "defend_brique": "defend_brique_v17",
+    "platoon": "platoon_v8"
+  },
+  "seed_search": {
+    "patrol_brique": [
+      "patrol_brique_v38_seed12",
+      "patrol_brique_v39_seed18",
+      "patrol_brique_v40_seed19",
+      "patrol_brique_v41_seed14"
+    ],
+    "squad": [
+      "squad_v27",
+      "squad_v28_seed13"
+    ]
   },
   "referenced_history": {
     "squad_nomask_v1": "B3 ablation arm on THIS cohort/ tree: orders kept, doctrine masks removed. Read against squad_v10, which is the full arm and a baseline member.",
@@ -21,46 +33,43 @@
     "squad_v11": "Price arm, done_false=-2.0, single-variable against squad_v10 (same tree, seed, steps). CONFIRMED the mechanism: root claims 178 -> 0, give-back -7pt -> +2pt, messages/ep 101 -> 78, distance from objective under threat 11.21 -> 9.53. REJECTED as a fix: root-closed 84% -> 0%, so the price does not repair the DONE channel, it closes it \u2014 the exact failure rewards.py warns about. Final success 0.92 -> 0.96 is NOT significant (Fisher p = 0.37; pooled p = 0.076).",
     "squad_v12": "Price arm, root_done_bonus_first_claim_only=true at the shipped done_false=-0.5. The lever squad_v11 argues for: at squad_v10's own claim precision of 0.433 it leaves the FIRST truthful claim at EV +1.014 and drops the second and later to -0.284, so spam stops paying without the honest report going -EV. Single-variable against squad_v10."
   },
-  "cohort_tree": "5f848fb6be9e2217b8a83e292ece8d7111519325",
+  "cohort_tree": "becc3ec433db1d61e7fc2789a32dae0306532c01",
   "commits": [
-    "342f3f9fc46e279752dcfa31a0eb5bba14ac9a74",
-    "4429eaa9579c91e263033d880b5fd2f56d4c6142",
-    "597f9f61d9126f462c3f2e063c46b5d61d74c230",
-    "628fecf17c72fe5ec8e23e4357187270465ed76f",
-    "a8d1ceafc855bb9c6f8af033ebdb2018f7a38016"
+    "1515e79cc0fbc90a1afd4fdfa109d916776e0355",
+    "3a32d3e8dfe1ce0d72428ac147bdafa9fbf0105d"
   ],
   "artifacts": {
-    "fireteam_v9": {
-      "behavior_final.json": "dcee866788de1b226bbdbf07271d56de21d4f630f166220926eb8a4ecab61c46",
-      "behavior.json": "adf866069e92fe41b25064321300105323744c99ab1100df5282db8ff630f9fa"
+    "fireteam_v12": {
+      "behavior_final.json": "ebc57a5586f7f93b1041ee1477161fe12f0c83af59a3cf29a62543aa7a8b5c21",
+      "behavior.json": "51db2a8183a08cdfdb80cbde56e04067555adb68675806322b79af4d0954ccd6"
     },
-    "fireteam_defend_v20": {
-      "behavior_final.json": "771015148d6c0fc6f33a74b8d870f86ef77429aa2fce89c58a539ac2c46b7d78",
-      "behavior.json": "8864b52556c3d4f7fa459bfd83df836b56b8fda9ee1576810d2517b4696abb3b"
+    "fireteam_defend_v23": {
+      "behavior_final.json": "44cb3a1c8b9abe3506ad64a221e5110f02a45e3fbfbcc0616d912fda6ef6734b",
+      "behavior.json": "2eabff6619e786b37e91cc0be7dbc4dc7e53e1b66e4fe8403afd396ea8b3b11b"
     },
-    "squad_v10": {
-      "behavior_final.json": "78068021cd7c8ad093468df27fd629ae3b11ceb9e7dfb87dee80704c754a2658",
-      "behavior.json": "3a330224731586159618751551bf5cdc1f0b8bcf24eabf777d872aa836f1f96c"
+    "squad_v27": {
+      "behavior_final.json": "05506f99ff7812c64cf793d1313a227ad66f392b700fb9710142d511a63e24d2",
+      "behavior.json": "39df922c69c6cd72e4d704985d08a5fb418772e87294fe3c73f4dbf2253834c5"
     },
-    "squad_recon_v8": {
-      "behavior_final.json": "70f69a3d79ea45b7aa84d858ebb7e7f53795076bd8484bd03f5be936f453e522",
-      "behavior.json": "40483d944e341e94a6f851a5c2a3481f9feead989bc2b3f66a663bc92ceb7529"
+    "squad_recon_v11": {
+      "behavior_final.json": "46d58b94d9f28ca248dce26fa0b75c9fd6d99a2895f58b1adaf4f1ae4dba5c36",
+      "behavior.json": "0be88d173d94a1e916c9caa9ac069d00885b5866e1b7263cd2ff3c0bbefcdcf0"
     },
-    "squad_screen_v11": {
-      "behavior_final.json": "728fbd8465245e17f0458f7f48bb56d2d58a36f80115e5fb77441f1bbd814a69",
-      "behavior.json": "db3699cd99be0ff2d3b967a82493d935e0c2e357bed9170f121fd5a4e0ed53cc"
+    "squad_screen_v14": {
+      "behavior_final.json": "95b1ac75fb56b673621d0935f4befeb07df001fb7fb23cfbdeecec6f1c4258a9",
+      "behavior.json": "ea4008244b9f466e45c1361b64d45d28c3200de09354ee9096bd4c12af8f876a"
     },
-    "patrol_brique_v6": {
-      "behavior_final.json": "410177e4f639c2969271e8635ceeb1bfb2bd115887ceb91008521bae630a07c5",
-      "behavior.json": "893e4a3964f0c4f6981c42296c28fec8fe7d221546be3a5adb22251774adf308"
+    "patrol_brique_v41_seed14": {
+      "behavior_final.json": "03499aba54acd94a51f5053298c63f258569c30459ba38c6e976c529253710ae",
+      "behavior.json": "6808163a6585d07425224fab30bee327af69865f93a4bdef785e2d44b985099d"
     },
-    "defend_brique_v15": {
-      "behavior_final.json": "34884793ca1f60509b87e32949d8f0773b2abf4d23bb8ec06c5b78352f1bfc69",
-      "behavior.json": "961efd799575e497a21c211822f101793f2c2a994d2f7bc8053e11d918e1d15d"
+    "defend_brique_v17": {
+      "behavior_final.json": "caab6dffe1152c4011fb7cade22c0b4a5b4127c78ab38ca8fcbe83f402da9503",
+      "behavior.json": "e3731722f560841ab24664e8535a15b83878f14ccd3660fccf71365adb4cd3f1"
     },
-    "platoon_v6": {
-      "behavior_final.json": "74e41ef646b903475005b7a46978bf267633cda28346084cdf847f40d47c8370",
-      "behavior.json": "ef13e69daca04fb6f68ff6ea53cd71d6bee86efe4b01a905cd8232489bb4555a"
+    "platoon_v8": {
+      "behavior_final.json": "fb4677604a23cb4df984a1d83ccd54e8b82df81122fabddbec944bcc710236a8",
+      "behavior.json": "7c1b39bed3dc27a352a1e346744ed80b8d70ff3dac9ca5eea930d23fa1a4b70e"
     }
   }
 }
