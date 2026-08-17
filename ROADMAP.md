@@ -55,15 +55,47 @@ disclosure since both candidates sit in `runs/` at the shipped config.
 above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
 stays open for the assurance layer to verify and close — never close it here.
 
-**IN FLIGHT (2026-08-17): the measurement campaign** —
-`scripts/campaigns/measurement_ablation_and_spread.jobs`, 13 runs, one queue,
-frozen v1.21 tree, seal untouched. Part 1: B3 ablation at 3 same-tree seeds
-per arm (found while planning: `squad_nomask_v1`/`squad_flat_v1` are
-v1.19-tree runs — manifest notes corrected — so both ablated arms retrain in
-full). Part 2: seed 13 under the six one-seed members, declared as spread
-measurements, NOT member candidates. **`cohort/` is frozen until the queue
-drains.** When it lands: per-seed aggregation in `ablation_report.py`, then
-read the ablation and the spread; `/train-status` to check in.
+**★ THE MEASUREMENT CAMPAIGN LANDED (2026-08-18)** — all 13 runs of
+`scripts/campaigns/measurement_ablation_and_spread.jobs` on the sealed tree
+(`becc3ec4`), evaluated at N=100 on both checkpoints, artifacts committed.
+No member changed; `baseline.py` still prints BASELINE OK, seal untouched.
+
+**The ablation, at the original's own strength (3 seeds/arm, N=100, one
+tree): the outcome half stays inverted, and the robustness half fell too.**
+`scripts/ablation_report.py <full×3> <nomask×3> <flat×3>` prints the table;
+the cells that matter:
+- success: full = nomask (282/300 each, Fisher p = 1.000); **flat BEATS full
+  296/300 vs 282/300, p = 0.004, separated**. B3's 7-point flat deficit is,
+  on this tree, a 5-point flat advantage.
+- robustness: the original's "flat wipes 2.2×" is refuted here — defeats/100
+  are flat 0.3, full 1.7, nomask 5.0. Flat is now the MOST robust arm.
+- what survives: interpretability (doctrine-valid 1.00 vs nomask 0.58; flat
+  has no orders to judge) and commander survival (root death 0.13 vs
+  0.20/0.21).
+- channels: nomask's root-close channel is dead (0.00 all seeds). Full's is
+  bimodal — **squad seed 14 (`squad_v29_seed14`) is a MUTE ROOT** (root-close
+  0.00, 2246 DONE reports all rejected/false), so squad's known same-config
+  draws are now 2-of-3 reporting, not the declared search's 2-of-2. Flat's
+  root closes 0.98 on all three seeds.
+- OWNER DECISIONS pending: (a) the README's ablation wording — the
+  interpretability claim stands, the robustness sentence does not survive
+  this tree, and the measured cost of the hierarchy vs flat is ~5 points
+  (p = 0.004); presented, not applied. (b) whether the manifest/board grows a
+  `seed_spread` disclosure block — the fleet board still says "2 of 2 seeds
+  report" (true of the declared SEARCH) while a third, mute, same-config draw
+  sits beside it as an ordinary row.
+
+**The spread read: every headline is seed-robust on success — and the
+reporting channel is bimodal in more scenarios than declared.** Six seed-13
+runs vs their incumbents at N=100: success deltas ≤ 0.03 everywhere (largest:
+fireteam 0.97 vs 0.94, in the new seed's favour). But **`platoon_v9_seed13`
+is a mute root** (root-close 0.00, false-DONE 1.00, success 0.99 — the
+patrol_brique pathology at three echelons), and `squad_screen_v15_seed13`
+degrades to root-close 0.71 (above the 0.5 floor). These runs are declared
+measurements, NOT member candidates (jobs-file header) — no swap happened.
+Consequence for the §12.146 rider below: the bimodal set is now
+patrol_brique, squad AND platoon, with squad_screen wobbling — the
+breaking-cycle seed retrain list grows accordingly.
 
 **Still open**:
 - ~~`fireteam_defend_v23`'s `false_complete_rate: null`~~ **DONE** (`8537c2c`,

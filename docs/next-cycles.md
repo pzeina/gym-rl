@@ -21,16 +21,20 @@ The v1.20 succession cycle below has shipped, and v1.21 sealed the fleet on one
 tree with its seed searches declared. What follows it is not yet chosen, but
 whatever it is, these ride along:
 
-> **In flight (2026-08-17): the measurement campaign**,
-> `scripts/campaigns/measurement_ablation_and_spread.jobs` — 13 runs on the
-> frozen v1.21 tree, no `cohort/` change, seal untouched. Part 1 does "the
-> ablation, at the strength it deserves" below (3 same-tree seeds per arm;
-> `squad_nomask_v1`/`squad_flat_v1` turned out to be v1.19-tree runs, so both
-> ablated arms retrain in full — the manifest notes are corrected). Part 2
-> closes "every headline is one seed" (seed 13 under the six one-seed members,
-> declared as measurements, not member candidates). When it lands:
-> `ablation_report.py` needs per-seed aggregation before the new cells are
-> quotable, then read the spread. `cohort/` is frozen until the queue drains.
+> **LANDED (2026-08-18): the measurement campaign** —
+> `scripts/campaigns/measurement_ablation_and_spread.jobs`, 13 runs on the
+> sealed tree, N=100 both checkpoints, no member changed. The ablation at
+> 3 seeds/arm: success full = nomask (p = 1.000), **flat beats full
+> 296/300 vs 282/300 (p = 0.004)** and is the most robust arm (defeats/100:
+> 0.3 vs full 1.7, nomask 5.0) — the outcome AND robustness halves of B3 are
+> inverted on this tree; interpretability (doctrine-valid 1.00 vs 0.58) and
+> commander survival (root death 0.13 vs 0.20/0.21) are what the hierarchy
+> still buys. The spread: success deltas ≤ 0.03 on all six one-seed members,
+> but `platoon_v9_seed13` is a MUTE ROOT and `squad_v29_seed14` makes squad
+> 2-of-3 reporting — the bimodal set for the rider below is now
+> patrol_brique, squad, platoon (squad_screen wobbling at 0.71). README
+> ablation wording and any manifest `seed_spread` block are owner decisions,
+> presented in ROADMAP's handoff.
 
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a
