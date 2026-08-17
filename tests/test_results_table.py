@@ -152,6 +152,68 @@ def test_an_unannounced_win_is_visible_as_a_fraction_not_a_dash(member, monkeypa
     assert cells[7] == "0/97"
 
 
+def test_a_claimless_root_shows_absent_not_a_hundred(member):
+    """Issue #61: `fireteam_defend_v23` and `defend_brique_v17` record
+    `closed_on_root_report_rate: 1.0` with `done_claim_episodes_root: 0` —
+    every close came from a SITREP landing on the final step, and the root
+    never filed a DONE claim. 100% in the root-reported column reads as a
+    completion channel working perfectly; the cell must say the claim record
+    is absent instead. Same misreading 8537c2c fixed on the board, one column
+    over."""
+    path = member / "squad_v10" / "behavior_final.json"
+    data = json.loads(path.read_text())
+    data["metrics"]["closed_on_root_report_rate"] = 1.0
+    data["metrics"]["done_claim_episodes_root"] = 0
+    path.write_text(json.dumps(data))
+
+    cells = [c.strip() for c in results_table.row("squad", "squad_v10").strip("|").split("|")]
+
+    assert cells[8] == results_table.NO_CLAIMS
+    assert "100%" not in cells[8]
+
+
+def test_a_claiming_root_keeps_its_measured_rate(member):
+    """The dash is for absence only. With DONE claims on the record the rate
+    is a measurement and must survive — the gate (`ROOT_REPORT_CLOSE_FLOOR`)
+    keeps doing its job on the arms that do claim."""
+    path = member / "squad_v10" / "behavior_final.json"
+    data = json.loads(path.read_text())
+    data["metrics"]["closed_on_root_report_rate"] = 1.0
+    data["metrics"]["done_claim_episodes_root"] = 96
+    path.write_text(json.dumps(data))
+
+    cells = [c.strip() for c in results_table.row("squad", "squad_v10").strip("|").split("|")]
+
+    assert cells[8] == "100%"
+
+
+def test_an_evaluation_predating_the_claim_counter_keeps_its_rate(member):
+    """Absence of `done_claim_episodes_root` is an old evaluation, not a mute
+    root — the fixture omits the key and the rate must still print."""
+    cells = [c.strip() for c in results_table.row("squad", "squad_v10").strip("|").split("|")]
+
+    assert cells[8] == "62%"
+
+
+def test_the_no_claims_note_travels_with_the_dash_and_only_with_it(member, monkeypatch):
+    """The note says which reading the dash forbids, so it must appear when a
+    dash does and stay out of the table when every rate is a measurement."""
+    monkeypatch.setattr(baseline, "load",
+                        lambda: {"runs": {"squad": "squad_v10"}})
+    monkeypatch.setattr(baseline, "DOCTRINE_SCENARIOS", ["squad"])
+
+    assert results_table.NO_CLAIMS not in results_table.table()
+
+    path = member / "squad_v10" / "behavior_final.json"
+    data = json.loads(path.read_text())
+    data["metrics"]["done_claim_episodes_root"] = 0
+    path.write_text(json.dumps(data))
+    body = results_table.table()
+
+    assert results_table.NO_CLAIMS in body
+    assert "no DONE claim" in body  # the dash explains itself
+
+
 def test_a_failed_gate_is_named_in_the_row(member):
     path = member / "squad_v10" / "behavior_final.json"
     data = json.loads(path.read_text())
