@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -55,6 +56,40 @@ EVALUATION_TREE = "cohort/"
 # An artifact that is not committed yet was measured against the tree as it
 # stands, i.e. HEAD or later.
 WORKTREE = "WORKTREE"
+
+
+def policy_digest(path: Path) -> str | None:
+    """sha256 of a checkpoint's model TENSORS — the policy's identity, not the file's.
+
+    The file bytes are the wrong identity in both directions. A checkpoint
+    serializes its ``reward_config``, so a file-level hash splits one policy
+    into two whenever only the price differs — precisely the comparison a price
+    experiment makes: the rdb campaign's seed-16 "pair" is one set of tensors
+    under two ``root_done_bonus`` tags, and its two arms were one run (#60 §3).
+    File identity is sufficient for policy identity and never necessary.
+
+    And tensor identity is common, not exotic: training is bit-deterministic in
+    (seed, scenario, steps, lr, price), so a re-launch across commits that never
+    touch the trajectory reproduces its predecessor exactly. All twelve v1.21
+    campaign runs did (#60 §1). ``validate_gate`` uses this to keep such
+    re-executions from inflating n, and ``baseline.py`` uses it to disclose
+    them before anyone describes a re-run as an independent draw.
+
+    None for a path that is not a readable checkpoint — absence, not a verdict.
+    """
+    if not path.is_file():
+        return None
+    try:
+        import torch
+
+        model = torch.load(path, map_location="cpu", weights_only=False)["model"]
+    except Exception:
+        return None
+    h = hashlib.sha256()
+    for key in sorted(model):
+        h.update(key.encode())
+        h.update(model[key].detach().cpu().numpy().tobytes())
+    return h.hexdigest()
 
 
 def audit_run(run_dir: Path) -> dict | None:
@@ -315,32 +350,12 @@ def validate_gate() -> int:
     runs that motivated it — ``squad_recon_v5``/``v6``, ``squad_v7`` — are all
     filed under ``runs/archive/``.
     """
-    import hashlib
-
-    def sha(path: Path) -> str | None:
-        """Hash the WEIGHTS, not the file.
-
-        The file bytes differ between policies that are bit-identical as
-        policies: a checkpoint embeds its ``reward_config``, so the v1.15 revert
-        and the v1.16 ENDEX restoration each produced arms whose tensors match
-        to 0.000e+00 and whose files do not. Hashing the file silently fails to
-        deduplicate and then reports the survivors as "distinct policies", which
-        is the kind of quiet false claim this whole audit exists to catch.
-        """
-        if not path.is_file():
-            return None
-        try:
-            import torch
-
-            model = torch.load(path, map_location="cpu", weights_only=False)["model"]
-        except Exception:
-            return None
-        h = hashlib.sha256()
-        for key in sorted(model):
-            h.update(key.encode())
-            h.update(model[key].detach().cpu().numpy().tobytes())
-        return h.hexdigest()
-
+    # Deduplicate on the WEIGHTS, not the file (``policy_digest``): the v1.15
+    # revert and the v1.16 ENDEX restoration each produced arms whose tensors
+    # match to 0.000e+00 and whose files do not. Hashing the file silently
+    # fails to deduplicate and then reports the survivors as "distinct
+    # policies", which is the kind of quiet false claim this audit exists to
+    # catch.
     seen: dict[str, str] = {}
     rows = []
     ann: list[tuple[str, float | None, float | None]] = []
@@ -354,7 +369,7 @@ def validate_gate() -> int:
         a = audit_run(d)
         if not a:
             continue
-        digest = sha(d / "ckpt_latest.pt")
+        digest = policy_digest(d / "ckpt_latest.pt")
         if digest and digest in seen:
             print(f"  (skipping {d.name}: weights identical to {seen[digest]})")
             continue

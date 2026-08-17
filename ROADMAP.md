@@ -22,11 +22,20 @@ artifact the gate now reads, per the owner's decision:
     defend_brique     defend_brique_v17         1.00 ± 0.00   root 1.00
     platoon           platoon_v8                1.00 ± 0.00   root 0.93
 
-**The seed searches are declared, and the seed CARRIES.** `patrol_brique`:
-**3 of 4 seeds report** (12 mute, 18/19/14 report — each seed repeating its
-draw from the `5a5e8bef` tree, five-for-five including squad's seed 13, so the
-reporting lottery is a property of the seed, not re-rolled per tree; §12.146's
-open question is answered WITHIN-scenario). Member is seed 14 — root-closed
+**The seed searches are declared — and the seed-carry claim is RETRACTED
+(assurance #60).** `patrol_brique`: **3 of 4 seeds report** (12 mute, 18/19/14
+report) — that count stands. What does not: "five-for-five, the seed carries"
+was an identity, not a measurement. All 12 campaign runs reproduce an earlier
+run's checkpoints bit-for-bit (training is bit-deterministic in
+seed/scenario/steps/lr/price, and no transition into `becc3ec4` touched any
+trajectory), so each cited pair compared a checkpoint with itself and
+"re-rolled by the tree" was unreachable by construction. §12.146's
+within-scenario question is still OPEN — on the 20 readable cross-tree pairs
+where a transition DID move the policy, the reporting label carries 10, chance
+either way — and answering it needs runs trained across a transition that
+actually moves the weights. `baseline.py` now digests every manifest run's
+model tensors against the corpus and discloses reproductions before a claim
+can be written on one. Member is seed 14 — root-closed
 0.878 with false-DONE 0.372, over seed 18's 0.949 at 0.639: claim quality over
 claim volume. `squad` declares 2 of 2 (the spare ran; hiding it would be the
 quiet half of a search). Both blocks live in `runs/BASELINE.json.seed_search`,
