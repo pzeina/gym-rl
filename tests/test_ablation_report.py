@@ -226,3 +226,67 @@ def test_fisher_matches_known_two_by_twos(table, expected):
     magnitude, which a tail error cannot survive.
     """
     assert ablation_report._fisher(*table) == pytest.approx(expected, rel=1e-3)
+
+
+def _seeded_arm(tmp_path, run: str, *, seed: int, successes: int, n: int = 100, **metrics):
+    _arm(tmp_path, run, successes=successes, n=n, **metrics)
+    (tmp_path / run / "config.json").write_text(json.dumps({"seed": seed}))
+
+
+def _nine(tmp_path, *, full_n=100, done_full=(173, 210, 2)) -> list[str]:
+    runs = []
+    for arm, done_cells in (("full", done_full), ("nomask", (0, 0, 1)), ("flat", (0, 2, 1))):
+        for seed, done in zip((12, 13, 14), done_cells, strict=True):
+            run = f"{arm}_s{seed}"
+            n = full_n if arm == "full" else 100
+            _seeded_arm(tmp_path, run, seed=seed, successes=int(0.95 * n), n=n,
+                        done_reports=done)
+            runs.append(run)
+    return runs
+
+
+def test_the_seed_report_prints_every_seed_and_lets_the_mean_follow(trio, capsys):
+    """A bimodal cell averaged into one number is a hiding place (refs the
+
+    original's 173/210/2 DONE column). The per-seed mode must show the three
+    draws, with the mean after them, never instead of them.
+    """
+    runs = _nine(trio)
+
+    assert ablation_report.seed_report(runs) == 0
+    out = capsys.readouterr().out
+
+    assert "173 210 2  (128)" in out
+    assert "seeds 12/13/14" in out
+
+
+def test_the_seed_report_pools_success_across_seeds_for_the_exact_test(trio, capsys):
+    runs = _nine(trio)
+
+    ablation_report.seed_report(runs)
+    out = capsys.readouterr().out
+
+    assert "success pooled over seeds 285/300 vs 285/300" in out
+    assert out.count("intervals OVERLAP, not a difference") == 2
+
+
+def test_the_seed_report_states_its_n_and_refuses_to_flatten_a_mixed_one(trio, capsys):
+    """Captioning N=20 rows as N=100 is the overstatement publish_audit exists
+
+    to catch; when the nine corpora disagree on N the header must say so."""
+    runs = _nine(trio, full_n=20)
+
+    ablation_report.seed_report(runs)
+    out = capsys.readouterr().out
+
+    assert "N varies: 20/100" in out
+
+
+def test_the_seed_report_names_an_unevaluated_run_rather_than_dropping_it(trio, capsys):
+    runs = _nine(trio)
+    (trio / "full_s13" / "behavior_final.json").unlink()
+
+    assert ablation_report.seed_report(runs) == 1
+    out = capsys.readouterr().out
+
+    assert "not evaluated yet: full_s13" in out

@@ -3,6 +3,8 @@
 
     scripts/ablation_report.py                                  # the v1.19 trio
     scripts/ablation_report.py squad_v10 squad_nomask_v1 squad_flat_v1
+    scripts/ablation_report.py full_a full_b full_c nomask_a nomask_b nomask_c \\
+                               flat_a flat_b flat_c              # 3 seeds per arm
 
 Does the chain of command earn its keep? The 2026-08-06 answer — 3 arms x 3
 seeds on Box(137) — was **yes, but not on the axis people expect**:
@@ -100,6 +102,10 @@ def _facts(run: str) -> dict | None:
         return None
     m = b.get("metrics", {})
     n = b.get("episodes") or 0
+    try:
+        seed = json.loads((run_dir(run) / "config.json").read_text()).get("seed")
+    except (OSError, json.JSONDecodeError):
+        seed = None
     success = m.get("success_rate")
     timeout = m.get("timeout_rate") or 0.0
     # The original's headline robustness cell. Not stored directly: an episode
@@ -108,6 +114,7 @@ def _facts(run: str) -> dict | None:
     return {
         "run": run,
         "n": n,
+        "seed": seed,
         "successes": m.get("successes"),
         "success": success,
         "ci": b.get("success_ci95"),
@@ -208,7 +215,9 @@ def report(runs: list[str]) -> int:
     def line(name: str, key: str, spec="{:.3f}"):
         print(f"{name:<28}" + "".join(f"{_fmt(f[key], spec):>16}" for f, _, _ in rows))
 
-    line("success (N=100)", "success")
+    ns = sorted({f["n"] for f, _, _ in rows})
+    n_label = f"N={ns[0]}" if len(ns) == 1 else "N varies: " + "/".join(map(str, ns))
+    line(f"success ({n_label})", "success")
     print(f"{'  95% CI':<28}" + "".join(f"{f['ci'] or '—':>16}" for f, _, _ in rows))
     line("defeats / 100  ROBUSTNESS", "defeat_per_100", "{:.1f}")
     line("ran the clock out", "timeout")
@@ -217,7 +226,7 @@ def report(runs: list[str]) -> int:
     line("orders / episode", "orders", "{:.2f}")
     line("doctrine-valid  INTERPRET", "doctrine_allowed")
     line("of which preferred", "doctrine_preferred")
-    line("DONE reports (N=100)", "done_reports", "{:.0f}")
+    line(f"DONE reports ({n_label})", "done_reports", "{:.0f}")
     line("  of which rejected", "done_rejected", "{:.0f}")
     print()
     line("wins announced", "announced", "{:.0f}")
@@ -249,14 +258,98 @@ def report(runs: list[str]) -> int:
     return 0
 
 
+def seed_report(runs: list[str]) -> int:
+    """Nine runs, three per arm: the strength the 2026-08-06 original ran at.
+
+    Per-seed cells are printed for every axis and the mean follows them rather
+    than standing in for them — the original's completion cell is bimodal
+    (173/210/2) and averaging such a cell into ``128 ± 111`` is the misreading
+    the per-seed layout exists to prevent. Success is additionally pooled
+    across seeds for Fisher's exact test between arms, which the one-seed
+    replication could not support.
+    """
+    arm_runs = {label: runs[i * 3:i * 3 + 3] for i, (_, label, _) in enumerate(ARMS)}
+    facts = {label: [_facts(r) for r in rs] for label, rs in arm_runs.items()}
+    missing = [r for label, rs in arm_runs.items()
+               for r, f in zip(rs, facts[label], strict=True) if f is None]
+    if missing:
+        print(f"not evaluated yet: {', '.join(missing)}")
+        print("(scripts/publish_baseline.py <run> scores a landed run at N=100)")
+        return 1
+
+    print("B3 ablation at three seeds per arm — does the chain of command earn its keep?\n")
+    for _, label, what in ARMS:
+        seeds = "/".join(str(f["seed"]) if f["seed"] is not None else "?" for f in facts[label])
+        names = ", ".join(f["run"] for f in facts[label])
+        print(f"  {label:<7} seeds {seeds:<9} {what}\n          {names}")
+    print()
+
+    ns = sorted({f["n"] for fs in facts.values() for f in fs})
+    n_label = f"N={ns[0]} each" if len(ns) == 1 else "N varies: " + "/".join(map(str, ns))
+    width = 26
+    print(f"per-seed, mean follows the seeds ({n_label})")
+    print(f"{'axis':<26}" + "".join(f"{label:>{width}}" for _, label, _ in ARMS))
+    print("-" * (26 + width * len(ARMS)))
+
+    def cell(fs: list[dict], key: str, spec: str) -> str:
+        vals = [f[key] for f in fs]
+        if all(v is None for v in vals):
+            return "—"
+        shown = " ".join("—" if v is None else spec.format(v) for v in vals)
+        known = [v for v in vals if v is not None]
+        return f"{shown}  ({sum(known) / len(known):{spec[2:-1]}})"
+
+    def line(name: str, key: str, spec="{:.2f}"):
+        print(f"{name:<26}" + "".join(f"{cell(facts[label], key, spec):>{width}}"
+                                      for _, label, _ in ARMS))
+
+    line("success", "success")
+    line("defeats / 100  ROBUSTNESS", "defeat_per_100", "{:.1f}")
+    line("root death rate", "root_death")
+    print()
+    line("orders / episode", "orders", "{:.1f}")
+    line("doctrine-valid  INTERPRET", "doctrine_allowed")
+    line("of which preferred", "doctrine_preferred")
+    line("DONE reports", "done_reports", "{:.0f}")
+    line("closed by the root itself", "closed_by_root")
+    print()
+
+    def pooled(label: str) -> tuple[int, int]:
+        fs = facts[label]
+        return sum(f["successes"] or 0 for f in fs), sum(f["n"] for f in fs)
+
+    k0, n0 = pooled("full")
+    for _, label, _ in ARMS[1:]:
+        k1, n1 = pooled(label)
+        p = _fisher(k0, n0 - k0, k1, n1 - k1)
+        lo0, hi0 = _wilson(k0, n0)
+        lo1, hi1 = _wilson(k1, n1)
+        overlap = not (hi0 < lo1 or hi1 < lo0)
+        print(f"full vs {label:<7} success pooled over seeds {k0}/{n0} vs {k1}/{n1}, "
+              f"Fisher p = {p:.3f}"
+              + ("  — intervals OVERLAP, not a difference" if overlap else "  — separated"))
+
+    print()
+    print(original_block())
+    print("\nThree seeds per arm — the original's own strength, on one tree. Bimodal\n"
+          "cells (the original's DONE column, nomask's false-claim behaviour) are\n"
+          "readable here per seed; a mean printed after three seeds is a summary,\n"
+          "a mean printed instead of them is a hiding place.")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=f"{__doc__}\n{original_block()}\n",
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("runs", nargs="*", help="full, nomask, flat (defaults to the v1.19 trio)")
+    ap.add_argument("runs", nargs="*",
+                    help="full nomask flat (defaults to the v1.19 trio), or nine runs "
+                         "— three per arm in that order — for the per-seed report")
     args = ap.parse_args()
     runs = args.runs or [r for r, _, _ in ARMS]
+    if len(runs) == 9:
+        return seed_report(runs)
     if len(runs) != 3:
-        print("give exactly three runs: full nomask flat")
+        print("give three runs (full nomask flat) or nine (three per arm in that order)")
         return 2
     return report(runs)
 
