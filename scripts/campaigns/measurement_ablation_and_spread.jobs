@@ -1,0 +1,67 @@
+# MEASUREMENT CAMPAIGN (2026-08-17) — non-breaking; the v1.21 seal stays valid.
+#
+# The next BREAKING cycle is deliberately unchosen (docs/next-cycles.md): its
+# candidates are owner design decisions, and §12.146's seed-carry rider waits
+# for it. What is NOT waiting on any decision are the two measurement gaps the
+# plan already names, both runnable on the frozen v1.21 tree with shipped
+# defaults and zero overrides. This queue closes both.
+#
+# ============ PART 1 — the B3 ablation at the strength it deserves ============
+# The v1.19 replication ran ONE seed per arm and inverted the original's
+# outcome half (success 0.92/0.98/1.00) while the interpretability half held;
+# the README now claims only the second. docs/next-cycles.md's instruction:
+# 3 seeds per arm, control arm = the squad baseline member, single-variable.
+#
+# FOUND WHILE WRITING THIS FILE: `squad_nomask_v1` / `squad_flat_v1` are NOT on
+# the sealed tree. They launched 2026-08-11 at 7f9f7a6, whose cohort/ tree is
+# 5f848fb6 — the v1.19 environment, before the v1.20 succession fix restored
+# the order edge. The manifest's referenced_history note saying "on THIS
+# cohort/ tree ... read against squad_v10" was carried forward from v1.19 and
+# is stale on both counts (corrected in the same commit as this file). So the
+# ablated arms contribute ZERO same-tree seeds, and reading v1 arms against
+# squad_v27 would put the succession fix inside the ablation delta.
+#
+# On the sealed tree becc3ec4 the full arm already has seeds 12 (squad_v27,
+# the member) and 13 (squad_v28_seed13, declared seed_search spare, archived
+# but resolvable). Everything else below is new. Arms are scenarios
+# (cohort/config.py: squad_nomask, squad_flat), not overrides, so the trio
+# stays single-variable at shipped defaults, 3M steps, seeds {12, 13, 14}.
+# When it lands: scripts/ablation_report.py needs the 2026-08-06 campaign's
+# per-seed aggregation before the new cells are quotable (next-cycles.md).
+#
+# ============ PART 2 — a second seed under every one-seed headline ============
+# Six members are published on exactly one seed. patrol_brique (4 seeds) and
+# squad (2) are the only scenarios with a measured spread — and squad's two
+# seeds were the pair that caught the v10/v10b regression. Seed 13, same
+# scenario, same steps, no overrides: after this, every published number has a
+# same-tree sibling and the seed-spread bound is measured instead of assumed.
+#
+# DECLARED INTENT — these six are measurements, NOT member candidates. A spread
+# run that happens to beat its incumbent does not rotate in: picking the better
+# of two seeds after the fact is an undeclared seed search, the exact
+# overstatement the v1.21 manifest exists to prevent. If the owner ever swaps a
+# member on one, the search gets declared in BASELINE.json.seed_search first.
+#
+# Every (scenario, seed, tree) triple below is new to the corpus, so
+# bit-determinism reproduces nothing here — and if that claim is wrong,
+# baseline.py's reproduction digests disclose the identity before anyone
+# writes on it (#60).
+# cohort/ is FROZEN until the queue drains; tooling/tests/docs stay free.
+# ~13 runs x 25-45 min, sequential, one nohup'd queue.
+
+# Part 1 — ablation arms to 3 same-tree seeds each
+squad_v29_seed14           --scenario squad           --total-steps 3000000 --seed 14
+squad_nomask_v2_seed12     --scenario squad_nomask    --total-steps 3000000 --seed 12
+squad_nomask_v3_seed13     --scenario squad_nomask    --total-steps 3000000 --seed 13
+squad_nomask_v4_seed14     --scenario squad_nomask    --total-steps 3000000 --seed 14
+squad_flat_v2_seed12       --scenario squad_flat      --total-steps 3000000 --seed 12
+squad_flat_v3_seed13       --scenario squad_flat      --total-steps 3000000 --seed 13
+squad_flat_v4_seed14       --scenario squad_flat      --total-steps 3000000 --seed 14
+
+# Part 2 — second seed under the six one-seed members
+fireteam_v13_seed13        --scenario fireteam        --total-steps 3500000 --seed 13
+fireteam_defend_v24_seed13 --scenario fireteam_defend --total-steps 3500000 --seed 13
+squad_recon_v12_seed13     --scenario squad_recon     --total-steps 3000000 --seed 13
+squad_screen_v15_seed13    --scenario squad_screen    --total-steps 2500000 --seed 13
+defend_brique_v18_seed13   --scenario defend_brique   --total-steps 3000000 --seed 13
+platoon_v9_seed13          --scenario platoon         --total-steps 3000000 --seed 13

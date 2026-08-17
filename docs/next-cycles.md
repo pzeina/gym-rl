@@ -21,6 +21,17 @@ The v1.20 succession cycle below has shipped, and v1.21 sealed the fleet on one
 tree with its seed searches declared. What follows it is not yet chosen, but
 whatever it is, these ride along:
 
+> **In flight (2026-08-17): the measurement campaign**,
+> `scripts/campaigns/measurement_ablation_and_spread.jobs` — 13 runs on the
+> frozen v1.21 tree, no `cohort/` change, seal untouched. Part 1 does "the
+> ablation, at the strength it deserves" below (3 same-tree seeds per arm;
+> `squad_nomask_v1`/`squad_flat_v1` turned out to be v1.19-tree runs, so both
+> ablated arms retrain in full — the manifest notes are corrected). Part 2
+> closes "every headline is one seed" (seed 13 under the six one-seed members,
+> declared as measurements, not member candidates). When it lands:
+> `ablation_report.py` needs per-seed aggregation before the new cells are
+> quotable, then read the spread. `cohort/` is frozen until the queue drains.
+
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a
   bit-identical reproduction of itself, so the question is open — on the 20
