@@ -15,7 +15,28 @@ box, three lanes in parallel, and **zero model tokens**. So the question is neve
 
 ---
 
-## v1.20 — the succession cycle (BREAKING, forced retrain)
+## Addendum (2026-08-17) — standing riders for the next breaking cycle
+
+The v1.20 succession cycle below has shipped, and v1.21 sealed the fleet on one
+tree with its seed searches declared. What follows it is not yet chosen, but
+whatever it is, these ride along:
+
+- **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
+  retracted (assurance #60): every cited pair compared a checkpoint with a
+  bit-identical reproduction of itself, so the question is open — on the 20
+  readable cross-tree pairs where a transition DID move the policy, the
+  reporting label carries 10, chance either way. Do not manufacture a
+  `cohort/` change to answer it: that is a design decision, and it confounds
+  the answer with itself. Instead, when the next breaking cycle retrains the
+  fleet, retrain the declared search seeds beside it — `patrol_brique`
+  12/14/18/19 and `squad` 12/13, six runs riding a campaign already burning
+  twelve — and read the reporting labels across that transition.
+  `baseline.py`'s reproduction digests now disclose bit-identical pairs, so an
+  immobile transition cannot silently re-produce the #60 mistake. If the
+  labels carry, a seed search amortizes across cycles; if they do not, the
+  manifest rule becomes: re-search bimodal scenarios every breaking cycle.
+
+## v1.20 — the succession cycle (BREAKING, forced retrain) — SHIPPED
 
 Four `cohort/` patches are written, tested and deliberately unapplied. They want
 one window because each one alone costs a full fleet retrain.
