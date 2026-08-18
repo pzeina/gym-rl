@@ -102,15 +102,19 @@ the cells that matter:
   (owner, 2026-08-18): the section now carries the three-seed table, claims
   interpretability + commander survival, disclaims outcome + robustness, and
   states the ~5-point cost vs flat (p = 0.004) plainly, with platoon depth
-  named as the open question. (b) STILL PENDING: whether the manifest/board grows a
-  `seed_spread` disclosure block — the fleet board still says "2 of 2 seeds
-  report" (true of the declared SEARCH) while two more same-config draws sit
-  outside it: `squad_v29_seed14` (gate-fail on both checkpoints, = archived
-  `squad_v10c`) as an ordinary row, and archived `squad_v20_seed15` (0.000 on
-  both checkpoints, pre-seal tree). If the block ships it must either carry
-  both — 2-of-4 — or state explicitly that its count is sealed-tree-only
-  (2-of-3), per assurance #63; "2 of 3" without that qualifier understates
-  squad's bimodality against this file's own 2026-08-14 record.
+  named as the open question. (b) DECIDED and DONE (owner, 2026-08-18): the
+  manifest carries a `seed_spread` block — every OTHER same-config-modulo-seed
+  draw the record holds, archived and cross-tree included, deduped by
+  model-tensor digest so a bit-identical re-execution counts once, audited for
+  completeness by `baseline.py` (a same-config draw in neither block fails the
+  audit by name) and rendered on the fleet board as counts beside the declared
+  search, cross-tree draws annotated (evidence about the seed, not about the
+  sealed environment). The completeness scan surfaced far more than the two
+  squad draws that raised the question: 56 runs, 41 distinct draws fleet-wide
+  — squad is 8-of-14 known draws reporting (not 2-of-2, not 2-of-4),
+  patrol_brique 6-of-16 — and the matcher is shared with
+  `campaign_preflight.py`, so the queue's "already trained" and the manifest's
+  "known draw" cannot drift apart.
 
 **The spread read: every headline is seed-robust on success — and the
 reporting channel is bimodal in more scenarios than declared.** Six seed-13

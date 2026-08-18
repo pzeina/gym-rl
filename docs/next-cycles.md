@@ -35,9 +35,12 @@ whatever it is, these ride along:
 > re-derivation of archived `squad_v10c`, assurance #63), making squad 2-of-3
 > reporting on the sealed tree, 2-of-4 expected counting archived
 > `squad_v20_seed15` — the bimodal set for the rider below is now
-> patrol_brique, squad, platoon (squad_screen wobbling at 0.71). README
-> ablation wording and any manifest `seed_spread` block are owner decisions,
-> presented in ROADMAP's handoff. Campaign queues now pre-flight each job's
+> patrol_brique, squad, platoon (squad_screen wobbling at 0.71). Both owner
+> decisions are closed (2026-08-18): the README ablation wording is applied,
+> and the manifest now carries a `seed_spread` block — every other
+> same-config draw the record holds, deduped by model-tensor digest, audited
+> for completeness, rendered beside the declared search as counts with
+> cross-tree draws annotated. Campaign queues now pre-flight each job's
 > config against the record (`scripts/campaign_preflight.py`) so a queued
 > config the archive already answered is refused before it burns 3M steps.
 
