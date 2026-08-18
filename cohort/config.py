@@ -470,6 +470,32 @@ SCENARIOS["squad_flat"] = replace(
     ablation="flat",
 )
 
+# The same two arms at platoon depth (owner-decided 2026-08-18, the README
+# ablation section's stated open question): exact mirrors of the squad arms —
+# identical geometry, OpFor, rewards, and spaces to `platoon`, only `ablation`
+# differs. Depth is the argument for a chain of command, and B3 had only ever
+# been measured on a squad.
+SCENARIOS["platoon_nomask"] = replace(
+    SCENARIOS["platoon"],
+    name="platoon_nomask",
+    description=(
+        "B3 ablation arm (ii) at platoon depth: the platoon scenario with the "
+        "doctrine-derivation constraint removed from the order mask (rank "
+        "admissibility and cooldown stay)."
+    ),
+    ablation="nomask",
+)
+SCENARIOS["platoon_flat"] = replace(
+    SCENARIOS["platoon"],
+    name="platoon_flat",
+    description=(
+        "B3 ablation arm (iii) at platoon depth: flat 16-agent team — no orders "
+        "at all; every agent receives the OPORD directly at reset; comms limited "
+        "to reports."
+    ),
+    ablation="flat",
+)
+
 # Information-asymmetry probe (v1.11 gate, docs/vision.md §6): the squad
 # scenario with eyes halved and nothing else touched — same geometry, OpFor,
 # rewards, spaces, and ablation arm. It tests the hypothesis behind directional

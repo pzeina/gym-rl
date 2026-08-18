@@ -55,6 +55,19 @@ disclosure since both candidates sit in `runs/` at the shipped config.
 above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
 stays open for the assurance layer to verify and close — never close it here.
 
+**IN FLIGHT (2026-08-18): the platoon-depth ablation cycle** — opened by
+`d439164` (platoon_nomask/platoon_flat registered, exact squad-arm mirrors),
+campaign `scripts/campaigns/platoon_depth_lane{A,B}.jobs` running in two
+lanes (~10 h). Lane A leads with the neutrality re-derivation
+`platoon_v10_seed12`: when it lands, check `baseline.py`'s reproduction table
+— **if it does not show `platoon_v10_seed12 == platoon_v8`, kill lane B and
+diagnose** (the additive claim failed). When all eight land: N=100 evals,
+`seed_spread` gains the new platoon draws (the completeness gate will insist),
+nine-run `ablation_report.py` read, README beside the squad table. Plan:
+docs/next-cycles.md, "The platoon-depth ablation cycle". Also on disk,
+unread: the v1.21 transparency-probe sweep (`runs/<member>/probe_{best,final}.json`)
+and the pending squad_screen oracle pass.
+
 **★ THE MEASUREMENT CAMPAIGN LANDED (2026-08-18)** — all 13 runs of
 `scripts/campaigns/measurement_ablation_and_spread.jobs` on the sealed tree
 (`becc3ec4`), evaluated at N=100 on both checkpoints, artifacts committed.
