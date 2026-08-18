@@ -59,6 +59,79 @@ whatever it is, these ride along:
   labels carry, a seed search amortizes across cycles; if they do not, the
   manifest rule becomes: re-search bimodal scenarios every breaking cycle.
 
+## The platoon-depth ablation cycle (chosen by the owner, 2026-08-18)
+
+The README now ends its ablation section with the open question: does the
+hierarchy's measured ~5-point cost against a flat team shrink, vanish or
+invert at three echelons? Depth is the whole argument for a chain of command;
+the deepest chart trained is `platoon` (PL + PSG + 2 squads, 16 agents), and
+B3 has only ever been measured on a squad. This cycle measures it.
+
+### The `cohort/` change, and what it does NOT break
+
+Two registrations in `cohort/config.py`, mechanical mirrors of the squad arms
+(`SCENARIOS["squad_nomask"]` / `["squad_flat"]` at line ~450): `platoon_nomask`
+and `platoon_flat` via `replace(SCENARIOS["platoon"], name=..., ablation=...)`.
+Identical geometry, OpFor, rewards, spaces and step budget — only the
+`ablation` field differs, exactly as decided for squad. Any deviation from the
+exact mirror is a design decision and goes back to the owner.
+
+**This is NOT a fleet-breaking cycle, and the plan must not pretend it is.**
+The addition is purely additive: no existing scenario's masks, observations,
+rewards or RNG stream moves, so the sealed v1.21 members stay on their
+recorded tree and `baseline.py` keeps passing. Two consequences, both from
+the #60/#63 lessons:
+
+1. **The additive claim is measured, not assumed.** The campaign's first job
+   re-derives the platoon full arm at seed 12 on the new tree (`FORCE=1` past
+   the pre-flight, which will rightly call it a duplicate). If its tensors
+   digest identical to `platoon_v8`, the transition is proven neutral and the
+   existing `platoon_v8` / `platoon_v9_seed13` stand as the full arm's seeds
+   12/13, disclosed as the same draws. If it does NOT reproduce, stop the
+   campaign: the additive claim was wrong, the cycle is breaking after all,
+   and that is a finding to diagnose before anything else trains.
+2. **The §12.146 rider does NOT ride here and stays open.** The rider needs a
+   transition that moves the weights; an additive registration moves nothing,
+   and manufacturing a `cohort/` change to move them is the confound the
+   addendum already forbids. The rider waits for the next genuinely
+   weight-moving change (e.g. `ASSUMING_POSITION`, if the owner ever decides
+   it).
+
+### The campaign (~7 runs, but platoon-priced)
+
+    platoon_v10_seed12      --scenario platoon         3M  seed 12   (neutrality re-derivation, FORCE)
+    platoon_v11_seed14      --scenario platoon         3M  seed 14   (full arm, third seed)
+    platoon_nomask_v1_seed12 / _v2_seed13 / _v3_seed14 --scenario platoon_nomask  3M
+    platoon_flat_v1_seed12  / _v2_seed13 / _v3_seed14  --scenario platoon_flat    3M
+
+  - Seeds 12/13/14, matching the squad ablation, shipped defaults, no overrides.
+  - **Wall-clock is the real cost**: a 3M-step platoon run is ~2.5 h (16 agents),
+    so eight runs are ~20 h sequential — run two lanes (`train_queue.sh` per
+    lane) and it is an overnight campaign, still zero tokens.
+  - After landing: `publish_baseline.py` at N=100 on all arms, then
+    `scripts/ablation_report.py` in its nine-run mode (full: v8-or-v10, v9_seed13,
+    v11_seed14).
+  - **Bookkeeping the audit will enforce**: `platoon_v11_seed14` (and the
+    re-derivation) are same-config platoon draws, so they join
+    `BASELINE.json.seed_spread` — the completeness gate fails until they do.
+    The nomask/flat arms are their own scenarios and stay out of it.
+
+### How to read it
+
+The squad result to beat: flat 296/300 vs full 282/300 (p = 0.004), flat the
+most robust arm, hierarchy paying only in doctrine-valid traffic and commander
+survival. The depth hypothesis is that a 16-agent flat team, where every agent
+holds the full OPORD and no order traffic exists, pays a coordination cost the
+9-agent squad did not — if so, the success gap narrows or inverts and the
+defeats row moves first. Read robustness and interpretability before success
+(the original's own instruction), read every DONE/completion cell per seed
+(platoon's reporting channel is measured bimodal — `platoon_v9_seed13` is a
+mute root), and pool Fisher across seeds exactly as the squad read did. Three
+honest outcomes: flat wins again (the hierarchy's value case narrows to
+interpretability at every measured depth), flat degrades (depth is where
+structure pays, measured at last), or a split — and any of the three goes in
+the README next to the squad table, at the same strength.
+
 ## v1.20 — the succession cycle (BREAKING, forced retrain) — SHIPPED
 
 Four `cohort/` patches are written, tested and deliberately unapplied. They want
