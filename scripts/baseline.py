@@ -138,8 +138,13 @@ DOCTRINE_SCENARIOS = [
 # of them are *designed* to score worse than it. Publishing them as part of a
 # fleet would advertise a deliberately crippled cohort as a product.
 NOT_BASELINE = {
-    "squad_nomask": "B3 ablation arm — doctrine masks removed, exists to be worse",
-    "squad_flat": "B3 ablation arm — no chain of command at all, exists to be worse",
+    # "exists to be worse" until 2026-08-18, when the three-seed measurement
+    # showed the flat arm beating the shipped system on success. The arms exist
+    # to MEASURE what the hierarchy buys, whichever way it falls.
+    "squad_nomask": "B3 ablation arm — doctrine masks removed; measures, not ships",
+    "squad_flat": "B3 ablation arm — no chain of command at all; measures, not ships",
+    "platoon_nomask": "B3 ablation arm at platoon depth — measures, not ships",
+    "platoon_flat": "B3 ablation arm at platoon depth — measures, not ships",
     "squad_short_vision": "information-asymmetry probe, not a shipping configuration",
     "squad_screen_core": "observation-width bisect arm, superseded by the bisect's answer",
 }
