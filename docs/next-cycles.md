@@ -25,11 +25,13 @@ whatever it is, these ride along:
 > `scripts/campaigns/measurement_ablation_and_spread.jobs`, 13 runs on the
 > sealed tree, N=100 both checkpoints, no member changed. The ablation at
 > 3 seeds/arm: success full = nomask (p = 1.000), **flat beats full
-> 296/300 vs 282/300 (p = 0.004)** and is the most robust arm (defeats/100:
-> 0.3 vs full 1.7, nomask 5.0) — the outcome AND robustness halves of B3 are
-> inverted on this tree; interpretability (doctrine-valid 1.00 vs 0.58) and
-> commander survival (root death 0.13 vs 0.20/0.21) are what the hierarchy
-> still buys. The spread: success deltas ≤ 0.03 on all six one-seed members,
+> 296/300 vs 282/300 (p = 0.004)** and holds the fewest defeats (1/300 vs
+> full 5/300, p = 0.22 — power only against nomask 15/300, p = 0.0004) — the
+> outcome AND robustness halves of B3 are inverted on this tree;
+> interpretability (doctrine-valid 1.00 vs 0.58) is what the hierarchy still
+> buys. (Commander survival — root death 0.13 vs 0.20/0.21 — was promoted
+> here too and is retracted per assurance #64: the separation is seed 14
+> alone, the #63 re-executed policy, and flips to p = 0.56 at ckpt_best.) The spread: success deltas ≤ 0.03 on all six one-seed members,
 > but `platoon_v9_seed13` is a MUTE ROOT and `squad_v29_seed14` fails the
 > root-report gate on both checkpoints (0.052 / 0.000 — and is a bit-identical
 > re-derivation of archived `squad_v10c`, assurance #63), making squad 2-of-3
@@ -118,9 +120,10 @@ the #60/#63 lessons:
 
 ### How to read it
 
-The squad result to beat: flat 296/300 vs full 282/300 (p = 0.004), flat the
-most robust arm, hierarchy paying only in doctrine-valid traffic and commander
-survival. The depth hypothesis is that a 16-agent flat team, where every agent
+The squad result to beat: flat 296/300 vs full 282/300 (p = 0.004), flat
+with the fewest defeats (a lead with power only against nomask), the
+hierarchy's remaining value case doctrine-valid traffic alone (commander
+survival retracted per assurance #64 — one re-executed seed, one checkpoint). The depth hypothesis is that a 16-agent flat team, where every agent
 holds the full OPORD and no order traffic exists, pays a coordination cost the
 9-agent squad did not — if so, the success gap narrows or inverts and the
 defeats row moves first. Read robustness and interpretability before success

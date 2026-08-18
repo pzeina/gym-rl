@@ -469,10 +469,15 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
 
     Three derivations keep the count honest:
 
-    * **dedupe** — draws are counted by ``policy_digest`` of the FINAL policy
-      (the artifact the reporting gate reads), so a bit-identical re-execution
-      (``squad_v29_seed14`` == archived ``squad_v10c``) is ONE draw disclosed
-      as such, never two (#60's lesson applied to counting).
+    * **dedupe** — draws are counted by ``policy_digest`` over EVERY checkpoint
+      both runs hold (assurance #65: ``runs/archive/`` prunes the final, so a
+      key on ``ckpt_latest.pt`` alone left 36 of the 56 declared runs silently
+      undedupable — absence-as-distinct inflates the count of independent
+      draws, the exact failure the block exists to prevent). Two runs sharing
+      at least one digestible checkpoint and disagreeing on none are ONE draw,
+      annotated with which checkpoints settled it, so a bit-identical
+      re-execution (``squad_v29_seed14`` == archived ``squad_v10c``) counts
+      once, never twice (#60's lesson applied to counting).
     * **cross-tree** — each draw's ``cohort/`` tree is derived from its
       recorded commit; a draw with no run on the member's tree is annotated,
       because it is evidence about the seed, not about the sealed environment.
@@ -530,34 +535,81 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     if not rows and not undeclared:
         return None
 
+    digests_enabled = digest is None
     if digest is None:
         from scripts.publish_audit import policy_digest as digest
 
-    # Member + search + valid spread runs, grouped into DRAWS by the identity
-    # of the final policy's tensors. No digest (no checkpoint, --no-loadable)
-    # means the run stands alone: unknown identity is not the same as shared.
-    draws: list[dict] = []
-    by_key: dict[str, dict] = {}
-    seen: set[str] = set()
+    # Member + search + valid spread runs, grouped into DRAWS by model-tensor
+    # identity over EVERY checkpoint both runs hold (assurance #65). Keying on
+    # the final alone could not dedupe an archived run — `runs/archive/` prunes
+    # `ckpt_latest.pt` and keeps `ckpt_best.pt` — so absence silently degraded
+    # to "distinct", inflating the independent-draw count. Two runs are one
+    # draw when they share at least one digestible checkpoint and disagree on
+    # none; a run with no digestible checkpoint stands alone (unknown identity
+    # is not the same as shared) and is disclosed — as a FAILURE when its
+    # files are on disk and the digests are real, because that is the key
+    # going quietly unavailable, not an honest absence.
+    kinds: dict[str, str] = {}
     entries = ([("declared", member)] + [("declared", r) for r in search]
                + [("spread", r["run"]) for r in rows
                   if r["exists"] and r["config_matches"] and not r["overrides"]])
+    order: list[str] = []
     for kind, run in entries:
-        if run in seen:
-            continue
-        seen.add(run)
-        key = digest(run_dir(run) / HEADLINE_CKPT) or f"only:{run}"
+        if run not in kinds:
+            kinds[run] = kind
+            order.append(run)
+    keys = {run: {name: dg for name in CHECKPOINTS
+                  if (dg := digest(run_dir(run) / name))}
+            for run in order}
+
+    parent = {run: run for run in order}
+
+    def _draw(r: str) -> str:
+        while parent[r] != r:
+            parent[r] = parent[parent[r]]
+            r = parent[r]
+        return r
+
+    for i, a in enumerate(order):
+        for b in order[i + 1:]:
+            shared = keys[a].keys() & keys[b].keys()
+            if shared and all(keys[a][n] == keys[b][n] for n in shared):
+                parent[_draw(b)] = _draw(a)
+
+    draws: list[dict] = []
+    by_key: dict[str, dict] = {}
+    for run in order:
+        key = _draw(run)
         group = by_key.get(key)
         if group is None:
             group = {"runs": [], "kinds": set(), "seeds": [], "trees": [], "verdicts": []}
             by_key[key] = group
             draws.append(group)
         group["runs"].append(run)
-        group["kinds"].add(kind)
+        group["kinds"].add(kinds[run])
         group["seeds"].append(_json_or_empty(run_dir(run) / "config.json").get("seed"))
         group["trees"].append(
             cohort_tree(_json_or_empty(run_dir(run) / "economics.json").get("git_commit")))
         group["verdicts"].append(_reporting_gate(run))
+
+    # Which checkpoints carry each group's identity — and, through a merge via
+    # an intermediary that holds only one of them, whether any two members of a
+    # group actually disagree somewhere. That shape is two final policies in
+    # one count and cannot be resolved mechanically, so it is surfaced as a
+    # problem rather than silently counted either way.
+    conflicts: list[tuple[list[str], list[str]]] = []
+    for g in draws:
+        settled, disputed = [], []
+        for name in CHECKPOINTS:
+            held = [keys[r][name] for r in g["runs"] if name in keys[r]]
+            if len(held) >= 2:
+                (settled if len(set(held)) == 1 else disputed).append(name)
+        g["settled"] = settled
+        if disputed:
+            conflicts.append((list(g["runs"]), disputed))
+    undigested = [r for r in order if not keys[r]]
+    unreadable = [r for r in undigested if digests_enabled
+                  and any((run_dir(r) / n).is_file() for n in CHECKPOINTS)]
 
     for g in draws:
         measured = [v for v in g["verdicts"] if v is not None]
@@ -572,6 +624,9 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
         "runs": rows,
         "undeclared": undeclared,
         "draws": draws,
+        "undigested": undigested,
+        "unreadable": unreadable,
+        "conflicts": conflicts,
         "spread_draws": len(spread),
         "spread_reporting": sum(1 for g in spread if g["reports"] is True),
         "spread_mute": sum(1 for g in spread if g["reports"] is False),
@@ -611,6 +666,17 @@ def _seed_spread_problems(facts: dict, member: str | None, search: list[str]) ->
             problems.append(
                 f"seed_spread[{sc}]: bit-identical runs {' = '.join(g['runs'])} carry "
                 "disagreeing measured reporting verdicts — a re-score moved one of them")
+    for runs, names in facts.get("conflicts", ()):
+        problems.append(
+            f"seed_spread[{sc}]: {' = '.join(runs)} group through a shared checkpoint "
+            f"but disagree at {', '.join(n.removesuffix('.pt') for n in names)} — two "
+            "final policies in one draw group; the identity is ambiguous and needs a "
+            "human read")
+    for run in facts.get("unreadable", ()):
+        problems.append(
+            f"seed_spread[{sc}]: {run} holds checkpoint files but none can be "
+            "digested — unknown identity silently counts as a distinct draw, which "
+            "inflates the spread (assurance #65)")
     if facts["undeclared"]:
         problems.append(
             f"seed_spread[{sc}]: same-config draw(s) in neither seed_search nor "
@@ -630,10 +696,17 @@ def _print_spread(sp: dict, declared_names: set[str]) -> None:
         spread_runs = [r for r in g["runs"] if r not in declared_names]
         if not spread_runs:
             continue
+        # Which checkpoints the identity rests on — said out loud whenever it
+        # is fewer than all of them, i.e. whenever a pruned final made
+        # ckpt_best carry the match (assurance #65).
+        note = ""
+        if len(g["runs"]) > 1 and set(g.get("settled") or ()) < set(CHECKPOINTS):
+            note = (" — settled at "
+                    + " + ".join(n.removesuffix(".pt") for n in g["settled"]))
         if "declared" in g["kinds"]:
             # Folded into a member/search line above — one draw, said out loud.
             print(f"          {' = '.join(spread_runs)}  ==  {g['runs'][0]} "
-                  "(the same draw, counted once)")
+                  f"(the same draw, counted once{note})")
             continue
         label = " = ".join(g["runs"])
         verdict = "—" if g["reports"] is None else "reports" if g["reports"] else "mute"
@@ -642,7 +715,11 @@ def _print_spread(sp: dict, declared_names: set[str]) -> None:
             trees = sorted({(t or "?")[:8] for t in g["trees"]})
             where = f"  cross-tree {'/'.join(trees)}"
         seed = g["seeds"][0]
-        print(f"          seed {seed!s:<4} {label:<40} {verdict:<8}{where}")
+        print(f"          seed {seed!s:<4} {label:<40} {verdict:<8}{where}{note}")
+    if sp.get("undigested"):
+        print(f"      identity underived for {len(sp['undigested'])} run(s) — no "
+              "digestible checkpoint, each counted as its own draw: "
+              f"{', '.join(sp['undigested'])}")
     unmeasured = f" ({sp['spread_unmeasured']} unmeasured)" if sp["spread_unmeasured"] else ""
     print(f"      known same-config draws: {sp['known_reporting']} of "
           f"{sp['known_total']} report{unmeasured}")
@@ -717,6 +794,31 @@ def _uncommitted(run: str) -> list[str]:
         return []
     tracked = {line.rsplit("/", 1)[-1] for line in out.stdout.split()}
     return [n for n in present if n not in tracked]
+
+
+def tracked_files(run: str) -> set[str] | None:
+    """Basenames of this run's files the repository tracks; None when git
+    cannot answer (a tarball export, a tmp_path fixture).
+
+    Issue #66. The manifest checks used to read the *filesystem*, so a declared
+    run that was on the authoring disk but never ``git add``-ed passed every
+    gate there and failed in any clone — ``platoon_v10_seed12`` did exactly
+    that. "Declared" must mean "in the repository", and only git can say so;
+    presence on one machine's disk is what the gate exists to see through.
+    """
+    import subprocess
+
+    d = run_dir(run)
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", str(d)],
+            cwd=ROOT, capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {line.rsplit("/", 1)[-1] for line in out.stdout.splitlines() if line}
 
 
 def _policy_reproductions(manifest: dict) -> list[tuple[str, str, list[str]]]:

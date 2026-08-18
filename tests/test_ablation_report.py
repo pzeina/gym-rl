@@ -260,6 +260,26 @@ def test_the_seed_report_prints_every_seed_and_lets_the_mean_follow(trio, capsys
     assert "seeds 12/13/14" in out
 
 
+def test_root_death_is_printed_per_seed_and_the_checkpoint_is_named(trio, capsys):
+    """Assurance #64: the promoted commander-survival claim was a mean (0.13)
+    that no seed exhibits — 0.12 / 0.27 / 0.00, the 0.00 a re-executed policy.
+    A bimodal row shown as a mean alone is the misreading the per-seed layout
+    exists to prevent, and every cell must say which checkpoint it reads."""
+    runs = _nine(trio)
+    for run, rate in zip(runs[:3], (0.12, 0.27, 0.0), strict=True):
+        path = trio / run / "behavior_final.json"
+        b = json.loads(path.read_text())
+        b["metrics"]["human_death_rate"] = rate
+        path.write_text(json.dumps(b))
+
+    assert ablation_report.seed_report(runs) == 0
+    out = capsys.readouterr().out
+
+    assert "0.12 0.27 0.00  (0.13)" in out, "the seeds, then the mean — never the mean alone"
+    assert "the FINAL policy, ckpt_latest" in out
+    assert "checkpoint selection" in out
+
+
 def test_the_seed_report_pools_success_across_seeds_for_the_exact_test(trio, capsys):
     runs = _nine(trio)
 

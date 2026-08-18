@@ -928,26 +928,44 @@ original's own strength.** The arms are scenarios (`squad_nomask`,
 | success, per seed | 0.97 / 0.95 / 0.90 | 0.96 / 0.93 / 0.93 | 0.98 / 0.98 / 1.00 |
 | success, pooled | 282/300 | 282/300 (p = 1.000) | **296/300 (p = 0.004)** |
 | defeats / 100, mean | 1.7 | 5.0 | **0.3** |
-| root death, mean | **0.13** | 0.20 | 0.21 |
+| root death, per seed | 0.12 / 0.27 / 0.00 | 0.19 / 0.20 / 0.21 | 0.23 / 0.20 / 0.21 |
 | doctrine-valid orders, per seed | 1.00 / 1.00 / 1.00 | 0.84 / 0.43 / 0.48 | — none issued |
 | root closes truthfully, per seed | 0.96 / 0.94 / 0.00 | 0.00 / 0.00 / 0.00 | 0.99 / 0.98 / 0.98 |
 
 The one-seed inversion is confirmed at strength, and the original's robustness
-half falls with it: flat is now the **most** robust arm (0.3 defeats per 100
-against the original's 2.2× wipe rate), and it beats the hierarchy on success
-outright. The completion channel adds a wrinkle the means would hide: nomask's
-root never closes truthfully, flat's closes on every seed, and the full arm's
-is **bimodal** — two seeds at 0.95+, while seed 14 fails the 0.5 reporting
-floor on both checkpoints (0.052 best, 0.000 final) — the same pathology the
-fleet's seed searches were declared for.
+half falls with it: the "flat wipes 2.2×" result is refuted — though the
+ordering that replaces it has power only against nomask (flat 1/300 defeats
+vs 15/300, p = 0.0004); flat against full is 1/300 vs 5/300 (p = 0.22), an
+ordering, not a finding. Flat beats the hierarchy on success outright. The
+completion channel adds a wrinkle the means would hide: nomask's root never
+closes truthfully, flat's closes on every seed, and the full arm's is
+**bimodal** — two seeds at 0.95+, while seed 14 fails the 0.5 reporting floor
+on both checkpoints (0.052 best, 0.000 final) — the same pathology the
+fleet's seed searches were declared for. Root death is bimodal the same way,
+which is why its row is printed per seed: the full arm's 0.13 mean is a rate
+no seed exhibits. Seed 13 (0.27) is worse than every ablated seed, and the
+0.00 belongs to seed 14 — the bit-identical re-execution of archived
+`squad_v10c` (assurance #63), not an independent draw. Set that seed aside
+and the survival edge does not weaken, it disappears: full 39/200 vs nomask
+39/200 (p = 1.0), vs flat 43/200 (p = 0.71). It is also the one row that
+changes verdict with the checkpoint: the full arm's toll is 39/300 at both,
+but flat's moves 64 → 45 at `ckpt_best`, taking full-vs-flat from p = 0.009
+to p = 0.56 (assurance #64).
 
 **What this project claims after three measurements**: the hierarchy buys
 **interpretability** (doctrine-valid traffic at 1.000 by construction against
-0.58 without masks — the one row all three measurements order the same way)
-and **commander survival** (root death 0.13 against 0.20/0.21). It claims
-neither the outcome nor the robustness result, and on this tree it measures
-the hierarchy's cost plainly: ~5 points of success against a flat team
-(p = 0.004) on a squad-sized scenario. Whether that cost shrinks, vanishes or
+0.58 without masks — the one row all three measurements order the same way,
+on every seed, at both checkpoints). Commander survival is **not** claimed:
+the 0.13-against-0.20/0.21 reading was carried entirely by the re-executed
+seed and by one checkpoint, and what survives both perturbations is that the
+arms are not distinguishable on root death (assurance #64) — the axis is
+real, the separation was not. The project claims neither the outcome nor the
+robustness result, and on this tree it measures the hierarchy's cost on the
+final policy: ~5 points of success against a flat team (p = 0.004) on a
+squad-sized scenario — a `ckpt_latest` reading; the same cells at
+`ckpt_best` give 1 point at p = 0.67, so the cost's magnitude is
+checkpoint-sensitive even though every measurement of it points the same
+way. Whether that cost shrinks, vanishes or
 inverts at platoon depth and beyond is exactly the open question the original
 posed and nobody has measured — depth is the argument for a chain of command,
 and the deepest chart trained is three echelons.
