@@ -476,6 +476,58 @@ The next candidate fix is no longer vocabulary: it is either steeper
 rank-scaled pricing, or a probe that models *rotation cycles* rather than
 single standing orders.
 
+## The v1.21 fleet sweep (2026-08-18)
+
+The probe's first run over an entire sealed fleet: all eight v1.21 members,
+both checkpoints, 30 episodes each at seeds 500–529, K=15 — sixteen cells,
+committed as `runs/<member>/probe_{best,final}.json`.
+
+    member                     ckpt    pairs   dest   majority    gap   posture  p-maj
+    fireteam_v12               best     7698  0.368     0.509   −0.141    0.546  0.672
+    fireteam_v12               final    7820  0.405     0.484   −0.079    0.620  0.686
+    fireteam_defend_v23        best    17050  0.491     0.998   −0.507    0.774  0.787
+    fireteam_defend_v23        final   14742  0.484     1.000   −0.516    0.632  0.602
+    squad_v27                  best    15147  0.451     0.623   −0.172    0.623  0.754
+    squad_v27                  final   13806  0.664     0.758   −0.094    0.630  0.713
+    squad_recon_v11            best    13476  0.514     0.693   −0.179    0.347  0.721
+    squad_recon_v11            final   10635  0.473     0.657   −0.184    0.481  0.571
+    squad_screen_v14           best    12188  0.382     0.713   −0.331    0.277  0.804
+    squad_screen_v14           final   11108  0.546     0.577   −0.030    0.525  0.457
+    patrol_brique_v41_seed14   best    17341  0.190     0.468   −0.278    0.556  0.960
+    patrol_brique_v41_seed14   final   13292  0.098     0.453   −0.355    0.813  0.994
+    defend_brique_v17          best    13540  0.497     0.817   −0.320    0.536  0.523
+    defend_brique_v17          final   11220  0.693     1.000   −0.307    0.454  0.414
+    platoon_v8                 best    44395  0.163     0.309   −0.146    0.435  0.736
+    platoon_v8                 final   42243  0.231     0.271   −0.041    0.449  0.669
+
+Four readings, in order of strength:
+
+1. **The A5 verdict stands fleet-wide: the majority baseline is unbeaten on
+   destination in all sixteen cells.** No member's radio net alone yet
+   predicts movement better than a constant OPORD-only reader.
+2. **The cells split into regimes, and the honest gap is smaller than the
+   worst number suggests.** The defend scenarios are degenerate — a garrison
+   that holds its objective makes the majority reader perfect by construction
+   (fireteam_defend 0.998–1.000, defend_brique final 1.000), so those four
+   cells can measure nothing but the floor. On the maneuver scenarios the
+   FINAL policies — the artifact the fleet gates on — close to within 3–9
+   points: squad_screen −0.030, platoon −0.041, fireteam −0.079, squad
+   −0.094. In every one of those the final policy is simultaneously more
+   probe-readable and *less* majority-predictable than its ckpt_best — the
+   improvement is information transfer, not an easier baseline.
+3. **Three final-policy posture cells beat the majority for the first time
+   anywhere in this program**: squad_screen +0.068, defend_brique +0.040,
+   fireteam_defend +0.030. Small margins, but A5 measured posture at −0.25
+   to −0.34; the sign has flipped on three scenarios.
+4. **`patrol_brique_v41_seed14` is the readability miss.** Destination 0.190
+   at best falling to 0.098 at final — against a beatable 0.45 majority —
+   makes the shipped patrol member near-opaque to the net-following reader;
+   its posture cell (0.813) sits under a 0.994-degenerate majority and says
+   nothing. The member was chosen for claim quality over claim volume
+   (root-closed 0.878, false-DONE 0.372); its radio silence between claims is
+   exactly what the probe cannot read through. Any future work on the
+   standing-order model or rank-scaled pricing should read this member first.
+
 ## Artifacts
 
 * `cohort/probe.py` — predictor, ground truth, scoring, CLI (pure and

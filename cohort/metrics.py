@@ -283,6 +283,11 @@ class TraceRecorder:
             # threat", so the fight-disposition metrics travel with the
             # combat model instead of a hard-coded constant.
             "threat_radius": float(env.combat.weapon_range),
+            # cohesion (owner's axis, 2026-08-18, measured NOT enforced): the
+            # radius that defines a "close" teammate is the combat model's own
+            # support umbrella — the distance at which doctrine already says a
+            # supporter counts — recorded so the trace states its definition.
+            "support_umbrella": float(env.combat.support_umbrella),
             "contact_refresh_age": env.rewards_cfg.contact_refresh_age,
             # issue #35: the interval that prices a SITREP fresh rather than
             # spam, and where the freshness clock starts — the scenario's own
@@ -328,6 +333,23 @@ class TraceRecorder:
         # succession moves the root mid-episode, so who holds the OPORD is a
         # function of the step, not of the roster at reset
         root = env.roster.root()
+        # cohesion (measured, not enforced): which living soldiers have a
+        # living teammate close (within the support umbrella) and which are in
+        # some living teammate's line of sight. Computed here rather than in
+        # the reducer because LOS needs the terrain grid, which the trace does
+        # not carry. Both relations are symmetric (euclidean distance;
+        # Bresenham LOS blocks on walls both ways), so one pass over pairs
+        # covers both directions. Pure grid/position lookups — no RNG.
+        living = [s for s in env.roster.soldiers if s.alive]
+        umbrella = float(env.combat.support_umbrella)
+        has_close_mate: set[str] = set()
+        seen_by_mate: set[str] = set()
+        for i, a in enumerate(living):
+            for b in living[i + 1:]:
+                if _dist(a.pos, b.pos) <= umbrella:
+                    has_close_mate.update((a.callsign, b.callsign))
+                if env.world.line_of_sight(a.pos, b.pos):
+                    seen_by_mate.update((a.callsign, b.callsign))
         for s in env.roster.soldiers:
             comp = None
             # A5-2: a pending order stages its recipient, and the environment
@@ -363,6 +385,11 @@ class TraceRecorder:
                     # issue #11: terrain posture, the strongest correlate of
                     # defend success found so far. Read-only grid lookup.
                     "cover": bool(env.world.cover_at(s.pos)),
+                    # cohesion booleans: None when dead, so the reducer can
+                    # tell "dead this step" and "pre-cohesion trace" (both
+                    # skipped) apart from a measured False
+                    "teammate_close": (s.callsign in has_close_mate) if s.alive else None,
+                    "teammate_sees": (s.callsign in seen_by_mate) if s.alive else None,
                     "fired": bool(s.fired_this_step) if s.alive else False,
                     "sees": [e.id for e in env._visible_enemies(s)] if s.alive else [],
                     # A5-3: the element stance set ON this soldier (leaders only)
@@ -1261,6 +1288,47 @@ def _fight_disposition(trace: dict) -> dict[str, Any]:
     }
 
 
+def _cohesion(trace: dict) -> dict[str, Any]:
+    """Does anyone leave the cohort? (owner's axis, 2026-08-18 — MEASURED,
+    never enforced: no mask and no reward reads these numbers.)
+
+    The axis, verbatim: "no agent should be allowed to leave the cohort or go
+    out of line of sight of all its teammates; there should always remain at
+    least one close teammate to each teammate". Two counts over living-agent-
+    steps, both recorded per step by the ``TraceRecorder`` (LOS needs the
+    terrain grid, which the trace does not carry):
+
+    * no close teammate — no living teammate within the combat model's
+      support umbrella (``trace["support_umbrella"]``, 8.0 by default), the
+      radius at which doctrine already counts a supporter as present;
+    * unseen by any teammate — no living teammate holds terrain line of
+      sight to the agent (walls block; the same ``World.line_of_sight``
+      vision spotting runs on).
+
+    A sole survivor counts as isolated on both — that is the finding, not an
+    artifact. Steps where the soldier is dead, and whole traces recorded
+    before these keys existed, contribute nothing to either count or to the
+    denominator, so old committed ``behavior.json`` files simply read None.
+    """
+    agent_steps = 0
+    no_close = 0
+    unseen = 0
+    for step in trace["steps"]:
+        for rec in step["soldiers"]:
+            close = rec.get("teammate_close")
+            seen = rec.get("teammate_sees")
+            if close is None or seen is None:
+                continue  # dead this step, or a pre-cohesion trace
+            agent_steps += 1
+            no_close += not close
+            unseen += not seen
+    return {
+        "cohesion_agent_steps": agent_steps,
+        "no_close_teammate_steps": no_close,
+        "unseen_by_any_teammate_steps": unseen,
+    }
+
+
 def _traffic(trace: dict) -> dict[str, Any]:
     """Everything said this episode, split by channel (refs issue #18).
 
@@ -1346,6 +1414,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_vocabulary(trace),
         **_human_exposure(trace),
         **_fight_disposition(trace),
+        **_cohesion(trace),
         **_traffic(trace),
     }
 
@@ -1604,6 +1673,16 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
             total("threat_objective_dist_sum"), total("threat_objective_dist_pairs")
         ),
         "threat_pairs": total("threat_pairs"),
+        # cohesion (owner's axis, 2026-08-18): pooled over living-agent-steps,
+        # so a long episode weighs more — the question being how much of the
+        # cohort's lived time is spent isolated. Measured, never enforced.
+        "no_close_teammate_rate": _ratio(
+            total("no_close_teammate_steps"), total("cohesion_agent_steps")
+        ),
+        "unseen_by_any_teammate_rate": _ratio(
+            total("unseen_by_any_teammate_steps"), total("cohesion_agent_steps")
+        ),
+        "cohesion_agent_steps": total("cohesion_agent_steps"),
         # clock expiry + traffic composition (refs #18). The rate is the
         # gated number; the composition is diagnosis, deliberately not gated
         # — measured across the fleet, a healthy `fireteam_defend_v10` runs
@@ -1766,6 +1845,8 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("human_death_rate", "human: death rate", "{:.2f}"),
     ("cover_occupancy_under_threat", "fight: cover occupancy", "{:.3f}"),
     ("mean_distance_from_objective_under_threat", "fight: dist from OBJ", "{:.2f}"),
+    ("no_close_teammate_rate", "cohesion: no close teammate", "{:.3f}"),
+    ("unseen_by_any_teammate_rate", "cohesion: unseen by teammates", "{:.3f}"),
     ("timeout_rate", "ran the clock out", "{:.2f}"),
     ("messages_per_episode", "messages / ep", "{:.0f}"),
     ("command_traffic_share", "of which command", "{:.3f}"),
@@ -2036,6 +2117,7 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
             f"n={agg['succession_events']}, unrecovered {agg['succession_unrecovered']}"
         ),
         "cover_occupancy_under_threat": f"n={agg.get('threat_pairs', 0)} threatened agent-steps",
+        "no_close_teammate_rate": f"n={agg.get('cohesion_agent_steps', 0)} living agent-steps",
         # the length next to its own ceiling: "375" only means "pinned" once
         # the reader is told the cap is 375 (refs #18)
         "timeout_rate": (

@@ -496,6 +496,47 @@ SCENARIOS["platoon_flat"] = replace(
     ablation="flat",
 )
 
+# Harder-OpFor follow-up to the platoon-depth B3 read (owner-decided
+# 2026-08-18): at n_enemies=8 every outcome axis saturated — all three arms
+# succeeded, so the depth cycle could not separate the hierarchy from its
+# ablations on outcomes. A heavier garrison is the follow-up: same chart,
+# geometry, rewards, and spaces as `platoon`; only the garrison is heavier
+# (8 → 14 defenders). Registered additively — `platoon` itself is untouched.
+# `experiment_arm` is labelling only (dashboard picker distinguishability,
+# required by tests/test_dashboard.py); it never changes behavior.
+SCENARIOS["platoon_hard"] = replace(
+    SCENARIOS["platoon"],
+    name="platoon_hard",
+    description=(
+        "Harder-OpFor follow-up to the platoon-depth B3 read (every outcome "
+        "axis saturated at n_enemies=8; owner-decided 2026-08-18): the platoon "
+        "scenario against a 14-defender garrison — same chart, geometry, "
+        "rewards, and spaces; only the garrison is heavier."
+    ),
+    n_enemies=14,
+    experiment_arm="heavy garrison",
+)
+SCENARIOS["platoon_hard_nomask"] = replace(
+    SCENARIOS["platoon_hard"],
+    name="platoon_hard_nomask",
+    description=(
+        "B3 ablation arm (ii) at platoon depth against the heavy garrison: the "
+        "platoon_hard scenario with the doctrine-derivation constraint removed "
+        "from the order mask (rank admissibility and cooldown stay)."
+    ),
+    ablation="nomask",
+)
+SCENARIOS["platoon_hard_flat"] = replace(
+    SCENARIOS["platoon_hard"],
+    name="platoon_hard_flat",
+    description=(
+        "B3 ablation arm (iii) at platoon depth against the heavy garrison: "
+        "flat 16-agent team — no orders at all; every agent receives the OPORD "
+        "directly at reset; comms limited to reports."
+    ),
+    ablation="flat",
+)
+
 # Information-asymmetry probe (v1.11 gate, docs/vision.md §6): the squad
 # scenario with eyes halved and nothing else touched — same geometry, OpFor,
 # rewards, spaces, and ablation arm. It tests the hypothesis behind directional

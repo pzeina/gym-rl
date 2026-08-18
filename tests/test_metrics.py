@@ -33,7 +33,7 @@ from cohort.training.evaluate import evaluate, run_episode
 
 def sold(
     cs, *, alive=True, pos=(0, 0), mission=None, since=None, auth=0, subs=(), comp=None, sees=(),
-    cover=False, rank=None,
+    cover=False, rank=None, teammate_close=None, teammate_sees=None,
 ):
     return {
         "cs": cs,
@@ -47,6 +47,11 @@ def sold(
         "sees": list(sees),
         "cover": cover,
         "rank": rank,
+        # None = unmeasured (dead, or a trace recorded before the cohesion
+        # keys existed) — the default, so every pre-cohesion test fixture
+        # doubles as a legacy trace
+        "teammate_close": teammate_close,
+        "teammate_sees": teammate_sees,
     }
 
 
@@ -531,6 +536,97 @@ def test_fight_disposition_is_none_without_threat():
     assert agg["cover_occupancy_under_threat"] is None
     assert agg["mean_distance_from_objective_under_threat"] is None
     assert agg["threat_pairs"] == 0
+
+
+# ---------------------------------------------------------------------- #
+# cohesion (owner's axis, 2026-08-18 — measured, never enforced)
+# ---------------------------------------------------------------------- #
+
+
+def _pair(t, *, close, seen):
+    """One step of a two-agent episode with a known cohesion state."""
+    return step(t, [
+        sold("RFN1", teammate_close=close, teammate_sees=seen),
+        sold("RFN2", teammate_close=close, teammate_sees=seen),
+    ])
+
+
+def test_cohesion_isolation_zero_and_one_by_construction():
+    together = episode_behavior(trace([_pair(t, close=True, seen=True) for t in range(3)]))
+    assert together["cohesion_agent_steps"] == 6
+    assert together["no_close_teammate_steps"] == 0
+    assert together["unseen_by_any_teammate_steps"] == 0
+    assert aggregate_behavior([together])["no_close_teammate_rate"] == 0.0
+    assert aggregate_behavior([together])["unseen_by_any_teammate_rate"] == 0.0
+
+    apart = episode_behavior(trace([_pair(t, close=False, seen=False) for t in range(3)]))
+    assert aggregate_behavior([apart])["no_close_teammate_rate"] == 1.0
+    assert aggregate_behavior([apart])["unseen_by_any_teammate_rate"] == 1.0
+
+    # pooled over living-agent-steps, not averaged per episode
+    both = aggregate_behavior([together, apart])
+    assert both["no_close_teammate_rate"] == 0.5
+    assert both["cohesion_agent_steps"] == 12
+
+
+def test_cohesion_tolerates_dead_soldiers_and_legacy_traces():
+    # a dead soldier records None and measures nothing; a whole trace without
+    # the keys (every committed behavior.json predating them) reads None, not 0
+    mixed = step(0, [
+        sold("RFN1", teammate_close=True, teammate_sees=False),
+        sold("RFN2", alive=False),
+    ])
+    ep = episode_behavior(trace([mixed]))
+    assert ep["cohesion_agent_steps"] == 1
+    assert ep["unseen_by_any_teammate_steps"] == 1
+    legacy = episode_behavior(trace([step(0, [sold("RFN1"), sold("RFN2")])]))
+    assert legacy["cohesion_agent_steps"] == 0
+    agg = aggregate_behavior([legacy])
+    assert agg["no_close_teammate_rate"] is None
+    assert agg["unseen_by_any_teammate_rate"] is None
+
+
+def test_recorder_cohesion_two_agents_and_a_wall():
+    """The recorder's own booleans, on a constructed grid: close vs far is the
+    support umbrella, and a wall between the pair breaks teammate LOS."""
+    from cohort.core.world import OPEN, WALL
+
+    env = make_env("fireteam")
+    env.reset(seed=3)
+    a, b, *rest = env.roster.soldiers
+    for s in rest:
+        s.alive = False
+    env.world.grid[:, :] = OPEN
+
+    rec = TraceRecorder()
+    umbrella = env.combat.support_umbrella
+
+    # side by side, nothing between them: cohesive on both axes
+    a.pos, b.pos = (2, 2), (2 + int(umbrella), 2)
+    rec.on_reset(env)
+    assert rec.trace["support_umbrella"] == umbrella
+    recs = {r["cs"]: r for r in rec.trace["steps"][0]["soldiers"]}
+    assert recs[a.callsign]["teammate_close"] is True
+    assert recs[a.callsign]["teammate_sees"] is True
+    assert recs[rest[0].callsign]["teammate_close"] is None  # dead: unmeasured
+
+    # a wall bisecting the map between them: still close, but unseen
+    wall_x = 4
+    a.pos, b.pos = (2, 2), (6, 2)
+    env.world.grid[:, wall_x] = WALL
+    rec.on_reset(env)
+    recs = {r["cs"]: r for r in rec.trace["steps"][0]["soldiers"]}
+    assert recs[a.callsign]["teammate_close"] is True
+    assert recs[a.callsign]["teammate_sees"] is False
+    assert recs[b.callsign]["teammate_sees"] is False
+
+    # wall gone, but beyond the umbrella: seen, not close
+    env.world.grid[:, wall_x] = OPEN
+    b.pos = (2 + int(umbrella) + 1, 2)
+    rec.on_reset(env)
+    recs = {r["cs"]: r for r in rec.trace["steps"][0]["soldiers"]}
+    assert recs[a.callsign]["teammate_close"] is False
+    assert recs[a.callsign]["teammate_sees"] is True
 
 
 def _defend_agg(*, cover, dist_from_obj):
