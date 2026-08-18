@@ -947,6 +947,33 @@ def test_recorded_final_hashes_that_disagree_keep_the_draws_apart(
     assert "spread: +1 distinct draws over 1 more runs — 0 report, 1 mute" in out
 
 
+def test_disagreeing_recorded_finals_with_no_tensor_do_not_split_the_draw(
+        fleet, capsys, monkeypatch):
+    """The #68 negative control: two runs tensor-identical at the checkpoint
+    both still hold, finals pruned on BOTH sides, recorded final file hashes
+    differing. A file hash is the stronger discriminator — one policy lives in
+    two byte-strings whenever only the serialized price differs (#61) — so
+    with no tensor to appeal to the disagreement is UNRESOLVED, not distinct:
+    the pair merges on ckpt_best, is counted once, and the audit says which
+    checkpoint could not be adjudicated rather than quietly counting two."""
+    _stub_digests(monkeypatch)
+    (fleet / "squad_v1" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    _recorded_final(fleet, "squad_v1", "1" * 64)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.85)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    _recorded_final(fleet, "squad_old", "2" * 64)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +0 distinct draws over 1 more runs" in out
+    assert ("squad_old  ==  squad_v1 (the same draw, counted once — "
+            "settled at ckpt_best)") in out
+    assert "unresolved at ckpt_latest for squad_v1 = squad_old" in out
+    assert "unadjudicated, not a second draw" in out
+
+
 def test_tensor_identity_outranks_the_recorded_file_hash(fleet, capsys, monkeypatch):
     """The caveat that bit the assurance layer, refused here: a checkpoint
     serializes its reward_config, so one policy can live in two byte-strings
