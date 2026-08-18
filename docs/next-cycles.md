@@ -30,11 +30,16 @@ whatever it is, these ride along:
 > inverted on this tree; interpretability (doctrine-valid 1.00 vs 0.58) and
 > commander survival (root death 0.13 vs 0.20/0.21) are what the hierarchy
 > still buys. The spread: success deltas ≤ 0.03 on all six one-seed members,
-> but `platoon_v9_seed13` is a MUTE ROOT and `squad_v29_seed14` makes squad
-> 2-of-3 reporting — the bimodal set for the rider below is now
+> but `platoon_v9_seed13` is a MUTE ROOT and `squad_v29_seed14` fails the
+> root-report gate on both checkpoints (0.052 / 0.000 — and is a bit-identical
+> re-derivation of archived `squad_v10c`, assurance #63), making squad 2-of-3
+> reporting on the sealed tree, 2-of-4 expected counting archived
+> `squad_v20_seed15` — the bimodal set for the rider below is now
 > patrol_brique, squad, platoon (squad_screen wobbling at 0.71). README
 > ablation wording and any manifest `seed_spread` block are owner decisions,
-> presented in ROADMAP's handoff.
+> presented in ROADMAP's handoff. Campaign queues now pre-flight each job's
+> config against the record (`scripts/campaign_preflight.py`) so a queued
+> config the archive already answered is refused before it burns 3M steps.
 
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a
