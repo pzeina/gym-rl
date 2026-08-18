@@ -149,3 +149,18 @@ def test_the_state_file_records_where_each_board_was_published():
     for name in update_boards.BOARDS:
         assert name in state.get("boards", {}), name
         assert state["boards"][name]["url"] == update_boards.BOARDS[name]["url"]
+
+
+def test_a_manifest_declaration_block_changing_marks_the_artifacts_stale():
+    """The spread block landed and the publish flag said "current" (2026-08-18):
+
+    the digest read only the rows, and seed_search/seed_spread change what the
+    fleet board says about a scenario without any run moving. The manifest
+    blocks are an argument, not a read, so the purity guard above still holds.
+    """
+    rows = [_row()]
+    before = {"version": "v1.21", "seed_search": {"squad": ["a", "b"]}, "seed_spread": None}
+    after = dict(before, seed_spread={"squad": ["c"]})
+
+    assert update_boards.data_digest(rows, before) != update_boards.data_digest(rows, after)
+    assert update_boards.data_digest(rows, before) == update_boards.data_digest(rows, dict(before))
