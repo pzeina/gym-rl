@@ -952,23 +952,66 @@ changes verdict with the checkpoint: the full arm's toll is 39/300 at both,
 but flat's moves 64 → 45 at `ckpt_best`, taking full-vs-flat from p = 0.009
 to p = 0.56 (assurance #64).
 
-**What this project claims after three measurements**: the hierarchy buys
-**interpretability** (doctrine-valid traffic at 1.000 by construction against
-0.58 without masks — the one row all three measurements order the same way,
+**2026-08-18, the depth question: 3 seeds per arm at platoon depth — 16
+agents, three echelons, N=100 each, one tree.** Depth is the whole argument
+for a chain of command, and B3 had only ever been measured on a squad. The
+arms (`platoon_nomask`, `platoon_flat`) are exact mirrors of the squad arms,
+and the registration was proven additive before the ablation was read: the
+campaign's lead run re-derived the platoon member bit-for-bit across it
+(`platoon_v10_seed12` ≡ `platoon_v8` on both checkpoints), so the full arm is
+the standing seed-12/13 draws plus the new `platoon_v11_seed14`. Every cell
+regenerates from the committed evaluations via `scripts/ablation_report.py`
+(nine runs, three per arm):
+
+| N=100 × 3 seeds, final policy | full | nomask | flat |
+|---|---|---|---|
+| success, per seed | 1.00 / 0.99 / 1.00 | 1.00 / 1.00 / 1.00 | 1.00 / 1.00 / 1.00 |
+| success, pooled | 299/300 | 300/300 (p = 1.000) | 300/300 (p = 1.000) |
+| defeats / 100, per seed | 0 / 0 / 0 | 0 / 0 / 0 | 0 / 0 / 0 |
+| root death, per seed | 0.17 / 0.00 / 0.23 | 0.00 / 0.21 / 0.04 | 0.11 / 0.12 / 0.13 |
+| doctrine-valid orders, per seed | 1.00 / 1.00 / 1.00 | 0.61 / 0.79 / 0.94 | — none issued |
+| root closes truthfully, per seed | 0.93 / 0.00 / 0.94 | 0.00 / 0.97 / 0.00 | 1.00 / 0.99 / 0.99 |
+
+The depth hypothesis — that a 16-agent flat team, every agent holding the full
+OPORD and no order traffic existing, pays a coordination cost the 9-agent
+squad did not — finds no support. The hierarchy's ~5-point squad cost neither
+persists nor inverts here, because **every outcome axis saturates**: 299 or
+300 of 300 for every arm, not one defeat in 900 episodes, root death
+separating nowhere. At this step budget the platoon scenario has no outcome
+power, and a gap in either direction could not have been seen. What still
+separates is the traffic. Doctrine-validity keeps its ordering at depth (1.00
+by construction; nomask 0.61–0.94, its best seed still below construction) —
+but doctrine *preference* no longer separates seed by seed (the full arm's
+worst seed, 0.62, sits below nomask's best, 0.72). And the completion channel
+is the starkest cell yet: the flat root closes truthfully on every seed
+(0.99–1.00); the full arm is bimodal exactly as the fleet's seed search
+declared (0.93 / 0.94, with mute `platoon_v9_seed13` at 0.00); and nomask's
+channel dissolves — two of three seeds never close truthfully while claiming
+DONE up to 1,284 times per 100 episodes (false-DONE 0.86 / 0.58). Removing
+the masks does not degrade the reporting channel at depth; it replaces it
+with noise.
+
+**What this project claims after four measurements** (three at squad depth,
+one at platoon): the hierarchy buys **interpretability** (doctrine-valid
+traffic at 1.000 by construction against 0.58 without masks at squad depth
+and 0.78 at platoon — the one row every measurement orders the same way,
 on every seed, at both checkpoints). Commander survival is **not** claimed:
 the 0.13-against-0.20/0.21 reading was carried entirely by the re-executed
 seed and by one checkpoint, and what survives both perturbations is that the
 arms are not distinguishable on root death (assurance #64) — the axis is
-real, the separation was not. The project claims neither the outcome nor the
-robustness result, and on this tree it measures the hierarchy's cost on the
-final policy: ~5 points of success against a flat team (p = 0.004) on a
-squad-sized scenario — a `ckpt_latest` reading; the same cells at
-`ckpt_best` give 1 point at p = 0.67, so the cost's magnitude is
-checkpoint-sensitive even though every measurement of it points the same
-way. Whether that cost shrinks, vanishes or
-inverts at platoon depth and beyond is exactly the open question the original
-posed and nobody has measured — depth is the argument for a chain of command,
-and the deepest chart trained is three echelons.
+real, the separation was not; platoon depth agrees (no separation, wide
+per-seed spread in both hierarchy arms). The project claims neither the
+outcome nor the robustness result, and on this tree it measures the
+hierarchy's cost on the final policy: ~5 points of success against a flat
+team (p = 0.004) on a squad-sized scenario — a `ckpt_latest` reading; the
+same cells at `ckpt_best` give 1 point at p = 0.67, so the cost's magnitude
+is checkpoint-sensitive even though every measurement of it points the same
+way. The original's open question — does that cost shrink, vanish or invert
+with depth — is now measured at three echelons, and the answer is that it
+vanishes into the ceiling: platoon at this budget cannot express an outcome
+gap in either direction, so the depth question that remains is what scenario
+or budget gives the deepest chart outcome power at all. The hierarchy's value
+case is interpretability at every depth measured.
 
 ### Can you predict the cohort from its radio net? (transparency probe)
 

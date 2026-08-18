@@ -55,18 +55,28 @@ disclosure since both candidates sit in `runs/` at the shipped config.
 above landed). `main` = `multi-agent-dev` = `a7e639e` = v1.21.1. Issue #60
 stays open for the assurance layer to verify and close — never close it here.
 
-**IN FLIGHT (2026-08-18): the platoon-depth ablation cycle** — opened by
-`d439164` (platoon_nomask/platoon_flat registered, exact squad-arm mirrors),
-campaign `scripts/campaigns/platoon_depth_lane{A,B}.jobs` running in two
-lanes (~10 h). Lane A leads with the neutrality re-derivation
-`platoon_v10_seed12`: when it lands, check `baseline.py`'s reproduction table
-— **if it does not show `platoon_v10_seed12 == platoon_v8`, kill lane B and
-diagnose** (the additive claim failed). When all eight land: N=100 evals,
-`seed_spread` gains the new platoon draws (the completeness gate will insist),
-nine-run `ablation_report.py` read, README beside the squad table. Plan:
-docs/next-cycles.md, "The platoon-depth ablation cycle". Also on disk,
-unread: the v1.21 transparency-probe sweep (`runs/<member>/probe_{best,final}.json`)
-and the pending squad_screen oracle pass.
+**★ THE PLATOON-DEPTH ABLATION CYCLE LANDED (2026-08-18 evening).** All eight
+runs of `scripts/campaigns/platoon_depth_lane{A,B}.jobs` converged. The
+neutrality gate held: `platoon_v10_seed12` re-derived `platoon_v8` bit-for-bit
+on both checkpoints, so the additive claim is proven and lane B was never
+killed. N=100 on both checkpoints for all eight, ten standard artifacts per
+run committed (`33fa245`), `platoon_v10_seed12`/`platoon_v11_seed14` declared
+in `seed_spread[platoon]` (the completeness gate insisted on each, correctly,
+as it landed), `baseline.py` BASELINE OK, seal untouched. **Verdict** (nine-run
+`ablation_report.py`, written into the README beside the squad table): every
+outcome axis saturates — 299–300/300 success per arm (Fisher p = 1.000 both
+comparisons), zero defeats in 900 episodes, root death separating nowhere — so
+the hierarchy's ~5-point squad cost is unmeasurable at platoon depth in either
+direction; the depth hypothesis (flat pays a coordination cost at 16 agents)
+finds no support. Doctrine-validity keeps its ordering (1.00 vs 0.61–0.94) but
+doctrine-preference no longer separates seed by seed; the completion channel
+is the starkest cell: flat truthful on every seed (0.99–1.00), full bimodal as
+the seed search declared (mute `platoon_v9_seed13` at 0.00), nomask dissolved
+(two seeds never close truthfully, false-DONE 0.86/0.58, up to 1,284 DONE
+claims per 100 episodes). The hierarchy's value case remains interpretability
+at every measured depth. Still on disk, unread: the v1.21 transparency-probe
+sweep (`runs/<member>/probe_{best,final}.json`) and the pending squad_screen
+oracle pass.
 
 **★ THE MEASUREMENT CAMPAIGN LANDED (2026-08-18)** — all 13 runs of
 `scripts/campaigns/measurement_ablation_and_spread.jobs` on the sealed tree

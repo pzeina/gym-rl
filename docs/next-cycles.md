@@ -61,7 +61,17 @@ whatever it is, these ride along:
   labels carry, a seed search amortizes across cycles; if they do not, the
   manifest rule becomes: re-search bimodal scenarios every breaking cycle.
 
-## The platoon-depth ablation cycle (chosen by the owner, 2026-08-18)
+## The platoon-depth ablation cycle (chosen by the owner, 2026-08-18) — LANDED 2026-08-18
+
+**Landed as planned, verdict in the README beside the squad table.** The
+neutrality re-derivation held (`platoon_v10_seed12` ≡ `platoon_v8`,
+bit-for-bit, both checkpoints), all eight runs converged, N=100 on both
+checkpoints, draws declared, BASELINE OK. Of the three honest outcomes named
+below, the first: flat wins again — every outcome axis saturates (299–300/300
+per arm, zero defeats in 900 episodes), so the squad-depth cost is
+unmeasurable here and the hierarchy's value case narrows to interpretability
+at every measured depth. The follow-up question this cycle leaves is what
+scenario or budget gives the deepest chart outcome power at all.
 
 The README now ends its ablation section with the open question: does the
 hierarchy's measured ~5-point cost against a flat team shrink, vanish or
