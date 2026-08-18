@@ -306,10 +306,12 @@ argument for a chain of command; nobody has measured it at three echelons.
   their reconstruction failing IS our defect. `parse_succession()` (v1.20 item 2)
   is the first half; a `cohort/probe.py` round-trip test over committed corpora
   is the second.
-- **The transparency probe has not run at v1.19.** B4's rule engine predicts
-  every living agent's next-15-step destination from the transcript alone. It
-  was measured at Box(137). It should be re-measured on the current fleet and,
-  after v1.20, on a fleet whose succession traffic is complete.
+- **The transparency probe has not run at v1.19.** — CLOSED 2026-08-18: the
+  sweep ran on all eight v1.21 members at both checkpoints and is read in
+  docs/transparency.md ("The v1.21 fleet sweep"). Majority still unbeaten on
+  destination (16/16 cells); maneuver finals within 3–9 points; three final
+  posture cells beat majority for the first time; `patrol_brique_v41_seed14`
+  is the readability miss to read before any pricing/probe-model work.
 - **`squad_screen`'s 24% root-death rate** is the second-highest in the fleet
   behind `squad`, on a scenario whose entire doctrine is *observe without
   engaging*. Weapons-tight is mask-enforced, so this is not a discipline

@@ -74,9 +74,27 @@ is the starkest cell: flat truthful on every seed (0.99–1.00), full bimodal as
 the seed search declared (mute `platoon_v9_seed13` at 0.00), nomask dissolved
 (two seeds never close truthfully, false-DONE 0.86/0.58, up to 1,284 DONE
 claims per 100 episodes). The hierarchy's value case remains interpretability
-at every measured depth. Still on disk, unread: the v1.21 transparency-probe
-sweep (`runs/<member>/probe_{best,final}.json`) and the pending squad_screen
+at every measured depth.
+
+**THE v1.21 PROBE SWEEP IS READ (2026-08-18, docs/transparency.md "The v1.21
+fleet sweep")**: majority unbeaten on destination in all 16 cells — the A5
+verdict stands fleet-wide — but the maneuver FINALS close to within 3–9
+points (squad_screen −0.030, platoon −0.041), three final posture cells beat
+majority for the first time anywhere, the defend cells are degenerate by
+construction, and `patrol_brique_v41_seed14` is the readability miss (dest
+0.098 final vs a beatable 0.45 majority — read it first before any
+standing-order-model or pricing work). Pending still: the squad_screen
 oracle pass.
+
+**IN FLIGHT (2026-08-18 night): the platoon_hard scout** (owner-decided:
+harder-OpFor additive scenario, robustness + measured-cohesion axes,
+scout-then-confirm). Build agent registers `platoon_hard{,_nomask,_flat}`
+(n_enemies 8→14), adds two cohesion behavior metrics (no-close-teammate
+within support umbrella; unseen-by-any-teammate LOS), queues neutrality
+re-derivation `platoon_v12_seed12` + three arms at seed 12 (~10 h), and runs
+a cohesion probe over the nine landed platoon-depth runs. Cohesion is
+MEASURED, not enforced — enforcement (mask/reward) is an owner decision that
+waits for the measurement.
 
 **★ THE MEASUREMENT CAMPAIGN LANDED (2026-08-18)** — all 13 runs of
 `scripts/campaigns/measurement_ablation_and_spread.jobs` on the sealed tree
