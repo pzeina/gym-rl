@@ -61,10 +61,17 @@ def test_the_63_pair_is_caught_before_the_queue():
     bit-identical. The pre-flight must surface both — the same-tree hit as a
     certain DUPLICATE, the cross-tree hit as the record plausibly already
     containing the policy.
+
+    The launch tree is pinned to the one `squad_v29_seed14` trained on (the
+    sealed tree), not HEAD — HEAD's cohort/ tree legitimately moves whenever a
+    cycle touches cohort/, and this test is about the record, not about where
+    HEAD happens to sit today.
     """
+    run = find_run("squad_v29_seed14", ROOT / "runs")
+    sealed_commit = json.loads((run / "economics.json").read_text())["git_commit"]
     config, overrides, _ = campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)
     matches = campaign_preflight.find_duplicates(
-        config, overrides, "squad_v30_seed14", ROOT / "runs", cohort_tree("HEAD"))
+        config, overrides, "squad_v30_seed14", ROOT / "runs", cohort_tree(sealed_commit))
     by_run = {m.run: m for m in matches}
     assert "squad_v10c" in by_run, "the archived original must be found through the archive"
     assert "squad_v29_seed14" in by_run
