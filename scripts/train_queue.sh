@@ -49,6 +49,16 @@ while read -r line; do
   fi
 done < "$JOBS"
 
+# Pre-flight the file against the record (runs/ AND runs/archive/): a job whose
+# exact training config already produced a run re-derives its checkpoints
+# bit-for-bit — squad_v29_seed14 spent 3M steps re-training archived squad_v10c,
+# whose N=100 evaluation was already on disk (assurance #63). FORCE=1 skips
+# this too, for a deliberate re-derivation.
+if [ "${FORCE:-0}" != "1" ]; then
+  "$PY" scripts/campaign_preflight.py "$JOBS" \
+    || { echo "refusing: the record already holds a job's config (FORCE=1 to queue anyway)" >&2; exit 1; }
+fi
+
 nohup bash -c '
   set -u
   jobs_file="$1"; root="$2"

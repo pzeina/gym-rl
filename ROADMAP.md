@@ -59,6 +59,12 @@ stays open for the assurance layer to verify and close — never close it here.
 `scripts/campaigns/measurement_ablation_and_spread.jobs` on the sealed tree
 (`becc3ec4`), evaluated at N=100 on both checkpoints, artifacts committed.
 No member changed; `baseline.py` still prints BASELINE OK, seal untouched.
+Assurance #63 verified the ablation cells independently (every cell
+reproduces) and found 12 of the 13 runs to be genuinely new policies — the
+thirteenth, `squad_v29_seed14`, re-derived archived `squad_v10c` bit-for-bit
+(see the channels bullet). Campaign queues now refuse a job whose exact
+training config already sits in the record — `scripts/campaign_preflight.py`,
+run by `train_queue.sh` before detaching; `FORCE=1` queues it anyway.
 
 **The ablation, at the original's own strength (3 seeds/arm, N=100, one
 tree): the outcome half stays inverted, and the robustness half fell too.**
@@ -73,18 +79,38 @@ the cells that matter:
   has no orders to judge) and commander survival (root death 0.13 vs
   0.20/0.21).
 - channels: nomask's root-close channel is dead (0.00 all seeds). Full's is
-  bimodal — **squad seed 14 (`squad_v29_seed14`) is a MUTE ROOT** (root-close
-  0.00, 2246 DONE reports all rejected/false), so squad's known same-config
-  draws are now 2-of-3 reporting, not the declared search's 2-of-2. Flat's
-  root closes 0.98 on all three seeds.
+  bimodal — **`squad_v29_seed14` fails the `closed_on_root_report_rate` gate
+  (floor 0.5) on BOTH checkpoints**: 0.052 at `ckpt_best` (18 claiming
+  episodes — low, not mute) and 0.000 at `ckpt_latest`, where the root filed
+  ZERO of the run's 2246 DONE reports — all 2246 are subordinate traffic, 594
+  of them rejected. (Corrected per assurance #63: an earlier draft here
+  labelled the run "MUTE ROOT (root-close 0.00, 2246 DONE reports all
+  rejected/false)" — a checkpoint-selected label this ROADMAP's own §12 note
+  on `squad_v10c` says no label describes, with the root's zero reports and
+  the subordinates' 2246 fused into one number. The gate-failure framing is
+  checkpoint-invariant and stronger.) The run also adds no degree of freedom:
+  its checkpoints are **bit-identical to archived `squad_v10c`** (#63) — the
+  campaign re-derived a policy the archive already held; the other 12 runs
+  are genuinely new, so #60's identity phenomenon was cycle-specific, not
+  standing. Squad's same-config draws on the sealed tree are therefore
+  2-of-3 reporting, not the declared search's 2-of-2 — and counting archived
+  `squad_v20_seed15` (0.000 on both checkpoints at the same config,
+  pre-seal tree; 2026-08-14, refs #52), the expected count is **2-of-4**,
+  with seed 15's sealed-tree confirmation a checkpoint hash away, not a
+  training run. Flat's root closes 0.98 on all three seeds.
 - OWNER DECISIONS: (a) the README's ablation wording — DECIDED and APPLIED
   (owner, 2026-08-18): the section now carries the three-seed table, claims
   interpretability + commander survival, disclaims outcome + robustness, and
   states the ~5-point cost vs flat (p = 0.004) plainly, with platoon depth
   named as the open question. (b) STILL PENDING: whether the manifest/board grows a
   `seed_spread` disclosure block — the fleet board still says "2 of 2 seeds
-  report" (true of the declared SEARCH) while a third, mute, same-config draw
-  sits beside it as an ordinary row.
+  report" (true of the declared SEARCH) while two more same-config draws sit
+  outside it: `squad_v29_seed14` (gate-fail on both checkpoints, = archived
+  `squad_v10c`) as an ordinary row, and archived `squad_v20_seed15` (0.000 on
+  both checkpoints, pre-seal tree). If the block ships it must either carry
+  both — 2-of-4 — or state explicitly that its count is sealed-tree-only
+  (2-of-3), per assurance #63; "2 of 3" without that qualifier understates
+  squad's bimodality against this file's own 2026-08-14 record.
 
 **The spread read: every headline is seed-robust on success — and the
 reporting channel is bimodal in more scenarios than declared.** Six seed-13
