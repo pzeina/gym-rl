@@ -1,0 +1,18 @@
+# PLATOON-DEPTH ABLATION — LANE A (of 2). Plan: docs/next-cycles.md,
+# "The platoon-depth ablation cycle" (owner-decided 2026-08-18).
+#
+# Job 1 is the NEUTRALITY RE-DERIVATION: platoon at seed 12 on the tree that
+# added the arms (d439164). The pre-flight will correctly flag it as a
+# duplicate of platoon_v8 — that is the measurement: this lane launches with
+# FORCE=1 precisely so the digests can say whether the registration moved
+# anything. If baseline.py's reproduction table does NOT show
+# platoon_v10_seed12 == platoon_v8 when it lands, STOP LANE B and diagnose —
+# the additive claim failed and that is the finding.
+#
+# The remaining jobs are new configs; FORCE=1 skips their pre-flight too,
+# which is accepted here because the arm scenarios did not exist before this
+# tree and can have no prior same-config runs.
+platoon_v10_seed12         --scenario platoon         --total-steps 3000000 --seed 12
+platoon_nomask_v1_seed12   --scenario platoon_nomask  --total-steps 3000000 --seed 12
+platoon_nomask_v2_seed13   --scenario platoon_nomask  --total-steps 3000000 --seed 13
+platoon_nomask_v3_seed14   --scenario platoon_nomask  --total-steps 3000000 --seed 14
