@@ -766,6 +766,126 @@ def test_a_spread_run_bit_identical_to_the_member_adds_no_draw(fleet, capsys, mo
     assert "known same-config draws: 1 of 1 report" in out
 
 
+# ----------------------------------- the dedupe key's availability (issue #65) --
+#
+# `runs/archive/` prunes `ckpt_latest.pt` and keeps `ckpt_best.pt`, and the
+# dedupe keyed on exactly the pruned file — so 36 of the 56 declared spread
+# runs could not be deduped at all, every one silently counted as a distinct
+# draw, and the docstring's own example pair (`squad_v10c` == `squad_v29_seed14`,
+# bit-identical at ckpt_best) printed as two rows. Absence-as-distinct inflates
+# the independent-draw count, the exact failure the block exists to prevent.
+# Identity now rests on every checkpoint both runs hold, and a run whose
+# on-disk checkpoints yield no digest is a failure, not a quiet degrade.
+
+
+def test_an_archived_draw_missing_its_final_is_deduped_on_the_checkpoint_it_holds(
+        fleet, capsys, monkeypatch):
+    """The #65 shape itself: the archive pruned the final, ckpt_best agrees —
+    one draw, folded into the member, annotated with what settled it."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.85)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +0 distinct draws over 1 more runs" in out
+    assert ("squad_old  ==  squad_v1 (the same draw, counted once — "
+            "settled at ckpt_best)") in out
+    assert "known same-config draws: 1 of 1 report" in out
+
+
+def test_two_archived_draws_agreeing_on_the_checkpoint_both_hold_are_one_draw(
+        fleet, capsys, monkeypatch):
+    """Both sides pruned: two archived same-seed runs with only ckpt_best each,
+    bit-identical there — one draw, not two."""
+    _stub_digests(monkeypatch)
+    for name in ("squad_v2_seed14", "squad_v2b_seed14"):
+        _member(fleet, name, seed=14, scenario="squad", close_rate=0.0)
+        (fleet / name / "ckpt_best.pt").write_text("S14")  # no ckpt_latest.pt
+    _spread(fleet, "squad", ["squad_v2_seed14", "squad_v2b_seed14"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +1 distinct draws over 2 more runs" in out
+    assert "squad_v2_seed14 = squad_v2b_seed14" in out
+    assert "settled at ckpt_best" in out
+
+
+def test_a_run_whose_checkpoints_yield_no_digest_is_a_loud_finding_not_a_quiet_distinct(
+        fleet, capsys, monkeypatch):
+    """The one change that would have caught #65 at authoring time: a key that
+    is unavailable for a run whose checkpoint files ARE on disk is the dedupe
+    going blind, and blind must not silently count as distinct."""
+    monkeypatch.setattr("scripts.publish_audit.policy_digest", lambda p: None)
+    _checkpoints(fleet, "squad_old", best="W1", latest="W2")
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.0)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "squad_old holds checkpoint files but none can be digested" in out
+    assert "inflates the spread" in out
+
+
+def test_a_run_with_no_checkpoints_at_all_is_disclosed_but_not_failed(
+        fleet, capsys, monkeypatch):
+    """Honest absence stays honest: nothing on disk to digest is disclosed as
+    unknown identity — the archive is not failed for a file it never had."""
+    _stub_digests(monkeypatch)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.0)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "identity underived" in out
+    assert "squad_old" in out
+
+
+def test_runs_grouped_through_an_intermediary_but_disagreeing_are_flagged(
+        fleet, capsys, monkeypatch):
+    """A best-only run bridging two runs whose finals differ would launder two
+    final policies into one draw — ambiguous identity is a human's call."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="X", latest="L1")
+    for name, latest in (("squad_a_seed14", None), ("squad_b_seed14", "L2")):
+        _member(fleet, name, seed=14, scenario="squad", close_rate=0.0)
+        (fleet / name / "ckpt_best.pt").write_text("X")
+        if latest:
+            (fleet / name / "ckpt_latest.pt").write_text(latest)
+    _spread(fleet, "squad", ["squad_a_seed14", "squad_b_seed14"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "disagree at ckpt_latest" in out
+    assert "identity is ambiguous" in out
+
+
+def test_every_declared_draw_holds_a_deduplicable_checkpoint():
+    """The population-level key-availability assertion, against the real
+    manifest: every run in every block holds at least one checkpoint the
+    dedupe can digest. 64% unavailable was a silent fact; now it is a red
+    test the moment an archive prune takes a run's last checkpoint."""
+    manifest = baseline.load()
+    runs = set(manifest["runs"].values())
+    for block in ("seed_search", "seed_spread"):
+        for declared in (manifest.get(block) or {}).values():
+            runs.update(declared)
+    keyless = [r for r in sorted(runs)
+               if not any((baseline.run_dir(r) / n).is_file()
+                          for n in baseline.CHECKPOINTS)]
+    assert not keyless, (
+        "declared runs with no checkpoint on disk — the spread dedupe has no "
+        f"key for them and would count each as distinct: {keyless}"
+    )
+
+
 def test_a_cross_tree_spread_draw_is_annotated_not_failed(fleet, capsys):
     """Owner decision: cross-tree draws are carried — they are evidence about
     the seed, not about the sealed environment — and the audit says which."""
