@@ -528,6 +528,49 @@ Four readings, in order of strength:
    exactly what the probe cannot read through. Any future work on the
    standing-order model or rank-scaled pricing should read this member first.
 
+### Appendix: the probe on the platoon ablation arms (2026-08-19, overnight)
+
+The same protocol (30 eps, seeds 500–529, K=15) over the six platoon-depth
+B3 arms — the first time the probe has been pointed at policies whose order
+traffic was ablated:
+
+    run                        ckpt    pairs   dest   majority    gap
+    platoon_nomask_v1_seed12   best    63226  0.128     0.322   −0.193
+    platoon_nomask_v1_seed12   final   45044  0.197     0.363   −0.166
+    platoon_nomask_v2_seed13   best    45093  0.117     0.356   −0.239
+    platoon_nomask_v2_seed13   final   43225  0.203     0.334   −0.131
+    platoon_nomask_v3_seed14   best    55782  0.176     0.343   −0.168
+    platoon_nomask_v3_seed14   final   47232  0.137     0.287   −0.150
+    platoon_flat_v1_seed12     best    43174  0.429     0.429   −0.001
+    platoon_flat_v1_seed12     final   39198  0.445     0.447   −0.002
+    platoon_flat_v2_seed13     best    42698  0.534     0.540   −0.006
+    platoon_flat_v2_seed13     final   38702  0.430     0.431   −0.000
+    platoon_flat_v3_seed14     best    46863  0.417     0.418   −0.001
+    platoon_flat_v3_seed14     final   39227  0.475     0.477   −0.002
+
+What the gap column actually measures here is whether **order traffic adds
+movement information beyond the OPORD** — and the three arms give the three
+possible answers:
+
+* **flat: zero by construction** (−0.000 to −0.006, six cells). With no
+  orders on the net, the net-following reader degenerates to the constant
+  OPORD reader; the cells are a correctness check on the probe, not a
+  readability result. "Flat is perfectly readable" would be the wrong gloss —
+  flat is *unreadable beyond its OPORD*, because nothing else is on the air.
+* **nomask: anti-information** (−0.13 to −0.24, every seed, both
+  checkpoints). Unmasked order traffic actively misleads: a reader that
+  follows it lands 13–24 points below one that ignores it entirely.
+* **full (from the sweep above): −0.146 best → −0.041 final.** Doctrine-
+  masked traffic still narrowly loses to the constant reader at K=15, but it
+  is an order of magnitude less misleading than nomask's.
+
+So the interpretability claim gains a sharper edge than "doctrine-valid by
+construction": **the masks are what keep order traffic from being worse than
+silence.** Ablate them and the net becomes actively deceptive about where the
+cohort will move; keep them and the net approaches (without yet reaching)
+informativeness. The remaining distance is the standing-order model and the
+vocabulary — the same two suspects the A5 verdict named.
+
 ## Artifacts
 
 * `cohort/probe.py` — predictor, ground truth, scoring, CLI (pure and
