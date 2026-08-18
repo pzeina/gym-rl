@@ -62,6 +62,39 @@ def test_spaces_frozen_across_arms():
             assert obs[a]["action_mask"].shape == (N_ACTIONS,)
 
 
+def test_platoon_hard_trio_differs_from_platoon_only_by_garrison_size():
+    """The harder-OpFor follow-up (owner-decided 2026-08-18) is additive: same
+    spaces as `platoon`, only `n_enemies` (and the arm's `ablation`) differ —
+    and the env actually builds and steps with the 14-defender garrison."""
+    platoon = get_scenario("platoon")
+    for name in ("platoon_hard", "platoon_hard_nomask", "platoon_hard_flat"):
+        spec = get_scenario(name)
+        assert spec.n_enemies == 14
+        # the only fields allowed to differ: name, description, n_enemies,
+        # ablation (the two arms), and the labelling-only experiment_arm
+        base = {
+            f: getattr(platoon, f)
+            for f in platoon.__dataclass_fields__
+            if f not in ("name", "description", "n_enemies", "ablation", "experiment_arm")
+        }
+        arm = {
+            f: getattr(spec, f)
+            for f in spec.__dataclass_fields__
+            if f not in ("name", "description", "n_enemies", "ablation", "experiment_arm")
+        }
+        assert arm == base, f"{name} deviates from platoon beyond the garrison"
+
+        env = make_env(name)
+        obs, _ = env.reset(seed=3)
+        assert len(env.enemies) == 14
+        assert env.observation_space("PL1")["observation"].shape == (OBS_DIM,)
+        assert env.action_space("PL1").n == N_ACTIONS
+        rng = np.random.default_rng(1)
+        for _ in range(10):
+            obs, *_ = env.step(_random_legal(env, obs, rng))
+        assert env.agents  # nobody's bookkeeping broke ten steps in
+
+
 def test_full_arm_is_the_shipped_system():
     """An explicit ablation="full" env is bit-identical to the shipped squad."""
     env_a = make_env("squad")

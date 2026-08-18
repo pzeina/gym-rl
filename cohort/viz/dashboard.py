@@ -349,6 +349,11 @@ def scenario_facets(spec) -> dict:
     """The (task, echelon) a scenario belongs to, for the two-menu picker."""
     if spec.ablation != "full":
         task = f"Ablation · {spec.ablation}"
+        if spec.experiment_arm is not None:
+            # an ablation arm of a tuned-parameter arm (platoon_hard_nomask):
+            # both facets are needed or it collides with the standard-difficulty
+            # ablation at the same echelon
+            task = f"{task} · {spec.experiment_arm}"
     elif spec.experiment_arm is not None:
         # an arm that differs from its control by a tuned parameter rather than
         # by a masking regime — same task and echelon as the control, so it

@@ -145,6 +145,12 @@ NOT_BASELINE = {
     "squad_flat": "B3 ablation arm — no chain of command at all; measures, not ships",
     "platoon_nomask": "B3 ablation arm at platoon depth — measures, not ships",
     "platoon_flat": "B3 ablation arm at platoon depth — measures, not ships",
+    "platoon_hard": (
+        "harder-OpFor follow-up scenario (14-defender garrison) — an experiment "
+        "axis until the owner decides it ships"
+    ),
+    "platoon_hard_nomask": "B3 ablation arm of platoon_hard — measures, not ships",
+    "platoon_hard_flat": "B3 ablation arm of platoon_hard — measures, not ships",
     "squad_short_vision": "information-asymmetry probe, not a shipping configuration",
     "squad_screen_core": "observation-width bisect arm, superseded by the bisect's answer",
 }
