@@ -937,8 +937,9 @@ half falls with it: flat is now the **most** robust arm (0.3 defeats per 100
 against the original's 2.2× wipe rate), and it beats the hierarchy on success
 outright. The completion channel adds a wrinkle the means would hide: nomask's
 root never closes truthfully, flat's closes on every seed, and the full arm's
-is **bimodal** — two seeds at 0.95+, seed 14 mute at 0.00 — the same pathology
-the fleet's seed searches were declared for.
+is **bimodal** — two seeds at 0.95+, while seed 14 fails the 0.5 reporting
+floor on both checkpoints (0.052 best, 0.000 final) — the same pathology the
+fleet's seed searches were declared for.
 
 **What this project claims after three measurements**: the hierarchy buys
 **interpretability** (doctrine-valid traffic at 1.000 by construction against
