@@ -204,7 +204,8 @@ def report(runs: list[str]) -> int:
     if not rows:
         return 1
 
-    print("B3 ablation — does the chain of command earn its keep?\n")
+    print("B3 ablation — does the chain of command earn its keep?")
+    print("(cells read behavior_final.json — the FINAL policy, ckpt_latest)\n")
     for f, label, what in rows:
         print(f"  {label:<7} {f['run']:<18} {what}")
     print()
@@ -287,7 +288,8 @@ def seed_report(runs: list[str]) -> int:
     ns = sorted({f["n"] for fs in facts.values() for f in fs})
     n_label = f"N={ns[0]} each" if len(ns) == 1 else "N varies: " + "/".join(map(str, ns))
     width = 26
-    print(f"per-seed, mean follows the seeds ({n_label})")
+    print(f"per-seed, mean follows the seeds ({n_label}; cells read "
+          "behavior_final.json — the FINAL policy, ckpt_latest)")
     print(f"{'axis':<26}" + "".join(f"{label:>{width}}" for _, label, _ in ARMS))
     print("-" * (26 + width * len(ARMS)))
 
@@ -334,7 +336,11 @@ def seed_report(runs: list[str]) -> int:
     print("\nThree seeds per arm — the original's own strength, on one tree. Bimodal\n"
           "cells (the original's DONE column, nomask's false-claim behaviour) are\n"
           "readable here per seed; a mean printed after three seeds is a summary,\n"
-          "a mean printed instead of them is a hiding place.")
+          "a mean printed instead of them is a hiding place.\n\n"
+          "Every cell is the FINAL policy; both checkpoints are committed at the\n"
+          "same N. A cell that changes verdict between them (root death full-vs-\n"
+          "flat: p = 0.009 final, p = 0.56 best — assurance #64) is evidence about\n"
+          "checkpoint selection, not about the arm, and cannot be promoted alone.")
     return 0
 
 

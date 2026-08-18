@@ -89,8 +89,15 @@ the cells that matter:
 - robustness: the original's "flat wipes 2.2×" is refuted here — defeats/100
   are flat 0.3, full 1.7, nomask 5.0. Flat is now the MOST robust arm.
 - what survives: interpretability (doctrine-valid 1.00 vs nomask 0.58; flat
-  has no orders to judge) and commander survival (root death 0.13 vs
-  0.20/0.21).
+  has no orders to judge) — every full seed, both checkpoints. (Corrected per
+  assurance #64: an earlier draft promoted commander survival too, off root
+  death 0.13 vs 0.20/0.21 — but 0.13 is a mean no seed exhibits: seed 13 is
+  0.27, worse than every ablated seed, and the pooled p = 0.009 is seed 14
+  alone — the #63 re-executed policy, 0 root deaths in 200 episodes. Set that
+  seed aside and full = nomask at 39/200 each (p = 1.0); and the cell flips
+  to p = 0.56 at ckpt_best because flat moves 64 → 45 while full stays
+  39/300. The README now prints root death per seed and claims
+  interpretability only.)
 - channels: nomask's root-close channel is dead (0.00 all seeds). Full's is
   bimodal — **`squad_v29_seed14` fails the `closed_on_root_report_rate` gate
   (floor 0.5) on BOTH checkpoints**: 0.052 at `ckpt_best` (18 claiming
@@ -115,7 +122,11 @@ the cells that matter:
   (owner, 2026-08-18): the section now carries the three-seed table, claims
   interpretability + commander survival, disclaims outcome + robustness, and
   states the ~5-point cost vs flat (p = 0.004) plainly, with platoon depth
-  named as the open question. (b) DECIDED and DONE (owner, 2026-08-18): the
+  named as the open question. (Amended per assurance #64, 2026-08-18: the
+  commander-survival half of that wording did not survive its own table's
+  perturbation rules — demoted; see the corrected "what survives" bullet
+  above. Interpretability and the cost statement stand, the latter now
+  labelled with the checkpoint it is read at.) (b) DECIDED and DONE (owner, 2026-08-18): the
   manifest carries a `seed_spread` block — every OTHER same-config-modulo-seed
   draw the record holds, archived and cross-tree included, deduped by
   model-tensor digest so a bit-identical re-execution counts once, audited for
