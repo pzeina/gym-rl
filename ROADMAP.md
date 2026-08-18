@@ -77,10 +77,11 @@ the cells that matter:
   0.00, 2246 DONE reports all rejected/false), so squad's known same-config
   draws are now 2-of-3 reporting, not the declared search's 2-of-2. Flat's
   root closes 0.98 on all three seeds.
-- OWNER DECISIONS pending: (a) the README's ablation wording — the
-  interpretability claim stands, the robustness sentence does not survive
-  this tree, and the measured cost of the hierarchy vs flat is ~5 points
-  (p = 0.004); presented, not applied. (b) whether the manifest/board grows a
+- OWNER DECISIONS: (a) the README's ablation wording — DECIDED and APPLIED
+  (owner, 2026-08-18): the section now carries the three-seed table, claims
+  interpretability + commander survival, disclaims outcome + robustness, and
+  states the ~5-point cost vs flat (p = 0.004) plainly, with platoon depth
+  named as the open question. (b) STILL PENDING: whether the manifest/board grows a
   `seed_spread` disclosure block — the fleet board still says "2 of 2 seeds
   report" (true of the declared SEARCH) while a third, mute, same-config draw
   sits beside it as an ordinary row.

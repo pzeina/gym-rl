@@ -879,10 +879,10 @@ first, then `--init-from runs/fireteam_v4/ckpt_best.pt` for `squad`, and so on u
 
 ### Does the hierarchy actually help? (ablation)
 
-Measured, not assumed — and measured twice, with the two answers disagreeing.
-Three arms on the squad scenario, same network and spaces: the shipped system,
-a hierarchy *without* doctrine masks, and a flat order-less team where every
-agent gets the OPORD directly.
+Measured, not assumed — and measured three times, with the answers agreeing on
+exactly one axis. Three arms on the squad scenario, same network and spaces:
+the shipped system, a hierarchy *without* doctrine masks, and a flat order-less
+team where every agent gets the OPORD directly.
 
 **2026-08-06, 3 seeds per arm, Box(137), 2.5M steps.** Structured command won on
 **outcome robustness** (N=100 success 0.92 ± 0.01 against 0.85 ± 0.06 flat,
@@ -910,16 +910,46 @@ not survive, and the completion-reporting claim is dead for an unrelated reason:
 the original's nomask arm claimed 0.3 DONE per 30 episodes and this one claims
 84, which is a change of code era, not of hierarchy.
 
-**Read the reversal together with the squad regression, because they are one
-observation.** The full arm is exactly the run that got weaker on this build
-(0.92 and 0.88 at two seeds, against 0.98 and 0.97 before, pooled p = 0.0031),
-while the ablated arms did not. On this tree the full-hierarchy squad converged
-to a chattier equilibrium — 101 and 167 messages per episode against 77 and 83 —
-and the ablated arms did not. Whether that is a price problem or a policy
-problem is **not** established; the diagnosis, the refuted first guess, and the
-discriminating experiment are in `ROADMAP.md` under 2026-08-11. Until that runs,
-this project claims the interpretability result and does not claim the outcome
-one.
+**Read the reversal together with the squad regression, because they were one
+observation** — the full arm was exactly the run that got weaker on that build
+(0.92 and 0.88 at two seeds against 0.98 and 0.97 before), so the inversion
+could have been nothing but the regression wearing an ablation costume. The
+2026-08-18 measurement below refutes that reading: the squad member recovered
+(`squad_v27`, 0.97 ± 0.03) and the inversion persisted anyway.
+
+**2026-08-18, 3 seeds per arm, N=100 each, the sealed v1.21 tree — the
+original's own strength.** The arms are scenarios (`squad_nomask`,
+`squad_flat`), the full arm is the baseline member's exact config at seeds
+12/13/14, and every cell regenerates from the committed evaluations via
+`scripts/ablation_report.py` (nine runs, three per arm):
+
+| N=100 × 3 seeds, final policy | full | nomask | flat |
+|---|---|---|---|
+| success, per seed | 0.97 / 0.95 / 0.90 | 0.96 / 0.93 / 0.93 | 0.98 / 0.98 / 1.00 |
+| success, pooled | 282/300 | 282/300 (p = 1.000) | **296/300 (p = 0.004)** |
+| defeats / 100, mean | 1.7 | 5.0 | **0.3** |
+| root death, mean | **0.13** | 0.20 | 0.21 |
+| doctrine-valid orders, per seed | 1.00 / 1.00 / 1.00 | 0.84 / 0.43 / 0.48 | — none issued |
+| root closes truthfully, per seed | 0.96 / 0.94 / 0.00 | 0.00 / 0.00 / 0.00 | 0.99 / 0.98 / 0.98 |
+
+The one-seed inversion is confirmed at strength, and the original's robustness
+half falls with it: flat is now the **most** robust arm (0.3 defeats per 100
+against the original's 2.2× wipe rate), and it beats the hierarchy on success
+outright. The completion channel adds a wrinkle the means would hide: nomask's
+root never closes truthfully, flat's closes on every seed, and the full arm's
+is **bimodal** — two seeds at 0.95+, seed 14 mute at 0.00 — the same pathology
+the fleet's seed searches were declared for.
+
+**What this project claims after three measurements**: the hierarchy buys
+**interpretability** (doctrine-valid traffic at 1.000 by construction against
+0.58 without masks — the one row all three measurements order the same way)
+and **commander survival** (root death 0.13 against 0.20/0.21). It claims
+neither the outcome nor the robustness result, and on this tree it measures
+the hierarchy's cost plainly: ~5 points of success against a flat team
+(p = 0.004) on a squad-sized scenario. Whether that cost shrinks, vanishes or
+inverts at platoon depth and beyond is exactly the open question the original
+posed and nobody has measured — depth is the argument for a chain of command,
+and the deepest chart trained is three echelons.
 
 ### Can you predict the cohort from its radio net? (transparency probe)
 
