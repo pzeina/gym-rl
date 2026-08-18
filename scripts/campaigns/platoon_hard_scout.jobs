@@ -1,0 +1,16 @@
+# PLATOON_HARD SCOUT (owner-decided 2026-08-18): harder-OpFor follow-up to
+# the platoon-depth B3 read — every outcome axis saturated at n_enemies=8, so
+# the depth cycle could not separate the hierarchy from its ablations on
+# outcomes. Scout-then-confirm protocol: ONE seed per arm; confirmation seeds
+# only for arms the scout says are worth them.
+#
+# Target axes: robustness (does the 14-defender garrison de-saturate the
+# outcome axes?) and cohesion (no_close_teammate_rate /
+# unseen_by_any_teammate_rate — measured by 450c8df, never enforced).
+#
+# All three scenarios are new on this tree (3c72cd1), so the pre-flight runs
+# normally — no FORCE. The deliberate neutrality re-derivation rides in its
+# own 1-job FORCE lane: scripts/campaigns/platoon_hard_scout_neutrality.jobs.
+platoon_hard_v1_seed12          --scenario platoon_hard          --total-steps 3000000 --seed 12
+platoon_hard_nomask_v1_seed12   --scenario platoon_hard_nomask   --total-steps 3000000 --seed 12
+platoon_hard_flat_v1_seed12     --scenario platoon_hard_flat     --total-steps 3000000 --seed 12
