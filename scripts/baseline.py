@@ -615,8 +615,25 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
         if name in keys[a] and name in keys[b]:
             return keys[a][name] == keys[b][name]
         if name in file_keys[a] and name in file_keys[b]:
-            return file_keys[a][name] == file_keys[b][name]
+            if file_keys[a][name] == file_keys[b][name]:
+                return True  # equal FILE hashes entail equal tensors — sound
+            if name in keys[a] or name in keys[b]:
+                return False  # a tensor anchors one side; the record splits them
+            # Differing FILE hashes with no tensor on either side prove
+            # nothing (#68): a checkpoint serializes its reward_config, so one
+            # policy can live in two byte-strings (#61), and with both files
+            # pruned no tensor can overrule the record. Unresolved, not
+            # distinct — `False` here flowed into `all(verdicts)` and split
+            # tensor-identical pairs into extra independent draws the moment
+            # their archives lost the files.
+            return None
         return None
+
+    def _unadjudicated(a: str, b: str, name: str) -> bool:
+        """The #68 shape: recorded file hashes disagree, no tensor to consult."""
+        return (name not in keys[a] and name not in keys[b]
+                and name in file_keys[a] and name in file_keys[b]
+                and file_keys[a][name] != file_keys[b][name])
 
     parent = {run: run for run in order}
 
@@ -655,6 +672,7 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     # one count and cannot be resolved mechanically, so it is surfaced as a
     # problem rather than silently counted either way.
     conflicts: list[tuple[list[str], list[str]]] = []
+    unresolved: list[tuple[list[str], list[str]]] = []
     for g in draws:
         settled, disputed = [], []
         for name in CHECKPOINTS:
@@ -666,6 +684,18 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
         g["settled"] = settled
         if disputed:
             conflicts.append((list(g["runs"]), disputed))
+        # The pairs the record could not adjudicate (#68): recorded file
+        # hashes that disagree at a checkpoint neither side still holds. The
+        # group merged on what the tensors do settle — the #65 behaviour —
+        # and the difference between "the final agrees" and "the final could
+        # not be read" is stated rather than resolved by whichever answer the
+        # surviving artifact happens to support.
+        g["unresolved"] = [name for name in CHECKPOINTS
+                           if any(_unadjudicated(a, b, name)
+                                  for i, a in enumerate(g["runs"])
+                                  for b in g["runs"][i + 1:])]
+        if g["unresolved"]:
+            unresolved.append((list(g["runs"]), list(g["unresolved"])))
     undigested = [r for r in order if not keys[r] and not file_keys[r]]
     unreadable = [r for r in order if not keys[r] and digests_enabled
                   and any((run_dir(r) / n).is_file() for n in CHECKPOINTS)]
@@ -694,6 +724,7 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
         "unreadable": unreadable,
         "final_unknown": final_unknown,
         "conflicts": conflicts,
+        "unresolved": unresolved,
         "spread_draws": len(spread),
         "spread_reporting": sum(1 for g in spread if g["reports"] is True),
         "spread_mute": sum(1 for g in spread if g["reports"] is False),
@@ -792,6 +823,12 @@ def _print_spread(sp: dict, declared_names: set[str]) -> None:
               "run(s) — ckpt_latest pruned and no evaluation recorded its hash, "
               "so identity rests on ckpt_best alone: "
               f"{', '.join(sp['final_unknown'])}")
+    for runs, names in sp.get("unresolved", ()):
+        print(f"      unresolved at {' + '.join(n.removesuffix('.pt') for n in names)} "
+              f"for {' = '.join(runs)} — recorded file hashes disagree and neither "
+              "file survives to compare tensors; a file hash splits one policy in "
+              "two whenever only the serialized price differs (#61), so the "
+              "disagreement is unadjudicated, not a second draw (#68)")
     unmeasured = f" ({sp['spread_unmeasured']} unmeasured)" if sp["spread_unmeasured"] else ""
     print(f"      known same-config draws: {sp['known_reporting']} of "
           f"{sp['known_total']} report{unmeasured}")
