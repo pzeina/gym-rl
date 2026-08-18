@@ -333,3 +333,73 @@ def test_a_member_with_no_done_claims_shows_a_dash_not_a_zero(tmp_path, monkeypa
     assert "false-DONE 0.37" in html
     assert "false-DONE 0.00" not in html
     assert "no DONE claims" in html  # the dash explains itself
+
+
+def test_the_board_counts_spread_draws_beside_the_declared_search(tmp_path, monkeypatch):
+    """The #63 gap, closed at the rendering: "2 of 2 seeds report" was true of
+    the SEARCH while two more same-config draws sat outside it, one failing the
+    gate on both checkpoints. The board now prints the spread beside the search
+    — counts, never rates — and the honest denominator."""
+    rates = {"squad_s12": (12, 0.8), "squad_s13": (13, 0.8),
+             "squad_v29_seed14": (14, 0.0), "squad_v20_seed15": (15, 0.0)}
+    manifest = _reporting_fleet(
+        tmp_path, monkeypatch, search={"squad": ["squad_s12", "squad_s13"]}, rates=rates)
+    manifest["runs"]["squad"] = "squad_s12"
+    manifest["seed_spread"] = {"squad": ["squad_v29_seed14", "squad_v20_seed15"]}
+    (tmp_path / "BASELINE.json").write_text(json.dumps(manifest))
+    for name in ("squad_v29_seed14", "squad_v20_seed15"):
+        d = tmp_path / name
+        d.mkdir(exist_ok=True)
+        (d / "config.json").write_text(json.dumps({"seed": rates[name][0]}))
+        (d / "economics.json").write_text(json.dumps({"git_commit": "a" * 40,
+                                                      "reward_overrides": []}))
+        (d / "behavior_final.json").write_text(json.dumps({
+            "episodes": 100,
+            "metrics": {"closed_on_root_report_rate": rates[name][1]}}))
+
+    html = fleet_board.reporting_channel(baseline_module.load())
+
+    assert "2 of 2 seeds report" in html          # the search claim stands...
+    assert "spread +2 draws, 0 report" in html    # ...and its quiet half is beside it
+    assert "<b>2 of 4 known</b>" in html          # the honest denominator
+    assert "Counts, never rates." in html
+
+
+def test_the_board_annotates_cross_tree_spread_draws(tmp_path, monkeypatch):
+    """A draw from another cohort/ tree is evidence about the seed, not about
+    the sealed environment — carried in the count, visibly annotated."""
+    _reporting_fleet(tmp_path, monkeypatch)
+    manifest = json.loads((tmp_path / "BASELINE.json").read_text())
+    manifest["seed_spread"] = {"squad": ["squad_old_seed13"]}
+    (tmp_path / "BASELINE.json").write_text(json.dumps(manifest))
+    d = tmp_path / "squad_old_seed13"
+    d.mkdir()
+    (d / "config.json").write_text(json.dumps({"seed": 13}))
+    (d / "economics.json").write_text(json.dumps({"git_commit": "b" * 40,
+                                                  "reward_overrides": []}))
+    (d / "behavior_final.json").write_text(json.dumps({
+        "episodes": 100, "metrics": {"closed_on_root_report_rate": 0.9}}))
+    monkeypatch.setattr(baseline_module, "cohort_tree",
+                        lambda c: {"a" * 40: "sealed-tree"}.get(c, "older-tree"))
+
+    html = fleet_board.reporting_channel(baseline_module.load())
+
+    assert "spread +1 draws, 1 report" in html
+    assert "(1 cross-tree)" in html
+    assert "evidence about the seed, not about the sealed environment" in html
+
+
+def test_an_undeclared_draw_changes_no_board_number(tmp_path, monkeypatch):
+    """The board renders the DECLARED block only: an undeclared same-config
+    draw is the audit's exit-1 to raise, not a number for the board to invent
+    — a rendered count must never be truer than its manifest."""
+    _reporting_fleet(tmp_path, monkeypatch)
+    d = tmp_path / "squad_undeclared"
+    d.mkdir()
+    (d / "config.json").write_text(json.dumps({"seed": 14}))
+    (d / "economics.json").write_text(json.dumps({"git_commit": "a" * 40,
+                                                  "reward_overrides": []}))
+
+    html = fleet_board.reporting_channel(baseline_module.load())
+
+    assert "spread" not in html

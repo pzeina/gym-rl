@@ -59,6 +59,19 @@ that honest and even expected; what it forbids is reading such a pair as an
 independent draw, which is how a pre-registered seed-carry test came to compare
 five checkpoints with themselves.
 
+The complement of the declared search is declared too (``seed_spread``, owner
+decision 2026-08-18): every OTHER run of the record — live or archived — that
+trained the member's exact config at a different seed, or the same seed on a
+different ``cohort/`` tree. The search says which seeds the member was chosen
+from; the spread says what else the record knows about that lottery, because a
+board that prints "2 of 2 seeds report" while mute same-config draws sit in
+the archive is the quiet half of a search (assurance #63: ``squad_v29_seed14``
+failed the reporting gate on both checkpoints and was in neither block). The
+audit dedupes the spread by model-tensor digest — a bit-identical re-execution
+is ONE draw, never two — and FAILS on any same-config draw the corpus holds
+that neither block names. Cross-tree draws are carried and annotated: they are
+evidence about the seed, not about the sealed environment.
+
 Exit status is 0 only if every check passes on every member — this is meant to
 be run before publishing anything that calls itself the baseline.
 """
@@ -157,9 +170,15 @@ def cohort_tree(commit: str | None) -> str | None:
     Derived from git rather than recorded at train time, so it works for every
     run already on disk. A commit this clone does not have reads as None, which
     the audit reports as unknown and never as agreement.
+
+    Memoized: a commit's tree is immutable, and the ``seed_spread`` audit asks
+    about the same handful of commits once per run in the corpus — without the
+    cache that is a ``git rev-parse`` subprocess per row, per board render.
     """
     if not commit:
         return None
+    if commit in _COHORT_TREES:
+        return _COHORT_TREES[commit]
     import subprocess
 
     try:
@@ -167,7 +186,34 @@ def cohort_tree(commit: str | None) -> str | None:
                              capture_output=True, text=True, timeout=20)
     except (OSError, subprocess.SubprocessError):
         return None
-    return out.stdout.strip() if out.returncode == 0 else None
+    tree = out.stdout.strip() if out.returncode == 0 else None
+    _COHORT_TREES[commit] = tree
+    return tree
+
+
+_COHORT_TREES: dict[str, str | None] = {}
+
+
+def config_matches(existing: dict, config: dict, *, modulo: tuple[str, ...] = ()) -> bool:
+    """Exact training-config identity, optionally ignoring named keys.
+
+    THE matcher — ``campaign_preflight`` uses it to refuse queueing a job the
+    record already answers (``modulo=()``: bit-deterministic re-derivation) and
+    the ``seed_spread`` audit uses it with ``modulo=("seed",)`` to recognise
+    another draw of the same lottery. One definition, because two matchers is
+    how one of them quietly stops matching.
+    """
+    def strip(c: dict) -> dict:
+        return {k: v for k, v in c.items() if k not in modulo}
+
+    return strip(existing) == strip(config)
+
+
+def overrides_match(recorded: list | None, overrides: list[str]) -> bool:
+    """Same prices, order-free. Different recorded prices are a different
+    experiment, not another draw; an UNRECORDED price (pre-economics run) stays
+    a suspect, because unknown is not the same finding as different."""
+    return recorded is None or sorted(recorded) == sorted(overrides)
 
 
 def _seal_drift(run: str, sealed: dict | None) -> list[str]:
@@ -401,6 +447,202 @@ def _seed_search_problems(facts: dict, member: str | None) -> list[str]:
     return problems
 
 
+def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
+                      digest=None) -> dict | None:
+    """Every OTHER same-config draw the record holds for one scenario.
+
+    **Why a second block.** ``seed_search`` declares the seeds a member was
+    *chosen* from, and the board prints "k of K seeds report" off it. But the
+    record can hold more draws of the same lottery than the search ever looked
+    at: the 2026-08-18 measurement campaign put a seed-13 run beside each
+    one-seed member, the archive holds same-config runs at other seeds and on
+    earlier ``cohort/`` trees, and ``squad_v29_seed14`` — which fails the
+    reporting gate on both checkpoints — sat in neither block while the board
+    said "2 of 2 seeds report" (assurance #63). True of the search, and the
+    quiet half of it. So the manifest's ``seed_spread`` block names those runs,
+    and this function derives everything else from their committed artifacts.
+
+    Three derivations keep the count honest:
+
+    * **dedupe** — draws are counted by ``policy_digest`` of the FINAL policy
+      (the artifact the reporting gate reads), so a bit-identical re-execution
+      (``squad_v29_seed14`` == archived ``squad_v10c``) is ONE draw disclosed
+      as such, never two (#60's lesson applied to counting).
+    * **cross-tree** — each draw's ``cohort/`` tree is derived from its
+      recorded commit; a draw with no run on the member's tree is annotated,
+      because it is evidence about the seed, not about the sealed environment.
+    * **completeness** — the corpus (``runs/`` and ``runs/archive/``) is
+      scanned for same-config-modulo-seed draws in NEITHER block, and the
+      audit fails naming them. That failure is the whole point: the block
+      cannot go quietly stale the way the board's caption did.
+
+    Returns None when the scenario has no declared spread and the scan finds
+    nothing — silence there means the search really is the whole record.
+    ``digest`` is injectable for tests and for ``--no-loadable``; unmeasured
+    reporting rates count in neither direction but are disclosed (archived
+    draws are not re-scored to make a count look complete).
+    """
+    if not member:
+        return None
+    declared = list((manifest.get("seed_spread") or {}).get(scenario) or [])
+    search = list((manifest.get("seed_search") or {}).get(scenario) or [])
+    member_dir = run_dir(member)
+    member_cfg = _json_or_empty(member_dir / "config.json")
+    member_tree = cohort_tree(_json_or_empty(member_dir / "economics.json").get("git_commit"))
+
+    rows = []
+    for run in declared:
+        d = run_dir(run)
+        cfg = _json_or_empty(d / "config.json")
+        econ = _json_or_empty(d / "economics.json")
+        rows.append({
+            "run": run,
+            "exists": d.is_dir(),
+            "seed": cfg.get("seed"),
+            "tree": cohort_tree(econ.get("git_commit")),
+            "overrides": econ.get("reward_overrides"),  # None = unrecorded, [] = none
+            "config_matches": bool(cfg and member_cfg
+                                   and config_matches(cfg, member_cfg, modulo=("seed",))),
+            "reports": _reporting_gate(run),
+        })
+
+    undeclared = []
+    if member_cfg:
+        from scripts.fleet_status import run_dirs
+
+        listed = {member, *search, *declared}
+        for d in run_dirs(RUNS):
+            if d.name in listed:
+                continue
+            cfg = _json_or_empty(d / "config.json")
+            if not cfg or not config_matches(cfg, member_cfg, modulo=("seed",)):
+                continue
+            recorded = _json_or_empty(d / "economics.json").get("reward_overrides")
+            if not overrides_match(recorded, []):
+                continue  # a different price is a different experiment
+            undeclared.append(d.name)
+
+    if not rows and not undeclared:
+        return None
+
+    if digest is None:
+        from scripts.publish_audit import policy_digest as digest
+
+    # Member + search + valid spread runs, grouped into DRAWS by the identity
+    # of the final policy's tensors. No digest (no checkpoint, --no-loadable)
+    # means the run stands alone: unknown identity is not the same as shared.
+    draws: list[dict] = []
+    by_key: dict[str, dict] = {}
+    seen: set[str] = set()
+    entries = ([("declared", member)] + [("declared", r) for r in search]
+               + [("spread", r["run"]) for r in rows
+                  if r["exists"] and r["config_matches"] and not r["overrides"]])
+    for kind, run in entries:
+        if run in seen:
+            continue
+        seen.add(run)
+        key = digest(run_dir(run) / HEADLINE_CKPT) or f"only:{run}"
+        group = by_key.get(key)
+        if group is None:
+            group = {"runs": [], "kinds": set(), "seeds": [], "trees": [], "verdicts": []}
+            by_key[key] = group
+            draws.append(group)
+        group["runs"].append(run)
+        group["kinds"].add(kind)
+        group["seeds"].append(_json_or_empty(run_dir(run) / "config.json").get("seed"))
+        group["trees"].append(
+            cohort_tree(_json_or_empty(run_dir(run) / "economics.json").get("git_commit")))
+        group["verdicts"].append(_reporting_gate(run))
+
+    for g in draws:
+        measured = [v for v in g["verdicts"] if v is not None]
+        g["reports"] = True if any(measured) else False if measured else None
+        resolved = [t for t in g["trees"] if t]
+        g["cross_tree"] = bool(member_tree and resolved
+                               and all(t != member_tree for t in resolved))
+
+    spread = [g for g in draws if g["kinds"] == {"spread"}]
+    return {
+        "scenario": scenario,
+        "runs": rows,
+        "undeclared": undeclared,
+        "draws": draws,
+        "spread_draws": len(spread),
+        "spread_reporting": sum(1 for g in spread if g["reports"] is True),
+        "spread_mute": sum(1 for g in spread if g["reports"] is False),
+        "spread_unmeasured": sum(1 for g in spread if g["reports"] is None),
+        "cross_tree": sum(1 for g in spread if g["cross_tree"]),
+        "known_total": len(draws),
+        "known_reporting": sum(1 for g in draws if g["reports"] is True),
+    }
+
+
+def _seed_spread_problems(facts: dict, member: str | None, search: list[str]) -> list[str]:
+    """What makes the disclosed spread worth believing — and the failure the
+    block exists for: a same-config draw the manifest does not carry."""
+    sc = facts["scenario"]
+    problems = []
+    names = [r["run"] for r in facts["runs"]]
+    for run in sorted({n for n in names if names.count(n) > 1}):
+        problems.append(f"seed_spread[{sc}]: {run} is listed twice — one draw, two counts")
+    for run in names:
+        if run == member or run in search:
+            problems.append(
+                f"seed_spread[{sc}]: {run} is already the member or a seed_search "
+                "candidate — one draw counted in two blocks")
+    for r in facts["runs"]:
+        if not r["exists"]:
+            problems.append(f"seed_spread[{sc}]: no run directory for {r['run']}")
+        elif r["overrides"]:
+            problems.append(
+                f"seed_spread[{sc}]: {r['run']} carries {', '.join(r['overrides'])} — "
+                "a different experiment, not a draw of the shipped configuration")
+        elif not r["config_matches"]:
+            problems.append(
+                f"seed_spread[{sc}]: {r['run']}'s training config is not the member's "
+                "modulo seed — not a draw of the same lottery")
+    for g in facts["draws"]:
+        if len({v for v in g["verdicts"] if v is not None}) > 1:
+            problems.append(
+                f"seed_spread[{sc}]: bit-identical runs {' = '.join(g['runs'])} carry "
+                "disagreeing measured reporting verdicts — a re-score moved one of them")
+    if facts["undeclared"]:
+        problems.append(
+            f"seed_spread[{sc}]: same-config draw(s) in neither seed_search nor "
+            f"seed_spread: {', '.join(facts['undeclared'])} — the record holds more "
+            "draws than the manifest declares")
+    return problems
+
+
+def _print_spread(sp: dict, declared_names: set[str]) -> None:
+    """The spread under one scenario's reporting lines: counts, then draws."""
+    extra = f", {sp['spread_unmeasured']} unmeasured" if sp["spread_unmeasured"] else ""
+    cross = f"; {sp['cross_tree']} cross-tree" if sp["cross_tree"] else ""
+    print(f"      spread: +{sp['spread_draws']} distinct draws over {len(sp['runs'])} "
+          f"more runs — {sp['spread_reporting']} report, {sp['spread_mute']} mute"
+          f"{extra}{cross}")
+    for g in sp["draws"]:
+        spread_runs = [r for r in g["runs"] if r not in declared_names]
+        if not spread_runs:
+            continue
+        if "declared" in g["kinds"]:
+            # Folded into a member/search line above — one draw, said out loud.
+            print(f"          {' = '.join(spread_runs)}  ==  {g['runs'][0]} "
+                  "(the same draw, counted once)")
+            continue
+        label = " = ".join(g["runs"])
+        verdict = "—" if g["reports"] is None else "reports" if g["reports"] else "mute"
+        where = ""
+        if g["cross_tree"]:
+            trees = sorted({(t or "?")[:8] for t in g["trees"]})
+            where = f"  cross-tree {'/'.join(trees)}"
+        seed = g["seeds"][0]
+        print(f"          seed {seed!s:<4} {label:<40} {verdict:<8}{where}")
+    unmeasured = f" ({sp['spread_unmeasured']} unmeasured)" if sp["spread_unmeasured"] else ""
+    print(f"      known same-config draws: {sp['known_reporting']} of "
+          f"{sp['known_total']} report{unmeasured}")
+
+
 def _loadable(run: str) -> bool:
     """Do this member's checkpoints load under the current spaces?
 
@@ -574,6 +816,17 @@ def audit(check_loadable: bool = True) -> int:
         searches[scenario] = s
         failures.extend(_seed_search_problems(s, members.get(scenario)))
 
+    spreads = {}
+    for scenario in DOCTRINE_SCENARIOS:
+        member = members.get(scenario)
+        sp = seed_spread_facts(manifest, scenario, member,
+                               digest=None if check_loadable else (lambda p: None))
+        if sp is None:
+            continue
+        spreads[scenario] = sp
+        failures.extend(_seed_spread_problems(
+            sp, member, (manifest.get("seed_search") or {}).get(scenario) or []))
+
     commits = {f["commit"] for _, _, f, _ in rows if f and f.get("commit")}
     trees = {f["cohort_tree"] for _, _, f, _ in rows if f and f.get("cohort_tree")}
     unknown = [run for _, run, f, _ in rows
@@ -616,13 +869,18 @@ def audit(check_loadable: bool = True) -> int:
             passes = _reporting_gate(member) if member else None
             verdict = "—" if passes is None else "reports" if passes else "MUTE"
             print(f"  {scenario:<18} 1 seed, not searched      {verdict}")
-            continue
-        seeds = ", ".join(str(r["seed"]) for r in s["runs"])
-        print(f"  {scenario:<18} {s['reporting']} of {s['total']} seeds report   (seeds {seeds})")
-        for r in s["runs"]:
-            mark = "  <- member" if r["run"] == members.get(scenario) else ""
-            verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
-            print(f"      seed {r['seed']!s:<4} {r['run']:<32} {verdict}{mark}")
+        else:
+            seeds = ", ".join(str(r["seed"]) for r in s["runs"])
+            print(f"  {scenario:<18} {s['reporting']} of {s['total']} seeds report   (seeds {seeds})")
+            for r in s["runs"]:
+                mark = "  <- member" if r["run"] == members.get(scenario) else ""
+                verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
+                print(f"      seed {r['seed']!s:<4} {r['run']:<32} {verdict}{mark}")
+        sp = spreads.get(scenario)
+        if sp:
+            declared_names = {members.get(scenario),
+                              *((manifest.get("seed_search") or {}).get(scenario) or [])}
+            _print_spread(sp, declared_names)
 
     # Disclosed, never gated on (assurance #60): a bit-deterministic re-run
     # reproducing its predecessor is honest — but a comparison inside such a

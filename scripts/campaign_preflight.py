@@ -42,7 +42,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from cohort.training.ppo import PPOConfig  # noqa: E402
-from scripts.baseline import cohort_tree  # noqa: E402
+from scripts.baseline import cohort_tree, config_matches, overrides_match  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 
 
@@ -166,7 +166,10 @@ def find_duplicates(config: dict, overrides: list[str], run_name: str,
             existing = json.loads((d / "config.json").read_text())
         except (OSError, json.JSONDecodeError):
             continue
-        if existing != config:
+        # THE config matcher, shared with baseline.py's seed_spread audit —
+        # which asks the same question modulo the seed. One matcher, so the
+        # queue's idea of "already trained" cannot drift from the manifest's.
+        if not config_matches(existing, config):
             continue
         try:
             econ = json.loads((d / "economics.json").read_text())
@@ -175,8 +178,7 @@ def find_duplicates(config: dict, overrides: list[str], run_name: str,
         # Different recorded prices -> a different experiment, not a duplicate.
         # An unrecorded price (pre-economics run) stays a suspect: unknown is
         # not different.
-        recorded = econ.get("reward_overrides")
-        if recorded is not None and sorted(recorded) != sorted(overrides):
+        if not overrides_match(econ.get("reward_overrides"), overrides):
             continue
         tree = cohort_tree(econ.get("git_commit"))
         matches.append(Match(run=d.name, path=d, tree=tree,

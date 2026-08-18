@@ -79,10 +79,28 @@ STABLE = (
 )
 
 
-def data_digest(rows: list[dict]) -> str:
+def manifest_blocks() -> dict:
+    """The manifest's declaration blocks, which the boards lead with.
+
+    ``seed_search`` and ``seed_spread`` change what the fleet board SAYS about a
+    scenario's draws without any run moving — the spread block landing was
+    invisible to a rows-only digest, and the publish flag said "current" over a
+    board that had just grown a whole disclosure. Loaded here, outside
+    ``data_digest``, because the digest itself must stay a pure function of its
+    arguments (pinned in tests/test_board_refresh.py).
+    """
+    try:
+        m = json.loads((ROOT / "runs" / "BASELINE.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {k: m.get(k) for k in ("version", "seed_search", "seed_spread")}
+
+
+def data_digest(rows: list[dict], manifest: dict | None = None) -> str:
     """A digest of what the boards say about the fleet, not of the rendered bytes."""
     stable = [{k: r.get(k) for k in STABLE} for r in rows]
-    payload = json.dumps({"rows": stable}, sort_keys=True, default=str)
+    payload = json.dumps({"rows": stable, "manifest": manifest or {}},
+                         sort_keys=True, default=str)
     return hashlib.sha256(payload.encode()).hexdigest()[:16]
 
 
@@ -163,7 +181,7 @@ def main() -> int:
         return 0
 
     rows = collect(Path(args.runs_dir))
-    sha = data_digest(rows)
+    sha = data_digest(rows, manifest_blocks())
     written = render_all(rows)
 
     boards = state.setdefault("boards", {})

@@ -20,6 +20,7 @@ rots quietest:
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -52,13 +53,18 @@ def test_the_shipped_manifest_covers_the_doctrine_scenarios():
 
 def _member(tmp_path, run: str, *, commit="a" * 40, overrides=(), episodes=100,
             gates=(), successes=97, announced=97, peak_episodes=100,
-            seed=12, close_rate=0.85):
+            seed=12, close_rate=0.85, scenario=None):
     d = tmp_path / run
     d.mkdir(parents=True, exist_ok=True)
     (d / "economics.json").write_text(json.dumps({
         "git_commit": commit, "reward_overrides": list(overrides),
     }))
-    (d / "config.json").write_text(json.dumps({"seed": seed}))
+    # The config is the run's training identity: the seed_spread completeness
+    # scan matches on it modulo seed, so every run carries a scenario key —
+    # derived from the name unless a test says otherwise — or eight members
+    # with the config {} would all read as draws of one another's lottery.
+    scenario = scenario or re.split(r"_v\d", run)[0]
+    (d / "config.json").write_text(json.dumps({"scenario": scenario, "seed": seed}))
     metrics = {"success_rate": 0.97, "successes": successes,
                "successes_announced": announced}
     if close_rate is not None:
@@ -664,3 +670,202 @@ def test_the_policy_identity_is_the_tensors_not_the_file(tmp_path):
     assert policy_digest(a) == policy_digest(b), "one policy, two price tags"
     assert policy_digest(a) != policy_digest(c), "different tensors, different policy"
     assert policy_digest(tmp_path / "absent.pt") is None, "absence, not a verdict"
+
+
+# ------------------------------------------------ the seed spread (issue #63) --
+#
+# `seed_search` declares the seeds a member was CHOSEN from; `seed_spread`
+# (owner decision 2026-08-18) declares every OTHER same-config draw the record
+# holds — archived, cross-tree, mute or unmeasured. The board said "2 of 2
+# seeds report" for squad, true of the search, while `squad_v29_seed14` failed
+# the reporting gate on both checkpoints in the same directory listing and
+# archived `squad_v20_seed15` sat at 0.000: the quiet half of a search. The
+# audit dedupes draws on the final policy's tensors (a bit-identical
+# re-execution is one draw) and FAILS on any same-config draw in neither block.
+
+
+def _spread(fleet, scenario, runs):
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest.setdefault("seed_spread", {})[scenario] = runs
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+
+
+def test_a_same_config_draw_in_neither_block_fails_the_audit_by_name(fleet, capsys):
+    """The completeness gate — the whole point of the block.
+
+    The exact #63 shape: a same-config draw lands beside the member, fails the
+    gate it would qualify, and no declaration anywhere says it exists.
+    """
+    _member(fleet, "squad_v2_seed14", seed=14, scenario="squad", close_rate=0.0)
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "neither seed_search nor seed_spread: squad_v2_seed14" in out
+    assert "more draws than the manifest declares" in out
+
+
+def test_a_declared_spread_draw_is_counted_and_does_not_fail(fleet, capsys):
+    _member(fleet, "squad_v2_seed14", seed=14, scenario="squad", close_rate=0.0)
+    _spread(fleet, "squad", ["squad_v2_seed14"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +1 distinct draws over 1 more runs — 0 report, 1 mute" in out
+    assert "known same-config draws: 1 of 2 report" in out
+
+
+def test_an_unmeasured_spread_draw_counts_in_neither_direction_but_is_disclosed(
+        fleet, capsys):
+    """Unlike a search candidate, an unmeasured spread draw does not fail the
+    audit: the archive is not re-scored to make a count look complete. It is
+    disclosed as unmeasured and stays out of both the numerator and the mute
+    count."""
+    _member(fleet, "squad_v2_seed14", seed=14, scenario="squad", close_rate=None)
+    _spread(fleet, "squad", ["squad_v2_seed14"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "0 report, 0 mute, 1 unmeasured" in out
+
+
+def test_bit_identical_spread_runs_count_as_one_draw(fleet, capsys, monkeypatch):
+    """#60's lesson applied to counting: `squad_v29_seed14` == archived
+    `squad_v10c`, so listing both must add ONE draw, disclosed as one."""
+    _stub_digests(monkeypatch)
+    for name in ("squad_v2_seed14", "squad_v2b_seed14"):
+        _member(fleet, name, seed=14, scenario="squad", close_rate=0.0)
+        _checkpoints(fleet, name, best="S14", latest="S14L")
+    _spread(fleet, "squad", ["squad_v2_seed14", "squad_v2b_seed14"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +1 distinct draws over 2 more runs" in out
+    assert "squad_v2_seed14 = squad_v2b_seed14" in out
+    assert "known same-config draws: 1 of 2 report" in out
+
+
+def test_a_spread_run_bit_identical_to_the_member_adds_no_draw(fleet, capsys, monkeypatch):
+    """The patrol_brique_v11_seed14 shape: the member re-derived an archived
+    run bit-for-bit, so the archived run is the member's own draw — carried
+    for completeness, folded out of the count, and said out loud."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _member(fleet, "squad_v0", seed=12, scenario="squad", close_rate=0.85)
+    _checkpoints(fleet, "squad_v0", best="W1", latest="W2")
+    _spread(fleet, "squad", ["squad_v0"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +0 distinct draws over 1 more runs" in out
+    assert "squad_v0  ==  squad_v1 (the same draw, counted once)" in out
+    assert "known same-config draws: 1 of 1 report" in out
+
+
+def test_a_cross_tree_spread_draw_is_annotated_not_failed(fleet, capsys):
+    """Owner decision: cross-tree draws are carried — they are evidence about
+    the seed, not about the sealed environment — and the audit says which."""
+    _member(fleet, "squad_v0_seed13", seed=13, scenario="squad",
+            commit="b" * 40, close_rate=0.0)
+    _spread(fleet, "squad", ["squad_v0_seed13"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "cross-tree env2" in out
+
+
+def test_a_spread_run_that_does_not_resolve_fails_the_fleet(fleet, capsys):
+    _spread(fleet, "squad", ["squad_ghost"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "seed_spread[squad]: no run directory for squad_ghost" in out
+
+
+def test_a_spread_run_of_a_different_config_fails_the_fleet(fleet, capsys):
+    """A run that trained different hyper-parameters is a different experiment;
+    counting it as a draw of the member's lottery would launder it."""
+    d = _member(fleet, "squad_other", seed=14, scenario="squad", close_rate=0.0)
+    (d / "config.json").write_text(json.dumps(
+        {"scenario": "squad", "seed": 14, "total_steps": 999}))
+    _spread(fleet, "squad", ["squad_other"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "not the member's modulo seed" in out
+
+
+def test_a_spread_run_with_an_override_fails_the_fleet(fleet, capsys):
+    _member(fleet, "squad_priced", seed=14, scenario="squad", close_rate=0.8,
+            overrides=["root_done_bonus=3.0"])
+    _spread(fleet, "squad", ["squad_priced"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "root_done_bonus=3.0" in out
+    assert "not a draw of the shipped configuration" in out
+
+
+def test_a_run_in_both_blocks_fails_the_fleet(fleet, capsys):
+    """One draw, two blocks, two counts — the double-count the dedupe exists
+    to refuse, at the declaration level."""
+    _member(fleet, "squad_v0_seed13", seed=13, scenario="squad", close_rate=0.8)
+    _search(fleet, "squad", ["squad_v1", "squad_v0_seed13"])
+    _spread(fleet, "squad", ["squad_v0_seed13"])
+
+    code, out = _audit(capsys)
+
+    assert code == 1
+    assert "counted in two blocks" in out
+
+
+def test_an_override_run_is_not_an_undeclared_draw(fleet, capsys):
+    """A different price is a different experiment (`overrides_match`), so a
+    priced run at the member's config must not fail the completeness gate."""
+    _member(fleet, "squad_priced", seed=14, scenario="squad",
+            overrides=["root_done_bonus=3.0"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "seed_spread" not in out
+
+
+def test_every_spread_run_the_shipped_manifest_declares_resolves_and_matches():
+    """The real manifest's block, held to its own rules — every declared draw
+    resolves (live or archived), trained the member's exact config modulo
+    seed, and carries no reward override."""
+    manifest = baseline.load()
+    spread = manifest.get("seed_spread")
+    assert spread, "the shipped manifest declares no seed_spread block"
+    for scenario in spread:
+        facts = baseline.seed_spread_facts(
+            manifest, scenario, manifest["runs"][scenario], digest=lambda p: None)
+        for r in facts["runs"]:
+            assert r["exists"], f"seed_spread[{scenario}]: {r['run']} does not resolve"
+            assert r["config_matches"], (
+                f"seed_spread[{scenario}]: {r['run']} is not the member's config modulo seed")
+            assert not r["overrides"], f"seed_spread[{scenario}]: {r['run']} carries overrides"
+
+
+def test_the_shipped_record_holds_no_draw_outside_the_declared_blocks():
+    """The completeness gate against the real corpus — the actual claim the
+    v1.21 board understated, now pinned. If a new same-config run lands, this
+    fails until the manifest says so."""
+    manifest = baseline.load()
+    for scenario, member in manifest["runs"].items():
+        facts = baseline.seed_spread_facts(manifest, scenario, member,
+                                           digest=lambda p: None)
+        assert facts is not None, f"{scenario}: no spread and an empty scan — unexpected"
+        assert not facts["undeclared"], (
+            f"{scenario}: same-config draws in neither seed_search nor seed_spread: "
+            f"{facts['undeclared']} — declare them in runs/BASELINE.json"
+        )
