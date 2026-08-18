@@ -886,6 +886,146 @@ def test_every_declared_draw_holds_a_deduplicable_checkpoint():
     )
 
 
+# --------------------------- the pruned final's recorded identity (issue #67) --
+#
+# #65's every-checkpoint key still settled 12 of its 13 merged groups "at
+# ckpt_best" — the block treated the final as unknowable because the archive
+# pruned `ckpt_latest.pt`, while every run's own behavior_final.json IS the
+# evaluation of that checkpoint and records its file sha256 beside the
+# metrics, written at eval time and committed. The dedupe now falls back to
+# that recorded hash — file hash against file hash, never against a tensor
+# digest (#61's confound: one policy, two byte-strings) — and a final that is
+# neither on disk nor recorded anywhere is disclosed by name, because it is
+# precisely the case the recovery does not fix.
+
+
+def _recorded_final(fleet, run: str, sha: str):
+    d = fleet / run
+    payload = json.loads((d / "behavior_final.json").read_text())
+    payload["checkpoint"] = f"runs/{run}/ckpt_latest.pt"
+    payload["checkpoint_sha256"] = sha
+    (d / "behavior_final.json").write_text(json.dumps(payload))
+
+
+def test_a_pruned_finals_recorded_hash_settles_the_final_not_just_best(
+        fleet, capsys, monkeypatch):
+    """The #67 shape: the archive pruned the final, but behavior_final.json
+    still holds its file sha256 — the merge is settled at BOTH checkpoints,
+    so no "settled at ckpt_best" understatement is printed."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _recorded_final(fleet, "squad_v1", "f" * 64)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.85)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    _recorded_final(fleet, "squad_old", "f" * 64)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "squad_old  ==  squad_v1 (the same draw, counted once)" in out
+    assert "settled at ckpt_best" not in out
+    assert "final policy unrecoverable" not in out
+
+
+def test_recorded_final_hashes_that_disagree_keep_the_draws_apart(
+        fleet, capsys, monkeypatch):
+    """ckpt_best agreement does not entail final agreement — two runs sharing
+    a best-save and diverging afterwards is exactly the shape the spread
+    exists to count correctly, and before #67 this pair merged silently."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _recorded_final(fleet, "squad_v1", "1" * 64)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.0)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    _recorded_final(fleet, "squad_old", "2" * 64)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "spread: +1 distinct draws over 1 more runs — 0 report, 1 mute" in out
+
+
+def test_tensor_identity_outranks_the_recorded_file_hash(fleet, capsys, monkeypatch):
+    """The caveat that bit the assurance layer, refused here: a checkpoint
+    serializes its reward_config, so one policy can live in two byte-strings
+    (#61). Where both finals are on disk the tensors decide, and differing
+    recorded file hashes must not split one draw into two."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _recorded_final(fleet, "squad_v1", "1" * 64)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.85)
+    _checkpoints(fleet, "squad_old", best="W1", latest="W2")
+    _recorded_final(fleet, "squad_old", "2" * 64)
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "squad_old  ==  squad_v1 (the same draw, counted once)" in out
+
+
+def test_a_record_that_names_a_different_checkpoint_lends_no_identity(
+        fleet, capsys, monkeypatch):
+    """The guard on the fallback: a behavior_final.json whose `checkpoint`
+    field does not name ckpt_latest.pt is a mis-keyed record, and its hash
+    must not stand in for the final's identity."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _recorded_final(fleet, "squad_v1", "f" * 64)
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.85)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("W1")  # no ckpt_latest.pt
+    payload = json.loads((fleet / "squad_old" / "behavior_final.json").read_text())
+    payload["checkpoint"] = "runs/squad_old/ckpt_best.pt"  # mis-keyed
+    payload["checkpoint_sha256"] = "f" * 64
+    (fleet / "squad_old" / "behavior_final.json").write_text(json.dumps(payload))
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "settled at ckpt_best" in out  # the final stays unsettled
+    assert "final policy unrecoverable" in out
+
+
+def test_a_final_no_record_can_recover_is_disclosed_by_name(fleet, capsys, monkeypatch):
+    """The squad_screen_v12 shape: final pruned AND no recorded hash — the one
+    case the recovery does not reach, said out loud rather than left to read
+    as an ordinary independent draw."""
+    _stub_digests(monkeypatch)
+    _checkpoints(fleet, "squad_v1", best="W1", latest="W2")
+    _member(fleet, "squad_old", seed=14, scenario="squad", close_rate=0.0)
+    (fleet / "squad_old" / "ckpt_best.pt").write_text("OTHER")  # no ckpt_latest.pt
+    _spread(fleet, "squad", ["squad_old"])
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "final policy unrecoverable for 1 run(s)" in out
+    assert "squad_old" in out
+
+
+def test_the_shipped_records_final_identities_are_recoverable_but_one():
+    """The population-level #67 fact, pinned: for every run in every declared
+    block, the FINAL policy's identity survives — the file itself on disk, or
+    the file sha256 its evaluation recorded — except `squad_screen_v12`, the
+    single known loss (final pruned, never evaluated, in no corpus). A second
+    name appearing here is a new unrecoverable final, not an ordinary prune."""
+    manifest = baseline.load()
+    runs = set(manifest["runs"].values())
+    for block in ("seed_search", "seed_spread"):
+        for declared in (manifest.get(block) or {}).values():
+            runs.update(declared)
+    lost = [r for r in sorted(runs)
+            if not (baseline.run_dir(r) / baseline.HEADLINE_CKPT).is_file()
+            and not baseline._recorded_file_hash(r, baseline.HEADLINE_CKPT)]
+    assert set(lost) <= {"squad_screen_v12"}, (
+        f"final-policy identity unrecoverable for {lost} — neither the file "
+        "nor a recorded checkpoint_sha256 survives"
+    )
+
+
 def test_a_cross_tree_spread_draw_is_annotated_not_failed(fleet, capsys):
     """Owner decision: cross-tree draws are carried — they are evidence about
     the seed, not about the sealed environment — and the audit says which."""

@@ -372,6 +372,34 @@ def _json_or_empty(path: Path) -> dict:
         return {}
 
 
+RECORDED_EVAL = {"ckpt_best.pt": "behavior.json", HEADLINE_CKPT: "behavior_final.json"}
+
+
+def _recorded_file_hash(run: str, name: str) -> str | None:
+    """The checkpoint's FILE sha256 as its own evaluation recorded it (#67).
+
+    ``runs/archive/`` prunes ``ckpt_latest.pt``, but the evaluation that scored
+    that checkpoint wrote ``checkpoint_sha256`` beside the metrics — at eval
+    time, before the prune, and committed. So for 50 of the repository's 51
+    pruned finals the identity is still in the record, and "settled at
+    ckpt_best" was a limitation of the lookup, not of the evidence. Guarded on
+    the recorded ``checkpoint`` actually naming this file, so a mis-keyed
+    record cannot lend one checkpoint another's identity.
+
+    This is a *file* hash — a different quantity from ``policy_digest``'s
+    digest over the model tensors. A checkpoint serializes its
+    ``reward_config``, so one policy can live in two byte-strings (the #61
+    confound); comparing across the two namespaces reports "differs" for
+    bit-identical runs. Callers compare file hash to file hash only.
+    """
+    rec = _json_or_empty(run_dir(run) / RECORDED_EVAL[name])
+    sha = rec.get("checkpoint_sha256")
+    recorded = rec.get("checkpoint")
+    if not sha or not recorded or Path(recorded).name != name:
+        return None
+    return sha
+
+
 def seed_search_facts(manifest: dict, scenario: str, member: str | None) -> dict | None:
     """The declared seed search behind one member, or None if none was declared.
 
@@ -477,7 +505,11 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
       at least one digestible checkpoint and disagreeing on none are ONE draw,
       annotated with which checkpoints settled it, so a bit-identical
       re-execution (``squad_v29_seed14`` == archived ``squad_v10c``) counts
-      once, never twice (#60's lesson applied to counting).
+      once, never twice (#60's lesson applied to counting). Where a checkpoint
+      file is pruned, the file sha256 its own evaluation recorded stands in
+      (#67) — file hash against file hash, never against a tensor digest — so
+      an archived final still carries identity instead of quietly degrading
+      the merge to ``ckpt_best``.
     * **cross-tree** — each draw's ``cohort/`` tree is derived from its
       recorded commit; a draw with no run on the member's tree is annotated,
       because it is evidence about the seed, not about the sealed environment.
@@ -544,10 +576,10 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     # the final alone could not dedupe an archived run — `runs/archive/` prunes
     # `ckpt_latest.pt` and keeps `ckpt_best.pt` — so absence silently degraded
     # to "distinct", inflating the independent-draw count. Two runs are one
-    # draw when they share at least one digestible checkpoint and disagree on
-    # none; a run with no digestible checkpoint stands alone (unknown identity
-    # is not the same as shared) and is disclosed — as a FAILURE when its
-    # files are on disk and the digests are real, because that is the key
+    # draw when they share at least one comparable checkpoint and disagree on
+    # none; a run with no derivable identity at all stands alone (unknown
+    # identity is not the same as shared) and is disclosed — as a FAILURE when
+    # its files are on disk and the digests are real, because that is the key
     # going quietly unavailable, not an honest absence.
     kinds: dict[str, str] = {}
     entries = ([("declared", member)] + [("declared", r) for r in search]
@@ -561,6 +593,24 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     keys = {run: {name: dg for name in CHECKPOINTS
                   if (dg := digest(run_dir(run) / name))}
             for run in order}
+    # The pruned final's recorded identity (#67). `runs/archive/` prunes
+    # `ckpt_latest.pt`, so #65's every-checkpoint key still settled its merged
+    # groups at ckpt_best alone — annotated as if the final were unknowable,
+    # when each run's own behavior_final.json IS the evaluation of that
+    # checkpoint and records its file sha256. Runs are compared per checkpoint
+    # tensor-to-tensor where both digests exist, file-to-file otherwise, and
+    # never across the two namespaces (a file hash splits one policy in two
+    # whenever only the serialized price differs — the #61 confound).
+    file_keys = {run: {name: sha for name in CHECKPOINTS
+                       if (sha := _recorded_file_hash(run, name))}
+                 for run in order}
+
+    def _same(a: str, b: str, name: str) -> bool | None:
+        if name in keys[a] and name in keys[b]:
+            return keys[a][name] == keys[b][name]
+        if name in file_keys[a] and name in file_keys[b]:
+            return file_keys[a][name] == file_keys[b][name]
+        return None
 
     parent = {run: run for run in order}
 
@@ -572,8 +622,9 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
 
     for i, a in enumerate(order):
         for b in order[i + 1:]:
-            shared = keys[a].keys() & keys[b].keys()
-            if shared and all(keys[a][n] == keys[b][n] for n in shared):
+            verdicts = [v for name in CHECKPOINTS
+                        if (v := _same(a, b, name)) is not None]
+            if verdicts and all(verdicts):
                 parent[_draw(b)] = _draw(a)
 
     draws: list[dict] = []
@@ -601,15 +652,24 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     for g in draws:
         settled, disputed = [], []
         for name in CHECKPOINTS:
-            held = [keys[r][name] for r in g["runs"] if name in keys[r]]
-            if len(held) >= 2:
-                (settled if len(set(held)) == 1 else disputed).append(name)
+            held = [v for i, a in enumerate(g["runs"])
+                    for b in g["runs"][i + 1:]
+                    if (v := _same(a, b, name)) is not None]
+            if held:
+                (settled if all(held) else disputed).append(name)
         g["settled"] = settled
         if disputed:
             conflicts.append((list(g["runs"]), disputed))
-    undigested = [r for r in order if not keys[r]]
-    unreadable = [r for r in undigested if digests_enabled
+    undigested = [r for r in order if not keys[r] and not file_keys[r]]
+    unreadable = [r for r in order if not keys[r] and digests_enabled
                   and any((run_dir(r) / n).is_file() for n in CHECKPOINTS)]
+    # The one case the recovery does not reach (#67): a final that is neither
+    # on disk nor recorded anywhere — its identity is unrecoverable by anyone,
+    # and any merge it takes part in rests on ckpt_best alone. Disclosed, not
+    # failed: the record cannot be completed retroactively.
+    final_unknown = [r for r in order if r not in undigested
+                     and HEADLINE_CKPT not in keys[r]
+                     and HEADLINE_CKPT not in file_keys[r]]
 
     for g in draws:
         measured = [v for v in g["verdicts"] if v is not None]
@@ -626,6 +686,7 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
         "draws": draws,
         "undigested": undigested,
         "unreadable": unreadable,
+        "final_unknown": final_unknown,
         "conflicts": conflicts,
         "spread_draws": len(spread),
         "spread_reporting": sum(1 for g in spread if g["reports"] is True),
@@ -720,6 +781,11 @@ def _print_spread(sp: dict, declared_names: set[str]) -> None:
         print(f"      identity underived for {len(sp['undigested'])} run(s) — no "
               "digestible checkpoint, each counted as its own draw: "
               f"{', '.join(sp['undigested'])}")
+    if sp.get("final_unknown"):
+        print(f"      final policy unrecoverable for {len(sp['final_unknown'])} "
+              "run(s) — ckpt_latest pruned and no evaluation recorded its hash, "
+              "so identity rests on ckpt_best alone: "
+              f"{', '.join(sp['final_unknown'])}")
     unmeasured = f" ({sp['spread_unmeasured']} unmeasured)" if sp["spread_unmeasured"] else ""
     print(f"      known same-config draws: {sp['known_reporting']} of "
           f"{sp['known_total']} report{unmeasured}")
