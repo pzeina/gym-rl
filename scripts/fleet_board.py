@@ -332,8 +332,32 @@ def _false_done(run: str) -> str:
     return f'<span class="dim">false-DONE {rate:.2f}</span>'
 
 
+def _spread_cell(sp: dict) -> str:
+    """The spread beside the declared search, as counts — never rates.
+
+    ``+N draws`` is what the record holds beyond the declaration, already
+    deduped (a bit-identical re-execution is one draw); ``k of M known`` is the
+    honest denominator the search alone understates. Cross-tree draws are
+    annotated because they are evidence about the seed, not about the sealed
+    environment — a seed that reported on three earlier trees and not the
+    sealed one still counts, it just does not describe the shipping system.
+    """
+    bits = f"{sp['spread_reporting']} report"
+    if sp["spread_unmeasured"]:
+        bits += f", {sp['spread_unmeasured']} unmeasured"
+    cross = ""
+    if sp["cross_tree"]:
+        cross = (
+            f' <span class="dim" title="draws trained on a different cohort/ tree — '
+            f'evidence about the seed, not about the sealed environment">'
+            f"({sp['cross_tree']} cross-tree)</span>"
+        )
+    return (f' · spread +{sp["spread_draws"]} draws, {bits} — '
+            f'<b>{sp["known_reporting"]} of {sp["known_total"]} known</b>{cross}')
+
+
 def reporting_channel(manifest: dict) -> str:
-    """The seed search behind each member, or the absence of one, as HTML.
+    """The seed search behind each member, and the spread beyond it, as HTML.
 
     The one claim on this board that a reader cannot check from the success
     column. ``closed_on_root_report_rate`` is a per-run bar over a quantity
@@ -344,6 +368,14 @@ def reporting_channel(manifest: dict) -> str:
     overstatement the manifest's ``seed_search`` block exists to prevent, and a
     declaration nobody renders is not a disclosure.
 
+    The same goes one step further (owner decision 2026-08-18, assurance #63):
+    a search count that is true of the declared candidates can still be the
+    quiet half of the record when more same-config draws sit outside it — the
+    board said "2 of 2 seeds report" for squad while ``squad_v29_seed14``
+    failed the gate on both checkpoints in the same directory listing. So the
+    manifest's ``seed_spread`` block declares every other same-config draw the
+    record holds, and the board renders it beside the search it qualifies.
+
     Every number is read from the members' committed evaluations through
     ``baseline``; nothing here is kept by hand.
     """
@@ -351,7 +383,7 @@ def reporting_channel(manifest: dict) -> str:
     if not members:
         return ""
     lines = []
-    searched = False
+    searched = spread_shown = False
     for scenario in baseline.DOCTRINE_SCENARIOS:
         member = members.get(scenario)
         if not member:
@@ -367,6 +399,12 @@ def reporting_channel(manifest: dict) -> str:
             seeds = ", ".join(str(r["seed"]) for r in facts["runs"])
             cell = (f'<b>{facts["reporting"]} of {facts["total"]} seeds report</b> '
                     f'<span class="dim">· seeds {html.escape(seeds)}</span>')
+        # Rendered only off the DECLARED block: undeclared draws are the
+        # audit's failure to raise, not a number for this board to invent.
+        sp = baseline.seed_spread_facts(manifest, scenario, member)
+        if sp and sp["runs"]:
+            spread_shown = True
+            cell += _spread_cell(sp)
         lines.append(
             f"<li>{html.escape(scenario)} — {cell} · {_false_done(member)}</li>")
     note = (
@@ -375,6 +413,13 @@ def reporting_channel(manifest: dict) -> str:
         if searched else
         "No member here was chosen from a seed search — each scenario ran one seed."
     )
+    if spread_shown:
+        note += (
+            " The spread is every other same-config draw the record holds, live or "
+            "archived, deduped to distinct policies — a bit-identical re-execution "
+            "counts once — and cross-tree draws are evidence about the seed, not "
+            "about the sealed environment. Counts, never rates."
+        )
     return (
         '<div class="note"><div class="note-h">'
         "<span>Does the commander close its own operations?</span></div>"
