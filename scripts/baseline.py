@@ -719,6 +719,31 @@ def _uncommitted(run: str) -> list[str]:
     return [n for n in present if n not in tracked]
 
 
+def tracked_files(run: str) -> set[str] | None:
+    """Basenames of this run's files the repository tracks; None when git
+    cannot answer (a tarball export, a tmp_path fixture).
+
+    Issue #66. The manifest checks used to read the *filesystem*, so a declared
+    run that was on the authoring disk but never ``git add``-ed passed every
+    gate there and failed in any clone — ``platoon_v10_seed12`` did exactly
+    that. "Declared" must mean "in the repository", and only git can say so;
+    presence on one machine's disk is what the gate exists to see through.
+    """
+    import subprocess
+
+    d = run_dir(run)
+    try:
+        out = subprocess.run(
+            ["git", "ls-files", "--", str(d)],
+            cwd=ROOT, capture_output=True, text=True, timeout=20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return {line.rsplit("/", 1)[-1] for line in out.stdout.splitlines() if line}
+
+
 def _policy_reproductions(manifest: dict) -> list[tuple[str, str, list[str]]]:
     """(run, other_run, checkpoints) wherever a manifest run's model tensors are
     bit-identical to another run's on disk.

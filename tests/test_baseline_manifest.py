@@ -856,6 +856,36 @@ def test_every_spread_run_the_shipped_manifest_declares_resolves_and_matches():
             assert not r["overrides"], f"seed_spread[{scenario}]: {r['run']} carries overrides"
 
 
+def test_every_run_the_shipped_manifest_declares_is_in_the_repository():
+    """Issue #66: "declared" must mean committed, not merely on this disk.
+
+    ``platoon_v10_seed12`` was declared in ``seed_spread[platoon]`` while the
+    run directory sat untracked in the working copy — every filesystem-reading
+    check here passed on the authoring machine and failed in any clone. Git,
+    not the filesystem, is the record; a declared run with zero tracked files
+    is the exact defect, caught at authoring time rather than at the next
+    clone. Skipped only where git cannot answer at all (a tarball export),
+    which is silence, not a verdict.
+    """
+    manifest = baseline.load()
+    declared: dict[str, str] = {r: "runs" for r in manifest["runs"].values()}
+    for block in ("seed_search", "seed_spread"):
+        for scenario, runs in (manifest.get(block) or {}).items():
+            for r in runs:
+                declared.setdefault(r, f"{block}[{scenario}]")
+    untracked = []
+    for run, where in sorted(declared.items()):
+        tracked = baseline.tracked_files(run)
+        if tracked is None:
+            pytest.skip("git cannot answer here — no index, no verdict")
+        if not tracked:
+            untracked.append(f"{where}: {run}")
+    assert not untracked, (
+        "declared runs with no tracked files — on this disk but not in the "
+        "repository, so any clone fails:\n  " + "\n  ".join(untracked)
+    )
+
+
 def test_the_shipped_record_holds_no_draw_outside_the_declared_blocks():
     """The completeness gate against the real corpus — the actual claim the
     v1.21 board understated, now pinned. If a new same-config run lands, this
