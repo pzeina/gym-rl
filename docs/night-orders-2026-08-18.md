@@ -57,6 +57,18 @@ draws → `seed_spread`; declared ⇒ tracked; artifacts committed; suite green)
    PushNotification with the outcome; boards will show PUBLISH PENDING for
    the owner's `/boards`.
 
+## Queue state (updated as the night runs)
+
+- 01:52 — items 1–2 done. Neutrality HOLDS (`platoon_v12_seed12` ≡
+  `platoon_v8`, both checkpoints; declared, artifacts committed, 695c72d).
+  `platoon_hard_v1_seed12` landed on a branch the orders did not name: a
+  **D4 collapse**, not a wall — rolling 92% at 13% of the run, final 0%,
+  all episodes to the clock, human-death 0.53–0.62. The scenario is
+  winnable; the full arm could not hold it. No recalibration (difficulty
+  produced signal). Scout verdict waits on the arms and is read at BOTH
+  checkpoints (D4 rule: rolling-best is the artifact, the final is the
+  stability evidence). nomask ETA ~04:20, flat ~07:00.
+
 ## Wake discipline
 
 A persistent monitor watches for training endings and crashes; wakeups
