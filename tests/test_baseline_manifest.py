@@ -1144,15 +1144,19 @@ def test_every_spread_run_the_shipped_manifest_declares_resolves_and_matches():
 
 
 def test_every_run_the_shipped_manifest_declares_is_in_the_repository():
-    """Issue #66: "declared" must mean committed, not merely on this disk.
+    """Issue #66, strengthened by #69: "declared" must mean the repository
+    holds an artifact the dedupe can key on, not merely some tracked file.
 
-    ``platoon_v10_seed12`` was declared in ``seed_spread[platoon]`` while the
-    run directory sat untracked in the working copy — every filesystem-reading
-    check here passed on the authoring machine and failed in any clone. Git,
-    not the filesystem, is the record; a declared run with zero tracked files
-    is the exact defect, caught at authoring time rather than at the next
-    clone. Skipped only where git cannot answer at all (a tarball export),
-    which is silence, not a verdict.
+    ``platoon_v10_seed12`` was declared with ZERO tracked files (#66); then
+    ``platoon_v12_seed12`` was declared with exactly two — config.json and
+    economics.json, the cheap metadata — while the identity-bearing artifacts
+    (its checkpoints, or an evaluation recording their hashes) stayed
+    untracked, so this gate reported "in the repository" for a run the two
+    identity gates above reject in any clone. The predicate here is now the
+    one those gates actually consume — at least one tracked checkpoint, or a
+    tracked evaluation whose recorded ``checkpoint_sha256`` recovers one — so
+    the three gates agree on what "declared" means. Skipped only where git
+    cannot answer at all (a tarball export), which is silence, not a verdict.
     """
     manifest = baseline.load()
     declared: dict[str, str] = {r: "runs" for r in manifest["runs"].values()}
@@ -1160,16 +1164,21 @@ def test_every_run_the_shipped_manifest_declares_is_in_the_repository():
         for scenario, runs in (manifest.get(block) or {}).items():
             for r in runs:
                 declared.setdefault(r, f"{block}[{scenario}]")
-    untracked = []
+    unkeyed = []
     for run, where in sorted(declared.items()):
         tracked = baseline.tracked_files(run)
         if tracked is None:
             pytest.skip("git cannot answer here — no index, no verdict")
-        if not tracked:
-            untracked.append(f"{where}: {run}")
-    assert not untracked, (
-        "declared runs with no tracked files — on this disk but not in the "
-        "repository, so any clone fails:\n  " + "\n  ".join(untracked)
+        keyed = (any(n in tracked for n in baseline.CHECKPOINTS)
+                 or any(rec in tracked and baseline._recorded_file_hash(run, ckpt)
+                        for ckpt, rec in baseline.RECORDED_EVAL.items()))
+        if not keyed:
+            unkeyed.append(f"{where}: {run} (tracked: {sorted(tracked) or 'nothing'})")
+    assert not unkeyed, (
+        "declared runs whose identity-bearing artifacts are not in the "
+        "repository — no tracked checkpoint and no tracked evaluation "
+        "recording one's hash — so the dedupe and identity gates fail in any "
+        "clone:\n  " + "\n  ".join(unkeyed)
     )
 
 

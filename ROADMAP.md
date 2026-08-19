@@ -1,6 +1,49 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-19 morning, **the night watch's ledger: platoon_hard scout SEPARATED, confirm in flight**)
+## ⟳ Session handoff — resume here (2026-08-19 afternoon, **the platoon_hard cycle is MEASURED: nine runs, confirmed separation, attractor mechanism oracle-confirmed**)
+
+**THE HARD CYCLE'S EVIDENCE IS COMPLETE** (commits through `42790d2` +
+`4768539`, all pushed, suite 1062 green). Nine runs (3 arms × seeds
+12/13/14), N=100 on both checkpoints, cohesion cells, all committed:
+
+    N=100, pooled/3 seeds        full             nomask           flat
+    success @ ckpt_best     219/300 (.76/.87/.56)  239/300        270/300 (.93/.98/.79)
+    success @ final         0/300                  0/300          192/300 (.95/.97/.00)
+    human death @ best      .44/.16/.32            .42/.61/.71    .24/.22/.74
+    root closes @ best      .11/.00/.00            .00 all        .00/.90/.01
+    cohesion (no_close)     .03–.15                .08–.16        .00–.02
+
+The four findings, in claim order: (1) hard difficulty de-saturates the
+outcome axes and the FLAT arm leads on all of them, both checkpoints;
+(2) the sharpest axis is training stability — a passive hide-to-the-clock
+attractor captured 6/6 hierarchy runs (from learned peaks 75–93%) and 1/3
+flat runs — flat delays D4, nothing escapes it reliably; (3) the reporting
+channel survives in exactly one run, flat seed 13 (.90 best/.60 final);
+(4) cohesion is flat-tightest at every seed and covaries with survival —
+still no case for enforcement (the most cohesive arm is unforced).
+**The attractor mechanism is oracle-confirmed** (platoon_hard_v2_seed13
+final, 30 eps, seeds 500+): in 18,000 root-steps NOT ONE agent-step under
+threat, zero deaths, root silent and ~60 cells from the objective all 30
+episodes — total avoidance, not degraded fighting; the reward drift shows it
+living on the command+compliance trickle (terminal→0, command +0.024–0.029).
+Re-derive anytime: `scripts/oracle_probe.py runs/platoon_hard_v2_seed13/ckpt_latest.pt --episodes 30 --seed 500`.
+Reference run for any future hard comparison: **platoon_hard_flat_v2_seed13**
+(held AND reported).
+
+**NEXT ACTIONS (in order):**
+1. **Owner reads the claims**: the hard read belongs in the README beside the
+   depth table (same strength rule); wording is the owner's, table above.
+2. **Owner decides the D4 response** — the attractor is now the program's
+   dominant open problem: target-KL guard / early-stop-at-rolling-best /
+   penalty shaping are the candidates; all touch training semantics.
+   Diagnose-first rule satisfied (the oracle read above).
+3. `/boards` (PUBLISH PENDING after the confirm landings).
+4. Still queued from the night: the squad_screen cover-exposure option
+   (mechanism + instrument gap in the 2026-08-19 morning ledger below);
+   assurance #70 deferred pending a cohort/-free window (cohort/ is
+   unfrozen now — no campaign is running).
+
+## ⟳ Previous handoff (2026-08-19 morning, **the night watch's ledger: platoon_hard scout SEPARATED, confirm in flight**)
 
 **THE NIGHT (2026-08-18 → 19, run under docs/night-orders-2026-08-18.md;
 every commit pushed, suite green throughout).** The owner's instruction was
