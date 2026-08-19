@@ -68,6 +68,21 @@ draws → `seed_spread`; declared ⇒ tracked; artifacts committed; suite green)
   produced signal). Scout verdict waits on the arms and is read at BOTH
   checkpoints (D4 rule: rolling-best is the artifact, the final is the
   stability evidence). nomask ETA ~04:20, flat ~07:00.
+- 04:43 — nomask hard arm landed COLLAPSED, same shape (peak 91% at 25%,
+  final 0%), and sharper: the collapsed regime is a stable passive attractor
+  (entropy falling, KL→0, human death 59%→0.3%, false DONE 74%→0.7%,
+  positive return 7.9/ep from the compliance trickle while never fighting).
+  Committed 33600f9.
+- 06:43 — **flat hard arm HELD: final rolling 91%, converged (gap 8),
+  PUBLISHABLE.** The scout SEPARATED on stability at hard difficulty: all
+  three arms learn the scenario, only flat keeps it; both order-bearing arms
+  slide into the passive attractor and stay. Per the protocol the confirm is
+  LAUNCHED: seeds 13/14 × three arms, two lanes
+  (platoon_hard_confirm_seed{13,14}.jobs), ETA ~afternoon. N=100 scoring of
+  the four scout runs + the cohesion probe on the hard trio run detached
+  behind the lanes. Note for the read: closed-on-root ~0 in the hard best
+  windows across arms — the reporting channel may not survive this
+  difficulty anywhere; read it per arm at N=100.
 
 ## Wake discipline
 
