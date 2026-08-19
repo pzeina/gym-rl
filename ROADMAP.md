@@ -33,22 +33,24 @@ replaces dead-in-the-open.
 exposure pricing is a changed DEFAULT — an owner decision — then a clean
 run).
 
-**THE OPEN DECISION (owner's, with the evidence now in hand):**
-1. **Accept exposure as the cost of a screen** — v14 stands, the 16/16
-   deaths-out-of-cover finding stays a documented property, no code change.
-   *(Recommended: two doses failed in opposite directions; the knob shapes
-   passivity, not cover discipline.)*
-2. **Scope the price to non-engaged exposed steps only** (exposed AND not
-   firing) — targets hiding-without-fighting directly; needs a RewardConfig
-   semantic change, i.e. a design decision, then a fresh arm.
-3. **Some other shaping** (e.g. casualty-side: raise the existing death
-   penalty rather than pricing the precursor).
+**DECIDED (owner, 2026-08-20): OPTION 1 — exposure is accepted as the
+cost of a screen.** v14 stands as the baseline member, the 16/16
+deaths-out-of-cover finding stays a documented property of the shipped
+policy, `exposed_under_threat` stays in RewardConfig at 0.0 (the arm
+evidence is on the program board; the knob is not removed). The
+squad_screen exposure thread is CLOSED end to end: instrument built,
+gap measured, price tried at two doses, both misses documented, decision
+taken.
 
 **NEXT ACTIONS:**
-1. Owner picks from the above; until then squad_screen work is done.
-2. Optional independent thread: the fresh-seed platoon_hard arm under the
-   live collapse guard (end-to-end verification; replay already proves it
-   on recorded curves).
+1. IN FLIGHT: the fresh-seed platoon_hard arm under the live collapse
+   guard (`platoon_hard_v4_seed15`, 3M) — end-to-end verification of the
+   D4 stop (replay proves it on recorded curves; 6/6 hierarchy runs were
+   captured, so this run should EARLY-STOP if the guard works live). An
+   EARLY-STOP state is the expected finding, not a crash.
+2. After it lands: read `early_stop.json` + train_status against the
+   replay's prediction; then the platoon-depth option space (penalty
+   shaping / KL-guard) remains the owner's open design question.
 
 ## ⟳ Previous handoff (2026-08-19 night, **the exposure arm MISSED: the price bought cover and killed the fight; quarter-price arm in flight**)
 
@@ -8522,3 +8524,7 @@ deliberately deferred (`docs/vision.md` §2c).
   squad_screen_v14 (v17 carries a --reward override and could not ship
   regardless). Remaining options — accept exposure, scope the price to
   non-engaged steps, or casualty-side shaping — are the owner's.
+- **2026-08-20** — **Owner decision: exposure accepted as the cost of a
+  screen (option 1).** squad_screen_v14 stands; `exposed_under_threat`
+  stays 0.0 and stays in RewardConfig; the two-dose miss evidence
+  (progress log 2026-08-19/20) is the record. Thread closed.
