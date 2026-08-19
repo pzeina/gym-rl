@@ -11,7 +11,7 @@
     success @ final         0/300                  0/300          192/300 (.95/.97/.00)
     human death @ best      .44/.16/.32            .42/.61/.71    .24/.22/.74
     root closes @ best      .11/.00/.00            .00 all        .00/.90/.01
-    cohesion (no_close)     .03–.15                .08–.16        .00–.02
+    cohesion (no_close) @ best  .03–.14            .07–.15        .00–.02
 
 The four findings, in claim order: (1) hard difficulty de-saturates the
 outcome axes and the FLAT arm leads on all of them, both checkpoints;
@@ -20,7 +20,17 @@ attractor captured 6/6 hierarchy runs (from learned peaks 75–93%) and 1/3
 flat runs — flat delays D4, nothing escapes it reliably; (3) the reporting
 channel survives in exactly one run, flat seed 13 (.90 best/.60 final);
 (4) cohesion is flat-tightest at every seed and covaries with survival —
-still no case for enforcement (the most cohesive arm is unforced).
+**at `ckpt_best` only** (flat tightest 3/3; Spearman no_close vs success
+−0.733, exact p = .031, n=9 non-independent). The claim inverts at
+`ckpt_final`: flat tightest 1/3, no covariation — consistent with D4
+flattening the arm signal, since 7/9 finals sit in the attractor. And the
+covariation itself is out-predicted by its own denominator: mean episode
+length vs success is ρ = −0.883, p = .003 at best, so the rate is not yet
+evidence cohesion carries information beyond how long the episode ran —
+any use as a signal must beat that trivial baseline first. Still no case
+for enforcement (the most cohesive arm is unforced). (Checkpoint scoping
+per assurance #71, measured independently from the committed behavior
+files and reproduced here.)
 **The attractor mechanism is oracle-confirmed** (platoon_hard_v2_seed13
 final, 30 eps, seeds 500+): in 18,000 root-steps NOT ONE agent-step under
 threat, zero deaths, root silent and ~60 cells from the objective all 30
@@ -33,6 +43,9 @@ Reference run for any future hard comparison: **platoon_hard_flat_v2_seed13**
 **NEXT ACTIONS (in order):**
 1. **Owner reads the claims**: the hard read belongs in the README beside the
    depth table (same strength rule); wording is the owner's, table above.
+   Claim 4 must carry its checkpoint qualifier (`ckpt_best`; it inverts at
+   final) and, if the covariation is quoted, the episode-length baseline
+   beside it — see assurance #71.
 2. **Owner decides the D4 response** — the attractor is now the program's
    dominant open problem: target-KL guard / early-stop-at-rolling-best /
    penalty shaping are the candidates; all touch training semantics.
