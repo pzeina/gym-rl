@@ -81,6 +81,14 @@ SYNC_WINDOW = 8
 #: succession are protocol, not competition for air.
 _TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3}
 
+#: The four static tasks priced by ``RewardConfig.exposed_under_threat`` —
+#: the set the squad_screen death measurement named, not "everything static":
+#: DEFEND/DENY posture is already governed by objective_lost and the
+#: defensive-ground gate, and a mover's exposure is the cost of moving.
+STATIC_EXPOSURE_MISSIONS = frozenset(
+    {MissionType.OBSERVE, MissionType.SCREEN, MissionType.HOLD, MissionType.COVER}
+)
+
 
 class CohortEnv(ParallelEnv):
     """Parallel multi-agent environment with a transparent chain of command."""
@@ -887,6 +895,23 @@ class CohortEnv(ParallelEnv):
         ):
             for s in self.roster.living:
                 ledger.add(s.callsign, "compliance", cfg.objective_lost)
+
+        # cover-exposure pressure (squad_screen diagnosis): a static-tasked
+        # soldier out of cover with a living enemy in weapon range bleeds
+        # exposed_under_threat per step — the four static tasks, because the
+        # measured deaths split OBSERVE .44 / SCREEN .38 / COVER .19 (16/16
+        # out of cover). Distance-only threat, the eval standard's definition.
+        if cfg.exposed_under_threat != 0.0:
+            for s in self.roster.living:
+                if s.mission is None or s.mission.type not in STATIC_EXPOSURE_MISSIONS:
+                    continue
+                if self.world.cover_at(s.pos):
+                    continue
+                if any(
+                    e.alive and dist(s.pos, e.pos) <= self.combat.weapon_range
+                    for e in self.enemies
+                ):
+                    ledger.add(s.callsign, "compliance", cfg.exposed_under_threat)
 
         # team observation progress for RECON / SCREEN campaigns. Each NOVEL
         # step toward the success counter pays observe_progress to the

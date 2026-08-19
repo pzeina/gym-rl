@@ -117,6 +117,23 @@ class RewardConfig:
     # Pure penalty: adds nothing to the stall-farm bound.
     objective_lost: float = -0.05
 
+    # Cover-exposure pressure (squad_screen diagnosis, 2026-08-19): a soldier
+    # holding a static task (OBSERVE / SCREEN / HOLD / COVER) who stands out
+    # of cover while a living enemy is within weapon range bleeds this per
+    # step. Measured before pricing (oracle_probe's cover-at-death rows):
+    # 16 of 16 squad_screen deaths out of cover, cover occupancy under threat
+    # 0.18 team / 0.09 human, deaths split OBSERVE .44 / SCREEN .38 /
+    # COVER .19 — which is why the set is the four static tasks and not
+    # SCREEN alone. Threat here is the eval standard's definition (a living
+    # enemy within weapon range, metrics.THREAT_RADIUS semantics), so the
+    # training pressure and the published cover_occupancy_under_threat number
+    # move together. A penalty rather than an in-cover bonus on the repo's
+    # own economics doctrine: a bonus earned while threatened is farmable by
+    # prolonging contact from cover; a penalty's best case is zero and adds
+    # nothing to the stall-farm bound. 0 -> off (the default: an experiment
+    # arm's price until it earns a place in the defaults).
+    exposed_under_threat: float = 0.0
+
     # Observation progress (A2/A7 lesson — the stall exploit): pay each NOVEL
     # step of team observation toward the root RECON/SCREEN success counter.
     # Telescoping: the counter pays only until the success threshold
