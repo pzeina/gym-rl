@@ -1,6 +1,56 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-17, **v1.21 SHIPPED on `multi-agent-dev`: the fleet is one system and its seed searches are declared**)
+## ⟳ Session handoff — resume here (2026-08-19 morning, **the night watch's ledger: platoon_hard scout SEPARATED, confirm in flight**)
+
+**THE NIGHT (2026-08-18 → 19, run under docs/night-orders-2026-08-18.md;
+every commit pushed, suite green throughout).** The owner's instruction was
+"train and experiment, no idling"; the ledger:
+
+- **The platoon_hard scout separated — on stability, not learnability.** All
+  three arms learn the 14-defender garrison (rolling peaks 91–92%); only the
+  flat arm keeps it. Full and nomask collapse into a **stable passive
+  attractor** (final 0%, every episode to the clock, entropy falling, KL→0,
+  human death →~0, positive return from the compliance trickle) — the D4
+  post-convergence mechanism at its largest expression yet. Flat dipped
+  mid-run and recovered (final rolling 91%, converged, PUBLISHABLE).
+  N=100 on both checkpoints, committed: **best** flat 0.93 / nomask 0.83 /
+  full 0.76 with human death 0.24 / 0.42 / 0.44; **final** flat 0.95 vs
+  0.00 / 0.00 (timeout 1.00). Cohesion covaries with survival: flat
+  no-close-teammate 0.010–0.022 vs 0.033–0.084 (hard trio, both ckpts).
+  **The reporting channel died everywhere at this difficulty** (root-close
+  ≤0.11 best, false-DONE 0.73–1.00, all arms) — a finding of its own.
+  **CONFIRM IN FLIGHT**: seeds 13/14 × three arms, two lanes
+  (`platoon_hard_confirm_seed{13,14}.jobs`), landing ~midday; read at BOTH
+  checkpoints, then the 3×3 hard read is README material beside the depth
+  table (owner reads the claims wording).
+- **Neutrality held twice**: `platoon_v12_seed12` ≡ `platoon_v8` bit-for-bit
+  (the platoon_hard registration is additive; declared in seed_spread,
+  N=100 scored, committed).
+- **The masks-vs-silence probe finding** (docs/transparency.md appendix):
+  order traffic's information content — flat ≡ constant-OPORD by
+  construction (gap −0.00), nomask actively deceptive (−0.13 to −0.24),
+  full an order of magnitude closer to neutral (−0.04 final). The masks are
+  what keep the net from being worse than silence.
+- **The squad_screen oracle pass** (30 eps, seed 500): mission mix under
+  threat is doctrinal (OBSERVE/SCREEN/HOLD, all 30 succeed) — the 24%
+  root-death is exposure, and the mechanism candidate is cover: ~28–31%
+  cover-occupancy-under-threat at every rank. Falsifiable claim: screen
+  deaths are predominantly out-of-cover; the oracle does not yet record
+  cover-state-at-death (instrument gap). Any fix (cover-seeking shaping
+  under SCREEN) is a reward design decision — owner's call.
+- **Assurance**: #68 committed (`84b750b`), #69 implemented by its agent
+  (working tree, red-until-artifacts-landed test now green — the agent
+  finalizes its own commit), #70 deferred (needs `cohort/`, frozen
+  mid-campaign). Issues left open per contract.
+- **Boards**: PUBLISH PENDING (fleet, program, gallery) → `/boards`.
+
+**Owner decisions queued from the night**: (1) the hard-difficulty claims
+wording once the confirm lands; (2) whether the dead reporting channel at
+hard difficulty warrants a scenario/reward response; (3) the squad_screen
+cover-shaping option; (4) cohesion enforcement remains measured-only, per
+the standing rule.
+
+## ⟳ Previous handoff (2026-08-17, **v1.21 SHIPPED on `multi-agent-dev`: the fleet is one system and its seed searches are declared**)
 
 **★ THE CAMPAIGN LANDED AND THE FLEET IS SEALED** (`d7b9374`). All 12 runs of
 `scripts/campaigns/v1_21_fleet.jobs` completed on one `cohort/` tree
