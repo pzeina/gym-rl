@@ -32,16 +32,28 @@ best; boards → published; next work → assurance #70 + squad_screen.
   under threat: team .18, human .09.
 - Boards published and stamped (fdd20c1e).
 
+**Owner decisions, evening round**: README hard-cycle section APPROVED and
+committed (`11ce4ce`). Cover response: OPTION 1 — exposure priced across
+the four static tasks. Implemented as `RewardConfig.exposed_under_threat`
+(`e16e748`, default 0.0 so the environment is unchanged; a penalty, not an
+in-cover bonus — a bonus earned while threatened is farmable by prolonging
+contact). **The arm is IN FLIGHT**: `squad_screen_v16_seed12`, exact mirror
+of incumbent v14 (seed 12, 2.5M) plus `--reward exposed_under_threat=-0.02`.
+The bar, set before launch: deaths drop AND success holds (v14: 1.00 ± 0.00,
+root-report 0.95) AND root-report holds — else document the miss and stop
+(honest-DoD, one diagnosed adjustment allowed).
+
 **NEXT ACTIONS (in order):**
-1. **Owner approves the README hard-cycle section** — drafted and sitting
-   UNCOMMITTED on the tree (after the depth table; #71-compliant: claim 4
-   carries the ckpt_best qualifier and the episode-length baseline).
-   Approve → commit; reject → `git checkout README.md`.
-2. **Owner decides the squad_screen cover response** — options and a
-   recommendation are in the session report; the instrument and numbers
-   above. Any shaping is a reward decision (diagnose-first satisfied).
+1. **Read squad_screen_v16_seed12 when it lands** (~30–40 min of CPU):
+   `scripts/run_report.py squad_screen_v16_seed12 --vs squad_screen_v14`,
+   then the instrumented oracle probe (cover-at-death rows) against the bar
+   above. It trains under the new collapse guard — an EARLY-STOP state is a
+   finding, not a crash.
+2. If it beats: `/publish` is pre-authorised; making −0.02 a DEFAULT price
+   is a separate owner decision (a baseline run may not ship an override).
 3. Optional: a fresh-seed hard arm under the live guard would verify the
-   stop end-to-end (the replay already proves it on recorded curves).
+   collapse stop end-to-end (the replay already proves it on recorded
+   curves).
 
 ## ⟳ Previous handoff (2026-08-19 afternoon, **the platoon_hard cycle is MEASURED: nine runs, confirmed separation, attractor mechanism oracle-confirmed**)
 
