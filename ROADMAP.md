@@ -1,6 +1,56 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-19 night, **the exposure arm MISSED: the price bought cover and killed the fight; quarter-price arm in flight**)
+## ⟳ Session handoff — resume here (2026-08-20 night, **the exposure cycle is CLOSED: two arms, two misses, the knob stays 0.0 — the decision is the owner's**)
+
+**squad_screen_v17_seed12 (−0.005, exact v14 mirror) landed and also missed
+the pre-registered bar** — 2 of 3 clauses, a different 2 than v16:
+- **Success HOLDS**: final 1.00 (gap 0 pts, all gates PASS, technically
+  publishable — but moot, see below).
+- **Deaths do NOT drop**: human death flat (.200 = .200, probe, 30 eps
+  seeds 500–529); team friendly deaths/ep **doubled** (.53 → 1.16), with
+  contact dragging (22 → 33 threatened steps/ep) and .73/ep now dying at
+  the OBJ on HOLD.
+- **Root-report does NOT hold**: closed-on-root .80 final vs v14's .95;
+  the root claimed 20/30 probe eps (v14: 29/30).
+
+**What −0.005 bought vs what it cost** (probe, ckpt_best vs v14): cover
+under threat team **.18 → .41** (human .09 → .39), deaths-out-of-cover
+share 1.00 → .60, false DONE **.179 → .059**, root claim spam 95 → 17
+with first-claim precision .815 → .938, obedience latency 1.14 → .43,
+doctrine preference .32 → .66. Against: team fire rate under threat
+.67 → .40, retasking collapsed (3.5 → 0.05/ep, order mix 99% HOLD), and
+the death/report clauses above. Both magnitudes double cover; the damage
+scales with the price (−0.02 broke success, −0.005 breaks the casualty
+and reporting clauses). Pricing exposure induces passivity at every dose
+tried — hunkering is cheaper than fighting, and dead-on-HOLD-at-the-OBJ
+replaces dead-in-the-open.
+
+**HONEST-DoD: STOP.** One retrain + one diagnosed adjustment were spent
+(v16, v17). Both documented (progress log 2026-08-19 and 2026-08-20).
+`exposed_under_threat` default stays **0.0**; the baseline member stays
+`squad_screen_v14`. Note v17 could never ship anyway: it trains with a
+`--reward` override, and a baseline run may not (the only path to shipped
+exposure pricing is a changed DEFAULT — an owner decision — then a clean
+run).
+
+**THE OPEN DECISION (owner's, with the evidence now in hand):**
+1. **Accept exposure as the cost of a screen** — v14 stands, the 16/16
+   deaths-out-of-cover finding stays a documented property, no code change.
+   *(Recommended: two doses failed in opposite directions; the knob shapes
+   passivity, not cover discipline.)*
+2. **Scope the price to non-engaged exposed steps only** (exposed AND not
+   firing) — targets hiding-without-fighting directly; needs a RewardConfig
+   semantic change, i.e. a design decision, then a fresh arm.
+3. **Some other shaping** (e.g. casualty-side: raise the existing death
+   penalty rather than pricing the precursor).
+
+**NEXT ACTIONS:**
+1. Owner picks from the above; until then squad_screen work is done.
+2. Optional independent thread: the fresh-seed platoon_hard arm under the
+   live collapse guard (end-to-end verification; replay already proves it
+   on recorded curves).
+
+## ⟳ Previous handoff (2026-08-19 night, **the exposure arm MISSED: the price bought cover and killed the fight; quarter-price arm in flight**)
 
 **squad_screen_v16_seed12 landed and missed the pre-set bar on all three
 clauses** (bar: deaths drop AND success holds AND root-report holds):
@@ -8456,3 +8506,19 @@ deliberately deferred (`docs/vision.md` §2c).
   reached by price instead of collapse. One diagnosed adjustment launched
   (`squad_screen_v17_seed12`, −0.005 = half the per-step time cost); if it
   misses, the knob stays 0.0 and the option space returns to the owner.
+- **2026-08-20** — **squad_screen exposure price, arm 2 (−0.005): MISS —
+  cycle closed, knob stays 0.0.** `squad_screen_v17_seed12` (v14 mirror,
+  quarter price) held success (1.00 final, gap 0) but missed the other two
+  pre-registered clauses: human death flat (.200), team friendly deaths/ep
+  doubled (.53→1.16, contact 22→33 threatened steps/ep, .73/ep dying at
+  the OBJ on HOLD), closed-on-root .80 vs .95. The price again bought real
+  cover (team .18→.41, human .09→.39, deaths-out-of-cover 1.00→.60) plus
+  collateral wins (false DONE .179→.059, claim spam 95→17, obedience
+  latency 1.14→.43) — and again paid in passivity: fire rate .67→.40,
+  retasks 3.5→0.05/ep, 99% HOLD orders. Two doses, two misses in opposite
+  directions (−0.02 broke success; −0.005 broke casualties + reporting):
+  exposure pricing shapes passivity, not cover discipline, at every
+  magnitude tried. Honest-DoD spent; default stays 0.0; baseline stays
+  squad_screen_v14 (v17 carries a --reward override and could not ship
+  regardless). Remaining options — accept exposure, scope the price to
+  non-engaged steps, or casualty-side shaping — are the owner's.
