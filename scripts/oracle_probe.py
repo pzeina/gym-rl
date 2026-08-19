@@ -85,6 +85,13 @@ class Accum:
         self.deaths_at_objective = 0
         self.deaths_in_the_open = 0
         self.human_deaths = 0
+        # cover-state at death (the squad_screen instrument gap, ROADMAP
+        # 2026-08-19 morning): the falsifiable claim "screen deaths are
+        # predominantly out-of-cover" needs the cover cell AND the mission
+        # held on the death step, or exposure and tasking stay conflated.
+        self.deaths_out_of_cover = 0
+        self.death_mission: Counter[str] = Counter()       # mission at death
+        self.death_mission_open: Counter[str] = Counter()  # ...of which out of cover
         self.enemy_kills = 0
         self.enemies_total = 0
         # preparation period (v1.10), when the scenario has one
@@ -184,6 +191,11 @@ def probe(
                             acc.deaths_in_the_open += 1
                         if sd["cs"] == human_cs:
                             acc.human_deaths += 1
+                        if not sd["cover"]:
+                            acc.deaths_out_of_cover += 1
+                        acc.death_mission[sd["mission"] or "NONE"] += 1
+                        if not sd["cover"]:
+                            acc.death_mission_open[sd["mission"] or "NONE"] += 1
                     continue
 
                 role = _role(sd, human_cs)
@@ -369,6 +381,25 @@ def report(acc: Accum, name: str, other: Accum | None, other_name: str | None) -
     a, b = pair(lambda x: x.human_deaths / x.episodes if x.episodes else None)
     print(_row("human death rate", a, b))
     a, b = pair(
+        lambda x: (
+            x.deaths_out_of_cover / (x.deaths_at_objective + x.deaths_in_the_open)
+            if (x.deaths_at_objective + x.deaths_in_the_open)
+            else None
+        )
+    )
+    print(_row("deaths out-of-cover (share)", a, b))
+    death_names = sorted(acc.death_mission, key=lambda k: -acc.death_mission[k])[:5]
+    if death_names:
+        print("DEATHS BY MISSION AT DEATH (share of deaths; open = out of cover)")
+    for m in death_names:
+        tot = sum(acc.death_mission.values()) or 1
+        a = acc.death_mission[m] / tot
+        b = None
+        if other is not None and sum(other.death_mission.values()):
+            b = other.death_mission[m] / sum(other.death_mission.values())
+        open_share = acc.death_mission_open[m] / acc.death_mission[m]
+        print(_row(f"{m} (open {open_share:.0%})", a, b))
+    a, b = pair(
         lambda x: x.enemy_kills / x.enemies_total if x.enemies_total else None
     )
     print(_row("enemies killed (share)", a, b))
@@ -449,6 +480,9 @@ def main() -> None:
             "deaths_at_objective": acc.deaths_at_objective,
             "deaths_in_the_open": acc.deaths_in_the_open,
             "human_deaths": acc.human_deaths,
+            "deaths_out_of_cover": acc.deaths_out_of_cover,
+            "death_mission": dict(acc.death_mission),
+            "death_mission_open": dict(acc.death_mission_open),
             "outcomes": dict(acc.outcomes),
             "prep_agent_steps": acc.prep_agent_steps,
             "prep_in_cover_at_obj": acc.prep_in_cover_at_obj,
