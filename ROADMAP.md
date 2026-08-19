@@ -1,6 +1,49 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-19 afternoon, **the platoon_hard cycle is MEASURED: nine runs, confirmed separation, attractor mechanism oracle-confirmed**)
+## ⟳ Session handoff — resume here (2026-08-19 evening, **the D4 response is BUILT and the squad_screen exposure is MEASURED**)
+
+**Owner decisions taken this session** (per the four-question check-in):
+README hard read → drafted for review; D4 response → early-stop at rolling
+best; boards → published; next work → assurance #70 + squad_screen.
+
+**Done, committed, pushed** (suite 1065 green, ruff clean):
+- **The D4 collapse stop is in** (`6e2ec04`): a run whose rolling success
+  sits ≥ `collapse_margin` (0.5) below its recorded full-window peak for
+  `collapse_patience` (1,200) consecutive iterations ends itself, writes
+  `early_stop.json`, and reads EARLY-STOP in train_status. Calibrated by
+  replaying all 46 curves on disk (`scripts/collapse_replay.py` — the exact
+  shipped gate, pure): every dip that ever recovered lasted ≤ 596 iters
+  (patience = 2×that); all 7 captured runs fire (saving 22–47% of budget),
+  none of the 39 others do. Guard fields are excluded from config.json
+  (`TRAJECTORY_NEUTRAL_FIELDS` — the guard cannot change what a run learns),
+  so the preflight duplicate matcher still works across the change.
+  `--collapse-patience 0` disables it for attractor-observation arms.
+  NOTE what remains open: the guard stops the bleeding, it does not prevent
+  capture — penalty shaping / KL-guard remain undecided owner options.
+- **Assurance #70 fixed** (`1985c07`): `briefing()` now publishes
+  `support_umbrella` beside `weapon_range` (+ #71 by its agent, `d9c4889`:
+  ROADMAP claim 4 scoped to ckpt_best). Issues left open per contract.
+- **The squad_screen instrument gap is closed and measured** (`d182d0b`):
+  the oracle probe now records cover-state and mission at death. First
+  measurement (squad_screen_v14 best, 30 eps, seed 500): **16 of 16 deaths
+  out of cover** — the falsifiable claim confirmed past its own wording —
+  and mission-at-death is OBSERVE .44 / SCREEN .38 / COVER .19, so shaping
+  scoped to SCREEN alone would miss half the exposure. Cover occupancy
+  under threat: team .18, human .09.
+- Boards published and stamped (fdd20c1e).
+
+**NEXT ACTIONS (in order):**
+1. **Owner approves the README hard-cycle section** — drafted and sitting
+   UNCOMMITTED on the tree (after the depth table; #71-compliant: claim 4
+   carries the ckpt_best qualifier and the episode-length baseline).
+   Approve → commit; reject → `git checkout README.md`.
+2. **Owner decides the squad_screen cover response** — options and a
+   recommendation are in the session report; the instrument and numbers
+   above. Any shaping is a reward decision (diagnose-first satisfied).
+3. Optional: a fresh-seed hard arm under the live guard would verify the
+   stop end-to-end (the replay already proves it on recorded curves).
+
+## ⟳ Previous handoff (2026-08-19 afternoon, **the platoon_hard cycle is MEASURED: nine runs, confirmed separation, attractor mechanism oracle-confirmed**)
 
 **THE HARD CYCLE'S EVIDENCE IS COMPLETE** (commits through `42790d2` +
 `4768539`, all pushed, suite 1062 green). Nine runs (3 arms × seeds

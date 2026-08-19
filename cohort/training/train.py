@@ -31,7 +31,7 @@ from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR, SUCCESS_RATE_FLOOR
 from cohort.training import provenance
-from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update
+from cohort.training.ppo import TRAJECTORY_NEUTRAL_FIELDS, PolicyNet, PPOConfig, RolloutBuffer, ppo_update
 
 METRIC_FIELDS = [
     "iteration",
@@ -207,6 +207,45 @@ def best_save_gate(
     return rolling > best_so_far
 
 
+def collapse_stop_gate(
+    streak: int,
+    rolling: float,
+    peak: float,
+    *,
+    window_full: bool,
+    floor: float,
+    margin: float,
+    patience: int,
+) -> tuple[int, bool]:
+    """Should the run end here because its policy has collapsed?
+
+    The D4 passive attractor (ROADMAP 2026-08-19) captures a converged policy
+    and holds it: rolling success falls from a learned peak to ~0 and never
+    returns, while the run spends its remaining budget entrenching the
+    collapsed policy — the platoon_hard cycle put 6/6 hierarchy runs there
+    from peaks of 75-93%, each finishing at 0/300. ``ckpt_best`` preserves
+    the peak either way; what stopping buys is that ``ckpt_latest`` (the
+    "final policy" every honest publication must also score) stops drifting
+    further from it, and the compute goes back to the queue.
+
+    Pure so scripts/collapse_replay.py can run the exact shipped rule over
+    any metrics.csv. The guard arms only once the run has recorded a
+    full-window rolling success of at least ``floor`` (a run that never
+    learned has nothing to protect), then counts consecutive iterations at
+    or below ``peak - margin``; ``patience`` of them ends the run. A single
+    window back above the line resets the count, which is what spares
+    dip-and-recover runs (platoon_hard_flat seed 12 recovered from a
+    mid-run dip to finish at 91%). ``patience <= 0`` disables the guard.
+    """
+    if patience <= 0 or not window_full or peak < floor:
+        return 0, False
+    if rolling <= peak - margin:
+        streak += 1
+    else:
+        streak = 0
+    return streak, streak >= patience
+
+
 def _load_compatible(net: PolicyNet, state: dict) -> list[str]:
     """Load ``state`` into ``net``, tolerating only the v1.11 additions.
 
@@ -294,6 +333,12 @@ class Trainer:
         self.recent_root_closed: deque[bool] = deque(maxlen=100)
         self.episodes_seen = 0  # episodes completed since training start (D4 best-gate)
         self.best_rolling_success = -1.0
+        # D4 collapse stop: the highest FULL-window rolling success seen, and
+        # the current run of iterations spent >= collapse_margin below it.
+        # Tracked apart from best_rolling_success, which is not monotone (a
+        # reporting window may supersede a higher mute one, see best_save_gate).
+        self.peak_rolling_success = -1.0
+        self.collapse_streak = 0
         # refs v1.20: whether the recorded ckpt_best came from a window whose
         # commander was reporting. A mute window may never take it back.
         self.best_was_reporting = False
@@ -574,6 +619,50 @@ class Trainer:
                     root_close, stats["success_rate_rolling"]
                 )
                 self.save_checkpoint("ckpt_best.pt")
+
+            # D4 collapse stop — see collapse_stop_gate. The peak is tracked
+            # here and not inside the gate so the gate stays pure (replayable
+            # over any metrics.csv by scripts/collapse_replay.py).
+            window_full = self.episodes_seen >= (self.recent_outcomes.maxlen or 0)
+            if window_full:
+                self.peak_rolling_success = max(
+                    self.peak_rolling_success, stats["success_rate_rolling"]
+                )
+            self.collapse_streak, collapsed = collapse_stop_gate(
+                self.collapse_streak,
+                stats["success_rate_rolling"],
+                self.peak_rolling_success,
+                window_full=window_full,
+                floor=cfg.collapse_floor,
+                margin=cfg.collapse_margin,
+                patience=cfg.collapse_patience,
+            )
+            if collapsed:
+                # The marker is what train_status.py reads to call the run
+                # EARLY-STOP rather than STOPPED (which reads as a crash).
+                (self.run_dir / "early_stop.json").write_text(
+                    json.dumps(
+                        {
+                            "reason": "collapse",
+                            "env_steps": self.env_steps,
+                            "iteration": self.iteration,
+                            "rolling_success": stats["success_rate_rolling"],
+                            "peak_rolling_success": self.peak_rolling_success,
+                            "patience": cfg.collapse_patience,
+                            "margin": cfg.collapse_margin,
+                            "floor": cfg.collapse_floor,
+                        },
+                        indent=2,
+                    )
+                )
+                print(
+                    f"COLLAPSE STOP at step {self.env_steps:,} (iter {self.iteration}): "
+                    f"rolling {stats['success_rate_rolling']:.0%} has sat >= "
+                    f"{cfg.collapse_margin:.0%} below peak {self.peak_rolling_success:.0%} "
+                    f"for {cfg.collapse_patience} iterations — the D4 attractor. "
+                    f"ckpt_best holds the peak; ending the run here."
+                )
+                break
         if self.writer is not None:
             self.writer.close()
 
@@ -706,6 +795,15 @@ def main() -> None:
     parser.add_argument("--num-minibatches", type=int, default=PPOConfig.num_minibatches)
     parser.add_argument("--target-kl", type=float, default=PPOConfig.target_kl,
                         help="early-stop the update epochs above this approx KL (<=0 disables)")
+    parser.add_argument("--collapse-patience", type=int, default=PPOConfig.collapse_patience,
+                        help="end the run after this many consecutive iterations spent "
+                             ">= collapse-margin below the peak rolling success "
+                             "(the D4 attractor; 0 disables — do that when the collapse "
+                             "IS the experiment)")
+    parser.add_argument("--collapse-margin", type=float, default=PPOConfig.collapse_margin,
+                        help="how far below the peak counts as collapsed")
+    parser.add_argument("--collapse-floor", type=float, default=PPOConfig.collapse_floor,
+                        help="the guard arms only once peak rolling success reaches this")
     parser.add_argument("--hidden", type=int, default=PPOConfig.hidden)
     parser.add_argument("--normalize-value", action=argparse.BooleanOptionalAction,
                         default=PPOConfig.normalize_value,
@@ -750,6 +848,9 @@ def main() -> None:
         update_epochs=args.update_epochs,
         num_minibatches=args.num_minibatches,
         target_kl=args.target_kl if args.target_kl and args.target_kl > 0 else None,
+        collapse_patience=args.collapse_patience,
+        collapse_margin=args.collapse_margin,
+        collapse_floor=args.collapse_floor,
         hidden=args.hidden,
         normalize_value=args.normalize_value,
         separate_critic=args.separate_critic,
@@ -758,7 +859,12 @@ def main() -> None:
     print(f"training scenario={args.scenario} → {run_dir}")
     (run_dir / ".").mkdir(parents=True, exist_ok=True)
     (run_dir / "config.json").write_text(
-        json.dumps({"scenario": args.scenario, "seed": args.seed, "total_steps": args.total_steps, **asdict(cfg)}, indent=2)
+        # The collapse-guard fields stay out: they cannot change what the run
+        # learns (see TRAJECTORY_NEUTRAL_FIELDS), and config.json's exact shape
+        # is what the preflight duplicate matcher and every reader parse.
+        json.dumps({"scenario": args.scenario, "seed": args.seed, "total_steps": args.total_steps,
+                    **{k: v for k, v in asdict(cfg).items() if k not in TRAJECTORY_NEUTRAL_FIELDS}},
+                   indent=2)
     )
     # Reward and scenario economics are what a run is actually an experiment
     # ABOUT, and they live in code defaults rather than CLI flags — so without

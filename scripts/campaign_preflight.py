@@ -41,7 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from cohort.training.ppo import PPOConfig  # noqa: E402
+from cohort.training.ppo import TRAJECTORY_NEUTRAL_FIELDS, PPOConfig  # noqa: E402
 from scripts.baseline import cohort_tree, config_matches, overrides_match  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 
@@ -89,6 +89,12 @@ def _train_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--update-epochs", type=int, default=PPOConfig.update_epochs)
     p.add_argument("--num-minibatches", type=int, default=PPOConfig.num_minibatches)
     p.add_argument("--target-kl", type=float, default=PPOConfig.target_kl)
+    # The D4 collapse guard: accepted so a real jobs line parses, excluded
+    # from the prediction (TRAJECTORY_NEUTRAL_FIELDS — the guard cannot change
+    # what a run learns, so it does not make a job a different experiment).
+    p.add_argument("--collapse-patience", type=int, default=PPOConfig.collapse_patience)
+    p.add_argument("--collapse-margin", type=float, default=PPOConfig.collapse_margin)
+    p.add_argument("--collapse-floor", type=float, default=PPOConfig.collapse_floor)
     p.add_argument("--hidden", type=int, default=PPOConfig.hidden)
     p.add_argument("--normalize-value", action=argparse.BooleanOptionalAction,
                    default=PPOConfig.normalize_value)
@@ -139,7 +145,9 @@ def predicted_config(train_args: list[str]) -> tuple[dict | None, list[str], str
         device=args.device,
     )
     config = {"scenario": args.scenario, "seed": args.seed,
-              "total_steps": args.total_steps, **asdict(cfg)}
+              "total_steps": args.total_steps,
+              **{k: v for k, v in asdict(cfg).items()
+                 if k not in TRAJECTORY_NEUTRAL_FIELDS}}
     # Round-trip through JSON so equality against a config.json read off disk
     # compares like with like (tuples->lists, float canonicalisation).
     return json.loads(json.dumps(config)), list(args.reward), None

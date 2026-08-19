@@ -748,6 +748,11 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # the engagement envelope, so an outside monitor can define "under
         # threat" the way the eval standard does (see metrics.py, issue #11)
         "weapon_range": spec.combat.weapon_range,
+        # the constant no_close_teammate_rate is defined by (issue #70) — equal
+        # to weapon_range today by coincidence of defaults, not by definition;
+        # published so the overlay states the metric's own constant rather than
+        # inviting a reader to borrow the numerically identical decoy next to it
+        "support_umbrella": spec.combat.support_umbrella,
         "vision_range": spec.combat.vision_range,
         "forest_vision_range": spec.combat.forest_vision_range,
     }

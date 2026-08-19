@@ -136,6 +136,21 @@ def test_briefing_carries_the_defend_objective_coordinates():
     assert briefing("fireteam_defend")["objective_cover"] is True
 
 
+def test_briefing_states_the_cohesion_metrics_own_constant():
+    """support_umbrella is the constant no_close_teammate_rate is defined by,
+    and it equals weapon_range today only by coincidence of defaults — the
+    overlay must publish it itself, or a reader borrows the decoy (issue #70)."""
+    from cohort.config import SCENARIOS, briefing, get_scenario
+
+    for name in sorted(SCENARIOS):
+        brief = briefing(name)
+        spec = get_scenario(name)
+        assert brief["support_umbrella"] == spec.combat.support_umbrella
+        # both constants are published independently; neither stands in for
+        # the other the day one of them is tuned alone
+        assert "weapon_range" in brief
+
+
 def test_briefing_carries_the_ordered_hour_the_defense_holds_to():
     """Issue #30: the horizon IS what DEFEND success means, so leaving it
     unpublished made the adjudication undecidable from outside the environment.

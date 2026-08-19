@@ -275,3 +275,51 @@ def test_eval_episodes_reproduce_standalone():
     assert env_alone.transcript.render() == env.transcript.render(), (
         "episode 2 standalone must be byte-identical to episode 2 in sequence"
     )
+
+
+def test_collapse_stop_gate_fires_on_capture_and_spares_recovery():
+    """D4 collapse stop: the gate must end a run the passive attractor has
+    captured and must never end a dip that recovers. Calibration lives in the
+    data (scripts/collapse_replay.py — recovered dips <= 596 iterations,
+    terminal captures 1,849+); this test pins the gate's semantics."""
+    from cohort.training.train import collapse_stop_gate
+
+    kw = dict(window_full=True, floor=0.5, margin=0.5, patience=3)
+
+    # unarmed: window not yet turned over, or the run never learned
+    assert collapse_stop_gate(2, 0.0, 0.9, **{**kw, "window_full": False}) == (0, False)
+    assert collapse_stop_gate(2, 0.0, 0.4, **kw) == (0, False)
+
+    # disabled: patience <= 0 never fires, whatever the streak says
+    assert collapse_stop_gate(99, 0.0, 0.9, **{**kw, "patience": 0}) == (0, False)
+
+    # armed and below the line: the streak counts up and fires at patience
+    streak, fire = collapse_stop_gate(0, 0.1, 0.9, **kw)
+    assert (streak, fire) == (1, False)
+    streak, fire = collapse_stop_gate(streak, 0.1, 0.9, **kw)
+    assert (streak, fire) == (2, False)
+    streak, fire = collapse_stop_gate(streak, 0.1, 0.9, **kw)
+    assert (streak, fire) == (3, True)
+
+    # a single window back above peak - margin resets the count — the
+    # dip-and-recover case (platoon_hard_flat seed 12 finished at 91%)
+    streak, fire = collapse_stop_gate(2, 0.5, 0.9, **kw)
+    assert (streak, fire) == (0, False)
+
+    # boundary: exactly peak - margin counts as collapsed
+    streak, fire = collapse_stop_gate(0, 0.4, 0.9, **kw)
+    assert (streak, fire) == (1, False)
+
+
+def test_collapse_stop_defaults_ride_along_on_config():
+    """The calibrated defaults exist on PPOConfig (so config.json records
+    them) and stay in the region the replay justified: patience above the
+    longest observed recovery (596), below the shortest terminal capture
+    (1,849) — outside that band the rule either kills publishable runs or
+    never fires."""
+    from cohort.training.ppo import PPOConfig
+
+    cfg = PPOConfig()
+    assert 596 < cfg.collapse_patience < 1849
+    assert 0.0 < cfg.collapse_margin <= 1.0
+    assert cfg.collapse_floor >= 0.5

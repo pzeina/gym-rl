@@ -72,12 +72,47 @@ class PPOConfig:
     #: this guard has never fired — the collapses were an economics failure,
     #: not a too-large-step failure. Kept as a cheap ceiling, not a fix.
     target_kl: float | None = 0.02
+    #: D4 collapse stop (the passive attractor, ROADMAP 2026-08-19): end the
+    #: run once rolling success has spent ``collapse_patience`` consecutive
+    #: iterations at or below ``peak - collapse_margin``, where the peak is
+    #: the highest full-window rolling success the run has recorded and the
+    #: guard only arms once that peak reaches ``collapse_floor``. Unlike
+    #: ``target_kl`` (which never fired — the collapses were an economics
+    #: failure, not a step-size failure) this acts on the outcome itself:
+    #: the platoon_hard cycle showed the attractor capturing 6/6 hierarchy
+    #: runs from learned peaks of 75-93%, each spending its final third at
+    #: 0% — pure compute spent entrenching a policy the run will not ship.
+    #: ``ckpt_best`` already preserves the peak; stopping means ckpt_latest
+    #: stops drifting ever further from it. 0 disables (and does so for the
+    #: attractor-observation arms, where the collapse IS the experiment).
+    #: Defaults calibrated by replaying every metrics.csv on disk
+    #: (scripts/collapse_replay.py, 46 runs): every dip that ever recovered
+    #: lasted <= 596 iterations (platoon_hard_flat seed 12, which went on to
+    #: finish at 91% and publish), while every terminal capture sat below the
+    #: line for 1,849-2,582 iterations to the end of its budget. Patience is
+    #: set at 2x the longest observed recovery: all 7 captured runs still
+    #: fire (saving 22-47% of their budgets), no recoverer does. NOTE the
+    #: unit is iterations (horizon x n_envs steps each, ~1,024 at defaults) —
+    #: re-run the replay before trusting these numbers at other batch shapes.
+    collapse_patience: int = 1200
+    collapse_margin: float = 0.5
+    collapse_floor: float = 0.5
     hidden: int = 256
     #: fit the critic against standardized returns (see module docstring)
     normalize_value: bool = True
     #: give the critic its own torso, and clip its gradient independently
     separate_critic: bool = True
     device: str = "cpu"
+
+
+#: PPOConfig fields that cannot change what a run LEARNS, only where it ends:
+#: the D4 collapse guard truncates a run when the attractor captures it, and
+#: up to that stop the trajectory is bit-identical to an unguarded run's.
+#: They are therefore excluded from config.json — the record of the
+#: experiment's trajectory-determining config, whose exact shape every
+#: existing reader (and the campaign preflight's duplicate matcher) parses —
+#: and the guard's one observable effect records itself in early_stop.json.
+TRAJECTORY_NEUTRAL_FIELDS = ("collapse_patience", "collapse_margin", "collapse_floor")
 
 
 def _layer(m: nn.Linear, std: float = np.sqrt(2), bias: float = 0.0) -> nn.Linear:
