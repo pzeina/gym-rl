@@ -1013,6 +1013,49 @@ gap in either direction, so the depth question that remains is what scenario
 or budget gives the deepest chart outcome power at all. The hierarchy's value
 case is interpretability at every depth measured.
 
+**2026-08-19, the hard question: the same three arms where the outcome axes
+bite — `platoon_hard`, a 14-defender garrison at the same 16-agent tree,
+3 seeds per arm, N=100 at both checkpoints.** The platoon measurement above
+ended in a ceiling: every arm at 299+/300, no outcome power. This cycle
+raises the difficulty until the axes de-saturate, and they do — nothing is
+near 1.00 and the arms separate on every one of them. All nine runs and both
+checkpoints regenerate from the committed evaluations:
+
+| N=100 × 3 seeds | full | nomask | flat |
+|---|---|---|---|
+| success @ `ckpt_best`, pooled | 219/300 | 239/300 | **270/300** |
+| success @ `ckpt_best`, per seed | 0.76 / 0.87 / 0.56 | — | 0.93 / 0.98 / 0.79 |
+| success @ final, pooled | 0/300 | 0/300 | **192/300** |
+| human death @ best, per seed | 0.44 / 0.16 / 0.32 | 0.42 / 0.61 / 0.71 | 0.24 / 0.22 / 0.74 |
+| root closes truthfully @ best, per seed | 0.11 / 0.00 / 0.00 | 0.00 / 0.00 / 0.00 | 0.00 / **0.90** / 0.01 |
+| cohesion (`no_close_teammate_rate`) @ best | 0.03–0.14 | 0.07–0.15 | **0.00–0.02** |
+
+Four findings, in claim order. **(1)** Hard difficulty gives the chart
+outcome power at last, and the flat arm leads on every outcome axis, at both
+checkpoints — the squad's ~5-point hierarchy cost, invisible at platoon
+depth, returns at hard difficulty as ~17 points at `ckpt_best`. **(2)** The
+sharpest axis is not success but **training stability**: a passive
+hide-to-the-clock attractor captured 6 of 6 hierarchy runs after learned
+peaks of 75–93% (final policies: 0/300), and 1 of 3 flat runs — flat delays
+the collapse; nothing escapes it reliably. The mechanism is oracle-confirmed,
+not inferred: over 18,000 root-steps of the captured policy, not one
+agent-step under threat, zero deaths, the root silent ~60 cells from the
+objective in all 30 probe episodes — total avoidance living on the
+command+compliance reward trickle, not degraded fighting. **(3)** The
+reporting channel survives hard difficulty in exactly one run of nine
+(flat seed 13, 0.90 best / 0.60 final). **(4)** Cohesion is tightest in the
+flat arm on every seed and covaries with survival — **at `ckpt_best` only**
+(tightest 3/3; Spearman −0.733, exact p = .031, n = 9 non-independent). The
+claim inverts at the final checkpoint (tightest 1/3, no covariation, with
+7/9 finals inside the attractor), and the covariation is out-predicted by
+its own denominator — mean episode length vs success is ρ = −0.883,
+p = .003 — so the rate is not yet evidence that cohesion carries information
+beyond how long the episode ran; any use as a signal must beat that trivial
+baseline first. There is still no case for enforcing cohesion: the most
+cohesive arm is the one with no enforcement. Reference run for future hard
+comparisons: `platoon_hard_flat_v2_seed13` — the only run of nine that both
+holds the objective and reports it.
+
 ### Can you predict the cohort from its radio net? (transparency probe)
 
 The founding promise — the net alone explains the behavior — is measured, not

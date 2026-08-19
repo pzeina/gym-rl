@@ -2,6 +2,8 @@
 
 from dataclasses import replace
 
+import pytest
+
 from cohort import make_env
 from cohort.config import get_scenario
 from cohort.core.world import FOREST, dist
@@ -117,3 +119,69 @@ def test_observation_concealment_places_ops():
         if env.world.grid[y, x] == FOREST and 4.5 <= dist((x, y), (ox, oy)) <= 7.5
     )
     assert ring_forest >= 10, "concealed OPs must exist on the observation ring"
+
+
+def test_exposed_under_threat_prices_static_tasks_out_of_cover():
+    """The squad_screen diagnosis (16/16 deaths out of cover): a static-tasked
+    soldier out of cover with a living enemy in weapon range bleeds
+    exposed_under_threat per step; cover stops it, distance stops it, a moving
+    task never pays it, and the default price is 0 (an experiment arm's price,
+    not yet the environment's)."""
+    from cohort.core.missions import Mission, MissionType
+    from cohort.env.cohort_env import STATIC_EXPOSURE_MISSIONS
+    from cohort.env.rewards import RewardConfig
+
+    assert RewardConfig().exposed_under_threat == 0.0
+
+    arm_price = -0.02
+
+    def compliance_of(price: float, *, covered: bool, in_range: bool) -> float:
+        """One step of a static OBSERVE watcher; returns its compliance bucket.
+
+        Rebuilt per call so the ONLY difference between two calls is the
+        (price, cover, range) triple — posture-compliance credit is identical
+        across them, and the delta is exactly the exposure price or zero.
+        """
+        env = make_env("fireteam")
+        env.reset(seed=5)
+        env.rewards_cfg = replace(env.rewards_cfg, exposed_under_threat=price)
+        env.world.grid[:] = 0
+        watcher = env.roster.soldiers[-1]
+        for s in env.roster.soldiers:
+            s.pos = (2, 2)
+            s.mission = None
+        watcher.pos = (5, 5)
+        if covered:
+            env.world.grid[5, 5] = 1
+            assert env.world.cover_at(watcher.pos)
+        watcher.mission = Mission(
+            type=MissionType.OBSERVE, objective_id=None, anchor=(5.0, 5.0),
+            issuer_id=-1, step_assigned=0,
+        )
+        threatener = env.enemies[0]
+        for e in env.enemies:
+            e.pos = (35, 35)
+            e.home = e.pos
+        if in_range:
+            threatener.pos = (5, 5 + int(env.combat.weapon_range))
+            threatener.home = threatener.pos
+        *_, infos = env.step({a: 0 for a in env.agents})
+        return infos[watcher.callsign]["components"]["compliance"]
+
+    baseline = compliance_of(0.0, covered=False, in_range=True)
+
+    # static task, out of cover, enemy in weapon range: bleeds exactly the price
+    # on top of whatever posture credit the mission earns
+    exposed = compliance_of(arm_price, covered=False, in_range=True)
+    assert exposed == pytest.approx(baseline + arm_price)
+
+    # cover stops the bleed — the marginal value of the cover cell is the full price
+    assert compliance_of(arm_price, covered=True, in_range=True) == pytest.approx(baseline)
+
+    # ...and so does distance
+    assert compliance_of(arm_price, covered=False, in_range=False) == pytest.approx(baseline)
+
+    # the priced set is exactly the measured one
+    assert {
+        MissionType.OBSERVE, MissionType.SCREEN, MissionType.HOLD, MissionType.COVER,
+    } == STATIC_EXPOSURE_MISSIONS
