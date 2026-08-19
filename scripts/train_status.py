@@ -118,6 +118,10 @@ def state_of(run_dir: Path, job: dict | None, rows: list[dict], total: int) -> s
     log = Path(job["log"]) if job and job.get("log") else None
     if log and log.exists() and "Traceback" in log.read_text()[-4000:]:
         return "FAILED"
+    # The trainer ended the run itself on the D4 collapse rule — not a crash,
+    # not a kill; ckpt_best holds the peak (see collapse_stop_gate).
+    if (run_dir / "early_stop.json").exists():
+        return "EARLY-STOP"
     if total and steps and steps >= total * 0.999:
         return "DONE"
     if job:
