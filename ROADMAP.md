@@ -1,6 +1,52 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-19 evening, **the D4 response is BUILT and the squad_screen exposure is MEASURED**)
+## ⟳ Session handoff — resume here (2026-08-19 night, **the exposure arm MISSED: the price bought cover and killed the fight; quarter-price arm in flight**)
+
+**squad_screen_v16_seed12 landed and missed the pre-set bar on all three
+clauses** (bar: deaths drop AND success holds AND root-report holds):
+final success **0.65 ± 0.21** (v14: 1.00), closed-on-root **0.385** (gate
+FAIL; v14: 0.95), human death 0.20 (v14: 0.18). Best-final gap 12 pts —
+NOT PUBLISHABLE regardless. The collapse guard did not fire (correctly:
+a lower plateau, not a collapse — no `early_stop.json`).
+
+**The confound is cleared before the verdict**: run_report `--vs v14` says
+CONFOUNDED (6 cohort/ commits between trees), but `squad_screen_v15_seed13`
+— current tree, NO price, 2.5M — landed at **100% rolling**, so the tree
+changes don't explain the drop. The price does.
+
+**Mechanism (oracle probe, 30 eps seeds 500–529, ckpt_best v16 vs v14)**:
+the penalty did exactly what it literally says — cover occupancy under
+threat team **.33 vs .18** — and the policy paid for it with the fight:
+fire rate under threat **.17 vs .67**, threatened steps/ep **52 vs 22**,
+friendly deaths/ep **3.1 vs 0.5** (deaths at OBJ 1.77 vs 0.03), mission
+mix under threat swung to HOLD (**.62 vs .14**), and the root parked at
+dist **30** from OBJ (v14: 16), never once inside the OBJ radius (v14:
+.23). The cheapest zero of an exposed-under-threat price is not
+cover-and-fight, it is threat-avoidance: don't close, don't fire, let
+contact drag — enemies survive, the screen fails, false DONE .97, clock
+ran out .27. Same passive-hide family as the D4 attractor, arrived at by
+price rather than by collapse.
+
+**The one diagnosed adjustment (honest-DoD) is IN FLIGHT**: the diagnosis
+that admits an arm is magnitude — −0.02 is 2× the per-step time cost, so
+avoidance out-earns engagement. `squad_screen_v17_seed12` runs the exact
+v14 mirror at **−0.005** (pid detached, ~40 min). Bar unchanged, set
+before launch: deaths drop AND success holds AND root-report holds.
+
+**NEXT ACTIONS (in order):**
+1. **Read squad_screen_v17_seed12 when it lands**:
+   `scripts/run_report.py squad_screen_v17_seed12 --vs squad_screen_v14`,
+   then `scripts/oracle_probe.py runs/squad_screen_v17_seed12/ckpt_best.pt
+   --vs runs/squad_screen_v14/ckpt_best.pt`.
+2. If it beats: `/publish` is pre-authorised; making −0.005 a DEFAULT is a
+   separate owner decision (a baseline run may not ship an override).
+3. **If it misses: STOP** — the miss is documented (progress log
+   2026-08-19), the default stays 0.0, and the remaining option space goes
+   back to the owner: scope the price to non-engaged steps only, or accept
+   exposure as the cost of a screen (in-cover *bonus* already ruled out as
+   farmable).
+
+## ⟳ Previous handoff (2026-08-19 evening, **the D4 response is BUILT and the squad_screen exposure is MEASURED**)
 
 **Owner decisions taken this session** (per the four-question check-in):
 README hard read → drafted for review; D4 response → early-stop at rolling
@@ -8397,3 +8443,16 @@ deliberately deferred (`docs/vision.md` §2c).
   correlation with its jackknife beside it; both matched tables now print what
   they could have shown. `exact_tests` gains tie-corrected `spearman_rho` and
   `jackknife_rho`. `cohort/` was not touched — the campaign is live.
+- **2026-08-19** — **squad_screen exposure price −0.02: MISS, mechanism
+  identified.** The arm (`squad_screen_v16_seed12`, exact v14 mirror +
+  `exposed_under_threat=-0.02`) missed its pre-registered bar on all three
+  clauses: success 0.65 vs 1.00, closed-on-root 0.385 vs 0.95, human death
+  0.20 vs 0.18. Tree confound cleared by `squad_screen_v15_seed13` (same
+  tree, no price, 100%). Oracle probe: cover under threat rose (.18→.33) —
+  the penalty worked as written — but fire rate under threat fell .67→.17,
+  threatened steps/ep 22→52, friendly deaths/ep 0.5→3.1, and the root never
+  entered the OBJ radius. Pricing exposure buys threat-avoidance, not
+  cover-and-fight: the same passive-hide family as the D4 attractor,
+  reached by price instead of collapse. One diagnosed adjustment launched
+  (`squad_screen_v17_seed12`, −0.005 = half the per-step time cost); if it
+  misses, the knob stays 0.0 and the option space returns to the owner.
