@@ -1,6 +1,60 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-20 night, **the exposure cycle is CLOSED: two arms, two misses, the knob stays 0.0 — the decision is the owner's**)
+## ⟳ Session handoff — resume here (2026-08-20 midday, **the anti-capture cycle is REOPENED by the owner: two penalty-shaping arms in flight, bar pre-registered**)
+
+**Owner instruction ("Rearm and launch!"): the platoon-depth anti-capture
+thread is reopened.** Two single-knob penalty-shaping arms launched as a
+seed-12 scout on `platoon_hard` (3M steps each, collapse guard ON — a
+captured arm early-stops at ~half budget). Diagnose-first is satisfied by
+the ledger already on file: the D4 attractor lives on the compliance+command
+trickle (+0.024–0.029/step, oracle-confirmed on `platoon_hard_v2_seed13`)
+against a −0.01 time cost, so idling is net-positive income. The static
+invariant is NOT the problem — `win_beats_stall` = 2.56 at default, above
+the 2.0 bar, yet 7/7 hierarchy runs captured — so the arms attack the
+learning dynamics: the safe idle trickle, not the expectation.
+
+- **`platoon_hard_timecost_v1_seed12`** — `--reward time_penalty=-0.03`:
+  the smallest dose that zeroes the measured idle income (trickle upper
+  bound 0.029). win/stall → 4.62. Characteristic risk to watch: time
+  pressure buying recklessness (human death up) — the exposure-cycle
+  lesson that damage scales with the price is why this is 3×, not 4×.
+- **`platoon_hard_lowcompliance_v1_seed12`** — `--reward
+  compliance_weight=0.05`: halves the trickle at its source. win/stall →
+  5.13. Characteristic risk: the obedience-teaching signal weakens
+  (obedience latency / compliance metrics degrade).
+
+**Pre-registered bar (set BEFORE launch, vs default full at seed 12: peak
+91% → final 0%)**: an arm counts as anti-capture evidence iff final rolling
+success ≥ 0.5 AND best-final gap < 10 pts AND ran-clock-out < 0.5. Each
+arm additionally reports its characteristic risk above; a "win" that trades
+capture for recklessness or disobedience is a finding, not a win. Both arms
+train with `--reward` overrides, so NEITHER can ever ship as a baseline
+member — a passing arm is evidence for changing a DEFAULT, which is an
+owner decision, followed by a clean run.
+
+**The stale watch is dead; a hardened one is armed.** The monitor from an
+old session (bare `kill -0` on `.job.json` pids — PID recycling produced
+two phantom "TRAINING ENDED" events this morning) was stopped; the watch
+now runs `scripts/night_watch_monitor.sh`, which routes liveness through
+`train_status.py`'s ps-verified check.
+
+**NEXT ACTIONS (in order):**
+1. **Read the arms when they land** (~2h40m each, or earlier via guard):
+   `scripts/run_report.py <arm> --vs platoon_hard_v1_seed12`, then
+   `scripts/oracle_probe.py runs/<arm>/ckpt_best.pt --episodes 30 --seed 500`
+   on any arm that avoids capture (and on ckpt_latest for the mechanism if
+   captured anyway).
+2. If an arm passes the bar: confirm at seeds 13/14 before believing it
+   (the ablation-cycle precedent), then the default-change question goes to
+   the owner with numbers.
+3. If both miss: honest-DoD — at most one diagnosed adjustment, then the
+   remaining option (a KL-guard, a training-code change) goes back to the
+   owner. Document the misses in the progress log either way.
+4. Housekeeping still queued: `scripts/archive_runs.py` (superseded
+   squad_screen/platoon_hard arms).
+
+
+## ⟳ Previous handoff (2026-08-20 night, **the exposure cycle is CLOSED: two arms, two misses, the knob stays 0.0 — the decision is the owner's**)
 
 **squad_screen_v17_seed12 (−0.005, exact v14 mirror) landed and also missed
 the pre-registered bar** — 2 of 3 clauses, a different 2 than v16:
