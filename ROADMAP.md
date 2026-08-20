@@ -42,15 +42,24 @@ squad_screen exposure thread is CLOSED end to end: instrument built,
 gap measured, price tried at two doses, both misses documented, decision
 taken.
 
+**The collapse guard is VERIFIED LIVE.** `platoon_hard_v4_seed15`
+(fresh seed, 3M) peaked at rolling 0.72 (iter 239, 15% in), was captured
+by the D4 attractor (ran-clock-out 1.00, ep length pinned at 600,
+terminal component 0.0), and the guard EARLY-STOPPED it at iter 1,594 /
+1.63M steps — `early_stop.json` reads reason=collapse, peak 0.72,
+patience 1200, exactly the shipped calibration — **saving 46% of the
+budget**, inside the replay's predicted 22–47% band. Seed 15 also makes
+it 7/7 hierarchy platoon_hard runs captured. The guard stops the
+bleeding; preventing capture (penalty shaping / KL-guard) remains the
+owner's open design question at platoon depth.
+
 **NEXT ACTIONS:**
-1. IN FLIGHT: the fresh-seed platoon_hard arm under the live collapse
-   guard (`platoon_hard_v4_seed15`, 3M) — end-to-end verification of the
-   D4 stop (replay proves it on recorded curves; 6/6 hierarchy runs were
-   captured, so this run should EARLY-STOP if the guard works live). An
-   EARLY-STOP state is the expected finding, not a crash.
-2. After it lands: read `early_stop.json` + train_status against the
-   replay's prediction; then the platoon-depth option space (penalty
-   shaping / KL-guard) remains the owner's open design question.
+1. Nothing in flight. Open owner decisions: none urgent — the
+   platoon-depth anti-capture option space (penalty shaping / KL-guard)
+   when the owner wants to reopen it.
+2. Housekeeping candidates when convenient: `scripts/archive_runs.py`
+   (superseded squad_screen/platoon_hard arms), next ship window per
+   docs/next-cycles.md.
 
 ## ⟳ Previous handoff (2026-08-19 night, **the exposure arm MISSED: the price bought cover and killed the fight; quarter-price arm in flight**)
 
@@ -8528,3 +8537,9 @@ deliberately deferred (`docs/vision.md` §2c).
   screen (option 1).** squad_screen_v14 stands; `exposed_under_threat`
   stays 0.0 and stays in RewardConfig; the two-dose miss evidence
   (progress log 2026-08-19/20) is the record. Thread closed.
+- **2026-08-20** — **The D4 collapse stop is verified end-to-end.**
+  `platoon_hard_v4_seed15` (fresh seed under the live guard) peaked 0.72,
+  was captured (ran-clock-out 1.00, terminal 0.0), and self-terminated at
+  1.63M/3M with `early_stop.json` (reason=collapse, peak 0.72, patience
+  1200) — 46% of budget saved, inside the replay's 22–47% prediction.
+  Hierarchy platoon_hard capture is now 7/7 across seeds 12–15.
