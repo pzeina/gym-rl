@@ -31,7 +31,7 @@ from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR, SUCCESS_RATE_FLOOR
 from cohort.training import provenance
-from cohort.training.ppo import TRAJECTORY_NEUTRAL_FIELDS, PolicyNet, PPOConfig, RolloutBuffer, ppo_update
+from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update, trajectory_config
 
 METRIC_FIELDS = [
     "iteration",
@@ -246,6 +246,28 @@ def collapse_stop_gate(
     return streak, streak >= patience
 
 
+def rescue_gate(
+    streak: int,
+    rescues_used: int,
+    *,
+    patience: int,
+    max_rescues: int,
+) -> bool:
+    """Should the run roll back to ckpt_best here, instead of dying later?
+
+    Companion to ``collapse_stop_gate`` and fed the same streak: the number
+    of consecutive iterations rolling success has spent at or below
+    ``peak - collapse_margin``. The stop ends a captured run to stop wasting
+    budget; the rescue (``Trainer.rescue``) spends that budget on another
+    attempt from the best policy the run ever had. It must fire before the
+    stop to fire at all, so ``rescue_patience < collapse_patience`` — the
+    defaults (700 vs 1200) keep that ordering and a config that breaks it
+    simply never rescues. Pure, like the stop gate, so
+    scripts/collapse_replay.py can replay the pair over any metrics.csv.
+    """
+    return max_rescues > 0 and rescues_used < max_rescues and 0 < patience <= streak
+
+
 def _load_compatible(net: PolicyNet, state: dict) -> list[str]:
     """Load ``state`` into ``net``, tolerating only the v1.11 additions.
 
@@ -339,6 +361,7 @@ class Trainer:
         # reporting window may supersede a higher mute one, see best_save_gate).
         self.peak_rolling_success = -1.0
         self.collapse_streak = 0
+        self.rescues_used = 0  # D4 rescue: rollbacks performed so far (see rescue())
         # refs v1.20: whether the recorded ckpt_best came from a window whose
         # commander was reporting. A mute window may never take it back.
         self.best_was_reporting = False
@@ -637,6 +660,13 @@ class Trainer:
                 margin=cfg.collapse_margin,
                 patience=cfg.collapse_patience,
             )
+            if rescue_gate(
+                self.collapse_streak,
+                self.rescues_used,
+                patience=cfg.rescue_patience,
+                max_rescues=cfg.rescue_max,
+            ) and self.rescue(stats["success_rate_rolling"]):
+                collapsed = False
             if collapsed:
                 # The marker is what train_status.py reads to call the run
                 # EARLY-STOP rather than STOPPED (which reads as a crash).
@@ -665,6 +695,58 @@ class Trainer:
                 break
         if self.writer is not None:
             self.writer.close()
+
+    def rescue(self, rolling: float) -> bool:
+        """Roll a captured run back to its best policy and keep training.
+
+        Restores ckpt_best's weights (value_norm statistics ride along in the
+        state dict, so the critic stays consistent with its returns), rebuilds
+        the optimizer from scratch — Adam's second-moment estimates encode the
+        migration's direction, and a restored policy stepping with the old
+        moments resumes the same walk — and tightens ``target_kl`` by
+        ``rescue_kl_scale`` (compounding across rescues). The rolling windows
+        are deliberately NOT cleared: they refill with the restored policy's
+        episodes within ~50 iterations, a tax the 700-iteration patience
+        absorbs, and clearing them would blind best_save_gate and the peak
+        tracker to real history. Each event appends to ``rescues.json`` so the
+        run's record shows every rollback, not just the final curve.
+
+        Returns False (no rescue performed) if ckpt_best does not exist —
+        possible in principle while best_save_gate withholds writes — in which
+        case the collapse stop proceeds as if the rescue never existed.
+        """
+        best = self.run_dir / "ckpt_best.pt"
+        if not best.exists():
+            return False
+        ckpt = torch.load(best, map_location=self.device, weights_only=True)
+        self.net.load_state_dict(ckpt["model"])
+        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=self.cfg.lr, eps=1e-5)
+        if self.cfg.target_kl is not None:
+            self.cfg.target_kl *= self.cfg.rescue_kl_scale
+        self.collapse_streak = 0
+        self.rescues_used += 1
+        events_path = self.run_dir / "rescues.json"
+        events = json.loads(events_path.read_text()) if events_path.exists() else []
+        events.append(
+            {
+                "rescue": self.rescues_used,
+                "iteration": self.iteration,
+                "env_steps": self.env_steps,
+                "rolling_success": rolling,
+                "peak_rolling_success": self.peak_rolling_success,
+                "restored_from_iteration": ckpt.get("iteration"),
+                "target_kl_after": self.cfg.target_kl,
+            }
+        )
+        events_path.write_text(json.dumps(events, indent=2))
+        print(
+            f"RESCUE {self.rescues_used}/{self.cfg.rescue_max} at step {self.env_steps:,} "
+            f"(iter {self.iteration}): rolling {rolling:.0%} vs peak "
+            f"{self.peak_rolling_success:.0%} — restored ckpt_best "
+            f"(iter {ckpt.get('iteration')}), fresh optimizer, "
+            f"target_kl now {self.cfg.target_kl}"
+        )
+        return True
 
     def save_checkpoint(self, name: str) -> Path:
         """Persist model weights + everything needed to reload them."""
@@ -804,6 +886,15 @@ def main() -> None:
                         help="how far below the peak counts as collapsed")
     parser.add_argument("--collapse-floor", type=float, default=PPOConfig.collapse_floor,
                         help="the guard arms only once peak rolling success reaches this")
+    parser.add_argument("--rescue-max", type=int, default=PPOConfig.rescue_max,
+                        help="roll a captured run back to ckpt_best (fresh optimizer, "
+                             "tightened target-kl) up to this many times before the "
+                             "collapse stop is allowed to end it (0 disables, the default)")
+    parser.add_argument("--rescue-patience", type=int, default=PPOConfig.rescue_patience,
+                        help="iterations spent >= collapse-margin below the peak before "
+                             "a rescue fires; must stay below collapse-patience to fire at all")
+    parser.add_argument("--rescue-kl-scale", type=float, default=PPOConfig.rescue_kl_scale,
+                        help="multiply target-kl by this on every rescue (compounding)")
     parser.add_argument("--hidden", type=int, default=PPOConfig.hidden)
     parser.add_argument("--normalize-value", action=argparse.BooleanOptionalAction,
                         default=PPOConfig.normalize_value,
@@ -851,6 +942,9 @@ def main() -> None:
         collapse_patience=args.collapse_patience,
         collapse_margin=args.collapse_margin,
         collapse_floor=args.collapse_floor,
+        rescue_patience=args.rescue_patience,
+        rescue_max=args.rescue_max,
+        rescue_kl_scale=args.rescue_kl_scale,
         hidden=args.hidden,
         normalize_value=args.normalize_value,
         separate_critic=args.separate_critic,
@@ -859,11 +953,11 @@ def main() -> None:
     print(f"training scenario={args.scenario} → {run_dir}")
     (run_dir / ".").mkdir(parents=True, exist_ok=True)
     (run_dir / "config.json").write_text(
-        # The collapse-guard fields stay out: they cannot change what the run
-        # learns (see TRAJECTORY_NEUTRAL_FIELDS), and config.json's exact shape
-        # is what the preflight duplicate matcher and every reader parse.
+        # Only the fields that determine what the run learns: the shape rules
+        # (collapse guard out, rescue knobs only when enabled) live in
+        # trajectory_config, shared with the preflight duplicate matcher.
         json.dumps({"scenario": args.scenario, "seed": args.seed, "total_steps": args.total_steps,
-                    **{k: v for k, v in asdict(cfg).items() if k not in TRAJECTORY_NEUTRAL_FIELDS}},
+                    **trajectory_config(cfg)},
                    indent=2)
     )
     # Reward and scenario economics are what a run is actually an experiment

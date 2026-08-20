@@ -565,6 +565,29 @@ def best_selection_line(run: str, rows: list[dict], final_roll: float) -> str | 
     return line
 
 
+def rescue_line(run: str) -> str | None:
+    """One line per run that was rolled back mid-training, or None.
+
+    A rescued run's curve shows dips the collapse stop would once have ended
+    the run at; without this line the digest reads them as ordinary recoveries
+    and overstates the policy's own stability. States each rollback's step and
+    the target_kl the run finished under so the intervention is on the record
+    wherever the numbers are.
+    """
+    path = run_dir(run) / "rescues.json"
+    if not path.exists():
+        return None
+    events = json.loads(path.read_text())
+    if not events:
+        return None
+    at = ", ".join(f"{int(e['env_steps']):,}" for e in events)
+    return (
+        f"  rescues  {len(events)} rollback(s) to ckpt_best at step {at}  "
+        f"(final target_kl {events[-1]['target_kl_after']}) — dips to the line "
+        f"were interrupted, not outgrown"
+    )
+
+
 def report(run: str, show_components: bool) -> dict:
     rows = rows_of(run)
     cfg_path = run_dir(run) / "config.json"
@@ -579,6 +602,8 @@ def report(run: str, show_components: bool) -> dict:
     final_roll = mean(last, "success_rate_rolling")
     print(f"  curve   {curve(rows)}   best rolling {best:.0%}   final {final_roll:.0%}")
     print(f"  {stability(best, final_roll)}")
+    if rescues := rescue_line(run):
+        print(rescues)
     if selection := best_selection_line(run, rows, final_roll):
         print(selection)
     if opt := optimizer_line(first, last):

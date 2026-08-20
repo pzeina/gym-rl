@@ -33,7 +33,7 @@ exact original architecture (``load_policy`` reads the flags off the file).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 import torch
@@ -97,6 +97,27 @@ class PPOConfig:
     collapse_patience: int = 1200
     collapse_margin: float = 0.5
     collapse_floor: float = 0.5
+    #: D4 rescue (v1.21): roll a capture BACK instead of only ending it. The
+    #: collapse stop above ends a captured run to save its budget; the rescue
+    #: spends that budget on another attempt. Watching the same line
+    #: (``peak - collapse_margin``, armed at ``collapse_floor``): once rolling
+    #: success has sat below it for ``rescue_patience`` consecutive iterations,
+    #: restore ckpt_best, rebuild the optimizer from scratch (Adam's moments
+    #: carry the migration's direction — a restored policy with the old moments
+    #: resumes the same walk), and multiply ``target_kl`` by
+    #: ``rescue_kl_scale`` as a compounding brake. At most ``rescue_max``
+    #: rescues; after that the collapse stop proceeds as before. 0 disables
+    #: (the default — no existing run's semantics change).
+    #: Calibration inherits the collapse replay: every recovered dip lasted
+    #: <= 596 iterations, so at 700 the rescue never interrupts a policy that
+    #: was coming back on its own, and it beats the stop (1200) to every
+    #: capture. NOTE the four observed captures migrated at approx_kl
+    #: 0.0001-0.006 — far under target_kl 0.02 — so the KL brake alone is
+    #: known NOT to prevent capture; the restore is the active ingredient,
+    #: and each rescue is a fresh draw against the attractor, not a cure.
+    rescue_patience: int = 700
+    rescue_max: int = 0
+    rescue_kl_scale: float = 0.5
     hidden: int = 256
     #: fit the critic against standardized returns (see module docstring)
     normalize_value: bool = True
@@ -113,6 +134,34 @@ class PPOConfig:
 #: existing reader (and the campaign preflight's duplicate matcher) parses —
 #: and the guard's one observable effect records itself in early_stop.json.
 TRAJECTORY_NEUTRAL_FIELDS = ("collapse_patience", "collapse_margin", "collapse_floor")
+
+#: The D4 rescue knobs (v1.21). Their neutrality is conditional, so they get
+#: their own tuple rather than a seat in TRAJECTORY_NEUTRAL_FIELDS: with
+#: ``rescue_max == 0`` the rescue can never fire and the fields are exactly as
+#: neutral as the collapse stop's, but the moment it is enabled a rescue
+#: rewrites the run's weights mid-flight — a different experiment, which
+#: config.json (and the campaign duplicate matcher) must see. The shared rule
+#: lives in ``trajectory_config``.
+RESCUE_FIELDS = ("rescue_patience", "rescue_max", "rescue_kl_scale")
+
+
+def trajectory_config(cfg: PPOConfig) -> dict:
+    """The PPOConfig fields that determine what a run learns, as a dict.
+
+    The single source of the config.json shape: ``train.py`` writes it and
+    ``scripts/campaign_preflight.py`` predicts it, and the duplicate matcher
+    compares the two byte-for-byte — so the inclusion rules must never fork.
+    Always excludes TRAJECTORY_NEUTRAL_FIELDS; excludes RESCUE_FIELDS only
+    while the rescue is disabled, which also keeps every pre-rescue run's
+    committed config.json reproducible from its original arguments.
+    """
+    fields = asdict(cfg)
+    for key in TRAJECTORY_NEUTRAL_FIELDS:
+        del fields[key]
+    if cfg.rescue_max == 0:
+        for key in RESCUE_FIELDS:
+            del fields[key]
+    return fields
 
 
 def _layer(m: nn.Linear, std: float = np.sqrt(2), bias: float = 0.0) -> nn.Linear:

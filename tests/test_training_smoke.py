@@ -323,3 +323,70 @@ def test_collapse_stop_defaults_ride_along_on_config():
     assert 596 < cfg.collapse_patience < 1849
     assert 0.0 < cfg.collapse_margin <= 1.0
     assert cfg.collapse_floor >= 0.5
+
+
+def test_rescue_gate_semantics():
+    """D4 rescue: off by default, fires at patience while rescues remain,
+    hands over to the collapse stop once they are spent. Its patience must
+    also sit in the replay-justified band (recovered dips <= 596 iterations)
+    and below the stop's, or it interrupts self-recovering runs / never
+    fires at all."""
+    from cohort.training.ppo import PPOConfig
+    from cohort.training.train import rescue_gate
+
+    # default-off: whatever the streak, rescue_max=0 never rescues, so every
+    # run trained before this knob existed behaves identically after it
+    assert not rescue_gate(10_000, 0, patience=700, max_rescues=PPOConfig.rescue_max)
+
+    # armed: fires exactly at patience, not before
+    assert not rescue_gate(699, 0, patience=700, max_rescues=3)
+    assert rescue_gate(700, 0, patience=700, max_rescues=3)
+
+    # spent: after max_rescues rollbacks the stop takes over
+    assert rescue_gate(700, 2, patience=700, max_rescues=3)
+    assert not rescue_gate(700, 3, patience=700, max_rescues=3)
+
+    # degenerate patience never fires
+    assert not rescue_gate(700, 0, patience=0, max_rescues=3)
+
+    cfg = PPOConfig()
+    assert 596 < cfg.rescue_patience < cfg.collapse_patience
+    assert cfg.rescue_max == 0, "rescue must stay opt-in until it earns a default"
+    assert 0.0 < cfg.rescue_kl_scale <= 1.0
+
+
+def test_rescue_restores_best_and_tightens_kl(tmp_path):
+    """Trainer.rescue must put the run back where ckpt_best left it: weights
+    equal to the saved best, fresh optimizer moments, target_kl scaled, the
+    streak cleared, and the rollback on the record in rescues.json."""
+    import json
+
+    cfg = PPOConfig(n_envs=2, horizon=32, rescue_max=3)
+    trainer = Trainer("fireteam", cfg, tmp_path / "run", seed=7, tensorboard=False)
+    trainer.train(total_steps=128)  # a couple of iterations, writes checkpoints
+    trainer.save_checkpoint("ckpt_best.pt")
+    best_weights = {k: v.clone() for k, v in trainer.net.state_dict().items()}
+
+    # drift the policy away from best and give the optimizer momentum
+    with torch.no_grad():
+        for p in trainer.net.parameters():
+            p.add_(torch.randn_like(p) * 0.05)
+    trainer.collapse_streak = 700
+
+    assert trainer.rescue(rolling=0.0)
+
+    for key, val in trainer.net.state_dict().items():
+        assert torch.equal(val, best_weights[key]), f"{key} not restored"
+    assert not trainer.optimizer.state, "optimizer moments must start fresh after a rescue"
+    assert trainer.cfg.target_kl == PPOConfig.target_kl * cfg.rescue_kl_scale
+    assert trainer.collapse_streak == 0
+    assert trainer.rescues_used == 1
+
+    events = json.loads((tmp_path / "run" / "rescues.json").read_text())
+    assert len(events) == 1 and events[0]["rescue"] == 1
+    assert events[0]["target_kl_after"] == trainer.cfg.target_kl
+
+    # no best on disk -> no rescue, the collapse stop keeps its authority
+    (tmp_path / "run" / "ckpt_best.pt").unlink()
+    assert not trainer.rescue(rolling=0.0)
+    assert trainer.rescues_used == 1

@@ -35,13 +35,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from cohort.training.ppo import TRAJECTORY_NEUTRAL_FIELDS, PPOConfig  # noqa: E402
+from cohort.training.ppo import PPOConfig, trajectory_config  # noqa: E402
 from scripts.baseline import cohort_tree, config_matches, overrides_match  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 
@@ -95,6 +95,13 @@ def _train_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--collapse-patience", type=int, default=PPOConfig.collapse_patience)
     p.add_argument("--collapse-margin", type=float, default=PPOConfig.collapse_margin)
     p.add_argument("--collapse-floor", type=float, default=PPOConfig.collapse_floor)
+    # The D4 rescue: unlike the collapse guard it CAN change what a run
+    # learns, so its knobs reach the PPOConfig and, once enabled, the
+    # prediction (trajectory_config) — an enabled rescue is a different
+    # experiment from the same run without one.
+    p.add_argument("--rescue-max", type=int, default=PPOConfig.rescue_max)
+    p.add_argument("--rescue-patience", type=int, default=PPOConfig.rescue_patience)
+    p.add_argument("--rescue-kl-scale", type=float, default=PPOConfig.rescue_kl_scale)
     p.add_argument("--hidden", type=int, default=PPOConfig.hidden)
     p.add_argument("--normalize-value", action=argparse.BooleanOptionalAction,
                    default=PPOConfig.normalize_value)
@@ -139,6 +146,9 @@ def predicted_config(train_args: list[str]) -> tuple[dict | None, list[str], str
         update_epochs=args.update_epochs,
         num_minibatches=args.num_minibatches,
         target_kl=args.target_kl if args.target_kl and args.target_kl > 0 else None,
+        rescue_patience=args.rescue_patience,
+        rescue_max=args.rescue_max,
+        rescue_kl_scale=args.rescue_kl_scale,
         hidden=args.hidden,
         normalize_value=args.normalize_value,
         separate_critic=args.separate_critic,
@@ -146,8 +156,7 @@ def predicted_config(train_args: list[str]) -> tuple[dict | None, list[str], str
     )
     config = {"scenario": args.scenario, "seed": args.seed,
               "total_steps": args.total_steps,
-              **{k: v for k, v in asdict(cfg).items()
-                 if k not in TRAJECTORY_NEUTRAL_FIELDS}}
+              **trajectory_config(cfg)}
     # Round-trip through JSON so equality against a config.json read off disk
     # compares like with like (tuples->lists, float canonicalisation).
     return json.loads(json.dumps(config)), list(args.reward), None
