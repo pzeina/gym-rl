@@ -1,6 +1,81 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-20 night, **the tie-break CAPTURED: the arm closes 2 survivors / 2 captures — the price halves the odds, it does not defeat the attractor; DECISION BACK TO THE OWNER**)
+## ⟳ Session handoff — resume here (2026-08-20 late night, **OWNER CHOSE THE KL-GUARD EXPERIMENT: the D4 rescue is built and committed, two conversion arms fly on the captured seeds, bar pre-registered before launch**)
+
+**Owner instruction: "Go with the KL-guard experiment — design it and
+launch."** Designed, implemented, tested (1068 green + ruff), committed
+(`2f379f6`), and launched — with the bar set before either arm lands.
+
+**The mechanism (cohort/training, default-off — `rescue_max=0` changes
+nothing anywhere):** the D4 rescue watches the same line as the collapse
+stop (peak − 0.5, armed at peak ≥ 0.5). At **700** consecutive iterations
+below it — above every replayed recovery (≤ 596), ahead of the stop
+(1200) — it **restores ckpt_best, rebuilds the optimizer from scratch**
+(Adam's second moments carry the migration's direction; a restored policy
+stepping with old moments resumes the same walk), and **multiplies
+target_kl by 0.5** (compounding), at most `rescue_max` times before the
+collapse stop regains authority. Every rollback is recorded in the run's
+`rescues.json` and printed by `run_report.py`, so a rescued curve can
+never pass as ordinary stability. Design honesty, in the code's own
+docstrings: the four observed captures migrated at approx_kl 0.0001–0.006
+— far under target_kl 0.02 — so the KL brake alone is known NOT to
+prevent capture; **the restore is the active ingredient, and each rescue
+is a fresh draw against the attractor, not a cure**. Plumbing note:
+the config.json shape rule moved into `ppo.trajectory_config` (shared
+with the campaign preflight): a disabled rescue stays out of config.json,
+an enabled one is recorded — it is a different experiment.
+
+**The experiment — convert the known captures.** Two arms launched
+(2026-08-20 ~23:55, ~2h40m each, nothing else in flight, tree committed
+first):
+
+- `platoon_hard_rescue_timecost_v1_seed14`
+- `platoon_hard_rescue_timecost_v1_seed15`
+
+Exact mirrors of the timecost arm (`--reward time_penalty=-0.03`, 3M
+steps) plus `--rescue-max 3`, on the two seeds that arm LOST (14: captured
+at 62%, 15: captured at 58%). The price stays because it is what makes
+survival possible at all (2/4 with vs 0/8 without); the rescue attacks the
+residual captures. Seeds 12/13 need no rerun — the rescue cannot fire on a
+run that never sits 700 iterations below its peak.
+
+**PRE-REGISTERED BAR (same three clauses):** final rolling ≥ 0.5,
+best-final gap < 10 pts, ran-clock-out < 0.5 — judged per arm, plus the
+rescue record read from `rescues.json`. Decision rule, set now:
+
+- **2/2 convert** → price+rescue reads seed-proof so far (4/4 across
+  seeds 12–15, counting the price-only survivors). The ship question —
+  rescue as a training default and/or the price as platoon_hard scenario
+  semantics — goes to the **owner** with the full table; the delegated
+  scoped-semantics plan from the timecost cycle becomes live again.
+- **1/2 or 0/2** → the rescue record is the finding: for each failed arm,
+  did the rescue fire, and did the restored policy re-migrate (rescues
+  exhausted then stop) or never fire at all (capture below the arming
+  floor)? Honest-DoD, diagnosis to the owner; the follow-up candidate is a
+  KL-anchor to ckpt_best (a trust region around the best policy, not the
+  previous one) — a bigger training change that this result would justify
+  or kill.
+- Either way: **no further cohort/ change without the owner** — the
+  rescue is committed but default-off, and enabling it anywhere is a
+  design decision.
+
+**Watch note:** rolling success in `train_status.py` will read low on a
+mid-rescue run by construction (the window carries the dip). Judge
+nothing before landing; read `rescues.json` alongside the report.
+
+**Archive housekeeping still queued** (`scripts/archive_runs.py`), cycle
+remains open until the rescue arms land.
+
+**NEXT ACTIONS (in order):**
+1. When the arms land: `scripts/run_report.py <arm>` (the digest now
+   prints rescues), judge against the bar above, oracle-probe any
+   survivor (`scripts/oracle_probe.py runs/<arm>/ckpt_best.pt --episodes 30 --seed 500`).
+2. Apply the decision rule above; take the outcome to the owner with the
+   four-seed + rescue table.
+3. Housekeeping: `scripts/archive_runs.py` dry run, then `--apply`.
+
+
+## ⟳ Previous handoff (2026-08-20 night, **the tie-break CAPTURED: the arm closes 2 survivors / 2 captures — the price halves the odds, it does not defeat the attractor; DECISION BACK TO THE OWNER**)
 
 **`platoon_hard_timecost_v1_seed15` was captured, and that closes the
 cycle under the pre-registered rule.** Guard early-stopped it at
