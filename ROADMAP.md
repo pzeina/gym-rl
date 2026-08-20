@@ -1,6 +1,64 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-20 late night, **OWNER CHOSE THE KL-GUARD EXPERIMENT: the D4 rescue is built and committed, two conversion arms fly on the captured seeds, bar pre-registered before launch**)
+## ⟳ Session handoff — resume here (2026-08-21 early, **THE RESCUE CONVERTS BOTH CAPTURED SEEDS: price+rescue is 4/4 across seeds 12–15 — one rollback each, no re-migration; SHIP QUESTION TO THE OWNER**)
+
+**The 2/2 branch of the pre-registered rule fired.** Both conversion arms
+ran their full 3M steps, converged, and pass all three clauses:
+
+| arm (rescue, seed) | final rolling | gap | clock-out | rescues | final policy (N=20) | oracle fresh seeds |
+|---|---|---|---|---|---|---|
+| seed 14 | **0.915** | 5 | 0.035 | 1 (at 1.36M) | **1.00** | success **0.90**, timeout 0.03 |
+| seed 15 | **0.876** | 9 | 0.048 | 1 (at 1.24M) | 0.80 | success **0.833** |
+
+Both PUBLISHABLE by the stability gate. The rescue record is the
+mechanism made visible: each arm fell into the attractor at the exact
+point its un-rescued twin died (14 restored from iter 558 — the very
+window that was un-rescued 14's stranded ckpt_best; 15 from iter 246,
+same story), was rolled back ONCE with a fresh optimizer and target_kl
+0.02→0.01, and trained through to convergence. **No second rescue was
+ever needed; no re-migration occurred.** Warts, honestly: closed-on-root
+still 0.000 on all arms (the known platoon_hard reporting gap, untouched
+by this mechanism), and report precision (0.56–0.61) sits below the
+no-rescue survivors' (0.71–0.97).
+
+**The four-seed table on platoon_hard with `time_penalty=-0.03`:**
+seeds 12, 13 survive without needing the rescue (it cannot fire on a run
+that never sits 700 iters below peak); seeds 14, 15 captured without it
+and CONVERT with it. Combined claim, at its honest strength: **price +
+rescue is 4/4 where price alone was 2/4 and no intervention was 0/8.**
+Every number from a `--reward` override arm — none can ship as baseline.
+
+**THE SHIP QUESTION IS THE OWNER'S (pre-registered):** turning this into
+a shipped platoon_hard means deciding, separately:
+1. **`time_penalty=-0.03` as platoon_hard scenario semantics** — the
+   per-scenario reward-override field in `ScenarioSpec` (the scoped form
+   argued for in the timecost cycle: minimal, reversible, no fleet
+   provenance break).
+2. **The rescue as a training default** (`rescue_max=3` for everyone vs
+   platoon-runs only vs stays opt-in CLI). It is committed, default-off,
+   trajectory-recorded when enabled; 2/2 conversions and 0 spurious fires
+   is the whole evidence base — a default for eight scenarios rests on
+   two runs from one.
+   **Recommendation: ship (1) as scenario semantics; keep (2) opt-in**
+   with `--rescue-max 3` named in platoon_hard's launch recipe, and let
+   the rescue earn a default across future cycles' runs. Then ONE clean
+   run (no CLI overrides once the spec carries the price) is the
+   baseline-eligible candidate; note the rescue-as-CLI-flag still blocks
+   baseline membership under the no-override rule unless (2) ships too —
+   that tension is exactly what the owner call is for.
+
+**Housekeeping unblocked**: `scripts/archive_runs.py` dry run then
+`--apply` for the superseded arms (survivors and conversion evidence stay
+resolvable — archiving is a move, never a delete).
+
+**NEXT ACTIONS:**
+1. Owner decides the two-part ship question above.
+2. On a ship decision: implement, retrain clean, evaluate at N=100 via
+   `/publish` (which drafts, never commits).
+3. Housekeeping: archive sweep.
+
+
+## ⟳ Previous handoff (2026-08-20 late night, **OWNER CHOSE THE KL-GUARD EXPERIMENT: the D4 rescue is built and committed, two conversion arms fly on the captured seeds, bar pre-registered before launch**)
 
 **Owner instruction: "Go with the KL-guard experiment — design it and
 launch."** Designed, implemented, tested (1068 green + ruff), committed
