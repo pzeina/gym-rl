@@ -30,6 +30,33 @@ tripling the price beat it, halving the income did not.
   the seed-12 arm. The hardened watch (`scripts/night_watch_monitor.sh`)
   is still armed and will fire on each landing.
 
+**OWNER DELEGATION (2026-08-20 afternoon): "I agree with you and let you
+choose what you judge is best."** The default-change decision for this
+thread is delegated. The pre-registered rule I will apply, set BEFORE the
+confirm seeds land:
+
+- **2/2 confirms pass the bar** → ship the price as **scenario semantics,
+  not a global default**: add a per-scenario reward-override field to
+  `ScenarioSpec` (config.py), give `platoon_hard` `time_penalty=-0.03` as
+  part of its definition ("a hard scenario prices idle time"), pytest+ruff
+  green, commit — then launch a clean run with NO CLI override (the price
+  comes from the spec, so what ships is what was trained). Rationale: the
+  global default touches all eight shipping scenarios' environments and
+  forces a fleet-provenance break for a knob only platoon_hard needs; the
+  scoped form is minimal and reversible. The cohort/ commit happens only
+  AFTER both confirms land (they already imported their tree; nothing else
+  is queued).
+- **1/2** → one tie-break seed (15), same arm, before any cohort/ change.
+- **0/2** → seed-12 was the draw, not the mechanism: document the miss,
+  no default change, thread back to the owner (a dead end is a finding,
+  and delegation doesn't convert one into a ship).
+
+**Archive housekeeping DEFERRED, deliberately**: the dry run would move
+`platoon_hard_timecost_v1_seed12` and the platoon_hard evidence runs —
+the open cycle's live evidence. Archiving is a move and stays resolvable,
+but moving an open thread's runs mid-cycle serves nothing; apply
+`scripts/archive_runs.py --apply` when this cycle closes.
+
 **NEXT ACTIONS (in order):**
 1. **Read the confirms when they land**: `scripts/run_report.py <arm>`,
    judge against the SAME pre-registered bar (final ≥ 0.5, gap < 10,
