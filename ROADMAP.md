@@ -1,6 +1,70 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-20 evening, **confirms SPLIT the letter from the spirit: seed 14 captured, seed 13 survived but missed the gap clause by 0.44 pts; tie-break seed 15 in flight**)
+## ⟳ Session handoff — resume here (2026-08-20 night, **the tie-break CAPTURED: the arm closes 2 survivors / 2 captures — the price halves the odds, it does not defeat the attractor; DECISION BACK TO THE OWNER**)
+
+**`platoon_hard_timecost_v1_seed15` was captured, and that closes the
+cycle under the pre-registered rule.** Guard early-stopped it at
+1.75M/3M (fourth live fire). Final rolling **0.000** (bar ≥ 0.5), gap
+**87 pts** (bar < 10), ran-clock-out **1.000** (bar < 0.5) — 0/3
+clauses. Peaked at 87% rolling at 14% of the run, then the full
+disengagement attractor: final decile ep length 600 (the whole clock),
+human death 0.000, clock-out 1.000, with the time component paid at
+−0.030 exactly as configured throughout.
+
+**The four-seed verdict on `time_penalty=-0.03` at platoon depth:**
+
+| seed | outcome | final rolling | gap | clock-out | oracle (fresh seeds) |
+|------|---------|--------------|-----|-----------|----------------------|
+| 12   | SURVIVED (3/3 clauses) | 0.908 | 8 | 0.024 | success 0.90 |
+| 13   | survived behaviorally, missed gap by 0.44 | 0.896 | 10.44 | 0.077 | success 0.867 |
+| 14   | CAPTURED | 0.01 | 90 | 0.986 | — |
+| 15   | CAPTURED | 0.000 | 87 | 1.000 | — |
+
+Against 0/8 survival without the price, 2/4 with it is a real effect —
+tripling the idle-time price roughly halves the capture odds. It is NOT
+a solution: the attractor remains reachable and absorbing, and both
+captures paid the price all the way down. **The honest claim is
+"reduces capture odds", never "prevents capture"; nothing here can ship
+as a default or as scenario semantics on this evidence.**
+
+**Per the pre-registered rule (2-survivor/2-capture split): honest-DoD,
+NO cohort/ change made, the decision goes back to the owner.** The
+delegation was to apply the rule, and the rule's own terms route this
+outcome to an owner decision. Options, with a recommendation:
+
+1. **KL-guard / trust-region tightening during training** (training-code
+   change, not a reward change): both captures show the same signature —
+   a fast early peak, then a policy migration the guard only catches
+   after commitment. A tighter `target_kl` or a KL-triggered rollback to
+   ckpt_best would attack the transition itself. **Recommended next
+   experiment**: it is orthogonal to reward shaping, and the reward-side
+   evidence (idle income vs time price) is now well-characterized.
+2. **Steeper price** (`time_penalty=-0.05+`): more of what worked twice;
+   risks distorting the surviving policies' behavior (seed 12/13 already
+   buy wins in the open) and the dose-response so far says the attractor
+   survives any price the incumbents will tolerate.
+3. **Close the thread as characterized**: document that platoon_hard is
+   unshippable under current training dynamics; keep the two survivors
+   as evidence runs, return after other cycles.
+
+All four arms carry a `--reward` override and can never be baseline
+members; the only path to a shipped platoon_hard remains a decided
+default/semantics change followed by a clean run.
+
+**Archive housekeeping now UNBLOCKED**: the cycle is closed;
+`scripts/archive_runs.py --apply` can file the superseded arms when
+convenient (survivors 12/13 stay resolvable as evidence — archiving is
+a move, never a delete).
+
+**NEXT ACTIONS (in order):**
+1. **Owner decides** among the three options above (or redirects).
+2. If option 1: design the KL-guard/rollback experiment (training-code
+   change → needs a cycle plan; spaces frozen, no env change).
+3. Housekeeping: `scripts/archive_runs.py` dry run, then `--apply`.
+4. Boards were PUBLISH PENDING at last check — `/boards` republishes.
+
+
+## ⟳ Previous handoff (2026-08-20 evening, **confirms SPLIT the letter from the spirit: seed 14 captured, seed 13 survived but missed the gap clause by 0.44 pts; tie-break seed 15 in flight**)
 
 **Both confirm seeds landed, and neither branch of the pre-registered rule
 fired cleanly.** Scored strictly the confirms are 0/2; read for what the
