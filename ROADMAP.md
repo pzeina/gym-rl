@@ -1,6 +1,53 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-20 midday, **the anti-capture cycle is REOPENED by the owner: two penalty-shaping arms in flight, bar pre-registered**)
+## ⟳ Session handoff — resume here (2026-08-20 afternoon, **the anti-capture scout SEPARATED: timecost PASSED the pre-registered bar, lowcompliance was captured; confirm seeds 13/14 in flight**)
+
+**The seed-12 scout separated cleanly, and the separation is the diagnosis
+confirmed.** The D4 attractor lives on idle income vs the time price;
+tripling the price beat it, halving the income did not.
+
+- **`platoon_hard_timecost_v1_seed12` (`time_penalty=-0.03`) PASSES all
+  three pre-registered clauses**: final rolling **0.908** (bar ≥ 0.5),
+  best-final gap **8 pts** (bar < 10), ran-clock-out **0.024** (bar < 0.5).
+  Final policy 0.85 ± 0.16 (N=20, gates timeout/success PASS); oracle at
+  fresh seeds 500–529 (30 eps): **success 0.90**. The first surviving
+  hierarchy `platoon_hard` run — the seven before it all captured.
+  **The characteristic risk did NOT materialize**: human death 0.35
+  (ckpt_best N=20) vs the default arm's peak 0.44 (N=100), report
+  precision 0.71 vs 0.59, human death *fell* over training (0.56 → 0.45).
+  Persisting warts, honestly: closed-on-root **0.000** (that gate still
+  FAILs — the known platoon_hard reporting gap, unrelated to this knob),
+  and the win is bought in the open (probe: 4.7 friendly deaths/ep in the
+  open, 94% of deaths out of cover, cover occupancy 0.18).
+- **`platoon_hard_lowcompliance_v1_seed12` (`compliance_weight=0.05`) was
+  CAPTURED**: peak rolling 0.93 at 36% of the run, guard early-stopped it
+  at 2.06M/3M (31% of budget saved — second live fire, working as
+  calibrated). Oracle on the final policy: **zero threatened steps, root
+  52.6 from OBJ, 100% timeout** — the same full-disengagement attractor.
+  Hierarchy capture without the time price is now **8/8**.
+- **Confirm seeds are in flight** (launched 2026-08-20 ~15:10, ~2h40m
+  each): `platoon_hard_timecost_v1_seed13` and `_seed14`, exact mirrors of
+  the seed-12 arm. The hardened watch (`scripts/night_watch_monitor.sh`)
+  is still armed and will fire on each landing.
+
+**NEXT ACTIONS (in order):**
+1. **Read the confirms when they land**: `scripts/run_report.py <arm>`,
+   judge against the SAME pre-registered bar (final ≥ 0.5, gap < 10,
+   ran-clock-out < 0.5), oracle-probe any survivor
+   (`scripts/oracle_probe.py runs/<arm>/ckpt_best.pt --episodes 30 --seed 500`).
+2. **If both confirm**: the default-change question (`time_penalty`
+   −0.01 → −0.03, platoon-depth anti-capture) goes to the **owner** with
+   the three-seed numbers. All three arms carry a `--reward` override and
+   can never ship as baseline members; the only path to a shipped result
+   is the changed default followed by a clean run.
+3. **If a confirm captures**: the effect is seed-dependent — honest-DoD,
+   document the split, options (KL-guard, training-code change) back to
+   the owner.
+4. Housekeeping still queued: `scripts/archive_runs.py` (superseded
+   squad_screen/platoon_hard arms).
+
+
+## ⟳ Previous handoff (2026-08-20 midday, **the anti-capture cycle is REOPENED by the owner: two penalty-shaping arms in flight, bar pre-registered**)
 
 **Owner instruction ("Rearm and launch!"): the platoon-depth anti-capture
 thread is reopened.** Two single-knob penalty-shaping arms launched as a
@@ -8597,3 +8644,21 @@ deliberately deferred (`docs/vision.md` §2c).
   1.63M/3M with `early_stop.json` (reason=collapse, peak 0.72, patience
   1200) — 46% of budget saved, inside the replay's 22–47% prediction.
   Hierarchy platoon_hard capture is now 7/7 across seeds 12–15.
+- **2026-08-20** — **Anti-capture scout separates: the time price beats the
+  attractor, the income cut does not.** `platoon_hard_timecost_v1_seed12`
+  (`--reward time_penalty=-0.03`, the smallest dose that zeroes the
+  oracle-measured idle trickle) **passed all three pre-registered clauses**:
+  final rolling 0.908, best-final gap 8 pts, ran-clock-out 0.024 — the first
+  surviving hierarchy platoon_hard run after seven captures. Final policy
+  0.85 ± 0.16 (N=20); oracle at fresh seeds 500–529: success 0.90. The
+  pre-registered risk (time pressure buying recklessness) did not appear:
+  human death 0.35 vs the default arm's peak 0.44, report precision 0.71 vs
+  0.59. Still open: closed-on-root 0.000 (gate FAIL, the standing
+  platoon_hard reporting gap) and cover discipline (94% of deaths out of
+  cover). `platoon_hard_lowcompliance_v1_seed12` (`compliance_weight=0.05`)
+  was **captured** — peak 0.93 at 36%, guard early-stop at 2.06M/3M (31%
+  budget saved, second live fire), final policy oracle: zero threatened
+  steps, 100% timeout. Halving the trickle at its source does not prevent
+  capture; pricing idle time does. Confirm seeds 13/14 of the timecost arm
+  launched; a pass sends the `time_penalty` default question to the owner —
+  no override arm can ever ship as baseline.
