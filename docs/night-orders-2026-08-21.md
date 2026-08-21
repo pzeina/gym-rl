@@ -83,3 +83,32 @@ ledger; no action branches on them (they inform the morning table only).
   oracle 0.90 / 0.833. ROADMAP updated, committed `ca5ca85`, pushed.
 - 00:20 archive dry run reviewed — deferred (above). Night orders
   written, committed, pushed.
+- 01:21 final-policy oracle (fresh seeds 600+): rescue14 ckpt_latest
+  success 0.933 (above its ckpt_best 0.90), rescue15 0.833 (equal). Both
+  conversion arms hold at the headline checkpoint. Seed 16 observed
+  mid-dip (rolling 0% at 45%) — rescue expected to fire; live test of
+  the mechanism. Seed 17 healthy (54%).
+- 01:52 both arms slowed ~6x (ETAs 7-9h): owner user-space load (Android
+  emulator 72% CPU, Hearthstone 61%) plus a pre-watch Python (pid 96620,
+  running since 13:09) — none of it mine to kill; trainings will simply
+  take longer. Seed 16 SELF-recovered from its 0% dip without a rescue
+  (no rescues.json; rolling 60% at 49%) — consistent with the guard's
+  recovered-dip calibration; the 700-iter patience correctly spared it.
+  Landings now projected after morning; flat_rescue arm stays gated on a
+  freed slot per orders. Heartbeat stretched to 60 min.
+- 03:05 seed 17 LANDED, PASSES (final 88 / gap 8 / clock-out 0.119,
+  publishable) with the rescue armed but NEVER fired — self-recovered
+  from its dip; the patience spared it correctly. Oracle probe detached.
+  flat_rescue_v1_seed14 launched in the freed slot (generalization test).
+  Seed 16 landing imminently; its rescue fired at 76% (restored from
+  iter 828) and rolling was still 0% at 91% — re-migration watch.
+- 03:20 seed 16 LANDED, FAILS all clauses (final 0.000 / gap 94 /
+  clock-out 1.000). The precise failure mode: rescue 1 fired at 76% and
+  WORKED — the restored policy re-climbed to a 94% peak at 84% (ckpt_best
+  post-dates the rollback) — then a third capture took it in the final
+  decile and only ~470 iters remained, under the 700 rescue-2 needs. Died
+  mid-draw, 2 rescues unused. Not "rescue fails": "this seed re-captures
+  faster than the budget re-draws". Honest-DoD: no more seeds; the
+  morning table reads: rescue-armed 5/6 converged+publishable (12, 13,
+  14, 15, 17 — of which 14/15 needed a rollback, 13* pre-rescue), seed 16
+  captured at budget end. flat_rescue generalization arm running.
