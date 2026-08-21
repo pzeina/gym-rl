@@ -64,6 +64,15 @@ whatever it is, these ride along:
   job 1 (`squad_ctrl_v1_seed12`, tree `0f37e6a`) and jobs 2+ (`1f6d2cd`)
   differ by one `cohort/metrics.py` measurement-only commit — env dynamics
   byte-identical, but the tree hashes are two, and the record should say why.
+  EVIDENCE for the mechanic (2026-08-21 platoon-depth spatial sweep, N=20/arm
+  at provenance): the flat arms win by PILING — stacked 0.840/0.944/0.890
+  across the three seeds (nn 0.45–0.77 cells, 16 agents in a blob, success
+  1.00), versus 0.30–0.57 for every hierarchy arm (masked and nomask); 3-vs-6
+  complete separation, exact p ≈ 0.012. All three flat arms FAIL the new
+  stacked gate; all six hierarchy arms pass. So B3's "flat beats full on
+  success" rests on a tactic AREA FIRE is built to price — rerunning the
+  depth ablation with the mechanic on is the measurement that would settle
+  whether the flat advantage survives dispersion being real.
 
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a
