@@ -1,6 +1,53 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-21 morning, **NIGHT WATCH COMPLETE: priced platoon_hard is 5/6 with the rescue armed; the rescue is a converter, not a cure — it fails at budget end and does not generalize to flat; SHIP QUESTION REFINED, OWNER'S CALL**)
+## ⟳ Session handoff — resume here (2026-08-21, **THE PRICE IS SHIPPED as platoon_hard scenario semantics (owner-decided); the clean baseline candidate `platoon_hard_v5_seed12` is training; rescue stays opt-in; archive applied; boards current**)
+
+**Owner decision executed: "Ship the price as scenario semantics, keep
+rescue opt-in."** Implemented, tested, committed, and the clean run is in
+flight — the anti-capture cycle is CLOSED as shipped.
+
+- **`ScenarioSpec.reward_overrides` (v1.21)**: a scenario may redefine
+  RewardConfig fields as its own semantics. `platoon_hard` sets
+  `time_penalty=-0.03` (evidence: 0/8 survival at the default price, 5/6
+  at −0.03 with the rescue armed). Envs built without an explicit config
+  default to the spec's economics; a checkpoint's recorded prices still
+  win in evaluate; CLI `--reward` layers on top (experiments stay
+  expressible); spec keys validate like CLI keys. nomask/flat inherit the
+  price (single-variable ablations). Commit `cde45ab`, tests
+  `test_scenario_economics.py` (incl. a registry guard: any NEW scenario
+  price must land in that test) + the updated ablation invariant.
+- **Baseline purity holds by construction**: `platoon_hard_v5_seed12`
+  (launched 2026-08-21, 3M steps, `--rescue-max 3`, NO --reward flags)
+  records `time_penalty: -0.03` with `reward_overrides: []` — verified in
+  its economics.json. The rescue flag is a training knob like
+  collapse-patience, recorded in config.json; the rescue itself remains
+  default-off everywhere.
+- **Housekeeping done**: 44 superseded runs archived (`e92e751`, suite
+  green, everything resolves via find_run); all three boards republished
+  and stamped current.
+
+**WHEN `platoon_hard_v5_seed12` LANDS (~3h from launch, watch note:
+rolling may dip mid-run — judge only the landing):**
+1. `scripts/run_report.py platoon_hard_v5_seed12` + rescues.json. Bar:
+   the same three clauses (final ≥ 0.5, gap < 10, clock-out < 0.5).
+2. PASS → oracle-probe, then `/publish` (drafts the README row and
+   ROADMAP entry for approval; N=100 eval — detach it). This is the
+   first shippable platoon_hard candidate ever.
+3. MISS → honest-DoD: one diagnosed adjustment (the four-seed history
+   says a capture at seed 12 would be the first under the shipped
+   config), document, owner.
+
+**Open threads for future cycles (all owner-gated design work):**
+- platoon_hard closed-on-root gate still FAILs everywhere (the known
+  reporting gap — orthogonal to this cycle).
+- Rescue refinements if it is ever to earn a default: KL floor ~0.01
+  (the 0.005 second rescue never re-climbed), post-rescue patience
+  shrink (seed 16 died 230 iters short), KL-anchor to ckpt_best.
+- platoon_hard_flat remains unsolved by price (untried) and rescue
+  (tried, delayed, lost).
+
+
+## ⟳ Previous handoff (2026-08-21 morning, **NIGHT WATCH COMPLETE: priced platoon_hard is 5/6 with the rescue armed; the rescue is a converter, not a cure — it fails at budget end and does not generalize to flat; SHIP QUESTION REFINED, OWNER'S CALL**)
 
 **The night ran the full pre-registered queue** (ledger with timestamps in
 `docs/night-orders-2026-08-21.md`; no cohort/ change, no design decision).
