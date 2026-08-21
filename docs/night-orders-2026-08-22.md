@@ -100,3 +100,9 @@ monitor and the loop.
   at the job tmp; note for future watches: probe stdout in `logs/` is
   deny-listed even for grep — write measurement tables elsewhere, keep only
   the `-DONE` sentinel in `logs/`.
+- 01:36 — `squad_voice_liaison_v1_seed12` lands (job 6/18), committed.
+  Facts: final 97% / best-window 100%, converged, PUBLISHABLE bar met;
+  spatial normal (stacked 0.283/0.289, sound ~0.70, nn ~1.9 — passes the
+  pending gate). Flags for the campaign's read, no verdict drawn: root is
+  MUTE (closed-on-root 0.000 both windows — the shape the mute gate
+  refuses) and root death 0.250 at ckpt_best behavior.
