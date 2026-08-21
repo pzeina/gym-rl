@@ -1190,7 +1190,14 @@ def test_the_shipped_record_holds_no_draw_outside_the_declared_blocks():
     for scenario, member in manifest["runs"].items():
         facts = baseline.seed_spread_facts(manifest, scenario, member,
                                            digest=lambda p: None)
-        assert facts is not None, f"{scenario}: no spread and an empty scan — unexpected"
+        if facts is None:
+            # The scan ran and the record holds no other same-config draw —
+            # true of `platoon_hard` at v1.22, whose only clean-config run is
+            # the member itself (its bit-identical override twin is a different
+            # recorded experiment, disclosed by the reproductions section).
+            # The eight v1.21 members all have draws, so they still exercise
+            # the branch below.
+            continue
         assert not facts["undeclared"], (
             f"{scenario}: same-config draws in neither seed_search nor seed_spread: "
             f"{facts['undeclared']} — declare them in runs/BASELINE.json"

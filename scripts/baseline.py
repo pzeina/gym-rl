@@ -81,6 +81,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -120,7 +121,7 @@ def artifact_digest(path: Path) -> str | None:
         return None
 
 
-# The scenarios a deployable baseline must cover: the eight that are doctrine
+# The scenarios a deployable baseline must cover: the nine that are doctrine
 # rather than instrumentation.
 DOCTRINE_SCENARIOS = [
     "fireteam",
@@ -131,6 +132,7 @@ DOCTRINE_SCENARIOS = [
     "patrol_brique",
     "defend_brique",
     "platoon",
+    "platoon_hard",
 ]
 
 # The rest, each with the reason it is not a baseline member. These are arms of
@@ -145,37 +147,13 @@ NOT_BASELINE = {
     "squad_flat": "B3 ablation arm — no chain of command at all; measures, not ships",
     "platoon_nomask": "B3 ablation arm at platoon depth — measures, not ships",
     "platoon_flat": "B3 ablation arm at platoon depth — measures, not ships",
-    "platoon_hard": (
-        "harder-OpFor follow-up scenario (14-defender garrison) — an experiment "
-        "axis until the owner decides it ships"
-    ),
+    # platoon_hard left this dict 2026-08-21: the owner decided it ships
+    # (platoon_hard_v5_seed12, with its root-report FAIL disclosed — see the
+    # manifest's `exceptions` block and the ROADMAP entry of that date).
     "platoon_hard_nomask": "B3 ablation arm of platoon_hard — measures, not ships",
     "platoon_hard_flat": "B3 ablation arm of platoon_hard — measures, not ships",
     "squad_short_vision": "information-asymmetry probe, not a shipping configuration",
     "squad_screen_core": "observation-width bisect arm, superseded by the bisect's answer",
-    # degraded communications (docs/degraded-communications.md §9): the matched
-    # voice-only experiment — arms measured against the shipped squad, never
-    # shipped in its place until the owner decides the degraded mode ships
-    "squad_voice_direct": (
-        "degraded-communications direct arm (voice only, tactical acoustics) — "
-        "an experiment arm of squad until the owner decides it ships"
-    ),
-    "squad_voice_no_acoustic_ablation": (
-        "degraded-communications ablation (voice only, sound off) — isolates enemy "
-        "hearing; not an operational mode, never ships"
-    ),
-    "squad_voice_liaison": (
-        "degraded-communications final arm (voice only, acoustics, liaison) — an "
-        "experiment arm of squad until the owner decides the degraded mode ships"
-    ),
-    "squad_global_acoustic_control": (
-        "degraded-communications control (global radio, acoustics on) — measures "
-        "sound exposure against the shipped squad; not a shipping configuration"
-    ),
-    "squad_range_control": (
-        "degraded-communications control (range radio, acoustics on) — the "
-        "range-radio comparison arm; not a shipping configuration"
-    ),
 }
 
 
@@ -184,6 +162,66 @@ def load() -> dict:
         return json.loads(MANIFEST.read_text())
     except (OSError, json.JSONDecodeError):
         return {"version": None, "commit": None, "runs": {}}
+
+
+def exceptions(manifest: dict) -> dict[str, dict]:
+    """The manifest's owner-decided exceptions, validated or the audit fails.
+
+    An exception is a member shipping with a named problem the owner looked at
+    and accepted — the opposite of the quiet flag the pre-v1.19 fleet carried
+    ("one published with a flag saying it missed the bar"). What made that flag
+    poisonous was not its existence but its silence: nothing rendered it, no
+    machinery re-checked it, and the fleet's OK line claimed a cleanliness the
+    flag contradicted. So an exception here is loud by construction: the audit
+    prints it every run, the README's generated table renders the FAIL it
+    waives, the OK line is qualified by it, and each waiver is re-verified —
+    a waiver whose problem has gone away is itself a failure (dead waivers are
+    how "disclosed" rots back into "assumed").
+
+    Schema, per member scenario::
+
+        "exceptions": {
+          "<scenario>": {
+            "decided": "YYYY-MM-DD",
+            "by": "owner",
+            "member_tree": "<full cohort/ tree sha the member trained on>",
+            "waives": {
+              "gate:<gate_name>":        "<the reason, as a claim>",
+              "provenance:cohort_tree":  "<why this member's tree may differ>"
+            }
+          }
+        }
+
+    ``member_tree`` is required whenever ``provenance:cohort_tree`` is waived:
+    the waiver relaxes "same tree as the fleet", never "a known tree" — an
+    excepted member whose tree MOVES is drift, not an exception.
+    """
+    excs = manifest.get("exceptions") or {}
+    problems = []
+    for scenario, exc in excs.items():
+        where = f"exceptions[{scenario}]"
+        if scenario not in (manifest.get("runs") or {}):
+            problems.append(f"{where}: names a scenario with no member")
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(exc.get("decided") or "")):
+            problems.append(f"{where}: no decision date")
+        if not exc.get("by"):
+            problems.append(f"{where}: no decider")
+        waives = exc.get("waives") or {}
+        if not waives:
+            problems.append(f"{where}: waives nothing — remove it")
+        for key, reason in waives.items():
+            if not (key.startswith("gate:") or key == "provenance:cohort_tree"):
+                problems.append(f"{where}: unknown waiver kind {key!r}")
+            if len(str(reason)) < 40:
+                problems.append(f"{where}: {key} has a placeholder, not a reason")
+        if "provenance:cohort_tree" in waives and not re.fullmatch(
+                r"[0-9a-f]{40}", str(exc.get("member_tree") or "")):
+            problems.append(
+                f"{where}: waives the tree without pinning member_tree — "
+                "an unpinned tree waiver cannot detect drift")
+    if problems:
+        raise SystemExit("malformed exceptions block:\n  " + "\n  ".join(problems))
+    return excs
 
 
 def cohort_tree(commit: str | None) -> str | None:
@@ -289,7 +327,8 @@ def _seal_drift(run: str, sealed: dict | None) -> list[str]:
     return problems
 
 
-def _run_facts(run: str, sealed: dict | None = None) -> dict:
+def _run_facts(run: str, sealed: dict | None = None,
+               waived_gates: tuple[str, ...] = ()) -> dict:
     """Everything the audit needs about one member, with absences named."""
     d = run_dir(run)
     facts: dict = {"run": run, "exists": d.is_dir(), "problems": []}
@@ -347,6 +386,16 @@ def _run_facts(run: str, sealed: dict | None = None) -> dict:
         facts["problems"].append(f"reward overrides: {', '.join(facts['overrides'])}")
     if facts.get("episodes", 0) < MIN_EPISODES:
         facts["problems"].append(f"evaluated at N={facts.get('episodes', 0)}, needs {MIN_EPISODES}")
+    # An owner-decided exception moves a named gate FAIL from "blocks the
+    # fleet" to "disclosed on every surface" — and is itself re-verified:
+    # a waiver whose gate now passes is a dead waiver, and a dead waiver is
+    # how a disclosure rots back into an assumption.
+    facts["waived_gates"] = [g for g in facts.get("gates_failed", []) if g in waived_gates]
+    facts["gates_failed"] = [g for g in facts.get("gates_failed", []) if g not in waived_gates]
+    for g in waived_gates:
+        if g not in facts["waived_gates"]:
+            facts["problems"].append(
+                f"waiver for gate {g} but the gate does not fail — remove the dead waiver")
     if facts.get("gates_failed"):
         facts["problems"].append(f"gate failed: {', '.join(facts['gates_failed'])}")
     # Still a problem for a member — "every gate green" cannot be claimed off a
@@ -1014,6 +1063,7 @@ def _policy_reproductions(manifest: dict) -> list[tuple[str, str, list[str]]]:
 def audit(check_loadable: bool = True) -> int:
     manifest = load()
     members = manifest.get("runs", {})
+    excs = exceptions(manifest)
     where = MANIFEST if not MANIFEST.is_relative_to(ROOT) else MANIFEST.relative_to(ROOT)
     print(f"baseline {manifest.get('version') or '(unversioned)'} — "
           f"{len(members)} members, manifest {where}\n")
@@ -1033,7 +1083,10 @@ def audit(check_loadable: bool = True) -> int:
         if not run:
             rows.append((scenario, "—", None, "MISSING"))
             continue
-        f = _run_facts(run, manifest.get("artifacts"))
+        exc = excs.get(scenario) or {}
+        waived = tuple(k.removeprefix("gate:")
+                       for k in (exc.get("waives") or {}) if k.startswith("gate:"))
+        f = _run_facts(run, manifest.get("artifacts"), waived_gates=waived)
         if check_loadable and f["exists"] and not _loadable(run):
             f["problems"].append("checkpoint does not load under the current spaces")
         if f["exists"]:
@@ -1043,7 +1096,10 @@ def audit(check_loadable: bool = True) -> int:
                     f"{', '.join(absent)} is not committed — a reader can see this "
                     "run's headline and cannot re-derive it"
                 )
-        rows.append((scenario, run, f, "OK" if not f["problems"] else "FAIL"))
+        status = "OK" if not f["problems"] else "FAIL"
+        if status == "OK" and (f.get("waived_gates") or "provenance:cohort_tree" in (exc.get("waives") or {})):
+            status = "OK*"
+        rows.append((scenario, run, f, status))
         for p in f["problems"]:
             failures.append(f"{run}: {p}")
 
@@ -1067,7 +1123,22 @@ def audit(check_loadable: bool = True) -> int:
             sp, member, (manifest.get("seed_search") or {}).get(scenario) or []))
 
     commits = {f["commit"] for _, _, f, _ in rows if f and f.get("commit")}
-    trees = {f["cohort_tree"] for _, _, f, _ in rows if f and f.get("cohort_tree")}
+    # A member with a tree waiver is held to its PINNED tree, not the fleet's:
+    # the waiver relaxes "same environment as the fleet", never "a known
+    # environment" — an excepted member whose tree moves is drift, not an
+    # exception. Everyone else must still resolve to one tree.
+    tree_waived: dict[str, str] = {}
+    for scenario, run, f, _ in rows:
+        exc = excs.get(scenario) or {}
+        if f and "provenance:cohort_tree" in (exc.get("waives") or {}):
+            pin = exc.get("member_tree")
+            tree_waived[run] = pin
+            if f.get("cohort_tree") and f["cohort_tree"] != pin:
+                failures.append(
+                    f"{run}: tree waiver pins {str(pin)[:8]} but the run resolves to "
+                    f"{f['cohort_tree'][:8]} — the excepted member's environment moved")
+    trees = {f["cohort_tree"] for _, run, f, _ in rows
+             if f and f.get("cohort_tree") and run not in tree_waived}
     unknown = [run for _, run, f, _ in rows
                if f and f.get("commit") and not f.get("cohort_tree")]
     if len(trees) > 1:
@@ -1141,16 +1212,37 @@ def audit(check_loadable: bool = True) -> int:
     print()
     if trees:
         verdict = "one environment" if len(trees) == 1 else "NOT one environment"
-        print(f"cohort/ tree: {'  '.join(sorted(t[:8] for t in trees))}   ({verdict})")
+        extra = "".join(f"  +{str(t)[:8]}*" for t in sorted(set(tree_waived.values()) - trees))
+        print(f"cohort/ tree: {'  '.join(sorted(t[:8] for t in trees))}{extra}   ({verdict}"
+              + (", * = disclosed exception)" if extra else ")"))
     if commits:
         # Printed, never gated on. Tooling commits between two launches are
         # routine and say nothing about what the runs trained against.
         note = "" if len(commits) == 1 else "   (tooling-only differences are expected)"
         print(f"commits:      {'  '.join(sorted(c[:8] for c in commits))}{note}")
+
+    # The exceptions are printed EVERY audit, pass or fail: a disclosure that
+    # only appears when something else is wrong is not a disclosure.
+    if excs:
+        print("\ndisclosed exceptions — owner-decided; the unqualified fleet "
+              "claim does NOT cover these:")
+        for scenario, exc in sorted(excs.items()):
+            run = members.get(scenario, "—")
+            print(f"  {scenario} ({run}) — decided {exc.get('decided')} by {exc.get('by')}:")
+            for key, reason in sorted((exc.get("waives") or {}).items()):
+                print(f"    · {key}: {reason}")
+
     if not failures:
-        print("\nBASELINE OK — every member on the same cohort/ tree, no overrides, "
-              "N>=100 on both published evaluations, unchanged since the seal, "
-              "gates green, stable, loadable, committed, every win announced.")
+        if excs:
+            names = ", ".join(sorted(excs))
+            print(f"\nBASELINE OK with {len(excs)} disclosed exception(s) ({names}) — "
+                  "every OTHER check green on every member: no overrides, N>=100 on "
+                  "both published evaluations, unchanged since the seal, stable, "
+                  "loadable, committed, every win announced.")
+        else:
+            print("\nBASELINE OK — every member on the same cohort/ tree, no overrides, "
+                  "N>=100 on both published evaluations, unchanged since the seal, "
+                  "gates green, stable, loadable, committed, every win announced.")
         return 0
     print(f"\nBASELINE NOT READY — {len(failures)} problem(s):")
     for f in failures:
@@ -1174,6 +1266,15 @@ def seal(version: str | None = None) -> int:
     says so out loud, which is the whole point of a seal.
     """
     manifest = load()
+    excs = exceptions(manifest)
+    # A member with a tree waiver seals against its own pinned tree, not the
+    # fleet's: the seal must record the split exactly as disclosed, and must
+    # refuse to stamp a pin that no longer matches the run — sealing is where
+    # an exception would otherwise quietly absorb drift.
+    tree_waived = {manifest["runs"][sc]: exc.get("member_tree")
+                   for sc, exc in excs.items()
+                   if sc in manifest.get("runs", {})
+                   and "provenance:cohort_tree" in (exc.get("waives") or {})}
     commits, trees = set(), set()
     for run in manifest.get("runs", {}).values():
         econ = run_dir(run) / "economics.json"
@@ -1181,7 +1282,14 @@ def seal(version: str | None = None) -> int:
             c = json.loads(econ.read_text()).get("git_commit")
             if c:
                 commits.add(c)
-                trees.add(cohort_tree(c))
+                t = cohort_tree(c)
+                if run in tree_waived:
+                    if t != tree_waived[run]:
+                        print(f"refusing to seal: {run} waives the fleet tree but resolves "
+                              f"to {str(t)[:8]}, not its pinned {str(tree_waived[run])[:8]}")
+                        return 1
+                else:
+                    trees.add(t)
     if len(trees) != 1 or None in trees:
         print(f"refusing to seal: {len(trees)} distinct cohort/ tree(s) across the fleet")
         return 1

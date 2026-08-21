@@ -1,6 +1,24 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-21, **THE PRICE IS SHIPPED as platoon_hard scenario semantics (owner-decided); the clean baseline candidate `platoon_hard_v5_seed12` is training; rescue stays opt-in; archive applied; boards current**)
+## ⟳ Session handoff — resume here (2026-08-21 evening, **platoon_hard IS SHIPPED: v1.22, nine scenarios, `platoon_hard_v5_seed12` a member with its root-report FAIL and its one-commit-ahead tree DISCLOSED via the manifest's new `exceptions` block (owner-decided); flat confirm seeds + acoustics breaking cycle both in flight**)
+
+**Owner decision executed (2026-08-21 evening): "ship v5_seed12 with the
+FAIL disclosed."** Done as v1.22 — `platoon_hard` joined
+`DOCTRINE_SCENARIOS`, the manifest gained a validated, re-verified
+`exceptions` mechanism (dead waivers fail, pinned trees catch drift),
+the README renders the FAIL bold with the decision beside it, the audit
+prints both waivers every run, sealed v1.22. Full entry in the progress
+log (commit `1b5b0c2`). **Still open for future cycles**: a
+deep-hierarchy claim mechanism that would let a three-echelon CO earn
+the gate honestly (the waiver's stated exit), and the flat confirm seeds
+13/14 (landing ~16:45 — their landing evals will crash on the post-break
+tree; recover via a worktree at `58732ae`). NOTE: the acoustics breaking
+cycle (concurrent session) will retrain the whole fleet; when that fleet
+lands, platoon_hard's successor member should be trained WITH it on one
+tree, which retires the provenance waiver — the reporting waiver stays
+until the claim mechanism exists.
+
+## ⟳ Previous handoff (2026-08-21 midday, **THE PRICE IS SHIPPED as platoon_hard scenario semantics (owner-decided); the clean baseline candidate `platoon_hard_v5_seed12` is training; rescue stays opt-in; archive applied; boards current**)
 
 **Owner decision executed: "Ship the price as scenario semantics, keep
 rescue opt-in."** Implemented, tested, committed, and the clean run is in
@@ -9302,3 +9320,36 @@ deliberately deferred (`docs/vision.md` §2c).
   `squad_voice_liaison`; scout seed then 12/13/14, N=100 at seeds 500–599);
   Phase D (platoon / patrol_brique mirrors). The fleet's own retrain on the
   new spaces is the separate, mandatory consequence of the break.
+- **2026-08-21** — **OWNER DECISION EXECUTED: platoon_hard SHIPS as the
+  ninth doctrine scenario — `platoon_hard_v5_seed12`, with its FAIL
+  disclosed (v1.22).** The mechanism is new and deliberately loud: the
+  manifest grew a first-class `exceptions` block (owner, decision date,
+  per-problem reasons), and an exception is re-verified machinery, not a
+  flag — a waived gate that stops failing becomes a "dead waiver" audit
+  failure, and the excepted member's cohort/ tree is PINNED so the waiver
+  can never absorb drift. Two waivers ship: (1)
+  `gate:closed_on_root_report_rate` — 0.000 at N=100 both checkpoints,
+  the diagnosed hierarchy-at-depth mute root (claims reachable and
+  declined at rdb 1.0 AND 3.0; flat reports 0.83 under identical
+  economics); (2) `provenance:cohort_tree` — the member trained one
+  commit ahead of the fleet tree, on `cde45ab8`, which IS this scenario's
+  shipped semantics; pinned at `079f78f0`. Surfaces: `baseline.py` prints
+  both waivers on every audit and qualifies its OK line ("BASELINE OK
+  with 1 disclosed exception"); the README row renders
+  `**FAIL: closed_on_root_report_rate** (shipped by owner decision
+  2026-08-21)` — bold, never softened — and the footer states the 8-of-9
+  tree split; the gallery becomes "the nine scenarios" (count-driven,
+  no more hardcoded eight). Sealed v1.22 (18 evaluation digests).
+  Disclosed by the audit, not gated: the member is bit-identical to
+  `platoon_hard_timecost_v1_seed12` — deterministic training re-executed
+  the same policy under clean provenance, which was the point of the run.
+  Tests: `tests/test_baseline_exceptions.py` (8 tests: placeholder
+  reasons refused, unpinned tree waivers refused, dead waivers fail,
+  unwaived FAILs still fail, README renders the FAIL, the pin is
+  live-checked against the run); the spread-completeness pin in
+  `test_baseline_manifest.py` now states why a scan can be legitimately
+  empty (platoon_hard holds no other clean-config draw). Known and
+  accepted: the fleet's loadable check fails fleet-wide under the
+  concurrent acoustics working tree (OBS_DIM 220→328) — that is the
+  breaking cycle's retrain to resolve, and the seal/audit here ran with
+  the loadable check off, saying so.

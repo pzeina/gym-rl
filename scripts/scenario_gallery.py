@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Render the eight doctrine scenarios as what they actually are: radio traffic.
+"""Render the doctrine scenarios as what they actually are: radio traffic.
 
     scripts/scenario_gallery.py                  # → runs/scenario_gallery.html
     scripts/scenario_gallery.py --out /tmp/g.html
@@ -198,21 +198,26 @@ def _scenario(scenario: str, run: str, rows: dict) -> str:
     )
 
 
+_COUNT_WORDS = {7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven", 12: "twelve"}
+
+
+def _count_word(n: int) -> str:
+    return _COUNT_WORDS.get(n, str(n))
+
+
 def render(rows: list[dict], *, now: datetime | None = None) -> str:
     stamp = (now or datetime.now()).strftime("%Y-%m-%d %H:%M")
     by_run = {r["run"]: r for r in rows}
     members = baseline.load().get("runs", {})
-    cards = "".join(
-        _scenario(scenario, members[scenario], by_run)
-        for scenario in baseline.DOCTRINE_SCENARIOS
-        if scenario in members
-    )
-    return f"""<title>cohort · the eight scenarios</title>
+    shown = [s for s in baseline.DOCTRINE_SCENARIOS if s in members]
+    count = _count_word(len(shown))
+    cards = "".join(_scenario(scenario, members[scenario], by_run) for scenario in shown)
+    return f"""<title>cohort · the {count} scenarios</title>
 <style>{BASE_CSS}{EXTRA_CSS}</style>
 <div class="sheet">
   <header class="masthead">
     <div class="eyebrow">cohort — chain of command, multi-agent RL</div>
-    <h1>Eight scenarios, as radio traffic</h1>
+    <h1>{count.capitalize()} scenarios, as radio traffic</h1>
     <p class="standfirst">One evaluated episode from each member of the baseline fleet,
       read off the net. A success rate cannot show that the OPORD came down, that it was
       acknowledged, or that HQ closed the operation — the transcript can. What you will

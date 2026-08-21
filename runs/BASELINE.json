@@ -1,7 +1,7 @@
 {
-  "version": "v1.21",
+  "version": "v1.22",
   "commit": null,
-  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults, seed 12 except where a declared seed_search chose the member. Sealed by scripts/baseline.py --seal once the fleet lands; audited by scripts/baseline.py. seed_search declares the seeds a member was CHOSEN from; seed_spread declares every other same-config draw the record holds, live or archived, cross-tree included — audited for completeness and deduped by model-tensor digest, so a bit-identical re-execution counts once (owner decision 2026-08-18, refs assurance #63).",
+  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults, seed 12 except where a declared seed_search chose the member. Sealed by scripts/baseline.py --seal once the fleet lands; audited by scripts/baseline.py. seed_search declares the seeds a member was CHOSEN from; seed_spread declares every other same-config draw the record holds, live or archived, cross-tree included \u2014 audited for completeness and deduped by model-tensor digest, so a bit-identical re-execution counts once (owner decision 2026-08-18, refs assurance #63).",
   "runs": {
     "fireteam": "fireteam_v12",
     "fireteam_defend": "fireteam_defend_v23",
@@ -10,7 +10,8 @@
     "squad_screen": "squad_screen_v14",
     "patrol_brique": "patrol_brique_v41_seed14",
     "defend_brique": "defend_brique_v17",
-    "platoon": "platoon_v8"
+    "platoon": "platoon_v8",
+    "platoon_hard": "platoon_hard_v5_seed12"
   },
   "seed_search": {
     "patrol_brique": [
@@ -102,18 +103,19 @@
     ]
   },
   "referenced_history": {
-    "squad_nomask_v1": "B3 ablation arm: orders kept, doctrine masks removed. CORRECTED 2026-08-17: trained 2026-08-11 at 7f9f7a6, whose cohort/ tree is 5f848fb6 (v1.19 era, before the v1.20 succession fix) — NOT the sealed v1.21 tree, and squad_v10, not squad_v27, is its same-tree full arm. A read against squad_v27 puts the succession fix inside the ablation delta. Same-tree replacements train in scripts/campaigns/measurement_ablation_and_spread.jobs (squad_nomask_v2..v4, seeds 12/13/14).",
-    "squad_flat_v1": "B3 ablation arm: no orders at all, every agent gets the OPORD direct. CORRECTED 2026-08-17: same provenance as squad_nomask_v1 — tree 5f848fb6, v1.19 era, not the sealed tree. Same-tree replacements: squad_flat_v2..v4 in the 2026-08-17 measurement campaign.",
+    "squad_nomask_v1": "B3 ablation arm: orders kept, doctrine masks removed. CORRECTED 2026-08-17: trained 2026-08-11 at 7f9f7a6, whose cohort/ tree is 5f848fb6 (v1.19 era, before the v1.20 succession fix) \u2014 NOT the sealed v1.21 tree, and squad_v10, not squad_v27, is its same-tree full arm. A read against squad_v27 puts the succession fix inside the ablation delta. Same-tree replacements train in scripts/campaigns/measurement_ablation_and_spread.jobs (squad_nomask_v2..v4, seeds 12/13/14).",
+    "squad_flat_v1": "B3 ablation arm: no orders at all, every agent gets the OPORD direct. CORRECTED 2026-08-17: same provenance as squad_nomask_v1 \u2014 tree 5f848fb6, v1.19 era, not the sealed tree. Same-tree replacements: squad_flat_v2..v4 in the 2026-08-17 measurement campaign.",
     "squad_abl_full_s3": "B3 2026-08-06, Box(137): the three-seed original. Kept because one seed per arm is what its v1.19 replication has, and the older result is the stronger evidence on the axes it measured.",
-    "squad_abl_flat_s3": "B3 2026-08-06, Box(137): the flat arm of that original — the 2.2x wipe rate the robustness claim rests on.",
-    "squad_v10b": "Confirmation seed (13) for the flagship squad scenario. squad_v10 published at 0.92 ± 0.05 against squad_v8's 0.98 ± 0.03 and squad_v9's 0.97 ± 0.03 — overlapping intervals, Fisher p = 0.10 and 0.21, so not a difference by this repo's own rule, but at the low end of the band with root death 0.30 vs 0.23/0.18 (p = 0.34 / 0.068). One seed cannot say whether that is the scenario or the draw; two can bound it. The manifest member stays seed 12 either way, because it is also the ablation's control arm and the three arms must share a seed.",
-    "squad_v11": "Price arm, done_false=-2.0, single-variable against squad_v10 (same tree, seed, steps). CONFIRMED the mechanism: root claims 178 -> 0, give-back -7pt -> +2pt, messages/ep 101 -> 78, distance from objective under threat 11.21 -> 9.53. REJECTED as a fix: root-closed 84% -> 0%, so the price does not repair the DONE channel, it closes it — the exact failure rewards.py warns about. Final success 0.92 -> 0.96 is NOT significant (Fisher p = 0.37; pooled p = 0.076).",
+    "squad_abl_flat_s3": "B3 2026-08-06, Box(137): the flat arm of that original \u2014 the 2.2x wipe rate the robustness claim rests on.",
+    "squad_v10b": "Confirmation seed (13) for the flagship squad scenario. squad_v10 published at 0.92 \u00b1 0.05 against squad_v8's 0.98 \u00b1 0.03 and squad_v9's 0.97 \u00b1 0.03 \u2014 overlapping intervals, Fisher p = 0.10 and 0.21, so not a difference by this repo's own rule, but at the low end of the band with root death 0.30 vs 0.23/0.18 (p = 0.34 / 0.068). One seed cannot say whether that is the scenario or the draw; two can bound it. The manifest member stays seed 12 either way, because it is also the ablation's control arm and the three arms must share a seed.",
+    "squad_v11": "Price arm, done_false=-2.0, single-variable against squad_v10 (same tree, seed, steps). CONFIRMED the mechanism: root claims 178 -> 0, give-back -7pt -> +2pt, messages/ep 101 -> 78, distance from objective under threat 11.21 -> 9.53. REJECTED as a fix: root-closed 84% -> 0%, so the price does not repair the DONE channel, it closes it \u2014 the exact failure rewards.py warns about. Final success 0.92 -> 0.96 is NOT significant (Fisher p = 0.37; pooled p = 0.076).",
     "squad_v12": "Price arm, root_done_bonus_first_claim_only=true at the shipped done_false=-0.5. The lever squad_v11 argues for: at squad_v10's own claim precision of 0.433 it leaves the FIRST truthful claim at EV +1.014 and drops the second and later to -0.284, so spam stops paying without the honest report going -EV. Single-variable against squad_v10."
   },
   "cohort_tree": "becc3ec433db1d61e7fc2789a32dae0306532c01",
   "commits": [
     "1515e79cc0fbc90a1afd4fdfa109d916776e0355",
-    "3a32d3e8dfe1ce0d72428ac147bdafa9fbf0105d"
+    "3a32d3e8dfe1ce0d72428ac147bdafa9fbf0105d",
+    "cde45ab8121e3072eae151e16500b65cebc10dbf"
   ],
   "artifacts": {
     "fireteam_v12": {
@@ -147,6 +149,21 @@
     "platoon_v8": {
       "behavior_final.json": "fb4677604a23cb4df984a1d83ccd54e8b82df81122fabddbec944bcc710236a8",
       "behavior.json": "7c1b39bed3dc27a352a1e346744ed80b8d70ff3dac9ca5eea930d23fa1a4b70e"
+    },
+    "platoon_hard_v5_seed12": {
+      "behavior_final.json": "ba3fc51e656d53c6c51a975b5c6e280a069f1250b56f422472677c89a523db74",
+      "behavior.json": "8ccdebc34bb9e767eb09b9b5fbdc2cfa62a7fa4c38d201243d3c4ae645a4dd80"
+    }
+  },
+  "exceptions": {
+    "platoon_hard": {
+      "decided": "2026-08-21",
+      "by": "owner",
+      "member_tree": "079f78f0e36087396f6bd0a7037b5ff5d3707ccd",
+      "waives": {
+        "gate:closed_on_root_report_rate": "0.000 at N=100, both checkpoints - the diagnosed mute-root cost of a three-echelon hierarchy, not a policy defect this member could have avoided: truthful claims are reachable (~9 golden steps/ep, oracle-forced claims confirm at 0.977) and declined at root_done_bonus 1.0 AND 3.0, while the flat ablation under identical economics reports at 0.83. Repricing is measured dead (ROADMAP 2026-08-21); shipped with the FAIL visible on every surface until a deep-hierarchy claim mechanism exists.",
+        "provenance:cohort_tree": "trained one commit ahead of the fleet tree (cde45ab8, which IS this scenario's shipped semantics: the idle-time price as ScenarioSpec.reward_overrides). No other member's environment moved; retraining the fleet onto this tree was mooted the same day by the acoustics spaces break. Pinned so any further movement is drift."
+      }
     }
   }
 }
