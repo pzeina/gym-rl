@@ -120,8 +120,13 @@ def main() -> int:
                 print(f"{run:<26} {ckpt_name.removeprefix('ckpt_').removesuffix('.pt'):<7} "
                       f"missing checkpoint")
                 continue
-            r = probe_checkpoint(path, args.episodes, args.seed)
             label = ckpt_name.removeprefix("ckpt_").removesuffix(".pt")
+            try:
+                r = probe_checkpoint(path, args.episodes, args.seed)
+            except Exception as e:  # an obs-layout change orphans old checkpoints
+                reason = str(e).splitlines()[0][:60] if str(e) else type(e).__name__
+                print(f"{run:<26} {label:<7} cannot replay on current tree: {reason}")
+                continue
             print(f"{run:<26} {label:<7} {r['no_close']:>8.3f} {r['unseen']:>8.3f} "
                   f"{r['stacked']:>8.3f} {r['sound']:>6.3f} {r['nn_dist']:>7.2f} "
                   f"{r['agent_steps']:>11,} {r['success']:>7.2f}")
