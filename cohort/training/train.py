@@ -821,6 +821,9 @@ def _spec_economics(scenario: str) -> dict:
         "done_cooldown", "order_cooldown", "assault_h_hour", "defend_horizon",
         "sitrep_cadence",
         "ablation", "opfor_mode", "comm_model", "n_enemies",
+        # degraded communications (§8 provenance): the run must say which
+        # communications/acoustic regime produced it
+        "sound_model", "voice_range", "comm_range",
     )
     return {k: getattr(spec, k, None) for k in keys}
 
@@ -1015,6 +1018,7 @@ def main() -> None:
     # nothing reachable from the snapshot may be read fresh off disk later.
     # test_import_snapshot.py computes that closure and fails if it is open.
     import cohort.core  # for the closure below, not for a name used here
+    import cohort.core.acoustics  # deferred by cohort.config (briefing)
     import cohort.core.language  # deferred by cohort.config
     import cohort.core.oracle  # deferred by CohortEnv.oracle()
     import cohort.metrics  # imported for the snapshot, not for a name used here

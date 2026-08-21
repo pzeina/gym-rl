@@ -65,6 +65,8 @@ def _one_of_every_act() -> dict[str, tuple[str, str]]:
         "format_sync_propose": (lang.format_sync_propose("RFN1", ["RFN2"]), "order"),
         "format_sync_go": (lang.format_sync_go("RFN1"), "order"),
         "format_contact": (lang.format_contact("SL1", "TL2", 3, (12, 7)), "rep"),
+        "format_acoustic_contact": (
+            lang.format_acoustic_contact("SL1", "TL2", 0, 6, 1, 12), "rep"),
         "format_sitrep": (
             lang.format_sitrep("SL1", "TL2", 90, 24, (12, 7), in_cover=True), "rep"),
         "format_done": (lang.format_done("SL1", "TL2", MissionType.OBSERVE, "ALPHA"), "close"),

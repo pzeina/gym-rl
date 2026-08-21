@@ -340,6 +340,60 @@ def parse_sitrep(text: str) -> dict | None:
     }
 
 
+#: Spoken vocabulary of the ACOUSTIC CONTACT report (§3.6.3): sound kinds,
+#: eight-way bearings (sector 0 = EAST, clockwise on a y-south grid) and
+#: distance bands. Indexes match cohort.core.acoustics' encodings.
+SOUND_KIND_WORDS: tuple[str, ...] = ("MOVEMENT", "VOICE", "SIGNAL", "WEAPON FIRE", "DEVICE")
+_SOUND_KIND_BY_WORD = {w: i for i, w in enumerate(SOUND_KIND_WORDS)}
+BEARING_WORDS: tuple[str, ...] = (
+    "EAST", "SOUTH-EAST", "SOUTH", "SOUTH-WEST",
+    "WEST", "NORTH-WEST", "NORTH", "NORTH-EAST",
+)
+_BEARING_BY_WORD = {w: i for i, w in enumerate(BEARING_WORDS)}
+DISTANCE_BAND_WORDS: tuple[str, ...] = ("NEAR", "MEDIUM", "FAR")
+_BAND_BY_WORD = {w: i for i, w in enumerate(DISTANCE_BAND_WORDS)}
+
+_ACOUSTIC_CONTACT_RE = re.compile(
+    r"ACOUSTIC CONTACT,\s*(?P<kind>" + "|".join(SOUND_KIND_WORDS) + r")"
+    r",\s*BEARING\s+(?P<bearing>" + "|".join(BEARING_WORDS) + r")"
+    r",\s*RANGE\s+(?P<band>" + "|".join(DISTANCE_BAND_WORDS) + r")"
+    r",\s*HEARD AT STEP\s+(?P<step>\d+)",
+    re.IGNORECASE,
+)
+
+
+def format_acoustic_contact(
+    leader_cs: str, sender_cs: str, kind_index: int, bearing: int, band: int, source_step: int
+) -> str:
+    """Coarse heard-presence report (manual: enemy presence OR *indication* of
+    presence). Deliberately carries NO grid reference — a sound never
+    discloses an exact cell — and stays textually distinct from a visually
+    confirmed CONTACT so the two can never be conflated on the net."""
+    return (
+        f"{leader_cs}, THIS IS {sender_cs}: ACOUSTIC CONTACT, "
+        f"{SOUND_KIND_WORDS[kind_index]}, BEARING {BEARING_WORDS[bearing % 8]}, "
+        f"RANGE {DISTANCE_BAND_WORDS[band]}, HEARD AT STEP {int(source_step)}. OVER."
+    )
+
+
+def parse_acoustic_contact(text: str) -> dict | None:
+    """Inverse of :func:`format_acoustic_contact` over exactly its fields.
+
+    Returns ``{"kind_index", "bearing", "distance_band", "source_step"}`` or
+    None when the line is not an acoustic contact report. Note there is no
+    grid key to return: the report has none, by design.
+    """
+    m = _ACOUSTIC_CONTACT_RE.search(text)
+    if m is None:
+        return None
+    return {
+        "kind_index": _SOUND_KIND_BY_WORD[m.group("kind").upper()],
+        "bearing": _BEARING_BY_WORD[m.group("bearing").upper()],
+        "distance_band": _BAND_BY_WORD[m.group("band").upper()],
+        "source_step": int(m.group("step")),
+    }
+
+
 def format_done(leader_cs: str, sender_cs: str, mission: MissionType, target: str | None) -> str:
     """Mission-complete report."""
     return f"{leader_cs}, THIS IS {sender_cs}: {mission_phrase(mission, target)} — COMPLETE. OVER."

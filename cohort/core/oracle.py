@@ -194,6 +194,21 @@ def observe(env) -> dict:
                 # enemies it can see RIGHT NOW, nearest first — ground truth,
                 # never belief. Identical to ``env._visible_enemies(s)``.
                 "sees": sees,
+                # tactical acoustics (§3.6): the coarse cue memory this agent
+                # holds — exactly what its observation encodes, exposed here
+                # so exposure/behavior analysis can audit it. Empty under
+                # sound_model="off".
+                "cues": [
+                    {
+                        "kind": c.kind,
+                        "side": c.side,
+                        "bearing": c.bearing,
+                        "band": c.distance_band,
+                        "strength": c.strength,
+                        "age": c.age(env._step_count),
+                    }
+                    for c in env._agent_cues.get(s.callsign, [])
+                ],
                 "tags": [
                     t.value
                     for t in unit_observables(
@@ -240,6 +255,14 @@ def observe(env) -> dict:
                 "goal": list(e.goal) if e.goal is not None else None,
                 "last_seen_player": list(e.last_seen_player) if e.last_seen_player else None,
                 "last_seen_step": e.last_seen_step,
+                # tactical acoustics (§3.6.4): this member's own frozen
+                # estimated anchor from the last Blue sound it detected —
+                # NEVER written into last_seen_player, and per-member so one
+                # hearing cannot become band-wide knowledge
+                "heard_blue_anchor": (
+                    list(e.heard_blue_anchor) if e.heard_blue_anchor is not None else None
+                ),
+                "heard_blue_step": e.heard_blue_step,
                 # BRIQUE per-member behavior state ("posted", "volleying",
                 # "sniping", "displacing", "raiding", "fleeing"...); None for
                 # the scripted garrison/assault OpFor
@@ -308,4 +331,11 @@ def observe(env) -> dict:
         "enemies": enemies,
         "band": band_rec,
         "traps": traps,
+        # tactical acoustics (§3.6): the last step's sound events with full
+        # source truth, semantic hearers and non-semantic detectors — oracle
+        # material only; the cue an agent holds carries none of this
+        "sound_events": [ev.to_record() for ev in getattr(env, "last_sound_events", [])],
+        # audit metadata for the last step's messages (medium + actual
+        # semantic hearers), parallel to env.last_messages
+        "message_meta": list(getattr(env, "last_message_meta", [])),
     }

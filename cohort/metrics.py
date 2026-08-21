@@ -418,13 +418,28 @@ class TraceRecorder:
                 }
             )
         messages = env.transcript.messages if initial else env.last_messages
+        # audit metadata parallel to the messages (medium + actual semantic
+        # hearers). At reset the transcript holds exactly the OPORD lines
+        # ``_say`` just recorded meta for, so the zip holds there too; a
+        # length mismatch (defensive) degrades to unlabeled messages.
+        metas = list(getattr(env, "last_message_meta", []))
+        if len(metas) != len(messages):
+            metas = [None] * len(messages)
         return {
             "t": env._step_count,
             "soldiers": soldiers,
             "enemies": [
                 {"id": e.id, "alive": e.alive, "pos": list(e.pos)} for e in env.enemies
             ],
-            "messages": [_message_record(env, m) for m in messages],
+            "messages": [
+                _message_record(env, m, meta) for m, meta in zip(messages, metas, strict=False)
+            ],
+            # tactical acoustics (§3.6): this step's sound events with source
+            # truth, semantic hearers and non-semantic detectors — the trace
+            # is ground-truth material, like enemy positions
+            "sounds": [] if initial else [
+                ev.to_record() for ev in getattr(env, "last_sound_events", [])
+            ],
             # B5 order economics: this tick's re-task events, straight from
             # the environment's own adjudication (issuer rank, priced or
             # excepted and why, anchor rotation or same-anchor type change)
@@ -439,7 +454,7 @@ def _knowledge_ttl() -> int:
     return KNOWLEDGE_TTL
 
 
-def _message_record(env: CohortEnv, m) -> dict:
+def _message_record(env: CohortEnv, m, meta: dict | None = None) -> dict:
     def cs_of(agent_id: int | None) -> str:
         if agent_id is None:
             return "ALL"
@@ -462,6 +477,11 @@ def _message_record(env: CohortEnv, m) -> dict:
         "to": cs_of(m.recipient_id),
         "mission": mission,
         "text": m.text,
+        # §8: transcripts label briefing / radio / voice / signal / gesture /
+        # external umpire events distinctly, and the trace separately records
+        # who could actually hear the semantics
+        "medium": meta.get("medium") if meta else None,
+        "heard_by": meta.get("heard_by") if meta else None,
     }
 
 

@@ -27,6 +27,10 @@ class MessageKind(Enum):
     ORDER = "order"                    # leader → subordinate order
     ACK = "ack"                        # subordinate acknowledges an order (auto)
     CONTACT = "contact"                # enemy sighting report (up the chain)
+    ACOUSTIC_CONTACT = "acoustic_contact"  # coarse heard-presence report (§3.6.3):
+    #                                    kind, bearing/distance bands and source
+    #                                    step — never a fabricated grid reference,
+    #                                    and it can never become a visual CONTACT
     SITREP = "sitrep"                  # status report (up the chain)
     DONE = "done"                      # mission-complete report (up the chain)
     DONE_CONFIRM = "done_confirm"      # superior confirms a truthful DONE (auto)

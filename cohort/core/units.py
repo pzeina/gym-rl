@@ -123,6 +123,13 @@ class Enemy:
     goal: Coord | None = None       # assault objective
     last_seen_player: Coord | None = None
     last_seen_step: int = -10_000
+    #: tactical acoustics (§3.6.4): this member's OWN estimated anchor from
+    #: the last Blue sound it detected — built once from the cue's bearing
+    #: sector and distance band, never the true source cell, and never
+    #: written into ``last_seen_player`` (sound is not sight). Per-member by
+    #: design: one BRIQUE member hearing Blue must not update the band.
+    heard_blue_anchor: Coord | None = None
+    heard_blue_step: int = -10_000
     #: per-member behavior state, set by the band controller each decision
     #: ("posted", "volleying", "sniping", "displacing", "raiding",
     #: "sabotaging", "fleeing"...). Band AI internal state — exposed to the
@@ -327,6 +334,26 @@ def resolve_fire(
     return False, 0
 
 
+def investigate_heard(
+    enemy: Enemy, world: World, step: int, sound_ttl: int, rng: np.random.Generator
+) -> tuple[str, Coord] | None:
+    """One investigation step toward this enemy's frozen heard anchor, or None.
+
+    §3.6.4 decision priority slot 3: a fresh acoustic anchor authorizes
+    MOVEMENT only — never fire, never a ``last_seen_player`` update. The
+    anchor was built once from the cue's coarse fields; arriving there and
+    finding nothing clears it (the sound led nowhere). ``sound_ttl=0`` (the
+    ``sound_model="off"`` caller) makes this a no-op that consumes no RNG.
+    """
+    if enemy.heard_blue_anchor is None or step - enemy.heard_blue_step > sound_ttl:
+        return None
+    if dist(enemy.pos, enemy.heard_blue_anchor) <= 1.0:
+        enemy.heard_blue_anchor = None  # investigated: nothing found
+        return None
+    enemy.behavior = "investigating"
+    return "move", _step_toward(enemy.pos, enemy.heard_blue_anchor, world, rng)
+
+
 def enemy_decide(
     enemy: Enemy,
     visible_players: list[Soldier],
@@ -334,11 +361,15 @@ def enemy_decide(
     step: int,
     params: CombatParams,
     rng: np.random.Generator,
+    *,
+    sound_ttl: int = 0,
 ) -> tuple[str, Coord | Soldier | None]:
     """Scripted OpFor policy. Returns ("fire", target) | ("move", pos) | ("stay", None).
 
     Garrison mode: hold near home, engage players on sight, chase briefly.
     Assault mode: advance on the goal, engage players on sight.
+    ``sound_ttl`` > 0 (tactical acoustics) inserts heard-anchor investigation
+    between the visual chase and the standing intent (§3.6.4 priority).
     """
     if visible_players:
         target = min(visible_players, key=lambda s: (abs(s.pos[0] - enemy.pos[0]) + abs(s.pos[1] - enemy.pos[1])))
@@ -349,9 +380,13 @@ def enemy_decide(
             return "fire", target
         return "move", _step_toward(enemy.pos, target.pos, world, rng)
 
-    # No contact: chase recent sighting, else return home / advance on goal.
+    # No contact: chase recent sighting, investigate a fresh heard anchor,
+    # else return home / advance on goal.
     if enemy.last_seen_player is not None and step - enemy.last_seen_step <= 8:
         return "move", _step_toward(enemy.pos, enemy.last_seen_player, world, rng)
+    heard = investigate_heard(enemy, world, step, sound_ttl, rng)
+    if heard is not None:
+        return heard
     anchor = enemy.goal if (enemy.mode == "assault" and enemy.goal is not None) else enemy.home
     if enemy.pos != anchor:
         return "move", _step_toward(enemy.pos, anchor, world, rng)
@@ -587,11 +622,17 @@ class BriqueBand:
         step: int,
         params: CombatParams,
         rng: np.random.Generator,
+        *,
+        sound_ttl: int = 0,
     ) -> tuple[str, Coord | Soldier | None]:
         """Per-member policy under the band intent.
 
         Same contract as :func:`enemy_decide`:
         ("fire", target) | ("move", pos) | ("stay", None).
+        ``sound_ttl`` > 0 inserts heard-anchor investigation (§3.6.4) between
+        the member's visual pursuit and its band intent — the MEMBER that
+        heard investigates; the band's shared intent machine never learns of
+        the sound (no band-wide acoustic omniscience channel).
         """
         cfg = self.cfg
         if self.intent == "scatter":
@@ -600,6 +641,16 @@ class BriqueBand:
             if dist(enemy.pos, edge) <= 1.0:
                 return "stay", None
             return "move", _step_toward(enemy.pos, edge, world, rng)
+
+        # §3.6.4 priority: with no target visible and no recent visual
+        # sighting to pursue, a fresh heard anchor is investigated before the
+        # standing band intent (movement/alerting only — never fire).
+        if not visible_players and (
+            enemy.last_seen_player is None or step - enemy.last_seen_step > 12
+        ):
+            heard = investigate_heard(enemy, world, step, sound_ttl, rng)
+            if heard is not None:
+                return heard
 
         if self.intent == "lurk":
             post = self.posts.get(enemy.id, enemy.home)

@@ -153,6 +153,18 @@ class ScenarioSpec:
     #                               high-power station: HQ traffic is always heard and
     #                               HQ always hears the root).
     comm_range: float = 12.0      # audible radius under comm_model="range"
+    sound_model: str = "off"      # tactical acoustic layer (degraded-communications
+    #                               cycle, §3.6): "off" (the shipped behavior — no
+    #                               sound events, no cues, no OpFor hearing, zero new
+    #                               state, zero new RNG) | "tactical" (movement /
+    #                               voice / signal / weapon / trap sounds, coarse
+    #                               AcousticCue memory for both sides, OpFor
+    #                               heard-anchor investigation). Operational
+    #                               voice_only presets require "tactical"; a
+    #                               voice-only run with sound off is an ablation,
+    #                               never the completed degraded mode. All model
+    #                               coefficients are published module constants
+    #                               (cohort.core.acoustics.published_parameters).
     voice_range: float = 6.0      # shouting distance (A5-4): trinôme sync proposals
     #                               register the peers within this radius at
     #                               propose time; voice traffic is not radio —
@@ -246,6 +258,9 @@ class ScenarioSpec:
     def __post_init__(self) -> None:
         if self.ablation not in ("full", "nomask", "flat"):
             msg = f"Unknown ablation arm {self.ablation!r} (expected full | nomask | flat)"
+            raise ValueError(msg)
+        if self.sound_model not in ("off", "tactical"):
+            msg = f"Unknown sound model {self.sound_model!r} (expected off | tactical)"
             raise ValueError(msg)
         from cohort.env.observations import OBS_PROFILES
 
@@ -774,4 +789,23 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         "support_umbrella": spec.combat.support_umbrella,
         "vision_range": spec.combat.vision_range,
         "forest_vision_range": spec.combat.forest_vision_range,
+        # --- degraded communications (§8 documentation/provenance) ---
+        # the communications model the scenario is played under, the speaking
+        # radius, and whether a remote HQ station exists in-episode at all
+        "comm_model": spec.comm_model,
+        "comm_range": spec.comm_range,
+        "voice_range": spec.voice_range,
+        "hq_available": spec.comm_model != "voice_only",
+        # the tactical acoustic layer and its complete published model —
+        # every radius, loss factor, TTL and the signal/gesture/visual-link
+        # ranges (cohort.core.acoustics; never hidden in the OpFor controller)
+        "sound_model": spec.sound_model,
+        "acoustics": _acoustic_parameters(),
     }
+
+
+def _acoustic_parameters() -> dict:
+    """The published acoustic model (§3.6.2) — one source of truth."""
+    from cohort.core.acoustics import published_parameters
+
+    return published_parameters()

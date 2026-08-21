@@ -41,6 +41,16 @@ _TERRAIN_RGB = {
     WALL: (0.25, 0.25, 0.28),
 }
 
+#: tactical-acoustics glyphs (color, marker) by sound kind — distinct per
+#: kind so a frame reader can tell a footstep ripple from a gunshot
+_SOUND_STYLE = {
+    "movement": ("#7a7a7a", "·"),
+    "voice": ("#2b6cb0", "♪"),
+    "signal": ("#d97706", "!"),
+    "weapon_fire": ("#b91c1c", "✶"),
+    "trap": ("#b45309", "▲"),
+}
+
 
 def _friendly_symbol(ax: plt.Axes, x: float, y: float, echelon: str, *, small: bool) -> None:
     """APP-6 friendly infantry: blue rectangle + saltire (+ echelon mark)."""
@@ -135,6 +145,18 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
                 Polygon([(x, y - r), (x + r, y + r * 0.8), (x - r, y + r * 0.8)], closed=True,
                         facecolor="#ffd24d", edgecolor=HOSTILE_LINE, linewidth=1.1, zorder=3)
             )
+
+    # tactical acoustics (§3.6): last step's sound events, one distinct glyph
+    # per kind plus the base detection footprint as a dotted ripple — the
+    # frame shows what could be heard, not who heard it
+    for ev in getattr(env, "last_sound_events", []):
+        color, glyph = _SOUND_STYLE.get(ev.kind, ("#666666", "?"))
+        ax.add_patch(
+            Circle(ev.pos, ev.base_radius, fill=False, ls=":", lw=0.7,
+                   color=color, alpha=0.5, zorder=2)
+        )
+        ax.annotate(glyph, ev.pos, ha="center", va="center", fontsize=7,
+                    color=color, zorder=6, annotation_clip=False)
 
     for e in env.enemies:
         _hostile_symbol(ax, e.pos[0], e.pos[1], alive=e.alive)

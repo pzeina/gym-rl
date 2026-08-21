@@ -23,6 +23,7 @@ from gymnasium import spaces
 from pettingzoo import ParallelEnv
 
 from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
+from cohort.core import acoustics as snd
 from cohort.core import language as lang
 from cohort.core.missions import (
     HOLDS_GROUND,
@@ -206,6 +207,18 @@ class CohortEnv(ParallelEnv):
         #: bonus — keyed by the standing order, NOT the window, so repeated
         #: propose/GO cycles can never re-earn already-covered ground
         self._bound_watermark: dict[int, tuple] = {}
+        # --- tactical acoustics (§3.6) — ALL of it inert under sound_model
+        # "off": no events, no cues, no anchors, no state, no RNG ---
+        self._sound_seq = 0                      # event id counter (episode-scoped)
+        self._step_sounds: list[snd.SoundEvent] = []   # this step's events
+        self.last_sound_events: list[snd.SoundEvent] = []  # last completed step's
+        self._pending_enemy_sounds: list[snd.SoundEvent] = []  # not yet heard by OpFor
+        self._agent_cues: dict[str, list[snd.AcousticCue]] = {}  # bounded coarse memory
+        self._own_sound: dict[str, tuple[str, float, int]] = {}  # cs → (kind, radius, step)
+        #: audit metadata parallel to ``last_messages`` (medium + actual
+        #: semantic hearers). Trace/oracle material — Message itself stays
+        #: text-only by the repo's schema invariant.
+        self.last_message_meta: list[dict] = []
 
     @property
     def outcome(self) -> str | None:
@@ -368,6 +381,13 @@ class CohortEnv(ParallelEnv):
         self._sync_pending = {}
         self._sync_until = {}
         self._bound_watermark = {}
+        self._sound_seq = 0
+        self._step_sounds = []
+        self.last_sound_events = []
+        self._pending_enemy_sounds = []
+        self._agent_cues = {cs: [] for cs in self._callsigns} if self._sound_on else {}
+        self._own_sound = {}
+        self.last_message_meta = []
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -690,8 +710,10 @@ class CohortEnv(ParallelEnv):
         cfg = self.rewards_cfg
         ledger = RewardLedger()
         self.last_messages = []
+        self.last_message_meta = []
         self._retask_log = []
         self._order_pay_log = []
+        self._step_sounds = []
         present = list(self.agents)
 
         # --- timed-order release (A5-2): "AT T PLUS n" comes due ---
@@ -738,6 +760,12 @@ class CohortEnv(ParallelEnv):
                 continue
             self._apply_action(soldier, int(actions[callsign]), ledger, enemy_kills, player_deaths)
 
+        # --- OpFor hearing (§3.6.4 ordering): Blue actions resolved first, so
+        # Blue movement/speech sounds may inform the OpFor turn this same
+        # step; OpFor sounds enter the next Blue observation. Recorded in the
+        # trace via each event's step and the delivery lists.
+        self._deliver_sounds_to_enemies()
+
         # --- OpFor actions ---
         if self.band is not None:
             # band-level intent machine ticks once, on post-move blue positions
@@ -782,6 +810,12 @@ class CohortEnv(ParallelEnv):
             for other in self.roster.living:
                 if other.id != shooter.id:
                     ledger.add(other.callsign, "combat", cfg.team_kill_share)
+
+        # --- Blue hearing: every one of this step's events (both phases)
+        # becomes at most one coarse cue per living listener, entering the
+        # observations assembled below — i.e. the NEXT Blue decision. ---
+        self._deliver_sounds_to_blue()
+        self.last_sound_events = list(self._step_sounds)
 
         # --- knowledge decay ---
         living_enemy_ids = {e.id for e in self.enemies if e.alive}
@@ -1192,8 +1226,19 @@ class CohortEnv(ParallelEnv):
             return  # illegal → treated as STAY
 
         if spec.kind == "move":
+            prev = soldier.pos
             soldier.pos = (soldier.pos[0] + spec.move[0], soldier.pos[1] + spec.move[1])
             soldier.heading = spec.move  # formation geometry frame (A5-3)
+            # §3.6.1: one movement event at the traversed edge, the noisier
+            # endpoint terrain setting the radius (blocked moves emit nothing —
+            # they returned above as illegal)
+            self._emit_sound(
+                "movement",
+                soldier.pos,
+                "friendly",
+                snd.movement_radius(self.world, prev, soldier.pos),
+                source_cs=soldier.callsign,
+            )
             self._check_trap(soldier, ledger, player_deaths)
         elif spec.kind == "fire":
             self._resolve_player_fire(soldier, ledger, enemy_kills)
@@ -1246,6 +1291,15 @@ class CohortEnv(ParallelEnv):
             return
         soldier.fired_this_step = True
         soldier.ammo -= 1
+        # §3.6.1: every shot creates a weapon event at the shooter, hit or
+        # miss; the event never identifies the shooter to a listener
+        self._emit_sound(
+            "weapon_fire",
+            soldier.pos,
+            "friendly",
+            snd.WEAPON_DETECT_RADIUS,
+            source_cs=soldier.callsign,
+        )
         # focus fire ("pas un pas sans appui"): with an active support
         # relation, follow-up shooters at an already-engaged target hit harder
         modifier = 1.0
@@ -1916,6 +1970,10 @@ class CohortEnv(ParallelEnv):
             if trap.armed and soldier.pos == trap.pos:
                 trap.armed = False
                 trap.revealed = True
+                # §3.6.1: the detonation is a sound at the trap cell; its
+                # side is the TRIGGERING side — the noise indicates Blue
+                # activity, which is what an OpFor anchor may investigate
+                self._emit_sound("trap", trap.pos, "friendly", snd.TRAP_DETECT_RADIUS)
                 self._say(
                     MessageKind.TRAP, HQ_ID, None, lang.format_trap(soldier.callsign, trap.pos)
                 )
@@ -1946,6 +2004,10 @@ class CohortEnv(ParallelEnv):
                 enemy.pos, s.pos, self.combat.vision_range, self.combat.forest_vision_range
             )
         ]
+        # heard-anchor investigation window (§3.6.4): active only under
+        # tactical sound — 0 keeps the shipped deciders on their exact
+        # pre-acoustic control flow (and RNG stream)
+        sound_ttl = snd.SOUND_MEMORY_TTL if self._sound_on else 0
         if self.band is not None and enemy.mode == "brique":
             act, arg = self.band.member_decide(
                 enemy,
@@ -1955,15 +2017,32 @@ class CohortEnv(ParallelEnv):
                 self._step_count,
                 self.combat,
                 self._rng,
+                sound_ttl=sound_ttl,
             )
         else:
             act, arg = enemy_decide(
-                enemy, visible_players, self.world, self._step_count, self.combat, self._rng
+                enemy, visible_players, self.world, self._step_count, self.combat, self._rng,
+                sound_ttl=sound_ttl,
             )
         if act == "move" and arg is not None and self.world.passable(arg):
+            prev = enemy.pos
             enemy.pos = arg
+            if prev != enemy.pos:
+                # sensor symmetry (§3.6.4): enemy movement makes the same
+                # class of sound Blue movement does
+                self._emit_sound(
+                    "movement",
+                    enemy.pos,
+                    "hostile",
+                    snd.movement_radius(self.world, prev, enemy.pos),
+                    source_cs=f"E{enemy.id}",
+                )
         elif act == "fire":
             enemy.fired_this_step = True  # oracle bookkeeping only
+            self._emit_sound(
+                "weapon_fire", enemy.pos, "hostile", snd.WEAPON_DETECT_RADIUS,
+                source_cs=f"E{enemy.id}",
+            )
             target: Soldier = arg
             # covered movement: firing at a supported element from inside an
             # in-position supporter's umbrella degrades the attacker's
@@ -1988,6 +2067,131 @@ class CohortEnv(ParallelEnv):
     # ------------------------------------------------------------------ #
     # views, masks, observations, compliance
     # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
+    # tactical acoustics (§3.6) — inert when sound_model="off"
+    # ------------------------------------------------------------------ #
+
+    @property
+    def _sound_on(self) -> bool:
+        return self.spec_cfg.sound_model == "tactical"
+
+    def _emit_sound(
+        self,
+        kind: str,
+        pos: tuple[int, int],
+        side: str,
+        base_radius: float,
+        *,
+        source_cs: str | None = None,
+        message_index: int | None = None,
+    ) -> snd.SoundEvent | None:
+        """Create one immutable SoundEvent at its physical source.
+
+        Under ``sound_model="off"`` this is a no-op: no event, no state, no
+        RNG. Two simultaneous movers create two independent events — nothing
+        here ever sums or merges them.
+        """
+        if not self._sound_on:
+            return None
+        event = snd.SoundEvent(
+            id=self._sound_seq,
+            step=self._step_count,
+            pos=(int(pos[0]), int(pos[1])),
+            side=side,
+            kind=kind,
+            base_radius=base_radius,
+            source=source_cs,
+            message_index=message_index,
+        )
+        self._sound_seq += 1
+        self._step_sounds.append(event)
+        if side == "friendly":
+            # only Blue-revealing sounds can anchor an OpFor investigation
+            self._pending_enemy_sounds.append(event)
+        if source_cs is not None:
+            # the emitter's own last footprint (kind + radius): observable to
+            # itself so the policy can learn the consequence of its previous
+            # choice without ever seeing who heard it
+            self._own_sound[source_cs] = (kind, base_radius, self._step_count)
+        return event
+
+    def _deliver_sounds_to_enemies(self) -> None:
+        """Give each enemy its own frozen estimated anchor from the freshest/
+        strongest Blue sound it detects (§3.6.4). Per-member: one BRIQUE
+        member hearing Blue updates nobody else. Positions are the enemies'
+        pre-turn positions — delivery precedes the OpFor turn."""
+        if not self._sound_on or not self._pending_enemy_sounds:
+            self._pending_enemy_sounds = []
+            return
+        events = self._pending_enemy_sounds
+        self._pending_enemy_sounds = []
+        for enemy in self.enemies:
+            if not enemy.alive:
+                continue
+            best: tuple[float, int, int, snd.SoundEvent] | None = None
+            for ev in events:
+                strength = snd.received_strength(
+                    self.world, ev.pos, enemy.pos, ev.base_radius
+                )
+                if strength is None:
+                    continue
+                ev.detected_by_hostile.append((enemy.id, strength))
+                key = (-strength, self._step_count - ev.step, ev.id, ev)
+                if best is None or key[:3] < best[:3]:
+                    best = key
+            if best is not None:
+                ev = best[3]
+                bearing = snd.bearing_sector(enemy.pos, ev.pos)
+                band = snd.distance_band(dist(enemy.pos, ev.pos))
+                # the anchor is built ONCE from the coarse fields and then
+                # frozen — it never follows the hidden source
+                enemy.heard_blue_anchor = snd.estimated_anchor(
+                    enemy.pos, bearing, band, self.world
+                )
+                enemy.heard_blue_step = self._step_count
+
+    def _attribute_cue_side(self, listener: Soldier, event: snd.SoundEvent) -> str:
+        """The LISTENER's side attribution for a cue — never the oracle label.
+
+        Friendly only when the listener also received the friendly semantic
+        message or currently perceives the source cell; hostile only when a
+        visible hostile at the source cell establishes the association;
+        otherwise unknown.
+        """
+        if event.side == "friendly":
+            if listener.callsign in event.heard_by:
+                return "friendly"
+            if dist(listener.pos, event.pos) <= snd.VISUAL_LINK_RANGE and (
+                self.world.line_of_sight(listener.pos, event.pos)
+            ):
+                return "friendly"
+            return "unknown"
+        if any(e.pos == event.pos for e in self._visible_enemies(listener)):
+            return "hostile"
+        return "unknown"
+
+    def _deliver_sounds_to_blue(self) -> None:
+        """Turn this step's events into bounded coarse cues per Blue listener,
+        then expire/truncate each memory by the stable §3.6.2 order."""
+        if not self._sound_on:
+            return
+        step = self._step_count
+        for s in self.roster.soldiers:
+            cues = self._agent_cues.setdefault(s.callsign, [])
+            if not s.alive:
+                cues.clear()
+                continue
+            for ev in self._step_sounds:
+                if ev.source == s.callsign:
+                    continue  # own footprint is its own observation slot
+                cue = snd.build_cue(
+                    self.world, s.pos, ev, self._attribute_cue_side(s, ev)
+                )
+                if cue is not None:
+                    ev.detected_by_friendly.append((s.callsign, cue.strength))
+                    cues.append(cue)
+            self._agent_cues[s.callsign] = snd.prune_cues(cues, step)
 
     def _audible_to(self, listener: Soldier, sender_id: int) -> bool:
         """Can ``listener`` hear a transmission from ``sender_id``?
@@ -2610,6 +2814,35 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
+    def _semantic_audience(self, sender_id: int) -> list[str]:
+        """Living stations that actually receive a transmission's SEMANTIC
+        content (sender excluded). Audit metadata for the trace/oracle —
+        ``heard_by`` never enters an agent observation wholesale."""
+        sender_cs = None
+        if sender_id != HQ_ID:
+            sender = self.roster.by_id.get(sender_id)
+            sender_cs = sender.callsign if sender is not None else None
+        return [
+            s.callsign
+            for s in self.roster.living
+            if s.callsign != sender_cs and self._audible_to(s, sender_id)
+        ]
+
+    def _message_medium(self, kind: MessageKind, sender: int, voice: bool) -> str:
+        """Label the channel a message travelled on (§8 provenance).
+
+        ``briefing`` — the pre-departure OPORD; ``external`` — umpire
+        adjudication from an unembodied HQ (CASUALTY, TRAP, ENDEX, verdicts
+        answered for HQ); ``voice`` — spoken; ``radio`` — transmitted.
+        """
+        if kind is MessageKind.OPORD:
+            return "briefing"
+        if sender == HQ_ID:
+            return "external"
+        if voice:
+            return "voice"
+        return "radio"
+
     def _say(
         self, kind: MessageKind, sender: int, recipient: int | None, text: str,
         *, voice: bool = False,
@@ -2620,6 +2853,31 @@ class CohortEnv(ParallelEnv):
         )
         self.transcript.add(msg)
         self.last_messages.append(msg)
+        heard_by = self._semantic_audience(sender)
+        self.last_message_meta.append(
+            {
+                "medium": self._message_medium(kind, sender, voice),
+                "heard_by": heard_by,
+            }
+        )
+        # §3.6.1: an embodied speaker makes noise — every emitted utterance,
+        # local automatic replies included, is a voice event at the speaker;
+        # the pre-arranged EXECUTE / SYNC_GO forms are louder signal events.
+        # Unembodied HQ (briefing / external umpire lines) emits nothing.
+        if sender != HQ_ID and self._sound_on:
+            speaker = self.roster.by_id.get(sender)
+            if speaker is not None and speaker.alive:
+                signal = kind in (MessageKind.EXECUTE, MessageKind.SYNC_GO)
+                event = self._emit_sound(
+                    "signal" if signal else "voice",
+                    speaker.pos,
+                    "friendly",
+                    snd.SIGNAL_DETECT_RADIUS if signal else snd.VOICE_DETECT_RADIUS,
+                    source_cs=speaker.callsign,
+                    message_index=len(self.transcript) - 1,
+                )
+                if event is not None:
+                    event.heard_by = list(heard_by)
 
     def inject_order(self, text: str, issuer: str = "HQ") -> Message:
         """Let a human speak on the net: parse and apply an order.
