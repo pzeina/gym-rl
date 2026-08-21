@@ -73,6 +73,14 @@ whatever it is, these ride along:
   success" rests on a tactic AREA FIRE is built to price — rerunning the
   depth ablation with the mechanic on is the measurement that would settle
   whether the flat advantage survives dispersion being real.
+  SCOPE (night of 2026-08-21→22, same probe): the piling REPRODUCES at hard
+  difficulty — flat confirm seeds 0.843/0.886/0.720 against 14 enemies
+  (hierarchy hard arms 0.354/0.452) — and does NOT appear at squad depth:
+  `squad_flat_v1` reads 0.333, indistinguishable from hierarchy squads, so
+  the pile is a platoon-scale (16-agent) behavior, not intrinsic to flat
+  control. Gate margin note: the empty band the 0.70 bound sits in is now
+  (0.57, 0.72) — `platoon_hard_flat_v6_seed14` fails at 0.720 by a hair.
+  (`squad_abl_*_s3` predate economics.json: no provenance, unprobeable.)
 
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a

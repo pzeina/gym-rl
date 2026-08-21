@@ -88,3 +88,15 @@ monitor and the loop.
   committed (jobs 1–5 of the campaign + the two flat confirm seeds, whose
   landing evals turn out intact — the handoff's crash warning did not
   materialize; artifacts complete). Idle probes launched.
+- 00:50 — the monitor died on arming: `/bin/bash` is 3.2, `declare -A` is
+  bash-4. Fixed portably (`4422c16`), smoke-tested, re-armed. A watch that
+  looks armed and is not is the worst night failure; the fix is the commit.
+- 01:00 — both idle probes landed. platoon_hard: flat piles at hard too
+  (0.843/0.886/0.720 vs hierarchy 0.354/0.452; all three fail the pending
+  gate, v6 by a hair at 0.720). squad depth: `squad_flat_v1` 0.333 — no
+  pile at 7 agents; the behavior is platoon-scale, not intrinsic to flat
+  control. `squad_abl_*_s3`: no provenance recorded (pre-economics), noted.
+  Rider EVIDENCE updated with the scope paragraph. Probe tables preserved
+  at the job tmp; note for future watches: probe stdout in `logs/` is
+  deny-listed even for grep — write measurement tables elsewhere, keep only
+  the `-DONE` sentinel in `logs/`.
