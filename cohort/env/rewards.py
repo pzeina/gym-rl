@@ -428,6 +428,20 @@ class RewardConfig:
     # cohesion stays a tactical trade and adds nothing to the stall bound.
     visual_link_broken: float = -0.01
     visual_link_broken_element_cap: float = -0.03
+    # Liaison credit to a DISPATCHED courier (§6.4) — the carrier holds none
+    # of the information value (order/report credit goes to the origin at
+    # delivery), so it is paid for the physical chain instead. Progress is
+    # watermarked per packet and leg: each NEW best cell of closure toward
+    # the fixed anchor pays once, so pacing cannot farm it and the total per
+    # packet is bounded by the initial distance. Delivery pays only when the
+    # content was ACCEPTED (order applied, report novel/fresh, claim
+    # confirmed): carrying a redundant report earns nothing. A self-carried
+    # packet earns none of these — its carrier is the origin, already paid
+    # through the information value. None enters max_step_farm(): each is
+    # one-shot or telescoping per packet.
+    liaison_progress: float = 0.03
+    liaison_delivery: float = 0.5
+    liaison_receipt_return: float = 0.25
 
     # ------------------------------------------------------------------ #
     # CLI overrides

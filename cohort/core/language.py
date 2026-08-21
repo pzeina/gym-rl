@@ -263,6 +263,82 @@ def is_gesture(text: str) -> bool:
     return parse_gesture(text) is not None
 
 
+# --- liaison (degraded communications §4) --------------------------------- #
+#: spoken words for the packet kinds a courier may carry
+PACKET_KIND_WORDS: dict[str, str] = {
+    "order": "ORDER", "contact": "CONTACT REPORT", "acoustic_contact": "ACOUSTIC REPORT",
+    "sitrep": "SITREP", "done": "COMPLETION REPORT",
+}
+_PACKET_KIND_BY_WORD = {w: k for k, w in PACKET_KIND_WORDS.items()}
+
+
+def format_dispatch(carrier_cs: str, issuer_cs: str, recipient_cs: str, kind: str) -> str:
+    """The local order detaching an agent of liaison:
+    'RFN1, THIS IS TL1: CARRY ORDER TO SL1. OUT.'"""
+    return f"{carrier_cs}, THIS IS {issuer_cs}: CARRY {PACKET_KIND_WORDS[kind]} TO {recipient_cs}. OUT."
+
+
+_DISPATCH_RE = re.compile(
+    r"^(?P<carrier>[A-Z]+\d+), THIS IS (?P<issuer>[A-Z]+\d+): CARRY (?P<kind>"
+    + "|".join(re.escape(w) for w in PACKET_KIND_WORDS.values())
+    + r") TO (?P<recipient>[A-Z]+\d+)\. OUT\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_dispatch(text: str) -> dict | None:
+    """Inverse of :func:`format_dispatch`: carrier, issuer, recipient, kind."""
+    m = _DISPATCH_RE.match(text.strip())
+    if m is None:
+        return None
+    return {
+        "carrier": m.group("carrier").upper(),
+        "issuer": m.group("issuer").upper(),
+        "recipient": m.group("recipient").upper(),
+        "kind": _PACKET_KIND_BY_WORD[m.group("kind").upper()],
+    }
+
+
+def format_receipt(origin_cs: str, carrier_cs: str, recipient_cs: str, positive: bool) -> str:
+    """The courier hands the order's receipt back to its origin:
+    'SL1, THIS IS RFN1: TL2 SENDS WILCO. OUT.' / '... TL2 SENDS NEGATIVE. OUT.'"""
+    word = "WILCO" if positive else "NEGATIVE"
+    return f"{origin_cs}, THIS IS {carrier_cs}: {recipient_cs} SENDS {word}. OUT."
+
+
+_RECEIPT_RE = re.compile(
+    r"^(?P<origin>[A-Z]+\d+), THIS IS (?P<carrier>[A-Z]+\d+): (?P<recipient>[A-Z]+\d+) SENDS "
+    r"(?P<word>WILCO|NEGATIVE)\. OUT\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_receipt(text: str) -> dict | None:
+    """Inverse of :func:`format_receipt`."""
+    m = _RECEIPT_RE.match(text.strip())
+    if m is None:
+        return None
+    return {
+        "origin": m.group("origin").upper(),
+        "carrier": m.group("carrier").upper(),
+        "recipient": m.group("recipient").upper(),
+        "positive": m.group("word").upper() == "WILCO",
+    }
+
+
+def format_negative(origin_cs: str, recipient_cs: str) -> str:
+    """A delivered order the recipient cannot lawfully take (obsolete chain
+    of command, unholdable mission): 'SL1, THIS IS TL2: NEGATIVE, CANNOT
+    COMPLY. OUT.' — the rejection is spoken, never silent."""
+    return f"{origin_cs}, THIS IS {recipient_cs}: NEGATIVE, CANNOT COMPLY. OUT."
+
+
+def format_undeliverable(origin_cs: str, carrier_cs: str, recipient_cs: str) -> str:
+    """The courier reports a vacant position: 'SL1, THIS IS RFN1: NO STATION
+    AT TL2'S POSITION. OUT.'"""
+    return f"{origin_cs}, THIS IS {carrier_cs}: NO STATION AT {recipient_cs}'S POSITION. OUT."
+
+
 def format_opord(
     recipient_cs: str,
     mission: MissionType,

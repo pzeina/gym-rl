@@ -224,7 +224,7 @@ UNSET_SITREP_CLOCK: int = -10_000
 #: Message kinds that carry command state — the learned acts of command an
 #: agent pays airtime for. The OPORD is excluded: it is HQ's, once, and no
 #: policy decided it.
-COMMAND_KINDS: frozenset[str] = frozenset({"order", "execute"})
+COMMAND_KINDS: frozenset[str] = frozenset({"order", "execute", "dispatch"})
 
 #: Message kinds spoken by VOICE (A5-4): never net-arbitrated — shouting to the
 #: soldier beside you does not contend for the net — but charged airtime like
@@ -307,6 +307,7 @@ class TraceRecorder:
             "comm_model": cfg.comm_model,
             "sound_model": cfg.sound_model,
             "voice_range": float(cfg.voice_range),
+            "liaison_enabled": bool(cfg.liaison_enabled),
             "human": human,
             "reported": {},
             "steps": [self._step_record(env, initial=True)],
@@ -450,6 +451,11 @@ class TraceRecorder:
             # §9 command_pair_in_voice_rate: (leader-direct-subordinate pairs,
             # pairs within low-voice range) this step
             "command_pairs": list(getattr(env, "_command_pairs", (0, 0))),
+            # §9 packet funnel: this step's packet lifecycle events
+            # (prepared / dispatched / delivered / returned / cancelled /
+            # expired / lost / undeliverable / completed), straight from the
+            # environment's bookkeeping
+            "packets": [] if initial else list(getattr(env, "_packet_log", [])),
             "messages": [
                 _message_record(env, m, meta) for m, meta in zip(messages, metas, strict=False)
             ],
@@ -500,6 +506,9 @@ def _degraded_soldier_record(env: CohortEnv, s) -> dict:
         "leader_age": leader_age,
         "cues": sum(1 for c in env._agent_cues.get(s.callsign, []) if c.side != "friendly"),
         "known": known,
+        # liaison (§4): the leg of an active courier duty, and a held packet
+        "liaison": env._liaison[s.id].leg if s.id in env._liaison else None,
+        "outbox": env._outbox[s.id].kind if s.id in env._outbox else None,
     }
 
 
@@ -1463,7 +1472,8 @@ def _traffic(trace: dict) -> dict[str, Any]:
 
 #: learned speech acts — the numerator classes of the voice metrics (§9)
 LEARNED_KINDS: frozenset[str] = frozenset(
-    {"contact", "acoustic_contact", "sitrep", "done", "order", "execute", "sync_propose", "sync_go"}
+    {"contact", "acoustic_contact", "sitrep", "done", "order", "execute", "sync_propose", "sync_go",
+     "dispatch", "receipt"}
 )
 
 
@@ -1506,6 +1516,17 @@ def _degraded(trace: dict) -> dict[str, Any]:
         "contact_root_step": None,
         "fresh_picture_sum": 0.0, "fresh_picture_steps": 0,
         "voice_only": voice_only, "sound_on": sound_on,
+        # packet funnel (§9): counts with their denominators
+        "orders_prepared": 0, "orders_dispatched": 0, "orders_delivered": 0,
+        "orders_lost": 0, "orders_stale_at_delivery": 0, "orders_rejected_at_delivery": 0,
+        "order_delivery_latencies": [], "order_receipt_return_latencies": [],
+        "reports_prepared": 0, "reports_dispatched": 0, "reports_delivered": 0,
+        "reports_expired": 0, "reports_lost": 0,
+        "packets_cancelled": 0, "packets_self_delivered": 0,
+        "liaison_assignments": 0, "liaison_completions": 0, "liaison_losses": 0,
+        "liaison_undeliverable": 0, "liaison_agent_steps": 0, "friendly_agent_steps": 0,
+        "liaison_outbound_paths": [], "liaison_return_paths": [],
+        "liaison_enabled": bool(trace.get("liaison_enabled")),
     }
     first_cue = first_visual = None
     open_breaks: dict[str, int] = {}
@@ -1561,7 +1582,44 @@ def _degraded(trace: dict) -> dict[str, Any]:
         if pairs:
             c["command_pairs"] += pairs[0]
             c["command_pairs_in_voice"] += pairs[1]
+        for ev in step.get("packets", []):
+            is_order = ev["kind"] == "order"
+            e = ev["event"]
+            if e == "prepared":
+                c["orders_prepared" if is_order else "reports_prepared"] += 1
+            elif e == "dispatched":
+                c["orders_dispatched" if is_order else "reports_dispatched"] += 1
+                c["liaison_assignments"] += 1
+            elif e == "delivered":
+                c["orders_delivered" if is_order else "reports_delivered"] += 1
+                if is_order:
+                    c["order_delivery_latencies"].append(ev.get("latency", 0))
+                    c["orders_stale_at_delivery"] += bool(ev.get("stale"))
+                    c["orders_rejected_at_delivery"] += ev.get("outcome") == "rejected"
+                if not ev.get("courier"):
+                    c["packets_self_delivered"] += 1
+            elif e == "returned":
+                c["order_receipt_return_latencies"].append(ev.get("latency", 0))
+            elif e == "lost":
+                c["orders_lost" if is_order else "reports_lost"] += 1
+                if ev.get("carrier"):
+                    c["liaison_losses"] += 1
+            elif e == "expired":
+                c["reports_expired" if not is_order else "orders_lost"] += 1
+            elif e == "cancelled":
+                c["packets_cancelled"] += 1
+            elif e == "undeliverable":
+                c["liaison_undeliverable"] += 1
+            elif e == "completed":
+                c["liaison_completions"] += 1
+                c["liaison_outbound_paths"].append(ev.get("outbound_path", 0))
+                if ev.get("return_path"):
+                    c["liaison_return_paths"].append(ev["return_path"])
         living = [r for r in step["soldiers"] if r.get("alive")]
+        for rec in living:
+            if "liaison" in rec:
+                c["friendly_agent_steps"] += 1
+                c["liaison_agent_steps"] += rec["liaison"] is not None
         fresh_holders = 0
         for rec in living:
             if "link" not in rec:
@@ -2051,6 +2109,60 @@ def _aggregate_degraded(episodes: list[dict]) -> dict[str, Any]:
             sum(ep.get("fresh_picture_sum", 0.0) for ep in episodes),
             total("fresh_picture_steps"),
         ),
+        # packet funnel (§9) — counts, never a single rate without them;
+        # None wherever no scenario in the run could prepare a packet
+        **_packet_funnel(episodes),
+    }
+
+
+def _packet_funnel(episodes: list[dict]) -> dict[str, Any]:
+    def total(key: str) -> int:
+        return sum(ep.get(key, 0) or 0 for ep in episodes)
+
+    enabled = any(ep.get("liaison_enabled") for ep in episodes)
+    if not enabled:
+        keys = (
+            "orders_prepared", "orders_dispatched", "orders_delivered", "orders_lost",
+            "orders_stale_at_delivery", "orders_rejected_at_delivery",
+            "order_delivery_latency_mean", "order_delivery_censored",
+            "order_receipt_return_latency_mean", "reports_prepared", "reports_dispatched",
+            "reports_delivered", "reports_expired", "reports_lost", "packets_cancelled",
+            "packets_self_delivered", "liaison_assignments", "liaison_completions",
+            "liaison_losses", "liaison_undeliverable", "liaison_agent_step_share",
+            "liaison_outbound_distance_mean", "liaison_return_distance_mean",
+        )
+        return {k: None for k in keys}
+    deliv = [x for ep in episodes for x in (ep.get("order_delivery_latencies") or [])]
+    ret = [x for ep in episodes for x in (ep.get("order_receipt_return_latencies") or [])]
+    out_paths = [x for ep in episodes for x in (ep.get("liaison_outbound_paths") or [])]
+    ret_paths = [x for ep in episodes for x in (ep.get("liaison_return_paths") or [])]
+    return {
+        "orders_prepared": total("orders_prepared"),
+        "orders_dispatched": total("orders_dispatched"),
+        "orders_delivered": total("orders_delivered"),
+        "orders_lost": total("orders_lost"),
+        "orders_stale_at_delivery": total("orders_stale_at_delivery"),
+        "orders_stale_definition": (
+            "issuer's own mission or recipient's standing order re-stamped after the packet was written"
+        ),
+        "orders_rejected_at_delivery": total("orders_rejected_at_delivery"),
+        "order_delivery_latency_mean": _mean(deliv),
+        "order_delivery_censored": total("orders_prepared") - total("orders_delivered"),
+        "order_receipt_return_latency_mean": _mean(ret),
+        "reports_prepared": total("reports_prepared"),
+        "reports_dispatched": total("reports_dispatched"),
+        "reports_delivered": total("reports_delivered"),
+        "reports_expired": total("reports_expired"),
+        "reports_lost": total("reports_lost"),
+        "packets_cancelled": total("packets_cancelled"),
+        "packets_self_delivered": total("packets_self_delivered"),
+        "liaison_assignments": total("liaison_assignments"),
+        "liaison_completions": total("liaison_completions"),
+        "liaison_losses": total("liaison_losses"),
+        "liaison_undeliverable": total("liaison_undeliverable"),
+        "liaison_agent_step_share": _ratio(total("liaison_agent_steps"), total("friendly_agent_steps")),
+        "liaison_outbound_distance_mean": _mean(out_paths),
+        "liaison_return_distance_mean": _mean(ret_paths),
     }
 
 

@@ -168,6 +168,13 @@ def _build_catalog() -> list[ActionSpec]:
     add("acoustic_contact", "REPORT_ACOUSTIC_CONTACT")  # coarse heard-presence report
     add("gesture_sync_go", "GESTURE_SYNC_GO")            # silent GO, LOS audience only
     add("gesture_execute", "GESTURE_EXECUTE")            # silent EXECUTE, LOS audience
+    # liaison (§4): deliver the packet one holds, cancel one's prepared
+    # packet / carrying duty, detach the direct subordinate in slot k as the
+    # agent of liaison carrying the prepared packet
+    add("deliver", "DELIVER_MESSAGE")
+    add("cancel", "CANCEL_MESSAGE")
+    for slot in range(MAX_SUB_SLOTS):
+        add("dispatch", f"DISPATCH_LIAISON_S{slot}", order_slot=slot)
     return specs
 
 
@@ -337,6 +344,12 @@ def compute_mask(
     gesture_execute_audience: bool = False,
     gesture_sync_audience: bool = False,
     reachable_sub_ids: frozenset[int] | set[int] | None = None,
+    liaison: bool = False,
+    carrying: bool = False,
+    outbox_empty: bool = True,
+    can_deliver: bool = False,
+    can_cancel: bool = False,
+    dispatch_slots: frozenset[int] | set[int] = frozenset(),
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -377,11 +390,41 @@ def compute_mask(
     * ``reachable_sub_ids`` — direct subordinates an order can actually be
       spoken to this tick (None → every slot, the radio behavior). A slot
       outside it is masked: an order that cannot be spoken is not an order.
+    * ``liaison`` — packets can be prepared (a liaison-enabled voice_only
+      scenario): an addressed act whose recipient is out of range PREPARES a
+      packet instead, so it stays legal while the outbox is empty; while the
+      outbox is occupied only in-range speech and CANCEL_MESSAGE remain.
+    * ``carrying`` — an active liaison duty: only STAY / MOVE / FIRE /
+      DELIVER_MESSAGE (and CANCEL_MESSAGE) are legal until the cycle ends.
+    * ``can_deliver`` / ``can_cancel`` / ``dispatch_slots`` — the liaison
+      actions' own preconditions, decided by the environment.
     """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
     if not soldier.alive:
         return mask
+
+    # a courier on duty: movement, self-defence, delivery, nothing else
+    if carrying:
+        for spec in CATALOG:
+            if spec.kind == "move":
+                nxt = (soldier.pos[0] + spec.move[0], soldier.pos[1] + spec.move[1])
+                if world.passable(nxt):
+                    mask[spec.index] = 1
+            elif spec.kind == "fire":
+                if soldier.ammo > 0 and visible_enemy_in_range:
+                    mask[spec.index] = 1
+            elif spec.kind == "deliver":
+                mask[spec.index] = can_deliver
+            elif spec.kind == "cancel":
+                mask[spec.index] = can_cancel
+        return mask
+
+    # with liaison enabled an out-of-range addressed act prepares a packet
+    # (legal while the outbox is empty); with it occupied, only in-range
+    # speech stays legal
+    may_prepare = liaison and outbox_empty
+    report_ok = superior_reachable or may_prepare
 
     for spec in CATALOG:
         if spec.kind == "move":
@@ -392,16 +435,22 @@ def compute_mask(
             if soldier.ammo > 0 and visible_enemy_in_range:
                 mask[spec.index] = 1
         elif spec.kind == "contact":
-            if (visible_enemy or held_contact_intel) and superior_reachable:
+            if (visible_enemy or held_contact_intel) and report_ok:
                 mask[spec.index] = 1
         elif spec.kind == "acoustic_contact":
-            if has_reportable_cue and superior_reachable:
+            if has_reportable_cue and report_ok:
                 mask[spec.index] = 1
         elif spec.kind == "sitrep":
-            if superior_reachable:
+            if report_ok:
                 mask[spec.index] = 1
+        elif spec.kind == "deliver":
+            mask[spec.index] = can_deliver
+        elif spec.kind == "cancel":
+            mask[spec.index] = can_cancel
+        elif spec.kind == "dispatch":
+            mask[spec.index] = spec.order_slot in dispatch_slots
         elif spec.kind == "done":
-            if superior_reachable and is_done_admissible(
+            if report_ok and is_done_admissible(
                 soldier,
                 roster,
                 root_mission=root_mission,
@@ -450,8 +499,12 @@ def compute_mask(
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
                 continue
-            if reachable_sub_ids is not None and subs[spec.order_slot].id not in reachable_sub_ids:
-                continue  # voice_only: nobody there to speak the order to
+            if (
+                reachable_sub_ids is not None
+                and subs[spec.order_slot].id not in reachable_sub_ids
+                and not may_prepare
+            ):
+                continue  # voice_only: nobody there to speak the order to, no courier
             # A5-3 stance orders: any mission-holding leader may set a
             # subordinate LEADER's formation; the recipient must actually
             # lead an element. No doctrine derivation, no cooldown — a

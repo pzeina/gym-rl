@@ -64,6 +64,15 @@ def _one_of_every_act() -> dict[str, tuple[str, str]]:
         "format_execute": (lang.format_execute("SL1"), "order"),
         "format_gesture_execute": (lang.format_gesture_execute("SL1"), "order"),
         "format_gesture_sync_go": (lang.format_gesture_sync_go("RFN1"), "order"),
+        # liaison (§4): the detaching order, and the receipts a courier brings
+        # home — WILCO / NEGATIVE are acknowledgements of an order
+        "format_dispatch": (lang.format_dispatch("RFN1", "TL1", "SL1", "order"), "order"),
+        "format_receipt": (lang.format_receipt("SL1", "RFN1", "TL2", True), "order"),
+        "format_negative": (lang.format_negative("SL1", "TL2"), "order"),
+        # deliberate: the undeliverable notice reports a VACANT position — the
+        # fact behind it is a casualty chain with no living holder, which is
+        # what a reader skimming for losses is looking for
+        "format_undeliverable": (lang.format_undeliverable("SL1", "RFN1", "TL2"), "cas"),
         "format_sync_propose": (lang.format_sync_propose("RFN1", ["RFN2"]), "order"),
         "format_sync_go": (lang.format_sync_go("RFN1"), "order"),
         "format_contact": (lang.format_contact("SL1", "TL2", 3, (12, 7)), "rep"),

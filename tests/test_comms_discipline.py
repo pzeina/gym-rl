@@ -67,8 +67,8 @@ def test_spaces_are_frozen_at_v14():
     acoustic + cohesion observation blocks. Phase C appends the liaison
     actions and message block on top; the first 228 indices never move
     (tests/test_degraded_regression.py pins them)."""
-    assert N_ACTIONS == 231
-    assert OBS_DIM == 328
+    assert N_ACTIONS == 237
+    assert OBS_DIM == 351
 
 
 # ---------------------------------------------------------------------- #

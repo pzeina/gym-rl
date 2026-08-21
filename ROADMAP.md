@@ -9228,3 +9228,77 @@ deliberately deferred (`docs/vision.md` §2c).
   for this docs+artifacts commit — the suite would be red against the
   other session's half-landed edits, which is their cycle's gate to run,
   not this one's.
+- **2026-08-21** — **DEGRADED COMMUNICATIONS, PHASES A–C LANDED** (spec:
+  `docs/degraded-communications.md`; an explicitly authorized spaces break,
+  actions 228 → 237, OBS_DIM 220 → 351 / core 166 → 297; every pre-break
+  checkpoint is orphaned — see the blast-radius note in the entry above).
+  **Phase A `11b7b8d`** — `sound_model="off"|"tactical"`:
+  `cohort/core/acoustics.py` (SoundEvent, threshold propagation with the
+  published forest 0.9 / wall 0.5 loss over a canonicalized ray, ≤4 coarse
+  AcousticCues per agent, TTL 6), movement/voice/signal/weapon/trap events for
+  both sides, a per-enemy frozen heard anchor in the OpFor priority between
+  visual pursuit and standing intent (never fires on sound, never writes
+  `last_seen_player`), `ACOUSTIC CONTACT` formatter/parser, trace/oracle
+  `medium` + `heard_by` + sound detectors, renderer glyphs. Golden digests
+  (`tests/test_degraded_regression.py`) pin global/range/defend/brique seeded
+  episodes bit-identical with sound off. **Phase B `62d42cd`** —
+  `comm_model="voice_only"` (`cohort/core/cohesion.py`): low voice within
+  `voice_range` + LOS, no HQ station (HQ injection raises), no arbitration,
+  per-listener pictures with listener-local novelty and a per-issuer
+  picture clock, reports/orders masked without a reachable station, casualty
+  news only to witnesses; EXECUTE/SYNC_GO as sound signals (range 6, walls
+  block) + silent `GESTURE_*` (LOS, range 6); `REPORT_ACOUSTIC_CONTACT` with
+  store-and-forward relay (carried-report TTL 20); friendly telemetry gated
+  behind local perception; hierarchical visual-link graph measured every tick
+  in every mode, priced only under voice_only (−0.01/agent-step, −0.03 cap
+  per element); acoustic (94) + cohesion (14) obs blocks; §9 metrics in
+  `cohort/metrics.py`. Presets `squad_voice_direct`,
+  `squad_voice_no_acoustic_ablation` (root_done_bonus=0 via
+  `reward_overrides`). **Phase C (this commit)** — `cohort/core/liaison.py`:
+  MessagePacket (canonical text + frozen payload, TTL 40, addressed to a
+  command position resolved through succession) and LiaisonTask (not a
+  MissionType); out-of-range acts prepare a packet (no message, no cost, no
+  reward), `DISPATCH_LIAISON_S0..3` / `DELIVER_MESSAGE` / `CANCEL_MESSAGE`;
+  order credit, tenure and cooldown start at delivery, an ORDER's WILCO /
+  NEGATIVE returns as a receipt, vacant position → undeliverable notice,
+  courier death → packet lost silently; courier credit
+  `liaison_progress=0.03` (watermarked per packet and leg),
+  `liaison_delivery=0.5` (accepted content only), `liaison_receipt_return=0.25`;
+  liaison obs block (23); packet funnel metrics; oracle/trace/renderer/play/
+  dashboard/briefing audit surfaces. Presets `squad_voice_liaison`,
+  `squad_global_acoustic_control`, `squad_range_control`
+  (`squad_global_control` IS the shipped `squad`). Suite 1154 green.
+  **Implementation decisions that refine the brief (none re-decides it):**
+  (1) gestures and REPORT_ACOUSTIC_CONTACT are masked outside voice_only /
+  tactical respectively; (2) the cohesion penalty applies under voice_only
+  only, the metric everywhere (§6 lists it under "Change in voice_only");
+  (3) a self-carried packet earns no courier credit — its origin is paid the
+  information value at delivery; `liaison_delivery` pays only when the
+  content was accepted (applied / novel / fresh / confirmed), so carrying
+  redundant reports earns nothing; (4) CANCEL_MESSAGE is charged
+  `order_churn` and logged as churn (the brief: "counted as churn"); (5) a
+  redundant ACOUSTIC CONTACT draws `contact_redundant`, per "same rules as
+  CONTACT"; (6) friendly last-known MISSION refreshes only from heard
+  ORDER / WILCO / DONE-confirm / SUPPORT END / succession lines, position
+  only from perception; the briefing seeds every agent with its element's
+  positions and the root OPORD; (7) `PACKET_TTL=40` and
+  `ACOUSTIC_REPORT_TTL=20` are published starting hypotheses the brief left
+  open; (8) the existing liveness-pruning of pictures (dead enemies drop
+  out) is kept for consistency with `range` — a small oracle leak the brief
+  would tighten. **Scouts (Phase B, 3M steps, seed 12, no --reward, launched
+  15:44 detached):** `squad_voice_direct_v1_seed12` (pid 48785,
+  `logs/squad_voice_direct_v1_seed12.log`) and
+  `squad_voice_no_acoustic_ablation_v1_seed12` (pid 48796,
+  `logs/squad_voice_no_acoustic_ablation_v1_seed12.log`). Both trained on
+  the Phase-B tree (obs 328 / 231 actions) and are **checkpoint-incompatible
+  with Phase C** by design ("an experiment, not the finished mode"); their
+  landing evaluations spawn on the post-C tree and will fail — read their
+  `metrics.csv` curves via `run_report`, or evaluate from a worktree at
+  `62d42cd`. **Remaining:** oracle diagnosis of the two scouts (acoustic
+  exposure, visual-link reachability, actual signal use) before any reward
+  change; the full matched-arm retrain from scratch on the final layout
+  (`squad`, `squad_global_acoustic_control`, `squad_range_control`,
+  `squad_voice_no_acoustic_ablation`, `squad_voice_direct`,
+  `squad_voice_liaison`; scout seed then 12/13/14, N=100 at seeds 500–599);
+  Phase D (platoon / patrol_brique mirrors). The fleet's own retrain on the
+  new spaces is the separate, mandatory consequence of the break.

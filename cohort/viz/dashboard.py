@@ -268,11 +268,19 @@ class LiveSession:
 
 
 def _messages_of(env: CohortEnv, messages) -> list[dict]:
+    # audit metadata (degraded communications §8): the medium a line
+    # travelled on and who actually received its semantics, when the env
+    # recorded them for exactly these messages
+    metas = list(getattr(env, "last_message_meta", []))
+    if len(metas) != len(messages):
+        metas = [None] * len(messages)
     return [
         {"kind": m.kind.value, "from": _callsign_of(env, m.sender_id),
          "to": _callsign_of(env, m.recipient_id) if m.recipient_id is not None else "ALL",
-         "text": m.text}
-        for m in messages
+         "text": m.text,
+         "medium": meta.get("medium") if meta else None,
+         "heard_by": meta.get("heard_by") if meta else None}
+        for m, meta in zip(messages, metas, strict=True)
     ]
 
 

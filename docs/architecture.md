@@ -19,6 +19,7 @@ judgment that defines a good soldier is *learned* (reward shaping).
 │ core domain                             (pure logic)    │
 │   ranks  missions/doctrine  orders  language            │
 │   units/roster/succession  world/LOS                    │
+│   acoustics  cohesion  liaison  (degraded comms)        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -148,14 +149,37 @@ purely additive. Net-busy arbitration (step 2 above) stays **global** under
 `"range"` too: earshot shapes who *hears* a message, but every station shares
 the one frequency, so simultaneous transmissions still contend.
 
-> **Designed, not implemented:** [`degraded-communications.md`](degraded-communications.md)
-> specifies a third, radio-less `comm_model="voice_only"`. It uses low voice
-> range, makes movement/voice/signals/weapons produce uncertain acoustic cues
-> for both sides, adds silent gestures and a continuous local visual-link
-> graph, removes remote friendly telemetry plus the HQ/global-frequency
-> exceptions, and permits physical store-and-forward delivery by an agent of
-> liaison. The existing `"range"` model remains a radio model and is the
-> control, not an approximation of that design.
+The third model, `comm_model="voice_only"`, is the radio-less degraded mode
+specified in [`degraded-communications.md`](degraded-communications.md)
+(implemented 2026-08-21, Phases A–C):
+
+* every utterance is low voice within `voice_range` with LOS
+  (`core/cohesion.py::voice_audible`); there is no HQ station after the
+  briefing, no global frequency and no arbitration; the briefing OPORD is
+  labelled `briefing`, umpire lines `external`;
+* pictures are per listener and updated only by own sightings and heard
+  CONTACTs; novelty and the re-task exception are listener-local;
+* reports need a superior in earshot, orders a subordinate in earshot — or,
+  with `liaison_enabled`, an out-of-range act prepares a `MessagePacket`
+  (`core/liaison.py`) that is self-carried or handed to a detached agent of
+  liaison and spoken at the recipient (`DELIVER_MESSAGE`); order credit and
+  tenure start at delivery, an ORDER's WILCO returns as a receipt;
+* `EXECUTE`/`SYNC_GO` are pre-arranged sound signals (`SIGNAL_RANGE`, walls
+  block) with silent `GESTURE_*` alternatives (LOS, `GESTURE_RANGE`);
+* friendly telemetry is gated behind local perception (last-known position
+  and heard mission, aging) and the element visual-link graph
+  (`core/cohesion.py::element_links`) is measured every tick and priced.
+
+Independently, `sound_model="tactical"` (`core/acoustics.py`) makes
+movement, voice, signals, weapon fire and traps produce `SoundEvent`s for
+both sides: friendlies hold at most four coarse `AcousticCue`s (kind, side
+attribution, bearing sector, distance band, confidence, age — never a source
+id or cell) and may report them as `ACOUSTIC CONTACT`; each enemy keeps its
+own frozen heard anchor and investigates it between visual pursuit and its
+standing intent, never firing on sound alone. `global`/`range` episodes stay
+bit-identical with sound off (golden digests in
+`tests/test_degraded_regression.py`). The trace records every message's
+medium and actual semantic hearers beside each sound event's detectors.
 
 ## The OpFor
 

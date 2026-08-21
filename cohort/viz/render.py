@@ -173,6 +173,14 @@ def render_frame(env: CohortEnv, transcript_lines: int = 10) -> np.ndarray:
             ax.add_patch(
                 Circle(s.pos, 0.85, fill=False, lw=1.3, color=HUMAN_RING, zorder=6)
             )
+        # liaison (§4): an envelope on a courier (filled) or a holder of a
+        # prepared packet (outline) — packet status is auditable on the frame
+        if s.id in getattr(env, "_liaison", {}):
+            ax.annotate("✉", s.pos, textcoords="offset points", xytext=(7, 6),
+                        fontsize=7, color="#7c3aed", zorder=7, annotation_clip=False)
+        elif s.id in getattr(env, "_outbox", {}):
+            ax.annotate("✉", s.pos, textcoords="offset points", xytext=(7, 6),
+                        fontsize=7, color="#a78bfa", alpha=0.8, zorder=7, annotation_clip=False)
         ax.annotate(
             s.callsign, s.pos, textcoords="offset points", xytext=(0, -12),
             ha="center", fontsize=6.5, color=FRIEND_LINE, fontweight="bold",

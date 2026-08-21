@@ -47,6 +47,10 @@ class MessageKind(Enum):
     CASUALTY = "casualty"              # agent down (auto broadcast)
     TRAP = "trap"                      # friendly hit a hidden device (auto broadcast)
     TAKING_COMMAND = "taking_command"  # succession announcement (auto broadcast)
+    DISPATCH = "dispatch"              # liaison (§4.3): the local order detaching a courier
+    RECEIPT = "receipt"                # liaison (§4.5): the courier returns an order's
+    #                                    WILCO / negative receipt (or an undeliverable
+    #                                    notice) to the origin
 
 
 @dataclass(frozen=True)

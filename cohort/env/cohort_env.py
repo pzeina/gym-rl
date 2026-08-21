@@ -26,6 +26,7 @@ from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_s
 from cohort.core import acoustics as snd
 from cohort.core import cohesion
 from cohort.core import language as lang
+from cohort.core import liaison as lia
 from cohort.core.missions import (
     HOLDS_GROUND,
     IN_POSITION_RADIUS,
@@ -84,6 +85,10 @@ SYNC_WINDOW = 8
 _TX_PRIORITY: dict[str, int] = {
     "contact": 0, "acoustic_contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3,
 }
+
+#: §4.5 acceptance: which packet deliveries count as ACCEPTED (and so pay the
+#: courier's liaison_delivery) — the content was new to the recipient
+_ACCEPTED = ("applied", "novel", "refresh", "fresh", "confirmed")
 
 #: how long a carried ACOUSTIC CONTACT report stays reportable onward
 #: (store-and-forward, §3.6.3): measured from its SOURCE step, so relaying
@@ -252,6 +257,20 @@ class CohortEnv(ParallelEnv):
         #: metrics bookkeeping: enemy ids whose move this step investigated a
         #: heard anchor
         self._opfor_investigating: set[int] = set()
+        # --- liaison / message packets (§4) — inert unless liaison_enabled ---
+        self._packet_seq = 0
+        self.packets: list[lia.MessagePacket] = []          # every packet this episode
+        self._outbox: dict[int, lia.MessagePacket] = {}      # origin id -> held packet
+        self._liaison: dict[int, lia.LiaisonTask] = {}      # carrier id -> duty
+        #: replaced soldier id -> successor id, so a packet addressed to a
+        #: command position reaches its current holder (§4.4)
+        self._successions: dict[int, int] = {}
+        #: this step's packet lifecycle events (trace/metrics bookkeeping)
+        self._packet_log: list[dict] = []
+
+    @property
+    def _liaison_on(self) -> bool:
+        return self._voice_only and bool(self.spec_cfg.liaison_enabled)
 
     @property
     def _voice_only(self) -> bool:
@@ -438,6 +457,12 @@ class CohortEnv(ParallelEnv):
         self._station = {}
         self._command_pairs = (0, 0)
         self._opfor_investigating = set()
+        self._packet_seq = 0
+        self.packets = []
+        self._outbox = {}
+        self._liaison = {}
+        self._successions = {}
+        self._packet_log = []
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -771,6 +796,7 @@ class CohortEnv(ParallelEnv):
         self._retask_log = []
         self._order_pay_log = []
         self._step_sounds = []
+        self._packet_log = []
         present = list(self.agents)
 
         # --- timed-order release (A5-2): "AT T PLUS n" comes due ---
@@ -858,6 +884,7 @@ class CohortEnv(ParallelEnv):
                 for callsign in present:
                     ledger.add(callsign, "combat", cfg.human_death)
             for successor, replaced in self.roster.succeed(dead):
+                self._successions[replaced.id] = successor.id
                 if self._voice_only:
                     self._succession_knowledge(successor, replaced)
                 text = (
@@ -880,6 +907,9 @@ class CohortEnv(ParallelEnv):
         # observations assembled below — i.e. the NEXT Blue decision. ---
         self._deliver_sounds_to_blue()
         self.last_sound_events = list(self._step_sounds)
+
+        # --- liaison duties (§4): loss, expiry, vacant positions, progress ---
+        self._update_liaisons(ledger)
 
         # --- knowledge decay ---
         living_enemy_ids = {e.id for e in self.enemies if e.alive}
@@ -975,7 +1005,11 @@ class CohortEnv(ParallelEnv):
             ):
                 subs = soldier.living_subordinates(self.roster)
                 if subs:
-                    all_tasked = all(sub.mission is not None for sub in subs)
+                    # §6.7: a detached courier counts as tasked (its tactical
+                    # mission is suspended, not absent)
+                    all_tasked = all(
+                        sub.mission is not None or sub.id in self._liaison for sub in subs
+                    )
                     ledger.add(callsign, "command", cfg.coverage_bonus if all_tasked else cfg.coverage_gap)
 
         # preparation-period occupancy (v1.10): before H, an agent in cover
@@ -1341,14 +1375,31 @@ class CohortEnv(ParallelEnv):
             self._execute_signal(soldier, ledger, gesture=True)
         elif spec.kind == "gesture_sync_go":
             self._sync_go(soldier, ledger, gesture=True)
+        elif spec.kind == "deliver":
+            self._deliver_message(soldier, ledger)
+        elif spec.kind == "cancel":
+            self._cancel_message(soldier, ledger)
+        elif spec.kind == "dispatch":
+            self._dispatch_liaison(soldier, spec.order_slot, ledger)
         elif spec.kind == "sitrep":
             # under the reporting doctrine the mandated cadence *is* the
             # freshness interval, so a due report is never scored as spam
             leader = self.roster.leader_of(soldier)
-            if self._voice_only and (leader is None or not self._audible_to(leader, soldier.id)):
-                return  # mask guards: nobody is there to report to (defensive)
             interval = self.spec_cfg.sitrep_cadence or cfg.sitrep_interval
             fresh = self._step_count - soldier.last_sitrep_step >= interval
+            if self._voice_only and (leader is None or not self._audible_to(leader, soldier.id)):
+                if leader is not None and self._may_prepare(soldier):
+                    # §4.2: the report captures the sender's state NOW; its
+                    # delay is visible as age at delivery, never refreshed
+                    self._prepare_packet(
+                        soldier, "sitrep", leader,
+                        lang.format_sitrep(
+                            leader.callsign, soldier.callsign, soldier.health, soldier.ammo,
+                            soldier.pos, in_cover=self.world.cover_at(soldier.pos),
+                        ),
+                        payload=(fresh, self._step_count),
+                    )
+                return  # mask guards: nobody is there to report to (defensive)
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
             self._charge_transmission(soldier, ledger, "report")
             soldier.last_sitrep_step = self._step_count
@@ -1483,25 +1534,46 @@ class CohortEnv(ParallelEnv):
         visible this exact tick. Novelty is the intended superior's, every
         local listener updates its own picture, and the captured coordinates
         travel unchanged (a relayed report never tracks the enemy)."""
-        cfg = self.rewards_cfg
         leader = self.roster.leader_of(soldier)
         held = self._agent_known.get(soldier.callsign, {})
-        if leader is None or not held or not self._audible_to(leader, soldier.id):
-            return  # mask guards: no superior in earshot or nothing to say (defensive)
+        if leader is None or not held:
+            return  # mask guards: nothing to say (defensive)
+        entries = tuple(sorted(held.items(), key=lambda kv: (-kv[1][2], kv[0])))  # freshest first
+        _eid, (nx, ny, _t) = entries[0]
+        text = lang.format_contact(leader.callsign, soldier.callsign, len(entries), (int(nx), int(ny)))
+        if not self._audible_to(leader, soldier.id):
+            if self._may_prepare(soldier):
+                # §4.2: the packet captures the selected held-intel
+                # coordinates and source time; carriage never refreshes them
+                self._prepare_packet(
+                    soldier, "contact", leader, text, payload=entries,
+                    source_step=max(e[1][2] for e in entries),
+                )
+            return
+        self._charge_transmission(soldier, ledger, "report")
+        self._deliver_contact(soldier, leader, entries, soldier, text, ledger)
+
+    def _deliver_contact(
+        self, origin: Soldier, recipient: Soldier, entries: tuple, speaker: Soldier,
+        text: str, ledger: RewardLedger,
+    ) -> str:
+        """Land a CONTACT (spoken by ``speaker`` — the origin itself or a
+        courier) on ``recipient``: novelty is the INTENDED superior's, the
+        credit is the origin's, every local listener updates its own picture
+        with the captured coordinates and source time. Returns the outcome:
+        novel | refresh | redundant."""
+        cfg = self.rewards_cfg
         step = self._step_count
-        entries = sorted(held.items(), key=lambda kv: (-kv[1][2], kv[0]))  # freshest first
-        superior_picture = self._agent_known.setdefault(leader.callsign, {})
+        superior_picture = self._agent_known.setdefault(recipient.callsign, {})
         new_intel = any(eid not in superior_picture for eid, _ in entries)
         refreshes = any(
             eid in superior_picture and step - superior_picture[eid][2] >= cfg.contact_refresh_age
             for eid, _ in entries
         )
         for eid, _entry in entries:
-            soldier.reported_enemy_ids.add(eid)
-        # every living friendly in earshot updates its own picture with the
-        # REPORTED coordinates and source time — never a fresher live fix
+            origin.reported_enemy_ids.add(eid)
         for listener in self.roster.living:
-            if listener is soldier or not self._audible_to(listener, soldier.id):
+            if listener is speaker or not self._audible_to(listener, speaker.id):
                 continue
             picture = self._agent_known.setdefault(listener.callsign, {})
             changed = False
@@ -1513,23 +1585,18 @@ class CohortEnv(ParallelEnv):
                     picture[eid] = entry
             if changed:
                 self._picture_changed_step[listener.callsign] = step
-        soldier.last_contact_report_step = step
+        origin.last_contact_report_step = step
         if new_intel:
-            ledger.add(soldier.callsign, "report", cfg.contact_new)
+            ledger.add(origin.callsign, "report", cfg.contact_new)
         elif not refreshes:
-            ledger.add(soldier.callsign, "report", cfg.contact_redundant)
-        self._charge_transmission(soldier, ledger, "report")
-        _eid, (nx, ny, _t) = entries[0]
+            ledger.add(origin.callsign, "report", cfg.contact_redundant)
+        outcome = "novel" if new_intel else ("refresh" if refreshes else "redundant")
         self._say(
-            MessageKind.CONTACT,
-            soldier.id,
-            soldier.leader_id,
-            lang.format_contact(
-                self._addressee(soldier), soldier.callsign, len(entries), (int(nx), int(ny))
-            ),
-            useful=new_intel or refreshes,
-            redundant=not (new_intel or refreshes),
+            MessageKind.CONTACT, speaker.id, recipient.id, text,
+            useful=outcome != "redundant", redundant=outcome == "redundant",
+            relayed_by=speaker.callsign if speaker is not origin else None,
         )
+        return outcome
 
     def _reportable_acoustic(self, soldier: Soldier) -> tuple | None:
         """The acoustic report this agent would make: its freshest/strongest
@@ -1553,48 +1620,85 @@ class CohortEnv(ParallelEnv):
         kind, bearing/distance bands and source step, never a grid reference.
         Same direct-voice / store-and-forward / listener-local novelty rules
         as CONTACT; it never touches the exact enemy picture."""
-        cfg = self.rewards_cfg
         leader = self.roster.leader_of(soldier)
         report = self._reportable_acoustic(soldier)
-        if leader is None or report is None or not self._audible_to(leader, soldier.id):
+        if leader is None or report is None:
             return  # mask guards (defensive)
+        kind_idx, bearing, band, source_step, _strength = report
+        text = lang.format_acoustic_contact(
+            leader.callsign, soldier.callsign, kind_idx, bearing, band, source_step
+        )
+        if not self._audible_to(leader, soldier.id):
+            if self._may_prepare(soldier):
+                # §4.2: only the cue's coarse fields travel — carriage can
+                # never upgrade it into an exact CONTACT
+                self._prepare_packet(
+                    soldier, "acoustic_contact", leader, text, payload=report,
+                    source_step=source_step,
+                )
+            return
+        self._charge_transmission(soldier, ledger, "report")
+        self._deliver_acoustic(soldier, leader, report, soldier, text, ledger)
+
+    def _deliver_acoustic(
+        self, origin: Soldier, recipient: Soldier, report: tuple, speaker: Soldier,
+        text: str, ledger: RewardLedger,
+    ) -> str:
+        """Land an ACOUSTIC CONTACT on ``recipient`` (see _deliver_contact).
+        Returns novel | redundant."""
+        cfg = self.rewards_cfg
         kind_idx, bearing, band, source_step, _strength = report
         key = (kind_idx, bearing, band, source_step)
         step = self._step_count
-        superior_memory = self._acoustic_received.setdefault(leader.callsign, {})
+        superior_memory = self._acoustic_received.setdefault(recipient.callsign, {})
         novel = key not in superior_memory
         for listener in self.roster.living:
-            if listener is soldier or not self._audible_to(listener, soldier.id):
+            if listener is speaker or not self._audible_to(listener, speaker.id):
                 continue
             memory = self._acoustic_received.setdefault(listener.callsign, {})
             if key not in memory:
                 memory[key] = step
                 self._held_acoustic.setdefault(listener.callsign, []).append(report)
-        if novel:
-            ledger.add(soldier.callsign, "report", cfg.acoustic_contact_new)
-        else:
-            ledger.add(soldier.callsign, "report", cfg.contact_redundant)
-        self._charge_transmission(soldier, ledger, "report")
+        ledger.add(origin.callsign, "report", cfg.acoustic_contact_new if novel else cfg.contact_redundant)
         self._say(
-            MessageKind.ACOUSTIC_CONTACT,
-            soldier.id,
-            soldier.leader_id,
-            lang.format_acoustic_contact(
-                self._addressee(soldier), soldier.callsign, kind_idx, bearing, band, source_step
-            ),
-            useful=novel,
-            redundant=not novel,
+            MessageKind.ACOUSTIC_CONTACT, speaker.id, recipient.id, text,
+            useful=novel, redundant=not novel,
+            relayed_by=speaker.callsign if speaker is not origin else None,
         )
+        return "novel" if novel else "redundant"
 
     def _report_done(self, soldier: Soldier, ledger: RewardLedger) -> None:
-        cfg = self.rewards_cfg
         mission = soldier.mission
         if mission is None:
             return
         if self._voice_only:
             leader = self.roster.leader_of(soldier)
-            if leader is None or not self._audible_to(leader, soldier.id):
+            if leader is None:
+                return
+            if not self._audible_to(leader, soldier.id):
+                if self._may_prepare(soldier):
+                    # §4.2: the claim captures claimant, task and claim time;
+                    # it is heard and adjudicated only on delivery
+                    obj_name = (
+                        self.world.objectives[mission.objective_id].name
+                        if mission.objective_id is not None
+                        else mission.extra.get("control")
+                    )
+                    self._prepare_packet(
+                        soldier, "done", leader,
+                        lang.format_done(leader.callsign, soldier.callsign, mission.type, obj_name),
+                        payload=(mission.type, mission.objective_id, mission.extra.get("control"),
+                                 mission.step_assigned, self._step_count),
+                    )
                 return  # §3.4: a claim nobody hears is not adjudicated (mask guards)
+        self._charge_transmission(soldier, ledger, "report")
+        self._adjudicate_done(soldier, soldier, ledger)
+
+    def _adjudicate_done(self, soldier: Soldier, speaker: Soldier, ledger: RewardLedger) -> str:
+        """Hear and adjudicate ``soldier``'s MISSION COMPLETE claim, spoken by
+        ``speaker`` (the claimant or its courier). Returns confirmed | rejected."""
+        cfg = self.rewards_cfg
+        mission = soldier.mission
         ctx = self._compliance_ctx(soldier, None, self._make_view(soldier))
         root_objective = (
             self.world.objective_by_name(self.spec_cfg.root_objective)
@@ -1636,12 +1740,12 @@ class CohortEnv(ParallelEnv):
         )
         self._say(
             MessageKind.DONE,
-            soldier.id,
+            speaker.id,
             soldier.leader_id,
             lang.format_done(self._addressee(soldier), soldier.callsign, mission.type, obj_name),
             useful=truthful,
+            relayed_by=speaker.callsign if speaker is not soldier else None,
         )
-        self._charge_transmission(soldier, ledger, "report")
         # the superior answers on the net: the verdict is command traffic, not
         # a secret side effect (a false claimant silently keeping its mission
         # was the one place command state stopped being derivable from traffic)
@@ -1667,17 +1771,18 @@ class CohortEnv(ParallelEnv):
             soldier.mission = None  # standing by for new orders
             if self._voice_only:
                 self._note_mission_heard(responder_id, soldier, None)
-        else:
-            self._say(
-                MessageKind.DONE_REJECT,
-                responder_id,
-                soldier.id,
-                lang.format_done_reject(soldier.callsign, responder_cs),
-            )
-            ledger.add(soldier.callsign, "report", cfg.done_false)
-            # a rejected claim cannot be re-rolled every tick (v1.10): the
-            # superior said continue the mission, so continue it
-            soldier.last_done_reject_step = self._step_count
+            return "confirmed"
+        self._say(
+            MessageKind.DONE_REJECT,
+            responder_id,
+            soldier.id,
+            lang.format_done_reject(soldier.callsign, responder_cs),
+        )
+        ledger.add(soldier.callsign, "report", cfg.done_false)
+        # a rejected claim cannot be re-rolled every tick (v1.10): the
+        # superior said continue the mission, so continue it
+        soldier.last_done_reject_step = self._step_count
+        return "rejected"
 
     def _sync_propose(self, soldier: Soldier, ledger: RewardLedger) -> None:
         """Trinôme bound proposal (A5-4), by VOICE — no radio involved.
@@ -1886,7 +1991,6 @@ class CohortEnv(ParallelEnv):
         re-tasked or priced; reissuing the standing stance is churn. The
         stance persists until changed and dies with the leader.
         """
-        cfg = self.rewards_cfg
         subs = soldier.living_subordinates(self.roster)
         if spec.order_slot >= len(subs):
             return
@@ -1894,6 +1998,12 @@ class CohortEnv(ParallelEnv):
         if not recipient.living_subordinates(self.roster):
             return  # not an element leader (mask guards; defensive)
         if self._voice_only and not self._audible_to(recipient, soldier.id):
+            if self._may_prepare(soldier):
+                self._prepare_packet(
+                    soldier, "order", recipient,
+                    lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+                    payload=("formation", spec.order_formation), ack_required=True,
+                )
             return  # §3.4: not spoken — nobody there to hear it (mask guards)
         self._charge_transmission(soldier, ledger, "command")
         if not self._audible_to(recipient, soldier.id):
@@ -1904,31 +2014,40 @@ class CohortEnv(ParallelEnv):
                 lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
             )
             return
-        if recipient.formation is spec.order_formation:
-            ledger.add(soldier.callsign, "command", cfg.order_churn)
-            return
-        recipient.formation = spec.order_formation
+        self._apply_formation(soldier, recipient, spec.order_formation, soldier, ledger)
+
+    def _apply_formation(
+        self, issuer: Soldier, recipient: Soldier, formation, speaker: Soldier, ledger: RewardLedger,
+    ) -> str:
+        """Land a stance order on its recipient (spoken by the issuer or a
+        courier). Returns applied | churn."""
+        cfg = self.rewards_cfg
+        if recipient.formation is formation:
+            ledger.add(issuer.callsign, "command", cfg.order_churn)
+            return "churn"
+        recipient.formation = formation
         self._say(
             MessageKind.ORDER,
-            soldier.id,
+            speaker.id,
             recipient.id,
-            lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+            lang.format_formation_order(issuer.callsign, recipient.callsign, formation),
             useful=True,
+            relayed_by=speaker.callsign if speaker is not issuer else None,
         )
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
                 recipient.id,
-                soldier.id,
-                lang.format_ack(soldier.callsign, recipient.callsign),
+                issuer.id,
+                lang.format_ack(issuer.callsign, recipient.callsign),
                 useful=True,
             )
+        return "applied"
 
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
         if spec.order_formation is not None:
             self._issue_formation(soldier, spec, ledger)
             return
-        cfg = self.rewards_cfg
         subs = soldier.living_subordinates(self.roster)
         if spec.order_slot >= len(subs):
             return
@@ -1946,6 +2065,20 @@ class CohortEnv(ParallelEnv):
             supported_id = subs[spec.order_support_slot].id
 
         if self._voice_only and not self._audible_to(recipient, soldier.id):
+            if self._may_prepare(soldier):
+                # §4.2: the packet captures the complete directive and timing
+                # clause; nothing is communicated, charged or rewarded now
+                target = self._order_target_name(spec.order_mission, obj_id, supported_id, control_name)
+                self._prepare_packet(
+                    soldier, "order", recipient,
+                    lang.format_order(
+                        soldier.callsign, recipient.callsign, spec.order_mission, target,
+                        at_my_command=spec.order_amc,
+                    ),
+                    payload=("mission", spec.order_mission, obj_id, supported_id, control_name,
+                             bool(spec.order_amc)),
+                    ack_required=True,
+                )
             return  # §3.4: an order that cannot be spoken is not an order (mask guards)
 
         # airtime (A4): the ORDER goes out on the net either way below
@@ -1965,21 +2098,44 @@ class CohortEnv(ParallelEnv):
                 awaiting_signal=spec.order_amc,
             )
             return
+        self._adjudicate_order(
+            soldier, recipient, spec.order_mission, obj_id, supported_id, control_name,
+            bool(spec.order_amc), soldier, ledger,
+        )
 
+    def _order_target_name(self, mission_type, obj_id, supported_id, control_name) -> str | None:
+        """The spoken target of an order (mirrors ``_assign_mission``)."""
+        if mission_type is MissionType.SUPPORT and supported_id is not None:
+            return self.roster.by_id[supported_id].callsign
+        if control_name is not None:
+            return control_name
+        if obj_id is not None:
+            return self.world.objectives[obj_id].name
+        return None
+
+    def _adjudicate_order(
+        self, soldier: Soldier, recipient: Soldier, mission_type: MissionType,
+        obj_id: int | None, supported_id: int | None, control_name: str | None,
+        amc: bool, speaker: Soldier, ledger: RewardLedger,
+    ) -> str:
+        """Price and apply an order that REACHED its recipient — spoken by the
+        issuer, or by a courier at delivery (§4.5: order reward at receipt).
+        Returns applied | churn."""
+        cfg = self.rewards_cfg
         # churn: reissuing the standing order is radio noise, not command —
         # a no-op (the mission is NOT restamped, so tenure keeps accruing).
         # A timing-qualifier change (pending vs. live) is a different order.
         if (
             recipient.mission is not None
-            and recipient.mission.type is spec.order_mission
+            and recipient.mission.type is mission_type
             and recipient.mission.objective_id == obj_id
             and recipient.mission.extra.get("supported_id") == supported_id
             and recipient.mission.extra.get("control") == control_name
-            and bool(recipient.mission.awaiting_signal) == bool(spec.order_amc)
+            and bool(recipient.mission.awaiting_signal) == bool(amc)
         ):
             ledger.add(soldier.callsign, "command", cfg.order_churn)
             self._log_order_pay(soldier, "churn", None, cfg.order_churn)
-            return
+            return "churn"
 
         standing = recipient.mission
         intent_changed = (
@@ -2003,7 +2159,7 @@ class CohortEnv(ParallelEnv):
         if standing is not None:
             excepted, reason = self._retask_exception(soldier, recipient, intent_changed)
             same_anchor = self._standing_anchor_key(standing) == self._order_anchor_key(
-                spec.order_mission, obj_id, supported_id, recipient, control_name
+                mission_type, obj_id, supported_id, recipient, control_name
             )
             cost = 0.0
             if not excepted and cfg.order_retask_cost_base != 0.0:
@@ -2030,7 +2186,7 @@ class CohortEnv(ParallelEnv):
         # changed after the subordinate was last ordered (propagation credit)
         fresh_tasking = standing is None or intent_changed
         if fresh_tasking:
-            quality = derivation_quality(soldier.mission.type if soldier.mission else None, spec.order_mission)
+            quality = derivation_quality(soldier.mission.type if soldier.mission else None, mission_type)
             # refs #52: `tier`/`pay` only accumulate what the ledger is charged
             # below; they decide nothing. A fresh tasking whose task derives
             # from nothing the issuer holds is logged as `unpaid` rather than
@@ -2061,13 +2217,15 @@ class CohortEnv(ParallelEnv):
             issuer_id=soldier.id,
             issuer_cs=soldier.callsign,
             recipient=recipient,
-            mission_type=spec.order_mission,
+            mission_type=mission_type,
             objective_id=obj_id,
             supported_id=supported_id,
             control_name=control_name,
-            awaiting_signal=spec.order_amc,
+            awaiting_signal=amc,
+            speaker_id=speaker.id,
         )
-        soldier.last_issued[recipient.id] = (spec.order_mission, obj_id, supported_id)
+        soldier.last_issued[recipient.id] = (mission_type, obj_id, supported_id)
+        return "applied"
 
     def _retask_exception(
         self, issuer: Soldier, recipient: Soldier, intent_changed: bool
@@ -2151,8 +2309,12 @@ class CohortEnv(ParallelEnv):
         control_name: str | None = None,
         effective_at: int | None = None,
         awaiting_signal: bool = False,
+        speaker_id: int | None = None,
     ) -> bool:
         """Transmit an order; if the recipient hears it, apply it (+ WILCO).
+
+        ``speaker_id`` (liaison, §4.5) is the courier actually speaking the
+        issuer's canonical line at delivery; audibility is the speaker's.
 
         Under ``comm_model="global"`` every order is heard. Under ``"range"``
         an out-of-earshot recipient never receives the mission: the ORDER
@@ -2196,10 +2358,11 @@ class CohortEnv(ParallelEnv):
         if effective_at is not None or awaiting_signal:
             # staging: until the order is effective, compliance is HOLD here
             extra["staging"] = recipient.pos
-        lands = self._audible_to(recipient, issuer_id)
+        speaker = issuer_id if speaker_id is None else speaker_id
+        lands = self._audible_to(recipient, speaker)
         self._say(
             MessageKind.ORDER,
-            issuer_id,
+            speaker,
             recipient.id,
             lang.format_order(
                 issuer_cs,
@@ -2210,6 +2373,10 @@ class CohortEnv(ParallelEnv):
                 at_my_command=awaiting_signal,
             ),
             useful=lands,
+            relayed_by=(
+                self.roster.by_id[speaker].callsign if speaker != issuer_id and speaker in self.roster.by_id
+                else None
+            ),
         )
         if not lands:
             return False
@@ -2240,7 +2407,7 @@ class CohortEnv(ParallelEnv):
         )
         recipient.last_order_step = self._step_count
         if self._voice_only:
-            self._note_mission_heard(issuer_id, recipient, mission_type)
+            self._note_mission_heard(speaker, recipient, mission_type)
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
@@ -2642,9 +2809,387 @@ class CohortEnv(ParallelEnv):
         return out
 
     def _detached_ids(self) -> frozenset[int]:
-        """Soldiers on an active liaison task (Phase C) — outside their
-        originating element's cohesion denominator. None before Phase C."""
-        return frozenset()
+        """Soldiers on an active liaison duty — explicitly outside their
+        originating element's cohesion denominator (§3.7)."""
+        return frozenset(self._liaison)
+
+    # ------------------------------------------------------------------ #
+    # liaison and message packets (§4) — inert unless liaison_enabled
+    # ------------------------------------------------------------------ #
+
+    def _may_prepare(self, soldier: Soldier) -> bool:
+        """May this agent spend the tick preparing a packet? Liaison enabled,
+        outbox empty, not itself on courier duty."""
+        return self._liaison_on and soldier.id not in self._outbox and soldier.id not in self._liaison
+
+    def _log_packet(self, event: str, packet: lia.MessagePacket, **extra: object) -> None:
+        self._packet_log.append(
+            {"event": event, "packet": packet.id, "kind": packet.kind, "origin": packet.origin_cs,
+             "recipient": packet.recipient_cs, "created": packet.created_step,
+             "step": self._step_count, **extra}
+        )
+
+    def _prepare_packet(
+        self, soldier: Soldier, kind: str, recipient: Soldier, text: str, *,
+        payload: tuple = (), source_step: int | None = None, ack_required: bool = False,
+    ) -> lia.MessagePacket:
+        """§4.2: spend the tick writing the canonical line. No transcript
+        message, no communication charge, no remote effect, no reward."""
+        packet = lia.MessagePacket(
+            id=self._packet_seq, kind=kind, origin_id=soldier.id, origin_cs=soldier.callsign,
+            recipient_id=recipient.id, recipient_cs=recipient.callsign, text=text,
+            created_step=self._step_count, source_step=source_step, ack_required=ack_required,
+            payload=tuple(payload), holder_id=soldier.id,
+        )
+        self._packet_seq += 1
+        self.packets.append(packet)
+        self._outbox[soldier.id] = packet
+        self._log_packet("prepared", packet)
+        return packet
+
+    def _held_packet(self, soldier: Soldier) -> lia.MessagePacket | None:
+        task = self._liaison.get(soldier.id)
+        if task is not None:
+            return task.packet
+        return self._outbox.get(soldier.id)
+
+    def _packet_target(self, soldier: Soldier) -> Soldier | None:
+        """The living holder of the position the packet in hand is going to."""
+        task = self._liaison.get(soldier.id)
+        if task is not None:
+            return lia.resolve_position(task.current_target_id(), self.roster, self._successions)
+        packet = self._outbox.get(soldier.id)
+        if packet is None:
+            return None
+        return lia.resolve_position(packet.recipient_id, self.roster, self._successions)
+
+    def _can_deliver(self, soldier: Soldier) -> bool:
+        """§4.5: DELIVER_MESSAGE is legal only with the current recipient in
+        voice range (and the packet unexpired)."""
+        packet = self._held_packet(soldier)
+        if packet is None or packet.expired(self._step_count):
+            return False
+        target = self._packet_target(soldier)
+        return target is not None and target is not soldier and self._audible_to(target, soldier.id)
+
+    def _dispatch_slots(self, soldier: Soldier) -> frozenset[int]:
+        """Direct-subordinate slots that may be detached as the agent of
+        liaison for the prepared packet (§4.3)."""
+        packet = self._outbox.get(soldier.id)
+        if packet is None or soldier.id in self._liaison:
+            return frozenset()
+        slots = set()
+        for k, sub in enumerate(soldier.living_subordinates(self.roster)[:4]):
+            if sub.id == packet.recipient_id or sub.id in self._liaison or sub.id in self._outbox:
+                continue
+            if not self._audible_to(sub, soldier.id):
+                continue
+            slots.add(k)
+        return frozenset(slots)
+
+    def _last_known_pos(self, observer: Soldier, other_id: int) -> tuple[int, int] | None:
+        rec = self._friendly_state.get(observer.callsign, {}).get(other_id)
+        return tuple(rec[0]) if rec is not None else None
+
+    def _dispatch_liaison(self, soldier: Soldier, slot: int, ledger: RewardLedger) -> None:
+        """§4.3: hand the prepared packet to the subordinate in ``slot`` — a
+        local spoken order that consumes the tick; the packet changes owner
+        and the carrier's tactical mission is suspended."""
+        if slot not in self._dispatch_slots(soldier):
+            return  # mask guards (defensive)
+        packet = self._outbox.pop(soldier.id)
+        carrier = soldier.living_subordinates(self.roster)[slot]
+        anchor = self._last_known_pos(soldier, packet.recipient_id)
+        if anchor is None:
+            rcpt = self.roster.by_id.get(packet.recipient_id)
+            anchor = tuple(rcpt.pos) if rcpt is not None else tuple(soldier.pos)
+        task = lia.LiaisonTask(
+            packet=packet, carrier_id=carrier.id, dispatched_step=self._step_count,
+            anchor=anchor, suspended_mission=carrier.mission,
+        )
+        carrier.mission = None
+        packet.holder_id = carrier.id
+        packet.status = "dispatched"
+        self._liaison[carrier.id] = task
+        self._charge_transmission(soldier, ledger, "command")
+        self._say(
+            MessageKind.DISPATCH, soldier.id, carrier.id,
+            lang.format_dispatch(carrier.callsign, soldier.callsign, packet.recipient_cs, packet.kind),
+            useful=True,
+        )
+        self._log_packet("dispatched", packet, carrier=carrier.callsign)
+
+    def _cancel_message(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """§4.2: cancel one's prepared packet, or abandon one's courier duty.
+        An internal command decision, counted as churn — never as speech."""
+        cfg = self.rewards_cfg
+        packet = self._outbox.pop(soldier.id, None)
+        task = self._liaison.get(soldier.id)
+        if packet is None and task is None:
+            return  # mask guards (defensive)
+        if packet is None:
+            packet = task.packet
+            self._end_liaison(task, "cancelled")
+        packet.status = "cancelled"
+        packet.holder_id = None
+        ledger.add(soldier.callsign, "command", cfg.order_churn)
+        self._log_order_pay(soldier, "churn", None, cfg.order_churn)
+        self._log_packet("cancelled", packet)
+
+    def _end_liaison(self, task: lia.LiaisonTask, how: str) -> None:
+        """Close a courier's duty: restore the suspended mission unless a
+        newer valid order arrived meanwhile (§4.5), drop the task."""
+        carrier = self.roster.by_id.get(task.carrier_id)
+        self._liaison.pop(task.carrier_id, None)
+        if carrier is not None and carrier.alive and carrier.mission is None:
+            carrier.mission = task.suspended_mission
+        self._log_packet(how, task.packet, carrier=carrier.callsign if carrier else None,
+                         outbound_path=task.outbound_path, return_path=task.return_path)
+
+    def _deliver_message(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """§4.5: speak the carried line to the current holder of the addressed
+        position; the content is validated and credited exactly as direct
+        speech would be, to the ORIGIN; a dispatched courier earns the
+        liaison credit when the content is accepted."""
+        cfg = self.rewards_cfg
+        if not self._can_deliver(soldier):
+            return  # mask guards (defensive)
+        task = self._liaison.get(soldier.id)
+        packet = self._held_packet(soldier)
+        target = self._packet_target(soldier)
+        origin = lia.resolve_position(packet.origin_id, self.roster, self._successions)
+        step = self._step_count
+        if task is not None and task.leg == "returning":
+            # the receipt reaches the origin position: the cycle completes
+            positive = bool(packet.receipt)
+            text = (
+                lang.format_receipt(target.callsign, soldier.callsign, packet.recipient_cs, positive)
+                if packet.status != "undeliverable"
+                else lang.format_undeliverable(target.callsign, soldier.callsign, packet.recipient_cs)
+            )
+            self._charge_transmission(soldier, ledger, "report")
+            self._say(MessageKind.RECEIPT, soldier.id, target.id, text, useful=True)
+            ledger.add(soldier.callsign, "report", cfg.liaison_receipt_return)
+            self._log_packet("returned", packet, carrier=soldier.callsign, positive=positive,
+                             latency=step - (packet.delivered_step or step))
+            self._end_liaison(task, "completed")
+            return
+        # outbound delivery: the spoken line is the canonical text, the
+        # speaker is whoever carries it
+        self._charge_transmission(soldier, ledger, "report" if packet.kind != "order" else "command")
+        outcome = self._land_packet(packet, origin, target, soldier, ledger)
+        packet.delivered_step = step
+        packet.status = "delivered"
+        stale = self._packet_stale(packet, origin, target)
+        self._log_packet("delivered", packet, carrier=soldier.callsign, outcome=outcome,
+                         latency=step - packet.created_step, stale=stale,
+                         courier=task is not None)
+        accepted = outcome in _ACCEPTED
+        if task is None:
+            # self-carried: the origin spoke its own line; outbox cleared
+            self._outbox.pop(soldier.id, None)
+            packet.holder_id = None
+            return
+        if accepted:
+            ledger.add(soldier.callsign, "report", cfg.liaison_delivery)
+        if packet.ack_required:
+            # the recipient's local WILCO / NEGATIVE becomes a receipt carried
+            # back to the origin position; the order already stands
+            packet.receipt = outcome in ("applied", "churn")
+            task.leg = "returning"
+            task.return_anchor = self._last_known_pos(soldier, packet.origin_id) or (
+                tuple(origin.pos) if origin is not None else tuple(soldier.pos)
+            )
+            task.best_distance = float("inf")
+            packet.status = "returning"
+            return
+        packet.holder_id = None
+        self._end_liaison(task, "completed")
+
+    def _packet_stale(self, packet, origin, target) -> bool:
+        """§9 orders_stale_at_delivery definition: the issuer's own mission or
+        the recipient's standing order changed after the packet was written."""
+        if packet.kind != "order":
+            return False
+        changed = []
+        if origin is not None and origin.mission is not None:
+            changed.append(origin.mission.step_assigned > packet.created_step)
+        if target is not None and target.mission is not None:
+            changed.append(target.mission.step_assigned > packet.created_step)
+        return any(changed)
+
+    def _land_packet(self, packet, origin, target, speaker: Soldier, ledger: RewardLedger) -> str:
+        """Apply a delivered packet with the same validation as direct speech
+        at this tick (§4.5). Returns the outcome class."""
+        kind = packet.kind
+        if kind == "order":
+            return self._land_order(packet, origin, target, speaker, ledger)
+        if origin is None:
+            # a report whose origin position is vacant is still information:
+            # credited to nobody, pictures still updated by the spoken line
+            origin = speaker
+        if kind == "contact":
+            return self._deliver_contact(origin, target, packet.payload, speaker, packet.text, ledger)
+        if kind == "acoustic_contact":
+            return self._deliver_acoustic(origin, target, packet.payload, speaker, packet.text, ledger)
+        if kind == "sitrep":
+            fresh, prep_step = packet.payload
+            cfg = self.rewards_cfg
+            ledger.add(origin.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
+            origin.last_sitrep_step = max(origin.last_sitrep_step, prep_step)
+            self._say(MessageKind.SITREP, speaker.id, target.id, packet.text, useful=fresh,
+                      redundant=not fresh, relayed_by=speaker.callsign if speaker is not origin else None)
+            return "fresh" if fresh else "spam"
+        if kind == "done":
+            mission_type, obj_id, control, assigned, _claim_step = packet.payload
+            m = origin.mission
+            if (
+                m is None or m.type is not mission_type or m.objective_id != obj_id
+                or m.extra.get("control") != control or m.step_assigned != assigned
+                or self.roster.leader_of(origin) is not target
+            ):
+                # the claimed task is no longer the claimant's standing order,
+                # or the recipient no longer commands it: rejected, aloud
+                self._say(MessageKind.DONE, speaker.id, target.id, packet.text, useful=False,
+                          relayed_by=speaker.callsign if speaker is not origin else None)
+                self._say(MessageKind.DONE_REJECT, target.id, origin.id,
+                          lang.format_done_reject(origin.callsign, target.callsign))
+                return "obsolete"
+            return self._adjudicate_done(origin, speaker, ledger)
+        return "unknown"
+
+    def _land_order(self, packet, origin, target, speaker: Soldier, ledger: RewardLedger) -> str:
+        """Validate and apply a carried order at delivery: the origin position's
+        current holder must still command the recipient, the recipient must
+        still be able to hold the task. Invalid → spoken NEGATIVE, never a
+        silent reinterpretation."""
+        payload = packet.payload
+        lawful = (
+            origin is not None and origin.alive and origin is not target
+            and target.leader_id == origin.id
+            and origin.effective_authority > target.effective_authority
+        )
+        if lawful and payload and payload[0] == "mission":
+            _tag, mission_type, obj_id, supported_id, control_name, amc = payload
+            if target.effective_authority < min_hold_authority(mission_type):
+                lawful = False
+            if obj_id is not None and obj_id >= len(self.world.objectives):
+                lawful = False
+            if mission_type is MissionType.SUPPORT:
+                supported = self.roster.by_id.get(supported_id)
+                if supported is None or not supported.alive or supported.leader_id != origin.id:
+                    lawful = False
+            if control_name is not None and self.world.control_by_name(control_name) is None:
+                lawful = False
+        if (
+            lawful and payload and payload[0] == "formation"
+            and not target.living_subordinates(self.roster)
+        ):
+            lawful = False
+        if not lawful:
+            self._say(MessageKind.ORDER, speaker.id, target.id, packet.text, useful=False,
+                      relayed_by=speaker.callsign)
+            self._say(MessageKind.ACK, target.id, packet.origin_id,
+                      lang.format_negative(packet.origin_cs, target.callsign), useful=False)
+            return "rejected"
+        if payload[0] == "formation":
+            return self._apply_formation(origin, target, payload[1], speaker, ledger)
+        _tag, mission_type, obj_id, supported_id, control_name, amc = payload
+        return self._adjudicate_order(
+            origin, target, mission_type, obj_id, supported_id, control_name, amc, speaker, ledger,
+        )
+
+    def _update_liaisons(self, ledger: RewardLedger) -> None:
+        """Per-step duty bookkeeping (§4.4-4.5): a dead courier loses its
+        packet (no backup, nobody told), an expired packet ends the duty, a
+        vacant destination turns the courier around with an undeliverable
+        notice, and NEW closure toward the fixed anchor pays progress."""
+        cfg = self.rewards_cfg
+        step = self._step_count
+        for origin_id, packet in list(self._outbox.items()):
+            holder = self.roster.by_id.get(origin_id)
+            if holder is None or not holder.alive:
+                packet.status = "lost"
+                packet.holder_id = None
+                del self._outbox[origin_id]
+                self._log_packet("lost", packet)
+            elif packet.expired(step):
+                packet.status = "expired"
+                packet.holder_id = None
+                del self._outbox[origin_id]
+                self._log_packet("expired", packet)
+        for carrier_id, task in list(self._liaison.items()):
+            carrier = self.roster.by_id.get(carrier_id)
+            packet = task.packet
+            if carrier is None or not carrier.alive:
+                packet.status = "lost"
+                packet.holder_id = None
+                self._liaison.pop(carrier_id, None)
+                self._log_packet("lost", packet, carrier=carrier.callsign if carrier else None)
+                continue
+            if packet.expired(step):
+                packet.status = "expired"
+                packet.holder_id = None
+                self._end_liaison(task, "expired")
+                continue
+            target = lia.resolve_position(task.current_target_id(), self.roster, self._successions)
+            if target is None:
+                if task.leg == "outbound":
+                    # §4.4: the addressed position is vacant — return with an
+                    # undeliverable notice, never retarget clairvoyantly
+                    packet.status = "undeliverable"
+                    packet.receipt = False
+                    task.leg = "returning"
+                    task.return_anchor = self._last_known_pos(carrier, packet.origin_id) or task.anchor
+                    task.best_distance = float("inf")
+                    self._log_packet("undeliverable", packet, carrier=carrier.callsign)
+                    continue
+                packet.holder_id = None
+                self._end_liaison(task, "orphaned")
+                continue
+            if carrier.pos != carrier.prev_pos:
+                if task.leg == "outbound":
+                    task.outbound_path += 1
+                else:
+                    task.return_path += 1
+            d = dist(carrier.pos, task.current_anchor())
+            if task.best_distance == float("inf"):
+                task.best_distance = d
+                continue
+            if d < task.best_distance - 1e-9:
+                cells = int(math.floor(task.best_distance) - math.floor(d))
+                task.best_distance = d
+                if cells > 0:
+                    ledger.add(carrier.callsign, "report", cfg.liaison_progress * cells)
+
+    def _liaison_view(self, soldier: Soldier) -> dict | None:
+        """The liaison observation block's inputs (§4.4, §5): fixed anchor,
+        local perception of the intended recipient, packet age, leg, receipt.
+        None when the scenario cannot prepare packets."""
+        if not self._liaison_on:
+            return None
+        step = self._step_count
+        task = self._liaison.get(soldier.id)
+        outbox = self._outbox.get(soldier.id)
+        packet = task.packet if task is not None else outbox
+        view: dict = {
+            "outbox_kind": outbox.kind if outbox is not None else None,
+            "carry_kind": task.packet.kind if task is not None else None,
+            "ttl": max(0.0, packet.ttl_remaining(step)) / lia.PACKET_TTL if packet is not None else 0.0,
+            "returning": task is not None and task.leg == "returning",
+            "anchor": None, "recipient_pos": None,
+            "can_deliver": self._can_deliver(soldier),
+            "receipt": packet.receipt if (task is not None and task.leg == "returning") else None,
+        }
+        if packet is not None:
+            if task is not None:
+                view["anchor"] = task.current_anchor()
+            else:
+                view["anchor"] = self._last_known_pos(soldier, packet.recipient_id)
+            target = self._packet_target(soldier)
+            if target is not None and cohesion.friendly_visible(self.world, soldier, target):
+                view["recipient_pos"] = tuple(target.pos)
+        return view
 
     def _update_visual_links(self) -> None:
         """Rebuild every element's visual-link graph (§3.7) and the station
@@ -2759,6 +3304,7 @@ class CohortEnv(ParallelEnv):
             station=station,
             formation_error=form_err,
             friendly_state=self._friendly_view(soldier),
+            liaison=self._liaison_view(soldier),
         )
 
     def _draw_h_hour(self) -> None:
@@ -2859,6 +3405,12 @@ class CohortEnv(ParallelEnv):
                 if self._voice_only
                 else None
             ),
+            liaison=self._liaison_on,
+            carrying=soldier.id in self._liaison,
+            outbox_empty=soldier.id not in self._outbox,
+            can_deliver=self._liaison_on and self._can_deliver(soldier),
+            can_cancel=self._liaison_on and (soldier.id in self._outbox or soldier.id in self._liaison),
+            dispatch_slots=self._dispatch_slots(soldier) if self._liaison_on else frozenset(),
         )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:

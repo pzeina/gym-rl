@@ -27,6 +27,7 @@ from cohort.core.acoustics import (
     SOUND_MEMORY_TTL,
     WEAPON_DETECT_RADIUS,
 )
+from cohort.core.liaison import PACKET_KINDS
 from cohort.core.missions import Formation, MissionType
 from cohort.core.ranks import Rank
 
@@ -106,12 +107,19 @@ _ACOUSTIC_BLOCK = 2 + MAX_CUES * _CUE_FIELDS + (len(SOUND_KINDS) + 2) + 1
 #: per subordinate slot: perceived (1) + last-known age (1) = 6 + 2*N_SUB = 14
 _COHESION_BLOCK = 6 + 2 * N_SUB_SLOTS
 
+#: liaison / message block (§5): liaison enabled (1) + outbox present (1) +
+#: outbox kind one-hot (5) + carrying (1) + carried kind one-hot (5) + packet
+#: TTL remaining (1) + leg is return (1) + fixed-anchor dx, dy (2) + intended
+#: recipient perceived (1) + perceived dx, dy (2) + delivery possible (1) +
+#: receipt positive / negative (2) = 23
+_LIAISON_BLOCK = 1 + 1 + len(PACKET_KINDS) + 1 + len(PACKET_KINDS) + 1 + 1 + 2 + 1 + 2 + 1 + 2
+
 #: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 5 leader
 #: + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
 #: point) + 6 comms + patch (98, radius 3)
 #: = 13 + 22 + 2 + 2 + 3 + 5 + 20 + 16 + 12 + 12 + 9 + 6 + 98 = 220
-#: + 94 acoustic + 14 cohesion (degraded-communications cycle) = 328
+#: + 94 acoustic + 14 cohesion + 23 liaison (degraded-communications cycle) = 351
 #: Observation profiles.
 #:
 #: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
@@ -162,6 +170,7 @@ def obs_dim(profile: str = "full") -> int:
         + (2 * patch_radius(profile) + 1) ** 2 * 2
         + _ACOUSTIC_BLOCK
         + _COHESION_BLOCK
+        + _LIAISON_BLOCK
     )
 
 
@@ -187,6 +196,7 @@ OFF_COMMS = OFF_PHASE_LINES + 3 * N_PHASE_LINE_SLOTS
 OFF_PATCH = OFF_COMMS + _COMMS_BLOCK
 OFF_ACOUSTIC = OFF_PATCH + (2 * PATCH_RADIUS + 1) ** 2 * 2
 OFF_COHESION = OFF_ACOUSTIC + _ACOUSTIC_BLOCK
+OFF_LIAISON = OFF_COHESION + _COHESION_BLOCK
 
 #: within-block field offsets referenced outside this module
 SELF_COVER = OFF_SELF + 4 + len(RANK_ORDER)      # standing in cover
@@ -209,6 +219,15 @@ COHESION_FORM_ERR = OFF_COHESION + 3
 COHESION_LEADER_SEEN = OFF_COHESION + 4
 COHESION_LEADER_AGE = OFF_COHESION + 5
 COHESION_SUBS = OFF_COHESION + 6                 # (seen, age) per slot
+LIAISON_ENABLED = OFF_LIAISON
+LIAISON_OUTBOX = OFF_LIAISON + 1                 # outbox present + kind one-hot
+LIAISON_CARRYING = LIAISON_OUTBOX + 1 + len(PACKET_KINDS)
+LIAISON_TTL = LIAISON_CARRYING + 1 + len(PACKET_KINDS)
+LIAISON_RETURNING = LIAISON_TTL + 1
+LIAISON_ANCHOR = LIAISON_RETURNING + 1           # dx, dy
+LIAISON_RECIPIENT_SEEN = LIAISON_ANCHOR + 2      # seen, dx, dy
+LIAISON_CAN_DELIVER = LIAISON_RECIPIENT_SEEN + 3
+LIAISON_RECEIPT = LIAISON_CAN_DELIVER + 1        # positive, negative
 
 
 @dataclass
@@ -258,6 +277,11 @@ class AgentView:
     #: soldier id -> (currently visible, last known pos, last known mission
     #: type or None, age of the last-known state). None → live telemetry.
     friendly_state: dict | None = None
+    #: liaison / message state (§5): None when the scenario cannot prepare
+    #: packets, else a dict with outbox_kind, carry_kind, ttl (0..1),
+    #: returning, anchor (pos or None), recipient_pos (perceived, or None),
+    #: can_deliver, receipt (True/False/None)
+    liaison: dict | None = None
 
 
 def _mission_idx(mission_type: MissionType | None) -> float:
@@ -522,6 +546,39 @@ def build_observation(
                 out[i] = 1.0 if seen else 0.0
                 out[i + 1] = min(1.0, age / 20.0)
         i += 2
+
+    # --- liaison / message block (§5) ---
+    # explicit packet and destination state: a FIXED anchor (last known, never
+    # a live beacon) plus whether the recipient is locally perceived
+    li = view.liaison
+    if li is not None:
+        out[i] = 1.0
+        if li.get("outbox_kind") is not None:
+            out[i + 1] = 1.0
+            out[i + 2 + PACKET_KINDS.index(li["outbox_kind"])] = 1.0
+        j = i + 2 + len(PACKET_KINDS)
+        if li.get("carry_kind") is not None:
+            out[j] = 1.0
+            out[j + 1 + PACKET_KINDS.index(li["carry_kind"])] = 1.0
+        j += 1 + len(PACKET_KINDS)
+        out[j] = float(li.get("ttl", 0.0))
+        out[j + 1] = 1.0 if li.get("returning") else 0.0
+        anchor = li.get("anchor")
+        if anchor is not None:
+            out[j + 2] = (anchor[0] - x) / w
+            out[j + 3] = (anchor[1] - y) / h
+        rpos = li.get("recipient_pos")
+        if rpos is not None:
+            out[j + 4] = 1.0
+            out[j + 5] = (rpos[0] - x) / w
+            out[j + 6] = (rpos[1] - y) / h
+        out[j + 7] = 1.0 if li.get("can_deliver") else 0.0
+        receipt = li.get("receipt")
+        if receipt is True:
+            out[j + 8] = 1.0
+        elif receipt is False:
+            out[j + 9] = 1.0
+    i += _LIAISON_BLOCK
 
     expected = obs_dim(profile)
     assert i == expected, f"obs layout mismatch: wrote {i}, expected {expected}"

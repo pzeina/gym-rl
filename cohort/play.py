@@ -29,7 +29,9 @@ from cohort.training.evaluate import _pick_actions
 #: and at the end of a long import chain. Single-sourcing is kept; only the
 #: direction changed, so prose is now prose everywhere in the package.
 HELP = """
-    TL1, seize obj bravo       inject an order (any command-language line)
+    TL1, seize obj bravo       inject an order (any command-language line;
+                               under comm_model=voice_only command as the
+                               embodied root callsign — there is no HQ station)
     <enter> or s [n]           advance n steps (default 5)
     m                          show the map
     net [n]                    show the last n radio messages (default 15)
@@ -49,7 +51,17 @@ def _print_status(env) -> None:
         acting = f" (acting {s.effective_rank.name})" if s.effective_rank is not s.rank else ""
         human = " HUMAN" if s.human else ""
         leader = env.roster.by_id[s.leader_id].callsign if s.leader_id is not None else "HQ"
-        print(f"  {s.callsign:>5} [{s.rank.name}{acting}{human}] → {leader:<5} {state}  {mission}  @{s.pos}")
+        packet = ""
+        task = getattr(env, "_liaison", {}).get(s.id)
+        held = getattr(env, "_outbox", {}).get(s.id)
+        if task is not None:
+            packet = f"  ✉ carrying {task.packet.kind} ({task.leg}) → {task.current_anchor()}"
+        elif held is not None:
+            packet = f"  ✉ holds {held.kind} for {held.recipient_cs}"
+        print(
+            f"  {s.callsign:>5} [{s.rank.name}{acting}{human}] → {leader:<5} {state}  {mission}"
+            f"  @{s.pos}{packet}"
+        )
 
 
 def _advance(env, obs, net, rng, n: int) -> dict:

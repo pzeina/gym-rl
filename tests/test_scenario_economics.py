@@ -74,10 +74,10 @@ def test_no_other_shipping_scenario_gained_a_price():
         # degraded communications (docs/degraded-communications.md §3.3): a
         # voice-only root has no HQ channel, so the bonus for closing it is
         # structurally unearnable — priced at 0 by the scenario, never a flag
-        "squad_voice_direct", "squad_voice_no_acoustic_ablation",
+        "squad_voice_direct", "squad_voice_no_acoustic_ablation", "squad_voice_liaison",
     }
 
 
 def test_voice_only_presets_price_only_the_absent_hq_channel():
-    for arm in ("squad_voice_direct", "squad_voice_no_acoustic_ablation"):
+    for arm in ("squad_voice_direct", "squad_voice_no_acoustic_ablation", "squad_voice_liaison"):
         assert dict(get_scenario(arm).reward_overrides) == {"root_done_bonus": 0.0}, arm

@@ -179,6 +179,13 @@ class ScenarioSpec:
     #                               Under comm_model="voice_only" this is the low,
     #                               intelligible speaking radius of EVERY utterance
     #                               (presets: 2.0).
+    liaison_enabled: bool = False  # degraded communications §4: may an out-of-range
+    #                               addressed act prepare a physical message packet,
+    #                               to be self-carried or handed to a detached agent
+    #                               of liaison (DISPATCH_LIAISON_Sk / DELIVER_MESSAGE /
+    #                               CANCEL_MESSAGE)? Only meaningful under
+    #                               comm_model="voice_only"; the liaison actions are
+    #                               masked off everywhere else.
     sitrep_cadence: int | None = None  # reporting doctrine: an agent not in contact
     #                               owes a SITREP every this-many steps; overdue draws
     #                               RewardConfig.sitrep_overdue per step and is surfaced
@@ -277,6 +284,9 @@ class ScenarioSpec:
                 f"Unknown comm model {self.comm_model!r} "
                 "(expected global | range | voice_only)"
             )
+            raise ValueError(msg)
+        if self.liaison_enabled and self.comm_model != "voice_only":
+            msg = "liaison_enabled requires comm_model='voice_only' (a radio net needs no courier)"
             raise ValueError(msg)
         from cohort.env.observations import OBS_PROFILES
 
@@ -679,6 +689,45 @@ SCENARIOS["squad_voice_no_acoustic_ablation"] = replace(
     sound_model="off",
     experiment_arm="voice direct · no acoustics",
 )
+SCENARIOS["squad_voice_liaison"] = replace(
+    SCENARIOS["squad_voice_direct"],
+    name="squad_voice_liaison",
+    description=(
+        "Degraded communications, final squad mode: the voice-only acoustic "
+        "direct arm with physical message packets — an out-of-range order or "
+        "report is prepared, then self-carried or handed to a detached agent "
+        "of liaison and delivered by voice at the recipient."
+    ),
+    liaison_enabled=True,
+    experiment_arm="voice liaison",
+)
+# The two same-space radio controls of the matched experiment (§9). The
+# frozen shipped reference, `squad_global_control`, IS the registered `squad`
+# scenario (global radio, sound off, liaison masked) — it is not duplicated
+# under a second name, so the baseline member keeps its identity.
+SCENARIOS["squad_global_acoustic_control"] = replace(
+    SCENARIOS["squad"],
+    name="squad_global_acoustic_control",
+    description=(
+        "Degraded-communications control: the squad scenario on its global "
+        "radio net with the tactical acoustic layer ON — separates sound "
+        "exposure from loss of radio."
+    ),
+    sound_model="tactical",
+    experiment_arm="global radio · acoustics",
+)
+SCENARIOS["squad_range_control"] = replace(
+    SCENARIOS["squad"],
+    name="squad_range_control",
+    description=(
+        "Degraded-communications control: the squad scenario on a range-limited "
+        "radio net (comm_range=12) with the tactical acoustic layer ON — the "
+        "range-radio comparison under the same sound environment."
+    ),
+    comm_model="range",
+    sound_model="tactical",
+    experiment_arm="range radio · acoustics",
+)
 
 
 def get_scenario(name: str) -> ScenarioSpec:
@@ -858,10 +907,17 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # carried acoustic report stays reportable, and whether a courier can
         # be detached at all (Phase C; False until then)
         "acoustic_report_ttl": _acoustic_report_ttl(),
-        "liaison_enabled": bool(getattr(spec, "liaison_enabled", False)),
+        "liaison_enabled": bool(spec.liaison_enabled),
+        "packet_ttl": _packet_ttl(),
         # the cohesion price travels with the regime (voice_only only)
         "visual_link_priced": spec.comm_model == "voice_only",
     }
+
+
+def _packet_ttl() -> int:
+    from cohort.core.liaison import PACKET_TTL
+
+    return PACKET_TTL
 
 
 def _acoustic_report_ttl() -> int:

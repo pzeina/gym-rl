@@ -335,6 +335,23 @@ def observe(env) -> dict:
         # source truth, semantic hearers and non-semantic detectors — oracle
         # material only; the cue an agent holds carries none of this
         "sound_events": [ev.to_record() for ev in getattr(env, "last_sound_events", [])],
+        # liaison (§4): every packet's status and the active courier duties,
+        # with the fixed anchors they walk toward — ground truth for audit,
+        # never an agent input
+        "packets": [p.to_record() for p in getattr(env, "packets", [])],
+        "liaison": {
+            env.roster.by_id[cid].callsign: {
+                "packet": task.packet.id,
+                "leg": task.leg,
+                "anchor": list(task.current_anchor()),
+                "dispatched": task.dispatched_step,
+                "suspended_mission": (
+                    task.suspended_mission.type.name if task.suspended_mission is not None else None
+                ),
+            }
+            for cid, task in getattr(env, "_liaison", {}).items()
+            if cid in env.roster.by_id
+        },
         # audit metadata for the last step's messages (medium + actual
         # semantic hearers), parallel to env.last_messages
         "message_meta": list(getattr(env, "last_message_meta", [])),

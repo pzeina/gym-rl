@@ -1,9 +1,15 @@
 # Voice-only degraded communications
 
-> **STATUS: design and implementation brief; not implemented.** Nothing in
-> `cohort/` currently provides the semantics specified here. The existing
-> `comm_model="range"` remains a range-limited **radio** model and must not be
-> relabelled as this mode.
+> **STATUS: Phases A–C implemented on `multi-agent-dev` (2026-08-21; commits
+> `11b7b8d`, `62d42cd` and the Phase C commit), matched-arm retrain and Phase
+> D pending.** `comm_model="voice_only"`, `sound_model="tactical"`, gestures,
+> the visual-link graph and the liaison packet system are in `cohort/`; the
+> registered arms are `squad_voice_direct`, `squad_voice_no_acoustic_ablation`,
+> `squad_voice_liaison`, `squad_global_acoustic_control` and
+> `squad_range_control` (`squad_global_control` is the shipped `squad`).
+> Implementation notes that refine, never re-decide, this brief are in the
+> ROADMAP progress log entry of that date. The existing `comm_model="range"`
+> remains a range-limited **radio** model and is not relabelled as this mode.
 
 ## 0. Decision and scope
 

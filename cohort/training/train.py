@@ -823,7 +823,7 @@ def _spec_economics(scenario: str) -> dict:
         "ablation", "opfor_mode", "comm_model", "n_enemies",
         # degraded communications (§8 provenance): the run must say which
         # communications/acoustic regime produced it
-        "sound_model", "voice_range", "comm_range",
+        "sound_model", "voice_range", "comm_range", "liaison_enabled",
     )
     return {k: getattr(spec, k, None) for k in keys}
 
@@ -1020,6 +1020,7 @@ def main() -> None:
     import cohort.core  # for the closure below, not for a name used here
     import cohort.core.acoustics  # deferred by cohort.config (briefing)
     import cohort.core.language  # deferred by cohort.config
+    import cohort.core.liaison  # deferred by cohort.config (briefing)
     import cohort.core.oracle  # deferred by CohortEnv.oracle()
     import cohort.metrics  # imported for the snapshot, not for a name used here
     import cohort.viz.render  # noqa: F401  # same; reached only when --gif is set
