@@ -85,11 +85,20 @@ def test_time_to_contact_is_zero_without_a_preparation_period():
             assert obs[cs]["observation"][TEMPO_TIME_TO_CONTACT] == 0.0, name
 
 
-def test_patch_block_is_the_last_block_and_sized_by_the_radius():
+def test_patch_block_precedes_the_degraded_comms_blocks_and_is_sized_by_the_radius():
+    """The patch used to be the last block; the degraded-communications cycle
+    appended the acoustic and cohesion blocks after it (spec §5: append, so
+    nothing before them moves)."""
+    from cohort.env.observations import OFF_ACOUSTIC, OFF_COHESION
+
     env = make_env("fireteam")
     obs, _ = env.reset(seed=1)
     tl = env.roster.by_callsign["TL1"]
     vec = obs["TL1"]["observation"]
     patch = env.world.local_patch(tl.pos, PATCH_RADIUS).reshape(-1)
-    assert OFF_PATCH + patch.shape[0] == OBS_DIM
-    assert np.array_equal(vec[OFF_PATCH:], patch)
+    assert OFF_PATCH + patch.shape[0] == OFF_ACOUSTIC < OFF_COHESION < OBS_DIM
+    assert np.array_equal(vec[OFF_PATCH:OFF_ACOUSTIC], patch)
+    # a radio scenario with sound off: the appended blocks are structurally
+    # unavailable and read as zeros, except the cohesion link/perception
+    # flags that are measured in every mode
+    assert not vec[OFF_ACOUSTIC:OFF_COHESION].any()

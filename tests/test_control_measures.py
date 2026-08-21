@@ -245,7 +245,7 @@ def test_obs_dim_math():
     # 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 5 leader
     # + 20 subs + 16 enemies + 12 obj + 12 wp + 9 pl + 6 comms
     # + 98 patch (radius 3) = 220
-    assert OBS_DIM == 220
+    assert OBS_DIM == 328  # degraded-comms cycle: 220 + 94 acoustic + 14 cohesion
     assert N_OBJECTIVE_SLOTS == 4
     assert N_WAYPOINT_SLOTS == 4
     assert N_PHASE_LINE_SLOTS == 3

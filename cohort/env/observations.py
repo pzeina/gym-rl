@@ -20,6 +20,13 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from cohort.core.acoustics import (
+    CUE_SIDES,
+    MAX_CUES,
+    SOUND_KINDS,
+    SOUND_MEMORY_TTL,
+    WEAPON_DETECT_RADIUS,
+)
 from cohort.core.missions import Formation, MissionType
 from cohort.core.ranks import Rank
 
@@ -80,11 +87,31 @@ _COVER_BLOCK = 3
 #: compromise the v1.10 space break pays off; the flag now means what it says)
 _COMMS_BLOCK = 5 + 1
 
+#: --- degraded communications (docs/degraded-communications.md §5) ---
+#: Both blocks are APPENDED after the patch for EVERY comm model / profile,
+#: zero-filled when structurally unavailable (sound off, radio modes), so one
+#: honest fleet-breaking cycle replaces scenario-specific network shapes.
+#:
+#: acoustic block: [sound_model active, comm_model is voice_only] (2) +
+#: MAX_CUES cues x (kind one-hot 5 + side one-hot 3 + eight-way bearing 8 +
+#: distance band 3 + confidence 1 + ttl-remaining 1 = 21) + own last emitted
+#: sound (kind one-hot 5 + radius/16 + age 1) + held-reportable-cue flag
+#: = 2 + 84 + 7 + 1 = 94
+_CUE_FIELDS = len(SOUND_KINDS) + len(CUE_SIDES) + 8 + 3 + 1 + 1
+_ACOUSTIC_BLOCK = 2 + MAX_CUES * _CUE_FIELDS + (len(SOUND_KINDS) + 2) + 1
+
+#: cohesion / local-friendly block: element visual link intact (1) +
+#: disconnected age (1) + at formation station (1) + normalized formation
+#: error (1) + leader currently perceived (1) + leader last-known age (1) +
+#: per subordinate slot: perceived (1) + last-known age (1) = 6 + 2*N_SUB = 14
+_COHESION_BLOCK = 6 + 2 * N_SUB_SLOTS
+
 #: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 5 leader
 #: + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
 #: point) + 6 comms + patch (98, radius 3)
 #: = 13 + 22 + 2 + 2 + 3 + 5 + 20 + 16 + 12 + 12 + 9 + 6 + 98 = 220
+#: + 94 acoustic + 14 cohesion (degraded-communications cycle) = 328
 #: Observation profiles.
 #:
 #: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
@@ -133,6 +160,8 @@ def obs_dim(profile: str = "full") -> int:
         + 3 * N_PHASE_LINE_SLOTS
         + (_COMMS_BLOCK if wide else _COMMS_BLOCK - 1)
         + (2 * patch_radius(profile) + 1) ** 2 * 2
+        + _ACOUSTIC_BLOCK
+        + _COHESION_BLOCK
     )
 
 
@@ -156,6 +185,8 @@ OFF_WAYPOINTS = OFF_OBJECTIVES + 3 * N_OBJECTIVE_SLOTS
 OFF_PHASE_LINES = OFF_WAYPOINTS + 3 * N_WAYPOINT_SLOTS
 OFF_COMMS = OFF_PHASE_LINES + 3 * N_PHASE_LINE_SLOTS
 OFF_PATCH = OFF_COMMS + _COMMS_BLOCK
+OFF_ACOUSTIC = OFF_PATCH + (2 * PATCH_RADIUS + 1) ** 2 * 2
+OFF_COHESION = OFF_ACOUSTIC + _ACOUSTIC_BLOCK
 
 #: within-block field offsets referenced outside this module
 SELF_COVER = OFF_SELF + 4 + len(RANK_ORDER)      # standing in cover
@@ -166,6 +197,18 @@ COVER_PRESENT = OFF_COVER                        # nearest-cover present/dx/dy
 LEADER_HUMAN = OFF_LEADER + 4                    # leader-is-human flag
 COMMS_KNOWN_PRESENT = OFF_COMMS + 2              # a known enemy is on the picture
 COMMS_SITREP_DUE = OFF_COMMS + 5                 # SITREP due-ness (v1.10 slot)
+ACOUSTIC_SOUND_ON = OFF_ACOUSTIC                 # sound_model active
+ACOUSTIC_VOICE_ONLY = OFF_ACOUSTIC + 1           # comm_model is voice_only
+ACOUSTIC_CUES = OFF_ACOUSTIC + 2                 # first cue slot
+ACOUSTIC_OWN = ACOUSTIC_CUES + MAX_CUES * _CUE_FIELDS   # own last sound
+ACOUSTIC_REPORTABLE = ACOUSTIC_OWN + len(SOUND_KINDS) + 2
+COHESION_LINK = OFF_COHESION                     # element visual link intact
+COHESION_BREAK_AGE = OFF_COHESION + 1
+COHESION_STATION = OFF_COHESION + 2
+COHESION_FORM_ERR = OFF_COHESION + 3
+COHESION_LEADER_SEEN = OFF_COHESION + 4
+COHESION_LEADER_AGE = OFF_COHESION + 5
+COHESION_SUBS = OFF_COHESION + 6                 # (seen, age) per slot
 
 
 @dataclass
@@ -192,6 +235,29 @@ class AgentView:
     sync_pending: bool = False
     #: fraction of the synchronized window remaining after a GO, in [0, 1]
     sync_active: float = 0.0
+    # --- degraded communications (§5) ---
+    #: tactical acoustics active / comm model is voice_only
+    sound_on: bool = False
+    voice_only: bool = False
+    #: the agent's bounded coarse cue memory (cohort.core.acoustics.AcousticCue),
+    #: already pruned to the freshest/strongest MAX_CUES; empty when sound is off
+    cues: list = field(default_factory=list)
+    #: (kind, base radius, step) of the agent's own last emitted sound, or None
+    own_sound: tuple | None = None
+    #: a reportable (non-friendly, unexpired) cue or carried acoustic report
+    has_reportable_cue: bool = False
+    #: element visual link (§3.7): None when the agent is in no element graph
+    #: (no leader and no subordinates, or the feature is off), else intact flag
+    link_intact: bool | None = None
+    link_break_age: int = 0
+    #: current formation-station status under the governing stance (None: no
+    #: stance governs) and the normalized formation error
+    station: bool | None = None
+    formation_error: float = 0.0
+    #: local friendly perception (voice_only telemetry gating): per related
+    #: soldier id -> (currently visible, last known pos, last known mission
+    #: type or None, age of the last-known state). None → live telemetry.
+    friendly_state: dict | None = None
 
 
 def _mission_idx(mission_type: MissionType | None) -> float:
@@ -299,11 +365,26 @@ def build_observation(
         i += 3
 
     # --- leader (5) ---
+    # voice_only (§3.7): NOT a live tracker. ``view.friendly_state`` carries
+    # what this agent can actually know — a live delta only while the leader
+    # is locally visible, otherwise the last perceived delta and the last
+    # reported mission, aging where they were captured. Radio modes keep the
+    # shipped live telemetry (friendly_state is None).
+    fs = view.friendly_state
     if leader is not None:
         out[i] = 1.0
-        out[i + 1] = (leader.pos[0] - x) / w
-        out[i + 2] = (leader.pos[1] - y) / h
-        out[i + 3] = _mission_idx(leader.mission.type if leader.mission else None)
+        known = fs.get(leader.id) if fs is not None else None
+        if fs is None:
+            out[i + 1] = (leader.pos[0] - x) / w
+            out[i + 2] = (leader.pos[1] - y) / h
+            out[i + 3] = _mission_idx(leader.mission.type if leader.mission else None)
+        elif known is not None:
+            _seen, last_pos, last_mission, _age = known
+            out[i + 1] = (last_pos[0] - x) / w
+            out[i + 2] = (last_pos[1] - y) / h
+            out[i + 3] = _mission_idx(last_mission)
+        else:
+            out[i] = 0.0  # relationship exists but nothing is known: false presence
         out[i + 4] = 1.0 if leader.human else 0.0
     i += 5
 
@@ -312,11 +393,22 @@ def build_observation(
     for k in range(N_SUB_SLOTS):
         if k < len(subs):
             s = subs[k]
-            out[i] = 1.0
-            out[i + 1] = (s.pos[0] - x) / w
-            out[i + 2] = (s.pos[1] - y) / h
-            out[i + 3] = _mission_idx(s.mission.type if s.mission else None)
-            out[i + 4] = 1.0 if view.step - s.last_contact_report_step <= 10 else 0.0
+            known = fs.get(s.id) if fs is not None else None
+            if fs is None:
+                out[i] = 1.0
+                out[i + 1] = (s.pos[0] - x) / w
+                out[i + 2] = (s.pos[1] - y) / h
+                out[i + 3] = _mission_idx(s.mission.type if s.mission else None)
+                out[i + 4] = 1.0 if view.step - s.last_contact_report_step <= 10 else 0.0
+            elif known is not None:
+                seen, last_pos, last_mission, age = known
+                out[i] = 1.0
+                out[i + 1] = (last_pos[0] - x) / w
+                out[i + 2] = (last_pos[1] - y) / h
+                out[i + 3] = _mission_idx(last_mission)
+                # "reported recently" is something the observer heard, so it
+                # is only asserted from a fresh (<= 10 step) perception/report
+                out[i + 4] = 1.0 if (seen and view.step - s.last_contact_report_step <= 10) else 0.0
         i += 5
 
     # --- visible enemies (4 each) ---
@@ -376,6 +468,60 @@ def build_observation(
     patch = world.local_patch(soldier.pos, patch_radius(profile)).reshape(-1)
     out[i : i + patch.shape[0]] = patch
     i += patch.shape[0]
+
+    # --- acoustic block (degraded communications §5) ---
+    # coarse cues only: kind / attributed side / bearing sector / distance
+    # band / confidence / time left — never a source id, a cell, or text
+    out[i] = 1.0 if view.sound_on else 0.0
+    out[i + 1] = 1.0 if view.voice_only else 0.0
+    i += 2
+    for k in range(MAX_CUES):
+        if k < len(view.cues):
+            c = view.cues[k]
+            out[i + SOUND_KINDS.index(c.kind)] = 1.0
+            out[i + len(SOUND_KINDS) + CUE_SIDES.index(c.side)] = 1.0
+            out[i + len(SOUND_KINDS) + len(CUE_SIDES) + (c.bearing % 8)] = 1.0
+            base = i + len(SOUND_KINDS) + len(CUE_SIDES) + 8
+            out[base + min(c.distance_band, 2)] = 1.0
+            out[base + 3] = float(c.strength)
+            out[base + 4] = max(0.0, c.ttl_remaining(view.step)) / SOUND_MEMORY_TTL
+        i += _CUE_FIELDS
+    # own last emitted sound: the consequence of the previous choice, without
+    # ever seeing who heard it
+    if view.own_sound is not None:
+        kind, radius, at = view.own_sound
+        out[i + SOUND_KINDS.index(kind)] = 1.0
+        out[i + len(SOUND_KINDS)] = min(1.0, float(radius) / WEAPON_DETECT_RADIUS)
+        out[i + len(SOUND_KINDS) + 1] = min(1.0, (view.step - at) / SOUND_MEMORY_TTL)
+    i += len(SOUND_KINDS) + 2
+    out[i] = 1.0 if view.has_reportable_cue else 0.0
+    i += 1
+
+    # --- cohesion / local-friendly block (§3.7) ---
+    # no teammate's selected action, logits, route or future position here:
+    # link state, station keeping, and how stale the last-known state is
+    out[i] = 1.0 if view.link_intact else 0.0
+    out[i + 1] = min(1.0, view.link_break_age / 20.0)
+    out[i + 2] = 1.0 if view.station else 0.0
+    out[i + 3] = float(view.formation_error)
+    if leader is not None:
+        if fs is None:
+            out[i + 4] = 1.0  # live telemetry: always "perceived", age 0
+        elif fs.get(leader.id) is not None:
+            seen, _p, _m, age = fs[leader.id]
+            out[i + 4] = 1.0 if seen else 0.0
+            out[i + 5] = min(1.0, age / 20.0)
+    i += 6
+    for k in range(N_SUB_SLOTS):
+        if k < len(subs):
+            s = subs[k]
+            if fs is None:
+                out[i] = 1.0
+            elif fs.get(s.id) is not None:
+                seen, _p, _m, age = fs[s.id]
+                out[i] = 1.0 if seen else 0.0
+                out[i + 1] = min(1.0, age / 20.0)
+        i += 2
 
     expected = obs_dim(profile)
     assert i == expected, f"obs layout mismatch: wrote {i}, expected {expected}"

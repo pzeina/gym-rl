@@ -24,6 +24,7 @@ from pettingzoo import ParallelEnv
 
 from cohort.config import ScenarioSpec, announced_assault_step, build_org, get_scenario
 from cohort.core import acoustics as snd
+from cohort.core import cohesion
 from cohort.core import language as lang
 from cohort.core.missions import (
     HOLDS_GROUND,
@@ -80,7 +81,14 @@ SYNC_WINDOW = 8
 #: command traffic of the same class) > SITREP (routine); ties break by agent
 #: order. Auto-traffic is not listed — WILCO, verdicts, CASUALTY, and
 #: succession are protocol, not competition for air.
-_TX_PRIORITY: dict[str, int] = {"contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3}
+_TX_PRIORITY: dict[str, int] = {
+    "contact": 0, "acoustic_contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3,
+}
+
+#: how long a carried ACOUSTIC CONTACT report stays reportable onward
+#: (store-and-forward, §3.6.3): measured from its SOURCE step, so relaying
+#: never refreshes it. Published through briefing() with the acoustic model.
+ACOUSTIC_REPORT_TTL = 20
 
 #: The four static tasks priced by ``RewardConfig.exposed_under_threat`` —
 #: the set the squad_screen death measurement named, not "everything static":
@@ -219,6 +227,40 @@ class CohortEnv(ParallelEnv):
         #: semantic hearers). Trace/oracle material — Message itself stays
         #: text-only by the repo's schema invariant.
         self.last_message_meta: list[dict] = []
+        # --- voice-only degraded communications (§3) — inert outside the mode ---
+        #: per-agent clock of the last change to ITS OWN enemy picture (new
+        #: enemy id or an aged refresh): the listener-local replacement for
+        #: the force-wide ``_last_net_contact_step`` re-task exception
+        self._picture_changed_step: dict[str, int] = {}
+        #: acoustic report memory per agent: report key -> step received
+        #: (novelty is judged against the INTENDED superior's memory)
+        self._acoustic_received: dict[str, dict[tuple, int]] = {}
+        #: carried acoustic reports per agent (kind index, bearing, band,
+        #: source step, strength) — store-and-forward onward, fields frozen
+        self._held_acoustic: dict[str, list[tuple]] = {}
+        #: voice_only friendly telemetry (§3.7): observer callsign -> related
+        #: soldier id -> [last known pos, last known mission type, pos step,
+        #: mission step]. Refreshed by local perception and heard reports only.
+        self._friendly_state: dict[str, dict[int, list]] = {}
+        #: visual-link state per agent: (intact or None, contiguous break age)
+        self._link_state: dict[str, tuple[bool | None, int]] = {}
+        #: formation station per agent: (at station or None, normalized error)
+        self._station: dict[str, tuple[bool | None, float]] = {}
+        #: metrics bookkeeping: (leader-direct-subordinate pairs, pairs in
+        #: voice range) this step
+        self._command_pairs: tuple[int, int] = (0, 0)
+        #: metrics bookkeeping: enemy ids whose move this step investigated a
+        #: heard anchor
+        self._opfor_investigating: set[int] = set()
+
+    @property
+    def _voice_only(self) -> bool:
+        return self.spec_cfg.comm_model == "voice_only"
+
+    @property
+    def _local_pictures(self) -> bool:
+        """Per-listener enemy pictures (range radio and voice_only)."""
+        return self.spec_cfg.comm_model in ("range", "voice_only")
 
     @property
     def outcome(self) -> str | None:
@@ -354,7 +396,7 @@ class CohortEnv(ParallelEnv):
         self._team_observe_steps = 0
         self._known_enemies = {}
         self._agent_known = (
-            {cs: {} for cs in self._callsigns} if cfg.comm_model == "range" else {}
+            {cs: {} for cs in self._callsigns} if self._local_pictures else {}
         )
         self._illegal_actions = 0
         self._episode_outcome = None
@@ -388,6 +430,14 @@ class CohortEnv(ParallelEnv):
         self._agent_cues = {cs: [] for cs in self._callsigns} if self._sound_on else {}
         self._own_sound = {}
         self.last_message_meta = []
+        self._picture_changed_step = {}
+        self._acoustic_received = {cs: {} for cs in self._callsigns}
+        self._held_acoustic = {cs: [] for cs in self._callsigns}
+        self._friendly_state = {}
+        self._link_state = {}
+        self._station = {}
+        self._command_pairs = (0, 0)
+        self._opfor_investigating = set()
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -445,6 +495,13 @@ class CohortEnv(ParallelEnv):
                     lang.format_opord(s.callsign, cfg.root_mission, cfg.root_objective),
                 )
 
+        if self._voice_only:
+            # the force departs together after the briefing: everyone knows
+            # where everyone in its element stands, and the root's OPORD
+            # (it was briefed, not overheard). Nothing else is known.
+            self._init_friendly_state(root)
+            self._refresh_friendly_perception()
+        self._update_visual_links()
         observations = self._all_observations()
         infos = {a: {"components": {}, "net_busy": False} for a in self.agents}
         return observations, infos
@@ -760,6 +817,7 @@ class CohortEnv(ParallelEnv):
                 continue
             self._apply_action(soldier, int(actions[callsign]), ledger, enemy_kills, player_deaths)
 
+        self._opfor_investigating = set()
         # --- OpFor hearing (§3.6.4 ordering): Blue actions resolved first, so
         # Blue movement/speech sounds may inform the OpFor turn this same
         # step; OpFor sounds enter the next Blue observation. Recorded in the
@@ -781,9 +839,13 @@ class CohortEnv(ParallelEnv):
             # B5 re-task exception bookkeeping: a casualty is news to every
             # commander above the fallen agent — their element's picture
             # changed, so re-tasking within it is free until re-ordered
+            # voice_only (§3.4, §6.8): the casualty is news only to a
+            # commander who actually witnessed it — there is no HQ
+            # all-stations CASUALTY line to tell a distant leader
             ancestor = self.roster.leader_of(dead)
             while ancestor is not None:
-                self._element_casualty_step[ancestor.id] = step
+                if not self._voice_only or self._witnessed(ancestor, dead.pos):
+                    self._element_casualty_step[ancestor.id] = step
                 ancestor = self.roster.leader_of(ancestor)
             # rank-weighted: losing a leader costs more, by effective authority
             weight = 1.0 + cfg.rank_casualty_scale * dead.effective_authority
@@ -796,6 +858,8 @@ class CohortEnv(ParallelEnv):
                 for callsign in present:
                     ledger.add(callsign, "combat", cfg.human_death)
             for successor, replaced in self.roster.succeed(dead):
+                if self._voice_only:
+                    self._succession_knowledge(successor, replaced)
                 text = (
                     lang.format_taking_command(successor.callsign, replaced.callsign)
                     if not replaced.alive
@@ -828,8 +892,25 @@ class CohortEnv(ParallelEnv):
             }
 
         self._known_enemies = _fresh(self._known_enemies)
+        if self._voice_only:
+            # §3.5: an agent's own sighting enters ITS picture, at the
+            # observed position and time (a new id moves its picture clock)
+            for s in self.roster.living:
+                picture = self._agent_known.setdefault(s.callsign, {})
+                for e in self._visible_enemies(s):
+                    if e.id not in picture:
+                        self._picture_changed_step[s.callsign] = step
+                    picture[e.id] = (float(e.pos[0]), float(e.pos[1]), step)
+            for cs in self._held_acoustic:
+                self._held_acoustic[cs] = [
+                    r for r in self._held_acoustic[cs] if step - r[3] <= ACOUSTIC_REPORT_TTL
+                ]
+            self._refresh_friendly_perception()
         for callsign in self._agent_known:
             self._agent_known[callsign] = _fresh(self._agent_known[callsign])
+        # visual-link graph (§3.7): every tick, no grace hidden from the
+        # metric; casualties and succession have already rebuilt the roster
+        self._update_visual_links()
 
         # --- mission progress + compliance + step costs ---
         root_obj = (
@@ -878,6 +959,9 @@ class CohortEnv(ParallelEnv):
                 cadence
                 and not views[callsign].visible_enemies
                 and step - soldier.last_sitrep_step > cadence
+                # voice_only §3.3: a root with no HQ channel is not mute, the
+                # channel is structurally absent — never punished for it
+                and not (self._voice_only and self.roster.leader_of(soldier) is None)
             ):
                 ledger.add(callsign, "report", cfg.sitrep_overdue)
             # leader coverage — neutralized in the flat ablation arm (B3):
@@ -912,6 +996,11 @@ class CohortEnv(ParallelEnv):
         # formation bonus — watermark-gated, so it telescopes with the
         # advance and cannot be farmed by circling or pacing
         self._formation_shaping(ledger)
+
+        # broken visual link (§3.7 / §6.5, voice_only): a small per-agent-step
+        # penalty on disconnected non-detached members, capped per element;
+        # no positive term exists for standing in a blob
+        self._visual_link_penalty(ledger)
 
         # trinôme bound shaping (A5-4): synchronized movers under a covering
         # peer earn the bound bonus on NEW closure toward their own anchor
@@ -1182,6 +1271,8 @@ class CohortEnv(ParallelEnv):
         tick-start legality (the same mask the policy acted under); masks
         and spaces are untouched — a blocked agent simply loses its tick.
         """
+        if self._voice_only:
+            return set()  # §3.2: no shared frequency, no global arbitration
         raw: list[tuple[int, int, Soldier]] = []
         for idx, callsign in enumerate(present):
             soldier = self.roster.by_callsign[callsign]
@@ -1244,9 +1335,18 @@ class CohortEnv(ParallelEnv):
             self._resolve_player_fire(soldier, ledger, enemy_kills)
         elif spec.kind == "contact":
             self._report_contact(soldier, ledger)
+        elif spec.kind == "acoustic_contact":
+            self._report_acoustic_contact(soldier, ledger)
+        elif spec.kind == "gesture_execute":
+            self._execute_signal(soldier, ledger, gesture=True)
+        elif spec.kind == "gesture_sync_go":
+            self._sync_go(soldier, ledger, gesture=True)
         elif spec.kind == "sitrep":
             # under the reporting doctrine the mandated cadence *is* the
             # freshness interval, so a due report is never scored as spam
+            leader = self.roster.leader_of(soldier)
+            if self._voice_only and (leader is None or not self._audible_to(leader, soldier.id)):
+                return  # mask guards: nobody is there to report to (defensive)
             interval = self.spec_cfg.sitrep_cadence or cfg.sitrep_interval
             fresh = self._step_count - soldier.last_sitrep_step >= interval
             ledger.add(soldier.callsign, "report", cfg.sitrep_fresh if fresh else cfg.sitrep_spam)
@@ -1270,6 +1370,8 @@ class CohortEnv(ParallelEnv):
                     soldier.pos,
                     in_cover=self.world.cover_at(soldier.pos),
                 ),
+                useful=fresh,
+                redundant=not fresh,
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
@@ -1327,6 +1429,9 @@ class CohortEnv(ParallelEnv):
 
     def _report_contact(self, soldier: Soldier, ledger: RewardLedger) -> None:
         cfg = self.rewards_cfg
+        if self._voice_only:
+            self._report_contact_voice(soldier, ledger)
+            return
         visible = self._visible_enemies(soldier)
         if not visible:
             return
@@ -1367,6 +1472,118 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             soldier.leader_id,
             lang.format_contact(self._addressee(soldier), soldier.callsign, len(visible), nearest.pos),
+            useful=new_intel or refreshes,
+            redundant=not (new_intel or refreshes),
+        )
+
+    def _report_contact_voice(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """CONTACT under voice_only (§3.5): spoken to the direct superior from
+        HELD intel — the agent's own picture (own sightings at their observed
+        position and time, plus reports it heard) — not only from an enemy
+        visible this exact tick. Novelty is the intended superior's, every
+        local listener updates its own picture, and the captured coordinates
+        travel unchanged (a relayed report never tracks the enemy)."""
+        cfg = self.rewards_cfg
+        leader = self.roster.leader_of(soldier)
+        held = self._agent_known.get(soldier.callsign, {})
+        if leader is None or not held or not self._audible_to(leader, soldier.id):
+            return  # mask guards: no superior in earshot or nothing to say (defensive)
+        step = self._step_count
+        entries = sorted(held.items(), key=lambda kv: (-kv[1][2], kv[0]))  # freshest first
+        superior_picture = self._agent_known.setdefault(leader.callsign, {})
+        new_intel = any(eid not in superior_picture for eid, _ in entries)
+        refreshes = any(
+            eid in superior_picture and step - superior_picture[eid][2] >= cfg.contact_refresh_age
+            for eid, _ in entries
+        )
+        for eid, _entry in entries:
+            soldier.reported_enemy_ids.add(eid)
+        # every living friendly in earshot updates its own picture with the
+        # REPORTED coordinates and source time — never a fresher live fix
+        for listener in self.roster.living:
+            if listener is soldier or not self._audible_to(listener, soldier.id):
+                continue
+            picture = self._agent_known.setdefault(listener.callsign, {})
+            changed = False
+            for eid, entry in entries:
+                have = picture.get(eid)
+                if have is None or have[2] < entry[2]:
+                    if have is None or step - have[2] >= cfg.contact_refresh_age:
+                        changed = True
+                    picture[eid] = entry
+            if changed:
+                self._picture_changed_step[listener.callsign] = step
+        soldier.last_contact_report_step = step
+        if new_intel:
+            ledger.add(soldier.callsign, "report", cfg.contact_new)
+        elif not refreshes:
+            ledger.add(soldier.callsign, "report", cfg.contact_redundant)
+        self._charge_transmission(soldier, ledger, "report")
+        _eid, (nx, ny, _t) = entries[0]
+        self._say(
+            MessageKind.CONTACT,
+            soldier.id,
+            soldier.leader_id,
+            lang.format_contact(
+                self._addressee(soldier), soldier.callsign, len(entries), (int(nx), int(ny))
+            ),
+            useful=new_intel or refreshes,
+            redundant=not (new_intel or refreshes),
+        )
+
+    def _reportable_acoustic(self, soldier: Soldier) -> tuple | None:
+        """The acoustic report this agent would make: its freshest/strongest
+        held non-friendly cue, else its freshest carried report. Returns
+        (kind index, bearing, band, source step, strength) or None."""
+        step = self._step_count
+        own = [
+            c for c in self._agent_cues.get(soldier.callsign, [])
+            if c.side != "friendly" and c.ttl_remaining(step) >= 0
+        ]
+        if own:
+            c = own[0]  # already in the stable (strength, age, id) order
+            return (snd.SOUND_KINDS.index(c.kind), c.bearing, c.distance_band, c.event_step, c.strength)
+        carried = [r for r in self._held_acoustic.get(soldier.callsign, []) if step - r[3] <= ACOUSTIC_REPORT_TTL]
+        if carried:
+            return max(carried, key=lambda r: (r[3], r[4], -r[0], -r[1]))
+        return None
+
+    def _report_acoustic_contact(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """ACOUSTIC CONTACT (§3.6.3): a coarse heard-presence report — cue
+        kind, bearing/distance bands and source step, never a grid reference.
+        Same direct-voice / store-and-forward / listener-local novelty rules
+        as CONTACT; it never touches the exact enemy picture."""
+        cfg = self.rewards_cfg
+        leader = self.roster.leader_of(soldier)
+        report = self._reportable_acoustic(soldier)
+        if leader is None or report is None or not self._audible_to(leader, soldier.id):
+            return  # mask guards (defensive)
+        kind_idx, bearing, band, source_step, _strength = report
+        key = (kind_idx, bearing, band, source_step)
+        step = self._step_count
+        superior_memory = self._acoustic_received.setdefault(leader.callsign, {})
+        novel = key not in superior_memory
+        for listener in self.roster.living:
+            if listener is soldier or not self._audible_to(listener, soldier.id):
+                continue
+            memory = self._acoustic_received.setdefault(listener.callsign, {})
+            if key not in memory:
+                memory[key] = step
+                self._held_acoustic.setdefault(listener.callsign, []).append(report)
+        if novel:
+            ledger.add(soldier.callsign, "report", cfg.acoustic_contact_new)
+        else:
+            ledger.add(soldier.callsign, "report", cfg.contact_redundant)
+        self._charge_transmission(soldier, ledger, "report")
+        self._say(
+            MessageKind.ACOUSTIC_CONTACT,
+            soldier.id,
+            soldier.leader_id,
+            lang.format_acoustic_contact(
+                self._addressee(soldier), soldier.callsign, kind_idx, bearing, band, source_step
+            ),
+            useful=novel,
+            redundant=not novel,
         )
 
     def _report_done(self, soldier: Soldier, ledger: RewardLedger) -> None:
@@ -1374,6 +1591,10 @@ class CohortEnv(ParallelEnv):
         mission = soldier.mission
         if mission is None:
             return
+        if self._voice_only:
+            leader = self.roster.leader_of(soldier)
+            if leader is None or not self._audible_to(leader, soldier.id):
+                return  # §3.4: a claim nobody hears is not adjudicated (mask guards)
         ctx = self._compliance_ctx(soldier, None, self._make_view(soldier))
         root_objective = (
             self.world.objective_by_name(self.spec_cfg.root_objective)
@@ -1418,6 +1639,7 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             soldier.leader_id,
             lang.format_done(self._addressee(soldier), soldier.callsign, mission.type, obj_name),
+            useful=truthful,
         )
         self._charge_transmission(soldier, ledger, "report")
         # the superior answers on the net: the verdict is command traffic, not
@@ -1443,6 +1665,8 @@ class CohortEnv(ParallelEnv):
                 self._root_close_earns_bonus = earns_bonus
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
+            if self._voice_only:
+                self._note_mission_heard(responder_id, soldier, None)
         else:
             self._say(
                 MessageKind.DONE_REJECT,
@@ -1484,15 +1708,22 @@ class CohortEnv(ParallelEnv):
             None,
             lang.format_sync_propose(soldier.callsign, [p.callsign for p in peers]),
             voice=True,
+            useful=any(self._audible_to(p, soldier.id) for p in peers),
         )
 
-    def _sync_go(self, soldier: Soldier, ledger: RewardLedger) -> None:
+    def _sync_go(self, soldier: Soldier, ledger: RewardLedger, *, gesture: bool = False) -> None:
         """The bound signal (A5-4): GO! Synchronizes the proposer and every
         registered peer still alive for the next ``SYNC_WINDOW`` steps.
 
         Charged like any learned transmission (see ``_sync_propose``). A GO
         that never lands — no live proposal, or one past its TTL — says
         nothing and so costs nothing.
+
+        Degraded communications (§3.6.5): under voice_only the spoken GO is a
+        pre-arranged SOUND SIGNAL — it reaches a registered peer only within
+        ``SIGNAL_RANGE`` with no wall between, and makes a ``signal`` event;
+        the gesture variant reaches only peers with a current visual edge
+        within ``GESTURE_RANGE`` and makes no sound. Signals never relay.
         """
         pending = self._sync_pending.pop(soldier.id, None)
         if pending is None:
@@ -1500,18 +1731,40 @@ class CohortEnv(ParallelEnv):
         propose_step, peer_ids = pending
         if self._step_count - propose_step > SYNC_PROPOSE_TTL:
             return  # stale proposal: the moment has passed
-        self._charge_transmission(soldier, ledger, "report")
+        if not gesture:
+            self._charge_transmission(soldier, ledger, "report")
         group = (soldier.id, self._step_count)
         until = self._step_count + SYNC_WINDOW
         self._sync_until[soldier.id] = (until, group)
+        receivers: list[str] = []
         for pid in peer_ids:
             peer = self.roster.by_id.get(pid)
-            if peer is not None and peer.alive:
-                self._sync_until[pid] = (until, group)
-        self._say(
-            MessageKind.SYNC_GO, soldier.id, None,
-            lang.format_sync_go(soldier.callsign), voice=True,
-        )
+            if peer is None or not peer.alive:
+                continue
+            if gesture:
+                if not self._gesture_visible(soldier, peer):
+                    continue
+            elif self._voice_only and not self._signal_reaches(soldier, peer):
+                continue
+            self._sync_until[pid] = (until, group)
+            receivers.append(peer.callsign)
+        if gesture:
+            self._say(
+                MessageKind.SYNC_GO, soldier.id, None,
+                lang.format_gesture_sync_go(soldier.callsign), voice=True,
+                medium="gesture", heard_by=receivers, useful=bool(receivers),
+            )
+        else:
+            self._say(
+                MessageKind.SYNC_GO, soldier.id, None,
+                lang.format_sync_go(soldier.callsign), voice=True,
+                medium="signal" if self._voice_only else None,
+                heard_by=receivers if self._voice_only else None,
+                useful=bool(receivers),
+                gesture_possible=self._voice_only and bool(receivers) and all(
+                    self._gesture_visible(soldier, self.roster.by_callsign[cs]) for cs in receivers
+                ),
+            )
 
     def _synchronized(self, soldier: Soldier) -> tuple | None:
         """The soldier's active sync-group key, or None outside a window.
@@ -1581,20 +1834,50 @@ class CohortEnv(ParallelEnv):
             if self._sync_cover_peers(s, group):
                 ledger.add(s.callsign, "compliance", bonus)
 
-    def _execute_signal(self, soldier: Soldier, ledger: RewardLedger) -> None:
+    def _execute_signal(
+        self, soldier: Soldier, ledger: RewardLedger, *, gesture: bool = False
+    ) -> None:
         """EXECUTE (A5-2): release ALL of this issuer's pending AT-MY-COMMAND
         orders. One broadcast frees every staged recipient at once — the
         manual's COMMANDEMENT DU BOND ("PREPAREZ-VOUS ... EN AVANT !").
-        Released orders start binding now: step_assigned restamps."""
-        self._charge_transmission(soldier, ledger, "command")
-        self._say(
-            MessageKind.EXECUTE, soldier.id, None, lang.format_execute(soldier.callsign)
-        )
+        Released orders start binding now: step_assigned restamps.
+
+        Degraded communications (§3.6.5): under voice_only the spoken form is
+        a pre-arranged sound signal and releases only the pending recipients
+        it reaches (``SIGNAL_RANGE``, no wall); the gesture form releases only
+        recipients with a current visual edge (``GESTURE_RANGE``, LOS) and
+        makes no sound. A recipient it does not reach stays staged."""
+        if not gesture:
+            self._charge_transmission(soldier, ledger, "command")
+        released: list[str] = []
         for s in self.roster.living:
             m = s.mission
-            if m is not None and m.awaiting_signal and m.issuer_id == soldier.id:
-                m.awaiting_signal = False
-                m.step_assigned = self._step_count
+            if m is None or not m.awaiting_signal or m.issuer_id != soldier.id:
+                continue
+            if gesture:
+                if not self._gesture_visible(soldier, s):
+                    continue
+            elif self._voice_only and not self._signal_reaches(soldier, s):
+                continue
+            m.awaiting_signal = False
+            m.step_assigned = self._step_count
+            released.append(s.callsign)
+        if gesture:
+            self._say(
+                MessageKind.EXECUTE, soldier.id, None,
+                lang.format_gesture_execute(soldier.callsign),
+                medium="gesture", heard_by=released, useful=bool(released),
+            )
+        else:
+            self._say(
+                MessageKind.EXECUTE, soldier.id, None, lang.format_execute(soldier.callsign),
+                medium="signal" if self._voice_only else None,
+                heard_by=released if self._voice_only else None,
+                useful=bool(released),
+                gesture_possible=self._voice_only and bool(released) and all(
+                    self._gesture_visible(soldier, self.roster.by_callsign[cs]) for cs in released
+                ),
+            )
 
     def _issue_formation(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
         """Element stance order (A5-3): set the recipient LEADER's formation.
@@ -1610,6 +1893,8 @@ class CohortEnv(ParallelEnv):
         recipient = subs[spec.order_slot]
         if not recipient.living_subordinates(self.roster):
             return  # not an element leader (mask guards; defensive)
+        if self._voice_only and not self._audible_to(recipient, soldier.id):
+            return  # §3.4: not spoken — nobody there to hear it (mask guards)
         self._charge_transmission(soldier, ledger, "command")
         if not self._audible_to(recipient, soldier.id):
             self._say(
@@ -1628,6 +1913,7 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             recipient.id,
             lang.format_formation_order(soldier.callsign, recipient.callsign, spec.order_formation),
+            useful=True,
         )
         if self.spec_cfg.auto_ack:
             self._say(
@@ -1635,6 +1921,7 @@ class CohortEnv(ParallelEnv):
                 recipient.id,
                 soldier.id,
                 lang.format_ack(soldier.callsign, recipient.callsign),
+                useful=True,
             )
 
     def _issue_order(self, soldier: Soldier, spec: ActionSpec, ledger: RewardLedger) -> None:
@@ -1657,6 +1944,9 @@ class CohortEnv(ParallelEnv):
             if spec.order_support_slot is None or spec.order_support_slot >= len(subs):
                 return
             supported_id = subs[spec.order_support_slot].id
+
+        if self._voice_only and not self._audible_to(recipient, soldier.id):
+            return  # §3.4: an order that cannot be spoken is not an order (mask guards)
 
         # airtime (A4): the ORDER goes out on the net either way below
         self._charge_transmission(soldier, ledger, "command")
@@ -1801,10 +2091,8 @@ class CohortEnv(ParallelEnv):
         claim cleared its mission, so a follow-up order is a fresh tasking and
         never reaches re-task pricing at all.
         """
-        if (
-            self._last_net_contact_step is not None
-            and self._last_net_contact_step > recipient.last_order_step
-        ):
+        contact_clock = self._contact_clock(issuer)
+        if contact_clock is not None and contact_clock > recipient.last_order_step:
             return True, "contact"
         casualty_step = self._element_casualty_step.get(issuer.id)
         if casualty_step is not None and casualty_step >= recipient.last_order_step:
@@ -1908,6 +2196,7 @@ class CohortEnv(ParallelEnv):
         if effective_at is not None or awaiting_signal:
             # staging: until the order is effective, compliance is HOLD here
             extra["staging"] = recipient.pos
+        lands = self._audible_to(recipient, issuer_id)
         self._say(
             MessageKind.ORDER,
             issuer_id,
@@ -1920,8 +2209,9 @@ class CohortEnv(ParallelEnv):
                 delay=(effective_at - self._step_count) if effective_at is not None else None,
                 at_my_command=awaiting_signal,
             ),
+            useful=lands,
         )
-        if not self._audible_to(recipient, issuer_id):
+        if not lands:
             return False
         # HQ re-issuing the OPORD observation task to the senior commander is
         # team-adjudicated, exactly like the reset OPORD (refs #9)
@@ -1949,12 +2239,15 @@ class CohortEnv(ParallelEnv):
             extra=extra,
         )
         recipient.last_order_step = self._step_count
+        if self._voice_only:
+            self._note_mission_heard(issuer_id, recipient, mission_type)
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
                 recipient.id,
                 issuer_id,
                 lang.format_ack(issuer_cs, recipient.callsign),
+                useful=True,
             )
         return True
 
@@ -2027,6 +2320,8 @@ class CohortEnv(ParallelEnv):
         if act == "move" and arg is not None and self.world.passable(arg):
             prev = enemy.pos
             enemy.pos = arg
+            if enemy.investigating_step == self._step_count:
+                self._opfor_investigating.add(enemy.id)
             if prev != enemy.pos:
                 # sensor symmetry (§3.6.4): enemy movement makes the same
                 # class of sound Blue movement does
@@ -2201,6 +2496,17 @@ class CohortEnv(ParallelEnv):
         high-power station: its traffic is always heard, and it always hears
         the root (the root's up-channel reports are adjudicated regardless).
         """
+        if self._voice_only:
+            # §3.1 / §3.3: low voice only — no radio, no high-power HQ
+            # station, no umpire bypass for anyone after the briefing
+            if sender_id == HQ_ID:
+                return False
+            sender = self.roster.by_id.get(sender_id)
+            if sender is None:
+                return False
+            if sender.id == listener.id:
+                return True
+            return cohesion.voice_audible(self.world, sender, listener, self.spec_cfg.voice_range)
         if self.spec_cfg.comm_model != "range":
             return True
         if sender_id == HQ_ID:
@@ -2209,6 +2515,187 @@ class CohortEnv(ParallelEnv):
         if sender is None or sender.id == listener.id:
             return True
         return dist(sender.pos, listener.pos) <= self.spec_cfg.comm_range
+
+    # ------------------------------------------------------------------ #
+    # voice-only degraded communications (§3) — helpers
+    # ------------------------------------------------------------------ #
+
+    def _signal_reaches(self, sender: Soldier, listener: Soldier) -> bool:
+        """A pre-arranged sound signal's fixed code reaches ``listener``."""
+        return cohesion.signal_audible(self.world, sender, listener, snd.SIGNAL_RANGE)
+
+    def _gesture_visible(self, sender: Soldier, listener: Soldier) -> bool:
+        """A silent gesture is seen: a real current visual edge within
+        GESTURE_RANGE (LOS required; a wall always blocks)."""
+        return cohesion.friendly_visible(self.world, sender, listener, snd.GESTURE_RANGE)
+
+    def _witnessed(self, observer: Soldier, cell: tuple[int, int]) -> bool:
+        """Could ``observer`` perceive what happened at ``cell`` (the local
+        friendly-visibility radius with LOS)? Used for casualties, whose
+        subject is no longer alive to satisfy ``friendly_visible``."""
+        return (
+            observer.alive
+            and dist(observer.pos, cell) <= snd.VISUAL_LINK_RANGE
+            and bool(self.world.line_of_sight(observer.pos, cell))
+        )
+
+    def _superior_reachable(self, soldier: Soldier) -> bool:
+        """Can this agent's reports reach its direct superior right now?
+        Radio: always (HQ included). voice_only: the superior must be an
+        embodied station in low-voice range — a root has none."""
+        if not self._voice_only:
+            return True
+        leader = self.roster.leader_of(soldier)
+        return leader is not None and self._audible_to(leader, soldier.id)
+
+    def _contact_clock(self, issuer: Soldier) -> int | None:
+        """The tactical-picture clock a re-task exception / cooldown lift is
+        judged against: the force-wide last CONTACT on a radio net, the
+        issuer's OWN picture-change step under voice_only (§3.5)."""
+        if self._voice_only:
+            return self._picture_changed_step.get(issuer.callsign)
+        return self._last_net_contact_step
+
+    def _init_friendly_state(self, root: Soldier) -> None:
+        """Reset-time friendly knowledge (voice_only): the force departs
+        together after the briefing — positions of one's leader and direct
+        subordinates are known, the root's OPORD is known to all (briefed,
+        not overheard), and no other mission is known."""
+        step = self._step_count
+        for s in self.roster.soldiers:
+            related = []
+            leader = self.roster.leader_of(s)
+            if leader is not None:
+                related.append(leader)
+            related.extend(s.living_subordinates(self.roster))
+            self._friendly_state[s.callsign] = {
+                o.id: [o.pos, (o.mission.type if (o is root and o.mission) else None), step, step]
+                for o in related
+            }
+
+    def _related(self, s: Soldier) -> list[Soldier]:
+        leader = self.roster.leader_of(s)
+        return ([leader] if leader is not None else []) + s.living_subordinates(self.roster)
+
+    def _refresh_friendly_perception(self) -> None:
+        """Seeing a nearby teammate refreshes its last-known position (never
+        its mission — that needs a heard report). No remote movement
+        refreshes anything."""
+        step = self._step_count
+        for s in self.roster.living:
+            known = self._friendly_state.setdefault(s.callsign, {})
+            for o in self._related(s):
+                if cohesion.friendly_visible(self.world, s, o):
+                    rec = known.get(o.id)
+                    if rec is None:
+                        known[o.id] = [o.pos, None, step, step]
+                    else:
+                        rec[0] = o.pos
+                        rec[2] = step
+
+    def _note_mission_heard(self, speaker_id: int, subject: Soldier, mission_type) -> None:
+        """A heard report refreshes the SEMANTIC half of friendly state: every
+        living station that heard ``speaker_id`` (the speaker included) now
+        knows ``subject`` holds ``mission_type`` (None: stood down)."""
+        step = self._step_count
+        for listener in self.roster.living:
+            if listener.id != speaker_id and not self._audible_to(listener, speaker_id):
+                continue
+            known = self._friendly_state.setdefault(listener.callsign, {})
+            rec = known.get(subject.id)
+            if rec is None:
+                if subject.id not in {o.id for o in self._related(listener)}:
+                    continue
+                known[subject.id] = [subject.pos, mission_type, step, step]
+            else:
+                rec[1] = mission_type
+                rec[3] = step
+
+    def _succession_knowledge(self, successor: Soldier, replaced: Soldier) -> None:
+        """Succession is structural; what observers KNOW of it is local: a
+        station that can perceive the successor (or itself) inherits its
+        record of the replaced position for the successor."""
+        for listener in self.roster.living:
+            known = self._friendly_state.setdefault(listener.callsign, {})
+            if replaced.id in known and (
+                listener is successor or cohesion.friendly_visible(self.world, listener, successor)
+            ):
+                rec = list(known.pop(replaced.id))
+                rec[0] = successor.pos
+                known[successor.id] = rec
+
+    def _friendly_view(self, soldier: Soldier) -> dict | None:
+        """The friendly-state dict the observation builder consumes under
+        voice_only: id -> (seen now, last pos, last mission, age). None on a
+        radio net (live telemetry)."""
+        if not self._voice_only:
+            return None
+        step = self._step_count
+        known = self._friendly_state.get(soldier.callsign, {})
+        out: dict[int, tuple] = {}
+        for o in self._related(soldier):
+            rec = known.get(o.id)
+            if rec is None:
+                continue
+            seen = cohesion.friendly_visible(self.world, soldier, o)
+            out[o.id] = (seen, rec[0], rec[1], step - rec[2])
+        return out
+
+    def _detached_ids(self) -> frozenset[int]:
+        """Soldiers on an active liaison task (Phase C) — outside their
+        originating element's cohesion denominator. None before Phase C."""
+        return frozenset()
+
+    def _update_visual_links(self) -> None:
+        """Rebuild every element's visual-link graph (§3.7) and the station
+        status of every member, every tick. Link state is recorded for every
+        comm model (a metric and an observation); only voice_only prices it."""
+        step = self._step_count
+        detached = self._detached_ids()
+        new_link: dict[str, tuple[bool | None, int]] = {}
+        new_station: dict[str, tuple[bool | None, float]] = {}
+        pairs = in_voice = 0
+        for leader in self.roster.living:
+            members, linked = cohesion.element_links(
+                self.world, leader, self.roster, detached=detached
+            )
+            if not members:
+                continue
+            intact = all(m.id in linked for m in members)
+            for m in members:
+                connected = m.id in linked
+                prev = self._link_state.get(m.callsign, (None, 0))
+                age = 0 if connected else prev[1] + 1
+                new_link[m.callsign] = (connected, age)
+                new_station[m.callsign] = cohesion.formation_station(leader, m)
+                pairs += 1
+                in_voice += cohesion.voice_audible(self.world, leader, m, self.spec_cfg.voice_range)
+            prev = self._link_state.get(leader.callsign, (None, 0))
+            new_link[leader.callsign] = (intact, 0 if intact else prev[1] + 1)
+        self._link_state = new_link
+        self._station = new_station
+        self._command_pairs = (pairs, in_voice)
+        del step
+
+    def _visual_link_penalty(self, ledger: RewardLedger) -> None:
+        """voice_only only: ``visual_link_broken`` per disconnected non-detached
+        member-step, capped per element-step. A leader whose element is
+        broken is not charged for its members; each member is charged once."""
+        cfg = self.rewards_cfg
+        if not self._voice_only or cfg.visual_link_broken == 0.0:
+            return
+        detached = self._detached_ids()
+        for leader in self.roster.living:
+            members = [m for m in leader.living_subordinates(self.roster) if m.id not in detached]
+            broken = [m for m in members if self._link_state.get(m.callsign, (True, 0))[0] is False]
+            if not broken:
+                continue
+            total = cfg.visual_link_broken * len(broken)
+            if cfg.visual_link_broken_element_cap < 0.0:
+                total = max(total, cfg.visual_link_broken_element_cap)
+            share = total / len(broken)
+            for m in broken:
+                ledger.add(m.callsign, "compliance", share)
 
     def _visible_enemies(self, soldier: Soldier) -> list[Enemy]:
         visible = [
@@ -2231,7 +2718,7 @@ class CohortEnv(ParallelEnv):
     def _make_view(self, soldier: Soldier) -> AgentView:
         known = (
             self._agent_known.get(soldier.callsign, {})
-            if self.spec_cfg.comm_model == "range"
+            if self._local_pictures
             else self._known_enemies
         )
         cadence = self.spec_cfg.sitrep_cadence
@@ -2251,6 +2738,8 @@ class CohortEnv(ParallelEnv):
         sync_active = (
             max(0.0, (entry[0] - step) / SYNC_WINDOW) if entry is not None else 0.0
         )
+        link_intact, link_age = self._link_state.get(soldier.callsign, (None, 0))
+        station, form_err = self._station.get(soldier.callsign, (None, 0.0))
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
@@ -2260,6 +2749,16 @@ class CohortEnv(ParallelEnv):
             sync_active=sync_active,
             episode_progress=min(1.0, step / max(1, self.spec_cfg.max_steps)),
             time_to_contact=self._time_to_contact(),
+            sound_on=self._sound_on,
+            voice_only=self._voice_only,
+            cues=list(self._agent_cues.get(soldier.callsign, [])),
+            own_sound=self._own_sound.get(soldier.callsign),
+            has_reportable_cue=self._sound_on and self._reportable_acoustic(soldier) is not None,
+            link_intact=link_intact,
+            link_break_age=link_age,
+            station=station,
+            formation_error=form_err,
+            friendly_state=self._friendly_view(soldier),
         )
 
     def _draw_h_hour(self) -> None:
@@ -2310,6 +2809,10 @@ class CohortEnv(ParallelEnv):
         visible = self._visible_enemies(soldier)
         in_range = any(dist(soldier.pos, e.pos) <= self.combat.weapon_range for e in visible)
         pending_sync = self._sync_pending.get(soldier.id)
+        has_pending_sync = (
+            pending_sync is not None
+            and self._step_count - pending_sync[0] <= SYNC_PROPOSE_TTL
+        )
         return compute_mask(
             soldier,
             self.roster,
@@ -2321,14 +2824,40 @@ class CohortEnv(ParallelEnv):
             root_mission=self.spec_cfg.root_mission,
             root_objective_id=self._root_objective_id(),
             step=self._step_count,
-            net_contact_step=self._last_net_contact_step,
+            net_contact_step=self._contact_clock(soldier),
             ablation=self.spec_cfg.ablation,
             has_voice_peer=bool(
                 voice_peers(soldier, self.roster, self.spec_cfg.voice_range)
             ),
-            has_pending_sync=(
-                pending_sync is not None
-                and self._step_count - pending_sync[0] <= SYNC_PROPOSE_TTL
+            has_pending_sync=has_pending_sync,
+            superior_reachable=self._superior_reachable(soldier),
+            held_contact_intel=(
+                self._voice_only and bool(self._agent_known.get(soldier.callsign))
+            ),
+            has_reportable_cue=(
+                self._sound_on and self._reportable_acoustic(soldier) is not None
+            ),
+            gestures_enabled=self._voice_only,
+            gesture_execute_audience=self._voice_only and any(
+                sub.mission is not None
+                and sub.mission.awaiting_signal
+                and sub.mission.issuer_id == soldier.id
+                and self._gesture_visible(soldier, sub)
+                for sub in soldier.living_subordinates(self.roster)
+            ),
+            gesture_sync_audience=self._voice_only and has_pending_sync and any(
+                (peer := self.roster.by_id.get(pid)) is not None
+                and self._gesture_visible(soldier, peer)
+                for pid in pending_sync[1]
+            ),
+            reachable_sub_ids=(
+                frozenset(
+                    sub.id
+                    for sub in soldier.living_subordinates(self.roster)
+                    if self._audible_to(sub, soldier.id)
+                )
+                if self._voice_only
+                else None
             ),
         )
 
@@ -2604,6 +3133,8 @@ class CohortEnv(ParallelEnv):
                 lang.format_support_end(self._addressee(s), s.callsign, supported_cs),
             )
             s.mission = None  # standing by for new orders
+            if self._voice_only:
+                self._note_mission_heard(s.id, s, None)
 
     def _compliance_ctx(
         self, soldier: Soldier, dist_prev: float | None, view: AgentView
@@ -2814,10 +3345,15 @@ class CohortEnv(ParallelEnv):
         leader = self.roster.leader_of(soldier)
         return leader.callsign if leader is not None else "HQ"
 
-    def _semantic_audience(self, sender_id: int) -> list[str]:
+    def _semantic_audience(self, sender_id: int, kind: MessageKind, recipient: int | None) -> list[str]:
         """Living stations that actually receive a transmission's SEMANTIC
         content (sender excluded). Audit metadata for the trace/oracle —
         ``heard_by`` never enters an agent observation wholesale."""
+        if kind is MessageKind.OPORD and self._voice_only:
+            # the pre-departure briefing: delivered to its addressee and to
+            # nobody else's picture (§3.3)
+            rcpt = self.roster.by_id.get(recipient) if recipient is not None else None
+            return [rcpt.callsign] if rcpt is not None else []
         sender_cs = None
         if sender_id != HQ_ID:
             sender = self.roster.by_id.get(sender_id)
@@ -2839,32 +3375,44 @@ class CohortEnv(ParallelEnv):
             return "briefing"
         if sender == HQ_ID:
             return "external"
-        if voice:
+        if voice or self._voice_only:
             return "voice"
         return "radio"
 
     def _say(
         self, kind: MessageKind, sender: int, recipient: int | None, text: str,
-        *, voice: bool = False,
+        *, voice: bool = False, medium: str | None = None,
+        heard_by: list[str] | None = None, **meta: object,
     ) -> None:
+        """Put one message on the transcript (text only — the repo's schema
+        invariant) and record its audit metadata beside it: ``medium``
+        (briefing / radio / voice / signal / gesture / external), the
+        stations that actually received the semantics, and any caller-stated
+        outcome flags (``useful``, ``redundant``, ``gesture_possible``) the
+        §9 metrics read. ``heard_by`` may be given by a caller that knows
+        its exact semantic audience (signals, gestures); otherwise it is the
+        audibility rule's audience."""
         msg = Message(
             step=self._step_count, kind=kind, sender_id=sender,
             recipient_id=recipient, text=text, voice=voice,
         )
         self.transcript.add(msg)
         self.last_messages.append(msg)
-        heard_by = self._semantic_audience(sender)
+        if heard_by is None:
+            heard_by = self._semantic_audience(sender, kind, recipient)
         self.last_message_meta.append(
             {
-                "medium": self._message_medium(kind, sender, voice),
-                "heard_by": heard_by,
+                "medium": medium or self._message_medium(kind, sender, voice),
+                "heard_by": list(heard_by),
+                **meta,
             }
         )
         # §3.6.1: an embodied speaker makes noise — every emitted utterance,
         # local automatic replies included, is a voice event at the speaker;
         # the pre-arranged EXECUTE / SYNC_GO forms are louder signal events.
-        # Unembodied HQ (briefing / external umpire lines) emits nothing.
-        if sender != HQ_ID and self._sound_on:
+        # Unembodied HQ (briefing / external umpire lines) and silent
+        # gestures emit nothing.
+        if sender != HQ_ID and self._sound_on and medium != "gesture":
             speaker = self.roster.by_id.get(sender)
             if speaker is not None and speaker.alive:
                 signal = kind in (MessageKind.EXECUTE, MessageKind.SYNC_GO)
@@ -2886,6 +3434,12 @@ class CohortEnv(ParallelEnv):
         recipient and have them as a direct subordinate). Returns the ORDER
         message; raises ``OrderParseError`` / ``PermissionError`` otherwise.
         """
+        if issuer.upper() == "HQ" and self._voice_only:
+            msg = (
+                "comm_model='voice_only': there is no remote HQ station after the "
+                "briefing — command as the embodied root callsign instead."
+            )
+            raise PermissionError(msg)
         parsed = lang.parse_order(text)
         recipient = self.roster.by_callsign.get(parsed.recipient_callsign)
         if recipient is None or not recipient.alive:
@@ -2974,6 +3528,12 @@ class CohortEnv(ParallelEnv):
     def inject_execute(self, issuer: str = "HQ") -> Message:
         """A human issuer broadcasts EXECUTE, releasing all its pending
         AT-MY-COMMAND orders (A5-2). ``issuer`` is "HQ" or a callsign."""
+        if issuer.upper() == "HQ" and self._voice_only:
+            msg = (
+                "comm_model='voice_only': there is no remote HQ station after the "
+                "briefing — signal EXECUTE as the embodied root callsign instead."
+            )
+            raise PermissionError(msg)
         if issuer.upper() == "HQ":
             issuer_id, issuer_cs = HQ_ID, "HQ"
         else:
@@ -2982,12 +3542,22 @@ class CohortEnv(ParallelEnv):
                 msg = f"No living station {issuer!r} on the net."
                 raise lang.OrderParseError(msg)
             issuer_id, issuer_cs = issuing.id, issuing.callsign
-        self._say(MessageKind.EXECUTE, issuer_id, None, lang.format_execute(issuer_cs))
+        issuing = self.roster.by_id.get(issuer_id)
+        released: list[str] = []
         for s in self.roster.living:
             m = s.mission
-            if m is not None and m.awaiting_signal and m.issuer_id == issuer_id:
-                m.awaiting_signal = False
-                m.step_assigned = self._step_count
+            if m is None or not m.awaiting_signal or m.issuer_id != issuer_id:
+                continue
+            if self._voice_only and issuing is not None and not self._signal_reaches(issuing, s):
+                continue
+            m.awaiting_signal = False
+            m.step_assigned = self._step_count
+            released.append(s.callsign)
+        self._say(
+            MessageKind.EXECUTE, issuer_id, None, lang.format_execute(issuer_cs),
+            medium="signal" if self._voice_only else None,
+            heard_by=released if self._voice_only else None,
+        )
         return self.last_messages[-1] if self.last_messages else self.transcript.messages[-1]
 
     # ------------------------------------------------------------------ #

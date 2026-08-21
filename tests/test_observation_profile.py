@@ -29,9 +29,11 @@ from cohort.env.observations import (
 
 
 def test_core_is_the_pre_v110_width():
-    """220 - 54 = 166: tempo (2) + cover (3) + sitrep-due (1) + patch (48)."""
-    assert obs_dim("full") == OBS_DIM == 220
-    assert obs_dim("core") == 166
+    """220 - 54 = 166: tempo (2) + cover (3) + sitrep-due (1) + patch (48) —
+    plus the degraded-communications blocks (94 acoustic + 14 cohesion),
+    appended to BOTH profiles so the bisect keeps its single variable."""
+    assert obs_dim("full") == OBS_DIM == 220 + 94 + 14
+    assert obs_dim("core") == 166 + 94 + 14
     widened_patch = (2 * PATCH_RADIUS + 1) ** 2 * 2 - (2 * CORE_PATCH_RADIUS + 1) ** 2 * 2
     assert widened_patch == 48
     assert obs_dim("full") - obs_dim("core") == 2 + 3 + 1 + widened_patch
@@ -106,8 +108,10 @@ def test_a_core_run_trains_and_checkpoints_at_its_own_width(tmp_path):
 
     cfg = PPOConfig(n_envs=2, horizon=32)
     trainer = Trainer("squad_screen_core", cfg, tmp_path / "run", seed=0, tensorboard=False)
-    assert trainer.obs_dim == 166
-    assert next(trainer.net.parameters()).shape[1] == 166, "first layer is 166 wide"
+    core = obs_dim("core")
+    assert core != OBS_DIM
+    assert trainer.obs_dim == core
+    assert next(trainer.net.parameters()).shape[1] == core, "first layer is core-wide"
     trainer.train(total_steps=256)
     ckpt = torch.load(trainer.save_checkpoint("ckpt_test.pt"), weights_only=True)
-    assert ckpt["obs_dim"] == 166, "the checkpoint must record the width it was built at"
+    assert ckpt["obs_dim"] == core, "the checkpoint must record the width it was built at"

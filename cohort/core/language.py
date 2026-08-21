@@ -226,6 +226,43 @@ def format_sync_go(proposer_cs: str) -> str:
     return f"{proposer_cs}: GO! OUT."
 
 
+#: Silent signal variants (degraded communications §3.6.5): the same two
+#: pre-arranged meanings, shown by hand rather than spoken. They still appear
+#: on the transcript — every C2 event does — worded so an external reader can
+#: tell the silent act from the sound one at a glance.
+GESTURE_MARK = "BY GESTURE"
+
+
+def format_gesture_execute(issuer_cs: str) -> str:
+    """Silent EXECUTE: 'ALL STATIONS, TL1 SIGNALS BY GESTURE: EXECUTE. OUT.'"""
+    return f"ALL STATIONS, {issuer_cs} SIGNALS {GESTURE_MARK}: EXECUTE. OUT."
+
+
+def format_gesture_sync_go(proposer_cs: str) -> str:
+    """Silent GO: 'RFN1 SIGNALS BY GESTURE: GO! OUT.'"""
+    return f"{proposer_cs} SIGNALS {GESTURE_MARK}: GO! OUT."
+
+
+_GESTURE_RE = re.compile(
+    r"^(?:ALL STATIONS,\s*)?(?P<cs>[A-Z]+\d+) SIGNALS BY GESTURE:\s*(?P<code>EXECUTE|GO)!?\.?\s*OUT\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_gesture(text: str) -> dict | None:
+    """Inverse of the two gesture formatters: ``{"issuer", "code"}`` with
+    ``code`` in ``{"EXECUTE", "GO"}``, or None for any spoken line."""
+    m = _GESTURE_RE.match(text.strip())
+    if m is None:
+        return None
+    return {"issuer": m.group("cs").upper(), "code": m.group("code").upper()}
+
+
+def is_gesture(text: str) -> bool:
+    """Was this transcript line a silent gesture rather than a sound?"""
+    return parse_gesture(text) is not None
+
+
 def format_opord(
     recipient_cs: str,
     mission: MissionType,

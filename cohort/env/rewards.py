@@ -413,6 +413,23 @@ class RewardConfig:
     defeat: float = -2.0              # whole cohort wiped out
 
     # ------------------------------------------------------------------ #
+    # degraded communications (docs/degraded-communications.md §6) —
+    # starting hypotheses, not doctrine; none of them enters max_step_farm()
+    # except the cohesion penalty, whose best case is zero
+    # ------------------------------------------------------------------ #
+    # A novel ACOUSTIC CONTACT received by the intended superior: half a
+    # visually confirmed CONTACT. A repeat of a fresh identical cue is noise
+    # and draws contact_redundant, exactly like CONTACT (same listener-local
+    # novelty rules). Pays only on receipt — never on hearing a sound.
+    acoustic_contact_new: float = 0.25
+    # Broken visual link (§3.7, voice_only only): per disconnected,
+    # non-detached agent-step, capped per element-step. Merely standing near a
+    # leader earns nothing: there is no positive proximity term at all, so
+    # cohesion stays a tactical trade and adds nothing to the stall bound.
+    visual_link_broken: float = -0.01
+    visual_link_broken_element_cap: float = -0.03
+
+    # ------------------------------------------------------------------ #
     # CLI overrides
     # ------------------------------------------------------------------ #
 

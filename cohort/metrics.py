@@ -300,6 +300,13 @@ class TraceRecorder:
                 (s.last_sitrep_step for s in env.roster.soldiers), default=UNSET_SITREP_CLOCK
             ),
             "knowledge_ttl": _knowledge_ttl(),
+            # degraded communications (docs/degraded-communications.md §9):
+            # the regime the episode was played under, so every voice /
+            # acoustic / cohesion metric below can state when it is
+            # structurally unavailable (null, never a zero rate)
+            "comm_model": cfg.comm_model,
+            "sound_model": cfg.sound_model,
+            "voice_range": float(cfg.voice_range),
             "human": human,
             "reported": {},
             "steps": [self._step_record(env, initial=True)],
@@ -415,6 +422,10 @@ class TraceRecorder:
                     # from, not a re-derivation of it.
                     "order_opts": order_options(env._mask_for(s)),
                     "root": s is root,
+                    # degraded communications (§9): visual-link state, station
+                    # keeping, last-known-leader freshness, held cues and the
+                    # agent's own enemy picture (local-picture modes only)
+                    **_degraded_soldier_record(env, s),
                 }
             )
         messages = env.transcript.messages if initial else env.last_messages
@@ -429,8 +440,16 @@ class TraceRecorder:
             "t": env._step_count,
             "soldiers": soldiers,
             "enemies": [
-                {"id": e.id, "alive": e.alive, "pos": list(e.pos)} for e in env.enemies
+                {
+                    "id": e.id, "alive": e.alive, "pos": list(e.pos),
+                    # §9 opfor_investigation_steps: this move followed a heard anchor
+                    "investigating": e.id in getattr(env, "_opfor_investigating", set()),
+                }
+                for e in env.enemies
             ],
+            # §9 command_pair_in_voice_rate: (leader-direct-subordinate pairs,
+            # pairs within low-voice range) this step
+            "command_pairs": list(getattr(env, "_command_pairs", (0, 0))),
             "messages": [
                 _message_record(env, m, meta) for m, meta in zip(messages, metas, strict=False)
             ],
@@ -446,6 +465,42 @@ class TraceRecorder:
             "retasks": [] if initial else env.retask_events_last_step,
             "order_pay": [] if initial else env.order_pay_events_last_step,
         }
+
+
+def _degraded_soldier_record(env: CohortEnv, s) -> dict:
+    """The per-soldier degraded-communications fields of a trace step."""
+    if not s.alive:
+        return {
+            "link": None, "link_age": 0, "station": None, "form_err": 0.0,
+            "leader_seen": None, "leader_age": None, "cues": 0, "known": [],
+        }
+    link, age = env._link_state.get(s.callsign, (None, 0))
+    station, err = env._station.get(s.callsign, (None, 0.0))
+    leader = env.roster.leader_of(s)
+    leader_seen = leader_age = None
+    if leader is not None:
+        fs = env._friendly_view(s)
+        if fs is None:
+            leader_seen, leader_age = True, 0
+        elif leader.id in fs:
+            leader_seen, leader_age = bool(fs[leader.id][0]), int(fs[leader.id][3])
+        else:
+            leader_seen = False
+    known = (
+        sorted(env._agent_known.get(s.callsign, {}))
+        if env._local_pictures
+        else sorted(env._known_enemies)
+    )
+    return {
+        "link": link,
+        "link_age": int(age),
+        "station": station,
+        "form_err": float(err),
+        "leader_seen": leader_seen,
+        "leader_age": leader_age,
+        "cues": sum(1 for c in env._agent_cues.get(s.callsign, []) if c.side != "friendly"),
+        "known": known,
+    }
 
 
 def _knowledge_ttl() -> int:
@@ -482,6 +537,9 @@ def _message_record(env: CohortEnv, m, meta: dict | None = None) -> dict:
         # who could actually hear the semantics
         "medium": meta.get("medium") if meta else None,
         "heard_by": meta.get("heard_by") if meta else None,
+        # outcome flags the environment stated at emission (§9 numerators):
+        # useful (applied / accepted / released), redundant, gesture_possible
+        **{k: meta[k] for k in ("useful", "redundant", "gesture_possible") if meta and k in meta},
     }
 
 
@@ -1403,6 +1461,159 @@ def _traffic(trace: dict) -> dict[str, Any]:
     }
 
 
+#: learned speech acts — the numerator classes of the voice metrics (§9)
+LEARNED_KINDS: frozenset[str] = frozenset(
+    {"contact", "acoustic_contact", "sitrep", "done", "order", "execute", "sync_propose", "sync_go"}
+)
+
+
+def _degraded(trace: dict) -> dict[str, Any]:
+    """Degraded-communications counts (§9), every one with its denominator.
+
+    Voice metrics read the ``medium`` / ``heard_by`` audit metadata the
+    environment records beside each message; acoustic metrics read the
+    per-step ``sounds`` records; cohesion metrics read the per-soldier link /
+    station fields. A trace recorded before these fields existed, or under a
+    regime where a channel is structurally absent (sound off, a radio net),
+    contributes zero to the relevant denominators, so the aggregate reads
+    ``None`` there rather than a flattering zero rate.
+    """
+    voice_only = trace.get("comm_model") == "voice_only"
+    sound_on = trace.get("sound_model") == "tactical"
+    c: dict[str, Any] = {
+        "voice_utterances": 0, "voice_hearers_sum": 0, "voice_useful": 0,
+        "voice_redundant": 0, "voice_when_gesture_possible": 0,
+        "direct_addressed": 0, "direct_delivered": 0,
+        "sound_signal_uses": 0, "sound_signal_semantic_receipts": 0,
+        "sound_signal_detections": 0,
+        "gesture_uses": 0, "gesture_semantic_receipts": 0,
+        "acoustic_reports_attempted": 0, "acoustic_reports_delivered": 0,
+        "acoustic_reports_redundant": 0,
+        "voice_events": 0, "voice_events_detected_by_opfor": 0,
+        "sound_events_by_kind": {}, "sound_detected_by_side_kind": {},
+        "movement_sound_open": [0, 0], "movement_sound_forest": [0, 0],
+        "acoustic_cue_agent_steps": 0, "acoustic_cues_received": 0,
+        "acoustic_to_visual_latency": None, "acoustic_first_cue_step": None,
+        "opfor_investigation_steps": 0, "opfor_agent_steps": 0,
+        "element_steps": 0, "element_steps_intact": 0,
+        "cohesion_eligible_agent_steps": 0, "disconnected_agent_steps": 0,
+        "visual_link_breaks": [],
+        "station_eligible_steps": 0, "station_steps": 0,
+        "formation_error_sum": 0.0, "formation_error_max": 0.0,
+        "friendly_state_age_sum": 0, "friendly_state_age_n": 0,
+        "command_pairs": 0, "command_pairs_in_voice": 0,
+        "contact_first_sighting_step": None, "contact_leader_step": None,
+        "contact_root_step": None,
+        "fresh_picture_sum": 0.0, "fresh_picture_steps": 0,
+        "voice_only": voice_only, "sound_on": sound_on,
+    }
+    first_cue = first_visual = None
+    open_breaks: dict[str, int] = {}
+    sighted: set[int] = set()
+    for step in trace["steps"]:
+        t = step["t"]
+        for msg in step["messages"]:
+            medium = msg.get("medium")
+            heard = msg.get("heard_by")
+            if msg["kind"] not in LEARNED_KINDS or medium in (None, "briefing", "external"):
+                continue
+            if medium in ("voice", "signal", "gesture") and heard is not None:
+                if medium != "gesture":
+                    c["voice_utterances"] += 1
+                    c["voice_hearers_sum"] += len(heard)
+                    c["voice_useful"] += bool(msg.get("useful"))
+                    c["voice_redundant"] += bool(msg.get("redundant"))
+                    c["voice_when_gesture_possible"] += bool(msg.get("gesture_possible"))
+                if medium == "signal":
+                    c["sound_signal_uses"] += 1
+                    c["sound_signal_semantic_receipts"] += len(heard)
+                if medium == "gesture":
+                    c["gesture_uses"] += 1
+                    c["gesture_semantic_receipts"] += len(heard)
+            if msg["kind"] == "acoustic_contact":
+                c["acoustic_reports_attempted"] += 1
+                c["acoustic_reports_delivered"] += heard is not None and msg["to"] in heard
+                c["acoustic_reports_redundant"] += bool(msg.get("redundant"))
+            if msg["to"] not in ("ALL", "HQ") and heard is not None:
+                c["direct_addressed"] += 1
+                c["direct_delivered"] += msg["to"] in heard
+        for ev in step.get("sounds", []):
+            side, kind = ev["side"], ev["kind"]
+            by_kind = c["sound_events_by_kind"].setdefault(side, {})
+            by_kind[kind] = by_kind.get(kind, 0) + 1
+            opposing = ev["detected_by_hostile"] if side == "friendly" else ev["detected_by_friendly"]
+            det = c["sound_detected_by_side_kind"].setdefault(side, {})
+            det[kind] = det.get(kind, 0) + bool(opposing)
+            if kind == "voice" and side == "friendly":
+                c["voice_events"] += 1
+                c["voice_events_detected_by_opfor"] += bool(ev["detected_by_hostile"])
+            if kind == "signal" and side == "friendly":
+                c["sound_signal_detections"] += bool(ev["detected_by_hostile"])
+            if kind == "movement" and side == "friendly":
+                key = "movement_sound_forest" if ev["radius"] > 2.0 else "movement_sound_open"
+                c[key][0] += 1
+                c[key][1] += bool(ev["detected_by_hostile"])
+        for e in step.get("enemies", []):
+            if e.get("alive"):
+                c["opfor_agent_steps"] += 1
+                c["opfor_investigation_steps"] += bool(e.get("investigating"))
+        pairs = step.get("command_pairs")
+        if pairs:
+            c["command_pairs"] += pairs[0]
+            c["command_pairs_in_voice"] += pairs[1]
+        living = [r for r in step["soldiers"] if r.get("alive")]
+        fresh_holders = 0
+        for rec in living:
+            if "link" not in rec:
+                continue  # pre-cycle trace
+            cues = rec.get("cues", 0)
+            if sound_on:
+                c["acoustic_cue_agent_steps"] += 1
+                c["acoustic_cues_received"] += cues
+                if cues and first_cue is None:
+                    first_cue = t
+            if rec.get("sees") and first_visual is None:
+                first_visual = t
+            if rec.get("sees"):
+                sighted.update(rec["sees"])
+                if c["contact_first_sighting_step"] is None:
+                    c["contact_first_sighting_step"] = t
+            if rec["link"] is not None:
+                if rec["subs"]:
+                    c["element_steps"] += 1
+                    c["element_steps_intact"] += bool(rec["link"])
+                if rec.get("leader") is not None:
+                    c["cohesion_eligible_agent_steps"] += 1
+                    c["disconnected_agent_steps"] += not rec["link"]
+                    if not rec["link"]:
+                        open_breaks[rec["cs"]] = open_breaks.get(rec["cs"], 0) + 1
+                    elif rec["cs"] in open_breaks:
+                        c["visual_link_breaks"].append(open_breaks.pop(rec["cs"]))
+            if rec.get("station") is not None:
+                c["station_eligible_steps"] += 1
+                c["station_steps"] += bool(rec["station"])
+                c["formation_error_sum"] += rec.get("form_err", 0.0)
+                c["formation_error_max"] = max(c["formation_error_max"], rec.get("form_err", 0.0))
+            if rec.get("leader_age") is not None:
+                c["friendly_state_age_sum"] += rec["leader_age"]
+                c["friendly_state_age_n"] += 1
+            known = rec.get("known") or []
+            if known:
+                fresh_holders += 1
+                if rec.get("root") and c["contact_root_step"] is None:
+                    c["contact_root_step"] = t
+                if rec["subs"] and c["contact_leader_step"] is None:
+                    c["contact_leader_step"] = t
+        if sighted and living:
+            c["fresh_picture_sum"] += fresh_holders / len(living)
+            c["fresh_picture_steps"] += 1
+    c["visual_link_breaks"].extend(open_breaks.values())
+    c["acoustic_first_cue_step"] = first_cue
+    if first_cue is not None and first_visual is not None and first_visual >= first_cue:
+        c["acoustic_to_visual_latency"] = first_visual - first_cue
+    return c
+
+
 def episode_behavior(trace: dict) -> dict[str, Any]:
     """Reduce one episode trace to its behavioral event counts and lists."""
     latencies, censored, obedience_by_task = _obedience(trace)
@@ -1436,6 +1647,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         **_fight_disposition(trace),
         **_cohesion(trace),
         **_traffic(trace),
+        **_degraded(trace),
     }
 
 
@@ -1715,6 +1927,130 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "messages_per_episode": _ratio(total("messages"), n_eps),
         "command_traffic_share": _ratio(total("messages_command"), total("messages")),
         "voice_traffic_share": _ratio(total("messages_voice"), total("messages")),
+        **_aggregate_degraded(episodes),
+    }
+
+
+def _aggregate_degraded(episodes: list[dict]) -> dict[str, Any]:
+    """Run-level degraded-communications metrics (§9). Every rate carries its
+    counts beside it; a channel that never existed reads None."""
+    def total(key: str) -> int:
+        return sum(ep.get(key, 0) or 0 for ep in episodes)
+
+    n_eps = len(episodes)
+    by_kind: dict[str, dict[str, int]] = {}
+    detected: dict[str, dict[str, int]] = {}
+    for ep in episodes:
+        for side, kinds in (ep.get("sound_events_by_kind") or {}).items():
+            dst = by_kind.setdefault(side, {})
+            for k, v in kinds.items():
+                dst[k] = dst.get(k, 0) + v
+        for side, kinds in (ep.get("sound_detected_by_side_kind") or {}).items():
+            dst = detected.setdefault(side, {})
+            for k, v in kinds.items():
+                dst[k] = dst.get(k, 0) + v
+    breaks = [b for ep in episodes for b in (ep.get("visual_link_breaks") or [])]
+    mv_open = [sum(ep.get("movement_sound_open", [0, 0])[i] for ep in episodes) for i in (0, 1)]
+    mv_forest = [sum(ep.get("movement_sound_forest", [0, 0])[i] for ep in episodes) for i in (0, 1)]
+    a2v = [ep.get("acoustic_to_visual_latency") for ep in episodes]
+    cued = [ep for ep in episodes if ep.get("acoustic_first_cue_step") is not None]
+    leader_lat = [
+        ep["contact_leader_step"] - ep["contact_first_sighting_step"]
+        for ep in episodes
+        if ep.get("contact_first_sighting_step") is not None and ep.get("contact_leader_step") is not None
+    ]
+    root_lat = [
+        ep["contact_root_step"] - ep["contact_first_sighting_step"]
+        for ep in episodes
+        if ep.get("contact_first_sighting_step") is not None and ep.get("contact_root_step") is not None
+    ]
+    sighted_eps = sum(1 for ep in episodes if ep.get("contact_first_sighting_step") is not None)
+    return {
+        # voice
+        "voice_utterances": total("voice_utterances"),
+        "voice_utterances_per_episode": _ratio(total("voice_utterances"), n_eps),
+        "voice_hearers_mean": _ratio(total("voice_hearers_sum"), total("voice_utterances")),
+        "voice_useful_delivery_rate": _ratio(total("voice_useful"), total("voice_utterances")),
+        "voice_useful_numerator_classes": (
+            "applied orders + their WILCOs, accepted/novel/fresh reports, confirmed DONEs, "
+            "signals that released or synchronized >= 1 recipient"
+        ),
+        "redundant_voice_rate": _ratio(total("voice_redundant"), total("voice_utterances")),
+        "voice_when_gesture_possible": total("voice_when_gesture_possible"),
+        "voice_when_gesture_possible_rate": _ratio(
+            total("voice_when_gesture_possible"), total("sound_signal_uses")
+        ),
+        "voice_detected_by_opfor": _ratio(
+            total("voice_events_detected_by_opfor"), total("voice_events")
+        ),
+        "voice_events": total("voice_events"),
+        "direct_delivery_rate": _ratio(total("direct_delivered"), total("direct_addressed")),
+        "direct_addressed": total("direct_addressed"),
+        # signals / gestures
+        "sound_signal_uses": total("sound_signal_uses"),
+        "sound_signal_semantic_receipts": total("sound_signal_semantic_receipts"),
+        "sound_signal_detections": total("sound_signal_detections"),
+        "gesture_uses": total("gesture_uses"),
+        "gesture_semantic_receipts": total("gesture_semantic_receipts"),
+        # acoustic reports
+        "acoustic_reports_attempted": total("acoustic_reports_attempted"),
+        "acoustic_reports_delivered": total("acoustic_reports_delivered"),
+        "acoustic_reports_redundant": total("acoustic_reports_redundant"),
+        "acoustic_report_delivery_rate": _ratio(
+            total("acoustic_reports_delivered"), total("acoustic_reports_attempted")
+        ),
+        # sound environment
+        "sound_events_by_kind": by_kind,
+        "sound_detected_by_side_kind": {
+            side: {k: _ratio(detected.get(side, {}).get(k, 0), n) for k, n in kinds.items()}
+            for side, kinds in by_kind.items()
+        },
+        "acoustic_cues_received_per_agent_step": _ratio(
+            total("acoustic_cues_received"), total("acoustic_cue_agent_steps")
+        ),
+        "acoustic_to_visual_latency_mean": _mean(a2v),
+        "acoustic_to_visual_censored": sum(
+            1 for ep in cued if ep.get("acoustic_to_visual_latency") is None
+        ),
+        "acoustic_cued_episodes": len(cued),
+        "opfor_investigation_steps": total("opfor_investigation_steps"),
+        "opfor_investigation_share": _ratio(
+            total("opfor_investigation_steps"), total("opfor_agent_steps")
+        ),
+        "movement_sound_open": {"moves": mv_open[0], "detected": mv_open[1]},
+        "movement_sound_forest": {"moves": mv_forest[0], "detected": mv_forest[1]},
+        # cohesion
+        "element_visual_link_rate": _ratio(total("element_steps_intact"), total("element_steps")),
+        "element_steps": total("element_steps"),
+        "disconnected_agent_step_share": _ratio(
+            total("disconnected_agent_steps"), total("cohesion_eligible_agent_steps")
+        ),
+        "visual_link_break_duration_mean": _mean(breaks),
+        "visual_link_break_duration_max": max(breaks) if breaks else None,
+        "visual_link_breaks": len(breaks),
+        "formation_station_rate": _ratio(total("station_steps"), total("station_eligible_steps")),
+        "formation_error_mean": _ratio(
+            sum(ep.get("formation_error_sum", 0.0) for ep in episodes),
+            total("station_eligible_steps"),
+        ),
+        "formation_error_max": max(
+            (ep.get("formation_error_max", 0.0) for ep in episodes), default=None
+        ) if total("station_eligible_steps") else None,
+        "friendly_state_age_mean": _ratio(
+            total("friendly_state_age_sum"), total("friendly_state_age_n")
+        ),
+        "command_pair_in_voice_rate": _ratio(
+            total("command_pairs_in_voice"), total("command_pairs")
+        ),
+        # information propagation
+        "contact_to_leader_latency_mean": _mean(leader_lat),
+        "contact_to_leader_censored": sighted_eps - len(leader_lat),
+        "contact_to_root_latency_mean": _mean(root_lat),
+        "contact_to_root_censored": sighted_eps - len(root_lat),
+        "fresh_picture_coverage": _ratio(
+            sum(ep.get("fresh_picture_sum", 0.0) for ep in episodes),
+            total("fresh_picture_steps"),
+        ),
     }
 
 

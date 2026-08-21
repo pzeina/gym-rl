@@ -62,6 +62,8 @@ def _one_of_every_act() -> dict[str, tuple[str, str]]:
             lang.format_formation_order("SL1", "TL2", Formation.WEDGE), "order"),
         "format_ack": (lang.format_ack("SL1", "TL2"), "order"),
         "format_execute": (lang.format_execute("SL1"), "order"),
+        "format_gesture_execute": (lang.format_gesture_execute("SL1"), "order"),
+        "format_gesture_sync_go": (lang.format_gesture_sync_go("RFN1"), "order"),
         "format_sync_propose": (lang.format_sync_propose("RFN1", ["RFN2"]), "order"),
         "format_sync_go": (lang.format_sync_go("RFN1"), "order"),
         "format_contact": (lang.format_contact("SL1", "TL2", 3, (12, 7)), "rep"),

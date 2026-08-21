@@ -130,6 +130,9 @@ class Enemy:
     #: design: one BRIQUE member hearing Blue must not update the band.
     heard_blue_anchor: Coord | None = None
     heard_blue_step: int = -10_000
+    #: the last step this member's chosen move was an investigation of its
+    #: heard anchor (metrics: ``opfor_investigation_steps``)
+    investigating_step: int = -10_000
     #: per-member behavior state, set by the band controller each decision
     #: ("posted", "volleying", "sniping", "displacing", "raiding",
     #: "sabotaging", "fleeing"...). Band AI internal state — exposed to the
@@ -351,6 +354,7 @@ def investigate_heard(
         enemy.heard_blue_anchor = None  # investigated: nothing found
         return None
     enemy.behavior = "investigating"
+    enemy.investigating_step = step
     return "move", _step_toward(enemy.pos, enemy.heard_blue_anchor, world, rng)
 
 

@@ -160,6 +160,14 @@ def _build_catalog() -> list[ActionSpec]:
                 order_slot=slot,
                 order_formation=formation,
             )
+    # --- degraded communications (docs/degraded-communications.md §5) ---
+    # APPENDED after every pre-existing entry, so the 228 indices above never
+    # move (pinned by tests/test_degraded_regression.py). Each is masked off
+    # wherever it is structurally unavailable: no cue to report, no gesture
+    # outside voice_only, no courier outside a liaison-enabled scenario.
+    add("acoustic_contact", "REPORT_ACOUSTIC_CONTACT")  # coarse heard-presence report
+    add("gesture_sync_go", "GESTURE_SYNC_GO")            # silent GO, LOS audience only
+    add("gesture_execute", "GESTURE_EXECUTE")            # silent EXECUTE, LOS audience
     return specs
 
 
@@ -322,6 +330,13 @@ def compute_mask(
     ablation: str = "full",
     has_voice_peer: bool = False,
     has_pending_sync: bool = False,
+    superior_reachable: bool = True,
+    held_contact_intel: bool = False,
+    has_reportable_cue: bool = False,
+    gestures_enabled: bool = False,
+    gesture_execute_audience: bool = False,
+    gesture_sync_audience: bool = False,
+    reachable_sub_ids: frozenset[int] | set[int] | None = None,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -343,6 +358,25 @@ def compute_mask(
       the cooldown stay;
     * ``"flat"`` — no ranks in effect: the order vocabulary is masked off
       for everyone; comms reduce to reports.
+
+    Degraded communications (docs/degraded-communications.md):
+
+    * ``superior_reachable`` — can the direct superior receive this agent's
+      reports right now? Always True on a radio net; under ``voice_only`` it
+      is the low-voice predicate, and False for a root whose only superior
+      is an absent HQ. CONTACT / SITREP / DONE / ACOUSTIC CONTACT are masked
+      when it is False: a report is spoken to someone, never into the void.
+    * ``held_contact_intel`` — the agent holds unexpired contact information
+      of its own (voice_only: CONTACT is legal on held intel, not only on an
+      enemy visible this exact tick — a scout observes, withdraws, reports).
+    * ``has_reportable_cue`` — a fresh non-friendly acoustic cue or carried
+      acoustic report is held (REPORT_ACOUSTIC_CONTACT).
+    * ``gestures_enabled`` + the two audience flags — silent EXECUTE / GO are
+      legal only in voice_only and only with a real current visual edge to
+      at least one eligible recipient.
+    * ``reachable_sub_ids`` — direct subordinates an order can actually be
+      spoken to this tick (None → every slot, the radio behavior). A slot
+      outside it is masked: an order that cannot be spoken is not an order.
     """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
@@ -358,12 +392,16 @@ def compute_mask(
             if soldier.ammo > 0 and visible_enemy_in_range:
                 mask[spec.index] = 1
         elif spec.kind == "contact":
-            if visible_enemy:
+            if (visible_enemy or held_contact_intel) and superior_reachable:
+                mask[spec.index] = 1
+        elif spec.kind == "acoustic_contact":
+            if has_reportable_cue and superior_reachable:
                 mask[spec.index] = 1
         elif spec.kind == "sitrep":
-            mask[spec.index] = 1
+            if superior_reachable:
+                mask[spec.index] = 1
         elif spec.kind == "done":
-            if is_done_admissible(
+            if superior_reachable and is_done_admissible(
                 soldier,
                 roster,
                 root_mission=root_mission,
@@ -390,6 +428,12 @@ def compute_mask(
             # A5-4: only the proposer of a still-live (unexpired) proposal
             if has_pending_sync:
                 mask[spec.index] = 1
+        elif spec.kind == "gesture_sync_go":
+            if gestures_enabled and has_pending_sync and gesture_sync_audience:
+                mask[spec.index] = 1
+        elif spec.kind == "gesture_execute":
+            if gestures_enabled and gesture_execute_audience:
+                mask[spec.index] = 1
 
     # Order vocabulary: command ranks only, doctrine-constrained ("full").
     # B3 arms: "flat" removes the order vocabulary outright; "nomask" keeps
@@ -406,6 +450,8 @@ def compute_mask(
         for spec in _ORDER_SPECS:
             if spec.order_slot >= len(subs):
                 continue
+            if reachable_sub_ids is not None and subs[spec.order_slot].id not in reachable_sub_ids:
+                continue  # voice_only: nobody there to speak the order to
             # A5-3 stance orders: any mission-holding leader may set a
             # subordinate LEADER's formation; the recipient must actually
             # lead an element. No doctrine derivation, no cooldown — a

@@ -61,9 +61,14 @@ def _put_enemy_in_view(env, callsign, enemy_idx=0):
 
 
 def test_spaces_are_frozen_at_v14():
-    """Spaces at the v1.10 layout (breaking cycle): Discrete(228) / Box(220)."""
-    assert N_ACTIONS == 228
-    assert OBS_DIM == 220
+    """Spaces at the degraded-communications layout (authorized breaking
+    cycle, docs/degraded-communications.md §5): the v1.10 Discrete(228) /
+    Box(220) plus the appended acoustic-report and gesture actions and the
+    acoustic + cohesion observation blocks. Phase C appends the liaison
+    actions and message block on top; the first 228 indices never move
+    (tests/test_degraded_regression.py pins them)."""
+    assert N_ACTIONS == 231
+    assert OBS_DIM == 328
 
 
 # ---------------------------------------------------------------------- #

@@ -151,7 +151,13 @@ class ScenarioSpec:
     #                               by stations within comm_range of the sender
     #                               (euclidean; the sender always hears itself; HQ is a
     #                               high-power station: HQ traffic is always heard and
-    #                               HQ always hears the root).
+    #                               HQ always hears the root); "voice_only" → no radios
+    #                               after the briefing (docs/degraded-communications.md):
+    #                               every utterance is low voice within voice_range
+    #                               with LOS, no global net or arbitration, no HQ
+    #                               station in-episode, per-listener pictures, friendly
+    #                               telemetry gated behind local perception, gestures
+    #                               and pre-arranged signals, cohesion priced.
     comm_range: float = 12.0      # audible radius under comm_model="range"
     sound_model: str = "off"      # tactical acoustic layer (degraded-communications
     #                               cycle, §3.6): "off" (the shipped behavior — no
@@ -168,7 +174,11 @@ class ScenarioSpec:
     voice_range: float = 6.0      # shouting distance (A5-4): trinôme sync proposals
     #                               register the peers within this radius at
     #                               propose time; voice traffic is not radio —
-    #                               never net-arbitrated, never airtime-costed
+    #                               never net-arbitrated, but charged per learned
+    #                               communication act like every other (#18).
+    #                               Under comm_model="voice_only" this is the low,
+    #                               intelligible speaking radius of EVERY utterance
+    #                               (presets: 2.0).
     sitrep_cadence: int | None = None  # reporting doctrine: an agent not in contact
     #                               owes a SITREP every this-many steps; overdue draws
     #                               RewardConfig.sitrep_overdue per step and is surfaced
@@ -261,6 +271,12 @@ class ScenarioSpec:
             raise ValueError(msg)
         if self.sound_model not in ("off", "tactical"):
             msg = f"Unknown sound model {self.sound_model!r} (expected off | tactical)"
+            raise ValueError(msg)
+        if self.comm_model not in ("global", "range", "voice_only"):
+            msg = (
+                f"Unknown comm model {self.comm_model!r} "
+                "(expected global | range | voice_only)"
+            )
             raise ValueError(msg)
         from cohort.env.observations import OBS_PROFILES
 
@@ -628,6 +644,43 @@ SCENARIOS["squad_screen_core"] = replace(
 )
 
 
+# Voice-only degraded communications (docs/degraded-communications.md §7.B.7,
+# §9): the squad scenario with no radios after the briefing. Exact `squad`
+# mirrors — same map, OpFor, org, step budget, spaces and reward defaults —
+# differing only in the communications regime, the acoustic layer and the
+# documented root-report economics: root_done_bonus=0 because the root's
+# HQ channel is structurally absent (§3.3), a scenario price (v1.21
+# mechanism), never a --reward flag. The two Phase-B "direct" arms have no
+# way to send a messenger; Phase C adds the liaison-capable arm.
+_VOICE_ECONOMICS = (("root_done_bonus", 0.0),)
+SCENARIOS["squad_voice_direct"] = replace(
+    SCENARIOS["squad"],
+    name="squad_voice_direct",
+    description=(
+        "Degraded communications, direct arm: the squad scenario with no radios "
+        "after the briefing — low voice within 2 cells and LOS, tactical "
+        "acoustics on (speech, movement and fire are heard by both sides), "
+        "gestures and pre-arranged signals, cohesion priced, no courier."
+    ),
+    comm_model="voice_only",
+    sound_model="tactical",
+    voice_range=2.0,
+    reward_overrides=_VOICE_ECONOMICS,
+    experiment_arm="voice direct",
+)
+SCENARIOS["squad_voice_no_acoustic_ablation"] = replace(
+    SCENARIOS["squad_voice_direct"],
+    name="squad_voice_no_acoustic_ablation",
+    description=(
+        "Degraded communications ABLATION (not an operational mode): the "
+        "voice-only direct arm with the tactical acoustic layer disabled — "
+        "isolates the causal contribution of enemy hearing."
+    ),
+    sound_model="off",
+    experiment_arm="voice direct · no acoustics",
+)
+
+
 def get_scenario(name: str) -> ScenarioSpec:
     """Look up a scenario preset by name."""
     if name not in SCENARIOS:
@@ -801,7 +854,20 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         # ranges (cohort.core.acoustics; never hidden in the OpFor controller)
         "sound_model": spec.sound_model,
         "acoustics": _acoustic_parameters(),
+        # the voice-only regime's remaining published constants: how long a
+        # carried acoustic report stays reportable, and whether a courier can
+        # be detached at all (Phase C; False until then)
+        "acoustic_report_ttl": _acoustic_report_ttl(),
+        "liaison_enabled": bool(getattr(spec, "liaison_enabled", False)),
+        # the cohesion price travels with the regime (voice_only only)
+        "visual_link_priced": spec.comm_model == "voice_only",
     }
+
+
+def _acoustic_report_ttl() -> int:
+    from cohort.env.cohort_env import ACOUSTIC_REPORT_TTL
+
+    return ACOUSTIC_REPORT_TTL
 
 
 def _acoustic_parameters() -> dict:
