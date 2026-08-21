@@ -659,6 +659,26 @@ def test_sole_survivor_cannot_be_stacked():
     assert aggregate_behavior([ep])["mean_nearest_teammate_dist"] is None
 
 
+def test_stacked_gate_refuses_the_pile_and_stays_unmeasured_on_legacy():
+    # fireteam_defend_v23's shape — win everything while stacked (owner-decided
+    # gate, 2026-08-21). Unconditional: it must be able to fail alone.
+    pile = [
+        sold(f"RFN{i}", pos=(5, 5), teammate_close=True, teammate_sees=True) for i in range(3)
+    ]
+    agg = aggregate_behavior([episode_behavior(trace([step(0, pile)]))])
+    g = next(x for x in regression_gates(agg) if x["name"] == "stacked_rate")
+    assert g["passed"] is False and g["value"] == 1.0
+    spread = [
+        sold(f"RFN{i}", pos=(0, 2 * i), teammate_close=True, teammate_sees=True) for i in range(3)
+    ]
+    agg = aggregate_behavior([episode_behavior(trace([step(0, spread)]))])
+    g = next(x for x in regression_gates(agg) if x["name"] == "stacked_rate")
+    assert g["passed"] is True and g["value"] == 0.0
+    legacy = aggregate_behavior([episode_behavior(trace([step(0, [sold("RFN1")])]))])
+    g = next(x for x in regression_gates(legacy) if x["name"] == "stacked_rate")
+    assert g["passed"] is None  # a pre-metric behavior.json is unmeasured, not passed
+
+
 def test_recorder_cohesion_two_agents_and_a_wall():
     """The recorder's own booleans, on a constructed grid: close vs far is the
     support umbrella, and a wall between the pair breaks teammate LOS."""
@@ -723,13 +743,15 @@ def test_positional_gate_fails_the_v7_disposition():
         "timeout_rate",
         "success_rate",
         "closed_on_root_report_rate",
+        "stacked_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
     ]
     positional = [
         g
         for g in gates
-        if g["name"] not in ("timeout_rate", "success_rate", "closed_on_root_report_rate")
+        if g["name"]
+        not in ("timeout_rate", "success_rate", "closed_on_root_report_rate", "stacked_rate")
     ]
     assert [g["passed"] for g in positional] == [False, False]
     assert "FAIL" in format_gate_report(positional)
@@ -742,7 +764,12 @@ def test_positional_gate_passes_a_prepared_defense():
     # no denominator and reads None — unmeasured, which is deliberately not a
     # pass. Nothing may FAIL; that is the claim this test makes.
     gates = regression_gates(_defend_agg(cover=True, dist_from_obj=2))
-    assert [g["passed"] for g in gates if g["name"] != "closed_on_root_report_rate"] == [
+    # closed_on_root_report_rate and stacked_rate read None here (no ENDEX, no
+    # cohesion booleans on these synthetic traces) — unmeasured, not passed
+    measured = [
+        g for g in gates if g["name"] not in ("closed_on_root_report_rate", "stacked_rate")
+    ]
+    assert [g["passed"] for g in measured] == [
         True,
         True,
         True,
@@ -763,6 +790,7 @@ def test_positional_gate_applies_to_defend_roots_only():
         "timeout_rate",
         "success_rate",
         "closed_on_root_report_rate",
+        "stacked_rate",
     ]
     assert format_gate_report([]) == ""
 
@@ -1096,11 +1124,17 @@ def test_success_axis_is_silent_on_a_genuine_stall():
     """
     agg = _shape_agg(0, 0, 30, root_mission="SEIZE")  # SEIZE: no positional gate in play
     gates = regression_gates(agg)
-    # the command-report gate is unconditional (it is an axis, not a shape), but
-    # a run that never won sends no ENDEX, so it reads unmeasured here
-    assert [g["name"] for g in gates] == ["timeout_rate", "closed_on_root_report_rate"]
+    # the command-report and bunching gates are unconditional (axes, not
+    # shapes), but this synthetic stall sends no ENDEX and carries no cohesion
+    # booleans, so both read unmeasured here
+    assert [g["name"] for g in gates] == [
+        "timeout_rate",
+        "closed_on_root_report_rate",
+        "stacked_rate",
+    ]
     assert gates[0]["passed"] is False
     assert gates[1]["passed"] is None
+    assert gates[2]["passed"] is None
     report = format_gate_report(gates)
     assert "FAIL" in report
     assert "success_rate" not in report

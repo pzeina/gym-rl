@@ -214,6 +214,19 @@ SUCCESS_RATE_FLOOR: float = 0.5
 #: through ``_gate``: unmeasured is not passed.
 ROOT_REPORT_CLOSE_FLOOR: float = 0.5
 
+#: The bunching gate (owner-decided 2026-08-21): the ceiling on
+#: ``stacked_rate`` a retrain must stay under. It encodes a measured exploit:
+#: ``fireteam_defend_v23`` wins DEFEND at success 1.00 while stacked on 0.940
+#: of its living-agent-steps (mean nearest teammate 0.39 cells — multiple
+#: agents per cell), and every isolation metric scored it the healthiest run
+#: in the fleet. "Win by piling on the point" is a failure no scenario wants.
+#: The bound is deliberately loose: the 2026-08-21 provenance sweep put every
+#: healthy member at 0.18-0.57 stacked and the exploit at 0.94, so 0.70
+#: refuses the regime without policing the wide healthy band. ``None`` (a
+#: pre-metric ``behavior.json``) stays ``None`` through ``_gate``: unmeasured
+#: is not passed.
+STACKED_RATE_CEILING: float = 0.70
+
 #: SITREP freshness interval for a trace recorded before the scenario's own
 #: was written into it (refs issue #35). Read off ``RewardConfig`` rather than
 #: restated, because it is the live price: a report at least this many steps
@@ -2283,6 +2296,10 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
             "min",
         )
     )
+    # the bunching gate (owner-decided 2026-08-21): unconditional for the same
+    # reason the mute gate is — winning stacked is not a collapse shape, so it
+    # must be able to fail alone. See STACKED_RATE_CEILING.
+    gates.append(_gate("stacked_rate", agg.get("stacked_rate"), STACKED_RATE_CEILING, "max"))
     if agg.get("root_mission") != MissionType.DEFEND.name:
         return gates
     return [
