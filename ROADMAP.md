@@ -9067,3 +9067,30 @@ deliberately deferred (`docs/vision.md` §2c).
   capture; pricing idle time does. Confirm seeds 13/14 of the timecost arm
   launched; a pass sends the `time_penalty` default question to the owner —
   no override arm can ever ship as baseline.
+- **2026-08-21** — **The platoon_hard reporting gap is DIAGNOSED: priced
+  silence on a reachable channel, not structural unreachability.** The
+  standing closed-on-root 0.000 (every platoon_hard arm, both checkpoints)
+  had two candidate mechanisms with opposite fixes: (a) the SEIZE root's
+  truthful-claim condition (`in_position` — the CO personally on the
+  objective) is unreachable for a rear commander, so the gate measures CO
+  co-location, not reporting; or (b) the claim is available and declined —
+  the patrol_brique mute-root price regime (`root_done_bonus` 1.0 since
+  v1.20; patrol_brique reports 0.867 at 3.0, mute at ≤2.0). `done_probe.py`
+  on `platoon_hard_timecost_v1_seed12/ckpt_best` (30 eps, seed 500,
+  observe/oracle/naive) refutes (a): **266 root golden steps (~9/ep),
+  30/30 episodes with ≥1 truthful claim opportunity** — the CO does stand
+  on the cleared objective post-T0 — and the oracle regime (force DONE on
+  golden steps) confirms at 0.977 with 30/30 episodes closing on the root.
+  Observed policy: 1 root claim in 30 episodes. The committed N=20 evals
+  agree across all five landed timecost/rescue arms: `done_admissible_root`
+  2.7k–4.8k per run, `done_reports_root` 0 (seed 17: 1, rejected). So the
+  gap is (b) at platoon depth: +1.0 does not buy the claim. Whether to
+  reprice (fleet default vs a platoon_hard `reward_overrides` entry, the
+  v1.21 scoped form) is the owner's; the measurement that would settle it
+  is launched: **`platoon_hard_rdb3_v1_seed12`** (`--reward
+  root_done_bonus=3.0`, spec economics otherwise, no rescue — single
+  variable against control `platoon_hard_timecost_v1_seed12`, which is
+  rdb=1.0 at the same effective prices and seed). An override arm can
+  never ship as baseline; it answers whether the patrol_brique price curve
+  transfers to platoon depth. `platoon_hard_v5_seed12` (the clean baseline
+  candidate, in flight) is untouched — no `cohort/` change in this cycle.
