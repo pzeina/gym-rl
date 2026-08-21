@@ -25,6 +25,18 @@ flight — the anti-capture cycle is CLOSED as shipped.
 - **Housekeeping done**: 44 superseded runs archived (`e92e751`, suite
   green, everything resolves via find_run); all three boards republished
   and stamped current.
+- **Autocycle (2026-08-21 midday)**: the standing reporting gap is
+  **DIAGNOSED** — priced silence on a reachable channel, not structural
+  (done_probe on the timecost control: 266 root golden steps in 30 eps,
+  30/30 with a truthful claim available, oracle-forced claims confirm
+  0.977, observed policy claimed once; full entry in the progress log,
+  commit `23603fd`). Two experiment arms fly beside the candidate:
+  `platoon_hard_rdb3_v1_seed12` (`--reward root_done_bonus=3.0` — does
+  the patrol_brique price curve transfer to platoon depth?) and
+  `platoon_hard_flat_v4_seed12` (first flat arm under the shipped price —
+  separates idle-economics death from missing-hierarchy death). Neither
+  can ship as baseline; both are evidence for owner design calls. Judge
+  all three at landing.
 
 **WHEN `platoon_hard_v5_seed12` LANDS (~3h from launch, watch note:
 rolling may dip mid-run — judge only the landing):**
@@ -38,8 +50,10 @@ rolling may dip mid-run — judge only the landing):**
    config), document, owner.
 
 **Open threads for future cycles (all owner-gated design work):**
-- platoon_hard closed-on-root gate still FAILs everywhere (the known
-  reporting gap — orthogonal to this cycle).
+- platoon_hard closed-on-root gate: mechanism now known (priced silence,
+  see 2026-08-21 diagnosis); whether to reprice `root_done_bonus` (fleet
+  default vs a platoon_hard `reward_overrides` entry) is the owner's —
+  the rdb3 arm in flight is the settling measurement.
 - Rescue refinements if it is ever to earn a default: KL floor ~0.01
   (the 0.005 second rescue never re-climbed), post-rescue patience
   shrink (seed 16 died 230 iters short), KL-anchor to ckpt_best.
