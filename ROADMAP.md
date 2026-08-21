@@ -9094,3 +9094,15 @@ deliberately deferred (`docs/vision.md` §2c).
   never ship as baseline; it answers whether the patrol_brique price curve
   transfers to platoon depth. `platoon_hard_v5_seed12` (the clean baseline
   candidate, in flight) is untouched — no `cohort/` change in this cycle.
+- **2026-08-21** — **The untried half of the flat question is launched:
+  `platoon_hard_flat_v4_seed12`**, the first flat arm to train under the
+  shipped platoon_hard economics (`time_penalty=-0.03` inherited from the
+  spec — no `--reward` flags, no rescue). Flat is 0/4 at platoon depth and
+  every prior arm trained at the pre-price default; the handoff names the
+  price as untried on flat. If the price alone converts flat the way it
+  converted the hierarchy (2/4 alone, 5/6 with rescue), the B3 depth read
+  changes: flat's platoon-depth failure was the idle economics, not the
+  missing hierarchy. If it captures anyway, the hierarchy is doing work at
+  this depth that flat cannot buy with the price — the first depth-scaling
+  separation the ablation would have shown. Judge at landing only
+  (capture, if it comes, historically lands 1.2–1.6M).
