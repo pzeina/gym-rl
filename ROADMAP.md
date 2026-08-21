@@ -1,6 +1,67 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-21 early, **THE RESCUE CONVERTS BOTH CAPTURED SEEDS: price+rescue is 4/4 across seeds 12–15 — one rollback each, no re-migration; SHIP QUESTION TO THE OWNER**)
+## ⟳ Session handoff — resume here (2026-08-21 morning, **NIGHT WATCH COMPLETE: priced platoon_hard is 5/6 with the rescue armed; the rescue is a converter, not a cure — it fails at budget end and does not generalize to flat; SHIP QUESTION REFINED, OWNER'S CALL**)
+
+**The night ran the full pre-registered queue** (ledger with timestamps in
+`docs/night-orders-2026-08-21.md`; no cohort/ change, no design decision).
+
+**The six-seed table on platoon_hard, `time_penalty=-0.03`, rescue armed
+where available (`--rescue-max 3`, seeds 14–17):**
+
+| seed | rescues fired | final rolling | gap | clock-out | oracle (fresh) | verdict |
+|---|---|---|---|---|---|---|
+| 12 | n/a (pre-rescue) | 0.908 | 8 | 0.024 | 0.90 | PASS |
+| 13 | n/a (pre-rescue) | 0.896 | 10.44 | 0.077 | 0.867 | pass by behavior, gap −0.44 |
+| 14 | 1 (converted) | 0.915 | 5 | 0.035 | 0.90 best / **0.933 final** | PASS |
+| 15 | 1 (converted) | 0.876 | 9 | 0.048 | 0.833 | PASS |
+| 16 | 1 (worked, then 3rd capture at budget end) | 0.000 | 94 | 1.000 | — | FAIL |
+| 17 | 0 (self-recovered; patience spared it) | 0.876 | 8 | 0.119 | 0.900 | PASS |
+
+**5/6 converged and publishable-by-stability on the priced scenario** (vs
+2/4 price-only, 0/8 bare). The two new facts the night added:
+
+1. **The rescue's failure mode is budget exhaustion, not rollback
+   failure.** Seed 16's rescue worked — the restored policy re-peaked at
+   94% — then a third capture landed with ~470 iterations left, under the
+   700 a second rescue needs. It died mid-draw with 2 rescues unused.
+2. **It does not generalize to platoon_hard_flat (0/1).**
+   `platoon_hard_flat_rescue_v1_seed14`: rescue 1 re-climbed to a new
+   0.92 peak then re-captured; rescue 2 (target_kl compounded to 0.005)
+   never re-climbed — either the KL brake now throttles re-learning
+   (observed migration KLs ran to 0.006) or flat's attractor is stronger.
+   Its un-rescued twin also died at 0%, so flat remains unsolved by both
+   the price (not tried) and the rescue (tried, delayed, lost).
+
+**Honest claim for anything that ships: "the price roughly halves capture
+odds and the rescue converts most of the remainder on THIS scenario; runs
+can still die at budget end, and neither mechanism is a cure."**
+
+**THE SHIP QUESTION (unchanged in structure, sharper in evidence):**
+1. `time_penalty=-0.03` as platoon_hard **scenario semantics**
+   (ScenarioSpec per-scenario reward override — minimal, reversible).
+2. The **rescue**: stays opt-in CLI (recommended — 2 conversions, 1
+   budget-end death, 1 off-scenario failure is early evidence for a
+   default) vs default for platoon-depth runs.
+   Refinement candidates surfaced by the night, for a FUTURE cycle (all
+   design decisions): don't compound target_kl below ~0.01 (the 0.005
+   second rescue never re-climbed); shrink rescue patience after the
+   first rescue (seed 16 died 230 iters short); KL-anchor to ckpt_best.
+   **Recommendation stands: ship (1), keep (2) opt-in, one clean run
+   under the new spec as the baseline candidate.**
+
+**Bookkeeping state:** boards PUBLISH PENDING (three landings overnight)
+→ `/boards`. Archive sweep still deferred (evidence of the open decision;
+apply after the owner decides). Night monitor stopped at morning wrap.
+All work committed and pushed through `multi-agent-dev`.
+
+**NEXT ACTIONS:**
+1. Owner: the two-part ship decision above.
+2. `/boards` (one step).
+3. After the decision: archive sweep, then implement + one clean run +
+   `/publish` (drafts only) if shipping.
+
+
+## ⟳ Previous handoff (2026-08-21 early, **THE RESCUE CONVERTS BOTH CAPTURED SEEDS: price+rescue is 4/4 across seeds 12–15 — one rollback each, no re-migration; SHIP QUESTION TO THE OWNER**)
 
 **The 2/2 branch of the pre-registered rule fired.** Both conversion arms
 ran their full 3M steps, converged, and pass all three clauses:

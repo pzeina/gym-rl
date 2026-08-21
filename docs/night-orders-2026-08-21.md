@@ -112,3 +112,13 @@ ledger; no action branches on them (they inform the morning table only).
   morning table reads: rescue-armed 5/6 converged+publishable (12, 13,
   14, 15, 17 — of which 14/15 needed a rollback, 13* pre-rescue), seed 16
   captured at budget end. flat_rescue generalization arm running.
+- 03:40 seed 17 oracle (fresh seeds 500+): success 0.900, timeout 0.10 —
+  fifth confirmed survivor. flat_rescue at 28%, rolling 0%; lands ~05:15.
+- 05:20 flat_rescue LANDED, FAILS (final 0.000 / gap 92 / clock-out 1.0).
+  Two rollbacks: #1 restored iter-175 best, re-climbed to a NEW 0.92 peak
+  (44%), re-captured; #2 at 2.36M (target_kl 0.005) never re-climbed —
+  either the compounded KL brake now throttles re-learning (migration KLs
+  ran to 0.006) or the flat attractor is simply stronger; its un-rescued
+  twin also died at 0%. Rescue 3 unfireable in the remaining ~630 iters.
+  Generalization verdict: on flat the rescue delays, does not convert.
+  Queue exhausted; morning wrap begins.
