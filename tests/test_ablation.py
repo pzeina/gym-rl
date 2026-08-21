@@ -62,27 +62,32 @@ def test_spaces_frozen_across_arms():
             assert obs[a]["action_mask"].shape == (N_ACTIONS,)
 
 
-def test_platoon_hard_trio_differs_from_platoon_only_by_garrison_size():
-    """The harder-OpFor follow-up (owner-decided 2026-08-18) is additive: same
-    spaces as `platoon`, only `n_enemies` (and the arm's `ablation`) differ —
+def test_platoon_hard_trio_differs_from_platoon_only_by_garrison_and_price():
+    """The harder-OpFor follow-up is additive: same spaces as `platoon`; the
+    fields that differ are `n_enemies` (owner-decided 2026-08-18) and the
+    scenario's own idle-time price (`reward_overrides`, owner-decided
+    2026-08-21 — the anti-capture cycle's ship) plus the arms' `ablation` —
     and the env actually builds and steps with the 14-defender garrison."""
     platoon = get_scenario("platoon")
     for name in ("platoon_hard", "platoon_hard_nomask", "platoon_hard_flat"):
         spec = get_scenario(name)
         assert spec.n_enemies == 14
+        assert dict(spec.reward_overrides) == {"time_penalty": -0.03}
         # the only fields allowed to differ: name, description, n_enemies,
-        # ablation (the two arms), and the labelling-only experiment_arm
+        # reward_overrides (asserted exactly above), ablation (the two arms),
+        # and the labelling-only experiment_arm
+        varied = ("name", "description", "n_enemies", "reward_overrides", "ablation", "experiment_arm")
         base = {
             f: getattr(platoon, f)
             for f in platoon.__dataclass_fields__
-            if f not in ("name", "description", "n_enemies", "ablation", "experiment_arm")
+            if f not in varied
         }
         arm = {
             f: getattr(spec, f)
             for f in spec.__dataclass_fields__
-            if f not in ("name", "description", "n_enemies", "ablation", "experiment_arm")
+            if f not in varied
         }
-        assert arm == base, f"{name} deviates from platoon beyond the garrison"
+        assert arm == base, f"{name} deviates from platoon beyond the garrison and the price"
 
         env = make_env(name)
         obs, _ = env.reset(seed=3)

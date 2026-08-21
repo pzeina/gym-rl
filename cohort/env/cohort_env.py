@@ -103,7 +103,9 @@ class CohortEnv(ParallelEnv):
     ) -> None:
         self.spec_cfg = get_scenario(scenario) if isinstance(scenario, str) else scenario
         self.render_mode = render_mode
-        self.rewards_cfg = reward_config or RewardConfig()
+        # No explicit config → the scenario's own economics (v1.21), not bare
+        # defaults: a spec's reward_overrides are part of what the scenario IS.
+        self.rewards_cfg = reward_config or RewardConfig.from_scenario(self.spec_cfg)
         self.combat = self.spec_cfg.combat
 
         org = build_org(self.spec_cfg.org)

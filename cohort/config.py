@@ -94,6 +94,20 @@ class ScenarioSpec:
     forest_density: float = 1.0
     wall_density: float = 1.0
     combat: CombatParams = field(default_factory=CombatParams)
+    # --- scenario economics (v1.21, owner-decided 2026-08-21) ---
+    reward_overrides: tuple[tuple[str, float], ...] = ()
+    #                             RewardConfig fields this scenario redefines as part
+    #                             of its own semantics ("a hard scenario prices idle
+    #                             time"), applied wherever an env is built without an
+    #                             explicit RewardConfig and as the base under CLI
+    #                             --reward flags (the CLI still wins, so experiments
+    #                             stay expressible). This is NOT a --reward override:
+    #                             economics.json's reward_overrides list stays empty
+    #                             for a spec-priced run, so baseline purity holds —
+    #                             what ships is what was trained, and the price is
+    #                             part of what the scenario IS. Keys are validated
+    #                             against RewardConfig at env build; a typo fails
+    #                             loudly, not silently.
     experiment_arm: str | None = None
     #                             a named experimental arm of another scenario, for
     #                             labelling ONLY — it never changes behavior. The
@@ -510,11 +524,16 @@ SCENARIOS["platoon_hard"] = replace(
     description=(
         "Harder-OpFor follow-up to the platoon-depth B3 read (every outcome "
         "axis saturated at n_enemies=8; owner-decided 2026-08-18): the platoon "
-        "scenario against a 14-defender garrison — same chart, geometry, "
-        "rewards, and spaces; only the garrison is heavier."
+        "scenario against a 14-defender garrison — same chart, geometry, and "
+        "spaces; only the garrison is heavier, and the scenario prices idle "
+        "time at -0.03 (owner-decided 2026-08-21: the anti-capture cycle "
+        "showed the D4 attractor lives on idle income vs the time price — "
+        "0/8 survival at the default price, 5/6 at -0.03 with the rescue "
+        "armed)."
     ),
     n_enemies=14,
     experiment_arm="heavy garrison",
+    reward_overrides=(("time_penalty", -0.03),),
 )
 SCENARIOS["platoon_hard_nomask"] = replace(
     SCENARIOS["platoon_hard"],

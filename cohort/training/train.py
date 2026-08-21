@@ -918,7 +918,7 @@ def main() -> None:
 
     spec = get_scenario(args.scenario)  # fail fast on typos
     try:  # ...and on bad prices, as a usage error rather than a traceback
-        rewards = RewardConfig.from_overrides(args.reward)
+        rewards = RewardConfig.from_overrides(args.reward, base=RewardConfig.from_scenario(spec))
     except ValueError as exc:
         parser.error(str(exc))
     if args.reward:

@@ -417,7 +417,21 @@ class RewardConfig:
     # ------------------------------------------------------------------ #
 
     @classmethod
-    def from_overrides(cls, items: Sequence[str]) -> RewardConfig:
+    def from_scenario(cls, spec) -> RewardConfig:
+        """The scenario's own economics: defaults plus its ``reward_overrides``.
+
+        v1.21 (owner-decided 2026-08-21): a scenario may redefine reward
+        weights as part of its semantics — platoon_hard prices idle time at
+        -0.03, because the D4 attractor lives on idle income vs the time
+        price. Routed through :meth:`from_overrides` so a typo'd key in a
+        spec fails at env build with the same near-miss message a CLI typo
+        gets, instead of training a run whose economics.json disagrees with
+        its policy.
+        """
+        return cls.from_overrides([f"{k}={v}" for k, v in spec.reward_overrides])
+
+    @classmethod
+    def from_overrides(cls, items: Sequence[str], base: RewardConfig | None = None) -> RewardConfig:
         """Build a config from ``KEY=VALUE`` strings, defaults for the rest.
 
         Reward weights were code-only defaults until v1.12, which meant an
@@ -449,7 +463,9 @@ class RewardConfig:
                 msg = f"unknown reward key {key!r}.{hint} Valid keys: {', '.join(sorted(types))}"
                 raise ValueError(msg)
             parsed[key] = _coerce(key, raw, str(types[key]))
-        return replace(cls(), **parsed)
+        # `base` (v1.21) lets a scenario's own economics sit under CLI flags:
+        # the spec redefines the default, the CLI still wins on conflict.
+        return replace(base if base is not None else cls(), **parsed)
 
     def max_step_farm(self) -> float:
         """Upper bound on per-step reward farmable by stalling (not winning).
