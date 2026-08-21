@@ -13,8 +13,11 @@
 set -u
 cd "$(dirname "$0")/.."
 
+# fired sentinels tracked as a space-separated list: /bin/bash on macOS is
+# 3.2, which has no associative arrays — `declare -A` killed the watch the
+# moment it armed (2026-08-22, first watch of the night)
 prev=""
-declare -A sentinel_fired
+fired=" "
 while true; do
   out=$(.venv/bin/python scripts/train_status.py 2>/dev/null)
   cur=$(echo "$out" | awk '/RUNNING/{print $2}')
@@ -28,9 +31,10 @@ while true; do
   fi
   prev="$cur"
   for log in "$@"; do
-    if [ -z "${sentinel_fired[$log]:-}" ] && grep -q -- "-DONE" "$log" 2>/dev/null; then
+    case "$fired" in *" $log "*) continue ;; esac
+    if grep -q -- "-DONE" "$log" 2>/dev/null; then
       echo "DETACHED JOB DONE: $log"
-      sentinel_fired[$log]=1
+      fired="$fired$log "
     fi
   done
   sleep 120
