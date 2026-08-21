@@ -93,7 +93,8 @@ grammar lives in [command_language.md](command_language.md):
   `RewardConfig.formation_bonus` (watermark-gated: geometry is shaped,
   never forced or masked).
 * **Trinôme sync** — `SYNC_PROPOSE` / `SYNC_GO`, by *voice* (voice_range ≈
-  6 cells, never net-arbitrated, no airtime): the manual's bond par binôme.
+  6 cells, never net-arbitrated, but charged like every learned speech act):
+  the manual's bond par binôme.
   Inside the 8-step window a GO opens, a mover closing new ground toward
   its own anchor under a COVERING group-mate earns
   `RewardConfig.bound_bonus` and the P2 covered-movement accuracy debuff.

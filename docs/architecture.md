@@ -148,6 +148,13 @@ purely additive. Net-busy arbitration (step 2 above) stays **global** under
 `"range"` too: earshot shapes who *hears* a message, but every station shares
 the one frequency, so simultaneous transmissions still contend.
 
+> **Designed, not implemented:** [`degraded-communications.md`](degraded-communications.md)
+> specifies a third, radio-less `comm_model="voice_only"`. It uses low voice
+> range, removes the HQ and global-frequency exceptions, and permits physical
+> store-and-forward delivery by an agent of liaison. The existing `"range"`
+> model remains a radio model and is the control, not an approximation of that
+> design.
+
 ## The OpFor
 
 Two enemy families, both environment-side (blue's spaces never change):
