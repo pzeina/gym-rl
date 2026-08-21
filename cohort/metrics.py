@@ -133,6 +133,15 @@ RING_RADIUS: float = IN_POSITION_RADIUS[MissionType.RECON]
 #: informative about *where the unit chose to fight*.
 THREAT_RADIUS: float = CombatParams().weapon_range
 
+#: Radius that defines "stacked" (the bunching half of the spatial-consistency
+#: axis): an agent is stacked when at least TWO living teammates stand within
+#: this distance — three or more soldiers inside one 3x3-cell patch, i.e. one
+#: burst's footprint. 1.5 covers the same cell and all eight adjacent cells
+#: (diagonal 1.41) and nothing further, so a buddy pair at arm's length (the
+#: binôme, which doctrine WANTS close) never triggers it, and neither does a
+#: legal tight column at 2-cell intervals (FORMATION_DEPTH 6 over ~3 members).
+STACK_RADIUS: float = 1.5
+
 #: Positional regression gate for DEFEND roots (refs issue #11). Bounds are
 #: set from the measured record, not from taste: `_v5` (24/30) and
 #: `defend_brique_v1` (27/30) held cover 0.79/0.96 at 2.90/1.99 cells, while
@@ -288,6 +297,11 @@ class TraceRecorder:
             # support umbrella — the distance at which doctrine already says a
             # supporter counts — recorded so the trace states its definition.
             "support_umbrella": float(env.combat.support_umbrella),
+            # the bunching radius the spatial-consistency reducer will read
+            # positions against — recorded so the trace states its definition,
+            # and so a later change to the default cannot silently reinterpret
+            # an old trace
+            "stack_radius": STACK_RADIUS,
             "contact_refresh_age": env.rewards_cfg.contact_refresh_age,
             # issue #35: the interval that prices a SITREP fresh rather than
             # spam, and where the freshness clock starts — the scenario's own
@@ -1376,43 +1390,75 @@ def _fight_disposition(trace: dict) -> dict[str, Any]:
 
 
 def _cohesion(trace: dict) -> dict[str, Any]:
-    """Does anyone leave the cohort? (owner's axis, 2026-08-18 — MEASURED,
-    never enforced: no mask and no reward reads these numbers.)
+    """Is the cohort spatially consistent? (owner's axis, 2026-08-18,
+    extended with the bunching half 2026-08-21 — MEASURED, never enforced:
+    no mask and no reward reads these numbers.)
 
     The axis, verbatim: "no agent should be allowed to leave the cohort or go
     out of line of sight of all its teammates; there should always remain at
-    least one close teammate to each teammate". Two counts over living-agent-
-    steps, both recorded per step by the ``TraceRecorder`` (LOS needs the
-    terrain grid, which the trace does not carry):
+    least one close teammate to each teammate". Spatial failure has two
+    opposite poles — scattering and piling up — so three violation predicates
+    per living-agent-step, the first two recorded by the ``TraceRecorder``
+    (LOS needs the terrain grid, which the trace does not carry), the third
+    computed here from the recorded positions:
 
     * no close teammate — no living teammate within the combat model's
       support umbrella (``trace["support_umbrella"]``, 8.0 by default), the
       radius at which doctrine already counts a supporter as present;
     * unseen by any teammate — no living teammate holds terrain line of
       sight to the agent (walls block; the same ``World.line_of_sight``
-      vision spotting runs on).
+      vision spotting runs on);
+    * stacked — at least two living teammates within ``STACK_RADIUS``
+      (``trace["stack_radius"]``, 1.5 by default): three or more soldiers in
+      one 3x3-cell patch, a single burst's worth of casualties. One buddy at
+      arm's length is the binôme and not a fault, hence "two", not "one".
 
-    A sole survivor counts as isolated on both — that is the finding, not an
-    artifact. Steps where the soldier is dead, and whole traces recorded
-    before these keys existed, contribute nothing to either count or to the
-    denominator, so old committed ``behavior.json`` files simply read None.
+    ``spatially_sound_steps`` counts the agent-steps that violate NONE of the
+    three — a true per-step union, so an agent both stacked and unseen costs
+    the composite once. ``nearest_teammate_dist_sum`` / ``_steps`` carry the
+    distance to the nearest living teammate (skipped for a sole survivor),
+    the continuous diagnostic that tells collapse (small) from scatter
+    (large) when a rate moves.
+
+    A sole survivor counts as isolated on both isolation poles — that is the
+    finding, not an artifact. Steps where the soldier is dead, and whole
+    traces recorded before these keys existed, contribute nothing to any
+    count or to the denominator, so old committed ``behavior.json`` files
+    simply read None.
     """
+    stack_radius = float(trace.get("stack_radius", STACK_RADIUS))
     agent_steps = 0
     no_close = 0
     unseen = 0
+    stacked = 0
+    sound = 0
+    nn_sum = 0.0
+    nn_steps = 0
     for step in trace["steps"]:
+        living = [(rec["cs"], rec["pos"]) for rec in step["soldiers"] if rec["alive"]]
         for rec in step["soldiers"]:
             close = rec.get("teammate_close")
             seen = rec.get("teammate_sees")
             if close is None or seen is None:
                 continue  # dead this step, or a pre-cohesion trace
             agent_steps += 1
+            mate_dists = [_dist(rec["pos"], p) for cs, p in living if cs != rec["cs"]]
+            crowded = sum(d <= stack_radius for d in mate_dists) >= 2
             no_close += not close
             unseen += not seen
+            stacked += crowded
+            sound += close and seen and not crowded
+            if mate_dists:
+                nn_sum += min(mate_dists)
+                nn_steps += 1
     return {
         "cohesion_agent_steps": agent_steps,
         "no_close_teammate_steps": no_close,
         "unseen_by_any_teammate_steps": unseen,
+        "stacked_steps": stacked,
+        "spatially_sound_steps": sound,
+        "nearest_teammate_dist_sum": nn_sum,
+        "nearest_teammate_dist_steps": nn_steps,
     }
 
 
@@ -1972,6 +2018,16 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "unseen_by_any_teammate_rate": _ratio(
             total("unseen_by_any_teammate_steps"), total("cohesion_agent_steps")
         ),
+        # the bunching pole and the composite (2026-08-21): stacked = 3+
+        # soldiers in one 3x3-cell patch; spatially sound = none of the three
+        # violations, unioned per agent-step so overlapping faults count once
+        "stacked_rate": _ratio(total("stacked_steps"), total("cohesion_agent_steps")),
+        "spatially_sound_rate": _ratio(
+            total("spatially_sound_steps"), total("cohesion_agent_steps")
+        ),
+        "mean_nearest_teammate_dist": _ratio(
+            total("nearest_teammate_dist_sum"), total("nearest_teammate_dist_steps")
+        ),
         "cohesion_agent_steps": total("cohesion_agent_steps"),
         # clock expiry + traffic composition (refs #18). The rate is the
         # gated number; the composition is diagnosis, deliberately not gated
@@ -2315,6 +2371,9 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("mean_distance_from_objective_under_threat", "fight: dist from OBJ", "{:.2f}"),
     ("no_close_teammate_rate", "cohesion: no close teammate", "{:.3f}"),
     ("unseen_by_any_teammate_rate", "cohesion: unseen by teammates", "{:.3f}"),
+    ("stacked_rate", "cohesion: stacked (3+ in 3x3)", "{:.3f}"),
+    ("spatially_sound_rate", "cohesion: spatially sound", "{:.3f}"),
+    ("mean_nearest_teammate_dist", "cohesion: nearest teammate (cells)", "{:.1f}"),
     ("timeout_rate", "ran the clock out", "{:.2f}"),
     ("messages_per_episode", "messages / ep", "{:.0f}"),
     ("command_traffic_share", "of which command", "{:.3f}"),
@@ -2586,6 +2645,7 @@ def format_behavior_table(agg: dict[str, Any]) -> str:
         ),
         "cover_occupancy_under_threat": f"n={agg.get('threat_pairs', 0)} threatened agent-steps",
         "no_close_teammate_rate": f"n={agg.get('cohesion_agent_steps', 0)} living agent-steps",
+        "spatially_sound_rate": "no violation of close/seen/not-stacked, unioned per step",
         # the length next to its own ceiling: "375" only means "pinned" once
         # the reader is told the cap is 375 (refs #18)
         "timeout_rate": (

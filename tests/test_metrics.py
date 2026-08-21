@@ -13,6 +13,7 @@ import numpy as np
 from cohort.env.cohort_env import make_env
 from cohort.metrics import (
     ROOT_REPORT_CLOSE_FLOOR,
+    STACK_RADIUS,
     SUCCESS_RATE_FLOOR,
     TraceRecorder,
     aggregate_behavior,
@@ -584,6 +585,78 @@ def test_cohesion_tolerates_dead_soldiers_and_legacy_traces():
     agg = aggregate_behavior([legacy])
     assert agg["no_close_teammate_rate"] is None
     assert agg["unseen_by_any_teammate_rate"] is None
+    assert agg["stacked_rate"] is None
+    assert agg["spatially_sound_rate"] is None
+    assert agg["mean_nearest_teammate_dist"] is None
+
+
+def test_stacked_and_spatially_sound_by_construction():
+    """The bunching pole: 3+ soldiers in one 3x3 patch is stacked; a buddy
+    pair at arm's length and a column at 2-cell intervals are not."""
+    def ep(positions):
+        soldiers = [
+            sold(f"RFN{i}", pos=p, teammate_close=True, teammate_sees=True)
+            for i, p in enumerate(positions)
+        ]
+        return episode_behavior(trace([step(0, soldiers)]))
+
+    pile = ep([(5, 5), (5, 5), (5, 6)])  # three inside one patch
+    assert pile["stacked_steps"] == 3
+    assert pile["spatially_sound_steps"] == 0
+    agg = aggregate_behavior([pile])
+    assert agg["stacked_rate"] == 1.0
+    assert agg["spatially_sound_rate"] == 0.0
+
+    pair = ep([(5, 5), (5, 6)])  # the binome: close on purpose, not a fault
+    assert pair["stacked_steps"] == 0
+    assert pair["spatially_sound_steps"] == 2
+
+    column = ep([(0, 0), (0, 2), (0, 4)])  # tightest legal column spacing
+    assert column["stacked_steps"] == 0
+    assert column["spatially_sound_steps"] == 3
+    assert aggregate_behavior([column])["mean_nearest_teammate_dist"] == 2.0
+
+
+def test_spatially_sound_unions_overlapping_faults():
+    # an agent both stacked and unseen costs the composite once, and the
+    # per-fault rates still each read the full violation
+    soldiers = [
+        sold(f"RFN{i}", pos=(5, 5), teammate_close=True, teammate_sees=False)
+        for i in range(3)
+    ]
+    agg = aggregate_behavior([episode_behavior(trace([step(0, soldiers)]))])
+    assert agg["cohesion_agent_steps"] == 3
+    assert agg["stacked_rate"] == 1.0
+    assert agg["unseen_by_any_teammate_rate"] == 1.0
+    assert agg["spatially_sound_rate"] == 0.0
+    assert agg["mean_nearest_teammate_dist"] == 0.0
+
+
+def test_stacked_reads_the_trace_radius_and_skips_the_dead():
+    # the trace states its own bunching radius; a dead soldier neither
+    # crowds anyone nor measures anything
+    soldiers = [
+        sold("RFN0", pos=(0, 0), teammate_close=True, teammate_sees=True),
+        sold("RFN1", pos=(0, 2), teammate_close=True, teammate_sees=True),
+        sold("RFN2", pos=(0, 4), teammate_close=True, teammate_sees=True),
+        sold("RFN3", pos=(0, 0), alive=False),
+    ]
+    t = trace([step(0, soldiers)])
+    assert episode_behavior(t)["stacked_steps"] == 0  # default radius 1.5
+    t["stack_radius"] = 2.5
+    ep = episode_behavior(t)
+    assert ep["stacked_steps"] == 1  # only RFN1 has two mates within 2.5
+    assert ep["cohesion_agent_steps"] == 3
+
+
+def test_sole_survivor_cannot_be_stacked():
+    lone = sold("RFN1", teammate_close=False, teammate_sees=False)
+    ep = episode_behavior(trace([step(0, [lone])]))
+    assert ep["cohesion_agent_steps"] == 1
+    assert ep["no_close_teammate_steps"] == 1  # isolated: that IS the finding
+    assert ep["stacked_steps"] == 0
+    assert ep["nearest_teammate_dist_steps"] == 0
+    assert aggregate_behavior([ep])["mean_nearest_teammate_dist"] is None
 
 
 def test_recorder_cohesion_two_agents_and_a_wall():
@@ -605,6 +678,7 @@ def test_recorder_cohesion_two_agents_and_a_wall():
     a.pos, b.pos = (2, 2), (2 + int(umbrella), 2)
     rec.on_reset(env)
     assert rec.trace["support_umbrella"] == umbrella
+    assert rec.trace["stack_radius"] == STACK_RADIUS
     recs = {r["cs"]: r for r in rec.trace["steps"][0]["soldiers"]}
     assert recs[a.callsign]["teammate_close"] is True
     assert recs[a.callsign]["teammate_sees"] is True

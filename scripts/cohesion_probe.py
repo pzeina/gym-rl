@@ -79,6 +79,9 @@ def probe_checkpoint(path: Path, episodes: int, first_seed: int) -> dict:
         "scenario": ckpt["scenario"],
         "no_close": agg["no_close_teammate_rate"],
         "unseen": agg["unseen_by_any_teammate_rate"],
+        "stacked": agg["stacked_rate"],
+        "sound": agg["spatially_sound_rate"],
+        "nn_dist": agg["mean_nearest_teammate_dist"],
         "agent_steps": agg["cohesion_agent_steps"],
         "success": successes / episodes,
     }
@@ -99,10 +102,11 @@ def main() -> int:
         f"seeds {args.seed}..{args.seed + args.episodes - 1}"
     )
     print("rates over living-agent-steps; close = within support umbrella (8.0), "
-          "unseen = no teammate holds terrain LOS")
+          "unseen = no teammate holds terrain LOS, stacked = 2+ teammates within 1.5 "
+          "cells, sound = none of the three (unioned per step)")
     print()
-    header = (f"{'run':<26} {'ckpt':<7} {'no_close':>8} {'unseen':>8} "
-              f"{'agent-steps':>11} {'success':>7}")
+    header = (f"{'run':<26} {'ckpt':<7} {'no_close':>8} {'unseen':>8} {'stacked':>8} "
+              f"{'sound':>6} {'nn_dist':>7} {'agent-steps':>11} {'success':>7}")
     print(header)
     print("-" * len(header))
     for run in runs:
@@ -119,6 +123,7 @@ def main() -> int:
             r = probe_checkpoint(path, args.episodes, args.seed)
             label = ckpt_name.removeprefix("ckpt_").removesuffix(".pt")
             print(f"{run:<26} {label:<7} {r['no_close']:>8.3f} {r['unseen']:>8.3f} "
+                  f"{r['stacked']:>8.3f} {r['sound']:>6.3f} {r['nn_dist']:>7.2f} "
                   f"{r['agent_steps']:>11,} {r['success']:>7.2f}")
     return 0
 
