@@ -38,16 +38,23 @@ flight — the anti-capture cycle is CLOSED as shipped.
   can ship as baseline; both are evidence for owner design calls. Judge
   all three at landing.
 
-**WHEN `platoon_hard_v5_seed12` LANDS (~3h from launch, watch note:
-rolling may dip mid-run — judge only the landing):**
-1. `scripts/run_report.py platoon_hard_v5_seed12` + rescues.json. Bar:
-   the same three clauses (final ≥ 0.5, gap < 10, clock-out < 0.5).
-2. PASS → oracle-probe, then `/publish` (drafts the README row and
-   ROADMAP entry for approval; N=100 eval — detach it). This is the
-   first shippable platoon_hard candidate ever.
-3. MISS → honest-DoD: one diagnosed adjustment (the four-seed history
-   says a capture at seed 12 would be the first under the shipped
-   config), document, owner.
+**`platoon_hard_v5_seed12` LANDED (2026-08-21 13:30) AND PASSED — the
+publication is DRAFTED, awaiting two owner calls (full entry + would-be
+README row in the progress log):**
+- All three clauses pass (final rolling 0.91, gap 8, clock-out 0.024);
+  the rescue never fired. N=100 both checkpoints: **final 0.94 ± 0.05**,
+  best 0.91 ± 0.06 — final is the better checkpoint on every axis.
+  Oracle fresh seeds: 0.90. Artifacts + probes committed.
+- **Blocks, both owner-gated**: platoon_hard is NOT_BASELINE by
+  declaration ("until the owner decides it ships"), and closed-on-root
+  0.000 fails the v1.21 gate (the diagnosed priced-silence gap).
+  Options (i) ship with FAIL disclosed / (ii) wait for the rdb3 arm and,
+  if it converts, reprice via `reward_overrides` + one retrain that
+  passes all gates / (iii) stays an experiment axis. Recommended: (ii).
+- In flight: `platoon_hard_rdb3_v1_seed12` (does rdb=3.0 buy the claim
+  at platoon depth?) and `platoon_hard_flat_v4_seed12` (first flat under
+  the shipped price — at 40% it was rolling ~1.00, watch the landing).
+  Judge both at landing; neither can ship (override / ablation arm).
 
 **Open threads for future cycles (all owner-gated design work):**
 - platoon_hard closed-on-root gate: mechanism now known (priced silence,
@@ -9120,3 +9127,39 @@ deliberately deferred (`docs/vision.md` §2c).
   this depth that flat cannot buy with the price — the first depth-scaling
   separation the ablation would have shown. Judge at landing only
   (capture, if it comes, historically lands 1.2–1.6M).
+- **2026-08-21** — **`platoon_hard_v5_seed12` LANDS AND PASSES: the first
+  clean platoon_hard result — and the publication is drafted, not applied,
+  because two blocks are the owner's.** The candidate (3M steps, spec
+  economics, `--rescue-max 3`, no `--reward` flags) passed all three
+  pre-registered clauses: final rolling 0.91 (bar ≥ 0.5), best-final gap
+  8 pts (bar < 10), clock-out 0.024 (bar < 0.5). **The rescue never
+  fired** — seed 12 survived the priced scenario on its own, as the night
+  table predicted. N=100, both checkpoints: **final 0.94 ± 0.05** / best
+  0.91 ± 0.06 — the final policy is the better checkpoint on every axis
+  (precision 0.834 vs 0.657, human death 0.28 vs 0.41, false DONE 0.714
+  vs 0.768, root death in success 22/94 vs 32/91), so the give-back is
+  negative and the headline is honestly the final. Oracle at fresh seeds
+  500–529: success 0.90. Announced 94/94. Against the scenario's history:
+  0/8 survival at the unpriced default; the priced spec's first clean
+  draw converges publishable. Warts, honestly: false DONE 0.71 (the
+  subordinate claim-spam channel, 76% rejected), human death 0.28, and
+  closed-on-root 0.000 — the diagnosed priced-silence gap (this log,
+  earlier today). **Why this is drafted and not applied**: (1)
+  `platoon_hard` sits in `baseline.py`'s NOT_BASELINE — "an experiment
+  axis until the owner decides it ships" — so joining the fleet IS the
+  ship decision, machinery-encoded; (2) `closed_on_root_report_rate`
+  0.000 fails the v1.21 per-run gate, the same gate that blocked v1.20b
+  on patrol_brique_v7. The would-be README row, from the committed N=100
+  artifacts:
+  `| platoon_hard | platoon_hard_v5_seed12 | 0.94 ± 0.05 (N=100) | 0.91 ± 0.06 (N=100) | −3.4 pt | 23% | 1% | 94/94 | 0% | FAIL (root-report) |`
+  **Options for the owner**: (i) ship now, gate FAIL disclosed — needs
+  platoon_hard out of NOT_BASELINE plus a decision on the gate's scope
+  for this scenario; (ii) wait ~1h for `platoon_hard_rdb3_v1_seed12` —
+  if rdb=3.0 converts the mute root at platoon depth as it did at patrol
+  depth, the clean path is repricing `root_done_bonus` as platoon_hard
+  `reward_overrides` semantics (the v1.21 scoped form, same as the time
+  price) and retraining one candidate that passes ALL gates; (iii)
+  platoon_hard stays an experiment axis. **Recommendation: (ii)** — the
+  evidence lands within the hour, v5_seed12 loses nothing by waiting
+  (artifacts committed, numbers stand), and a member that ships with a
+  FAIL row would be the first ever to do so.
