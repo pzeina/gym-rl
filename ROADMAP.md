@@ -51,10 +51,21 @@ README row in the progress log):**
   Options (i) ship with FAIL disclosed / (ii) wait for the rdb3 arm and,
   if it converts, reprice via `reward_overrides` + one retrain that
   passes all gates / (iii) stays an experiment axis. Recommended: (ii).
-- In flight: `platoon_hard_rdb3_v1_seed12` (does rdb=3.0 buy the claim
-  at platoon depth?) and `platoon_hard_flat_v4_seed12` (first flat under
-  the shipped price — at 40% it was rolling ~1.00, watch the landing).
-  Judge both at landing; neither can ship (override / ablation arm).
+- **Both arms LANDED and separated (15:30, N=100 committed): rdb=3.0
+  does NOT buy the claim at platoon depth (closed-on-root 0.011/0.000)
+  while FLAT under the same price solves the scenario AND reports
+  (success 0.96/0.93, closed-on-root 0.832/0.667). The mute root is what
+  the hierarchy costs at depth; repricing is a dead end, so the ship
+  options for v5_seed12 narrow to: FAIL disclosed / gate scoped by depth
+  / claim-mechanism redesign — all owner calls.** Full entries in the
+  progress log.
+- **⚠ A CONCURRENT SESSION OPENED A BREAKING CYCLE (acoustics Phase A,
+  `11b7b8d` 15:20): OBS_DIM 220→328 — every pre-break checkpoint is
+  orphaned on the new tree.** Flat confirm seeds 13/14 land ~16:45; they
+  trained pre-break in memory but their landing evals will crash on the
+  post-break tree — recover via a worktree at `58732ae`. The autocycle
+  loop stood down on discovering this; coordinate cycles before
+  relaunching it.
 
 **Open threads for future cycles (all owner-gated design work):**
 - platoon_hard closed-on-root gate: mechanism now known (priced silence,
@@ -9163,3 +9174,57 @@ deliberately deferred (`docs/vision.md` §2c).
   evidence lands within the hour, v5_seed12 loses nothing by waiting
   (artifacts committed, numbers stand), and a member that ships with a
   FAIL row would be the first ever to do so.
+- **2026-08-21** — **The two arms land and separate cleanly: the mute root
+  is a HIERARCHY-at-depth phenomenon, not a price phenomenon — and the
+  price alone converts flat.** Both landed publishable-by-stability and
+  were scored at N=100 on both checkpoints (evals ran ~14:45–15:20, i.e.
+  BEFORE the acoustics spaces break below — each eval process imported the
+  pre-break env, consistent with the checkpoints' recorded obs_dim 220).
+  **`platoon_hard_rdb3_v1_seed12`** (rdb=3.0, the arm the morning's
+  diagnosis launched): converged (best rolling 1.00, final 0.93, gap 7;
+  N=100 success 0.91/0.89) and the root STILL does not claim —
+  closed-on-root **0.011 best / 0.000 final** (1 and 3 root claims in 100
+  episodes). The patrol_brique price curve (mute at ≤2.0, 0.867 at 3.0)
+  does NOT transfer to platoon depth: tripling the bonus bought nothing.
+  **`platoon_hard_flat_v4_seed12`** (first flat under the shipped price,
+  rdb at the default 1.0): flat, 0/4 at the unpriced default, now
+  **solves the scenario** — best rolling 1.00 at 20% of budget, final
+  0.98, gap 2; N=100 success **0.96 ± 0.04 / 0.93 ± 0.05**; and its root
+  CLAIMS: closed-on-root **0.832 best / 0.667 final** (148 and 76 root
+  claims). Same seed, same economics, opposite reporting behaviour.
+  Verdict, at its honest strength: at platoon depth against the heavy
+  garrison, the idle-time price is what was killing flat (economics, not
+  the missing hierarchy), and the root's silence is what the hierarchy
+  itself costs — a flat root learns the claim at +1.0 while the
+  three-echelon CO declines it at +3.0. This inverts the depth half of
+  the B3 read the same way the squad-depth ablation inverted the outcome
+  half (flat 296/300 vs full 282/300, p=0.004): what the hierarchy still
+  buys is doctrine interpretability, not outcomes or reporting. Caveats:
+  one seed per arm so far (flat confirm seeds 13/14 in flight); the
+  rdb3 null rests on n=1 at 3.0 but on 7 runs at 1.0. Neither arm can
+  ship (override / ablation). **Consequence for the pending v5_seed12
+  ship decision: option (ii) — reprice-and-retrain — is DEAD; the gate
+  cannot be bought at any tested price at this depth. Remaining options:
+  ship with the FAIL disclosed, scope the gate by echelon depth (design),
+  or a claim mechanism redesign for deep hierarchies (design). All
+  owner's.**
+- **2026-08-21** — **LOOP STANDS DOWN: a concurrent session opened a
+  breaking cycle mid-afternoon.** Commits `7496d53`/`dc38519` (voice-only
+  design) and `11b7b8d` 15:20 ("Phase A: deterministic tactical acoustic
+  substrate"), with further uncommitted `cohort/` edits still landing at
+  15:31 — **OBS_DIM 220 → 328, actions 228 → 231: a spaces break.** Every
+  pre-break checkpoint (the entire fleet, v5_seed12, all of today's arms)
+  is orphaned against the new tree; this session's oracle probe on the
+  flat arm crashed exactly there (env 328 vs checkpoint 220) — the N=100
+  behavior artifacts above all predate the break and stand. **Blast
+  radius to know about: `platoon_hard_flat_v5_seed13` and
+  `platoon_hard_flat_v6_seed14` (the confirm seeds, landing ~16:45)
+  trained safely in memory on the pre-break tree (their checkpoints
+  record obs_dim 220), but their LANDING evaluations spawn fresh
+  processes on the post-break tree and will crash.** Recovery when
+  wanted: evaluate their checkpoints from a worktree at `58732ae` (the
+  last pre-break commit). This autocycle commits only runs/ + ROADMAP
+  (no cohort/ change all session) and deliberately skips the pytest gate
+  for this docs+artifacts commit — the suite would be red against the
+  other session's half-landed edits, which is their cycle's gate to run,
+  not this one's.
