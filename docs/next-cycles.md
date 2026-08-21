@@ -46,6 +46,25 @@ whatever it is, these ride along:
 > config against the record (`scripts/campaign_preflight.py`) so a queued
 > config the archive already answered is refused before it burns 3M steps.
 
+- **RIDER (2026-08-21, owner-decided): the dispersion pair on branch
+  `dispersion-mechanic`** — merge into the acoustics breaking cycle BEFORE its
+  fleet retrain launches; two commits, pytest+ruff green (`3d9adf7`,
+  `358ee13`). (1) The bunching gate: `stacked_rate <= 0.70`, unconditional —
+  `fireteam_defend_v23` wins DEFEND at 1.00 success while stacked on 0.940 of
+  its living-agent-steps (nn 0.39 cells), the exploit the gate encodes; the
+  fleet's healthy band is 0.18–0.57 (2026-08-21 provenance sweep,
+  `scripts/spatial_probe_provenance.py`). (2) AREA FIRE: a hit sprays
+  `int(damage * burst_fraction)` onto every other living unit of the struck
+  side within `burst_radius` (1.5 = the metric's own radius, tied by test).
+  Shipped OFF (`burst_fraction=0.0`, byte-identical scenarios, no RNG draws,
+  no obs change); which scenarios turn it on — recommended opening value 0.5 —
+  is the cycle's decision, made per scenario in `config.py`. It lands on a
+  branch and not `multi-agent-dev` because the matched voice campaign froze
+  `cohort/` while its queue feeds. DISCLOSE with that campaign's analysis: its
+  job 1 (`squad_ctrl_v1_seed12`, tree `0f37e6a`) and jobs 2+ (`1f6d2cd`)
+  differ by one `cohort/metrics.py` measurement-only commit — env dynamics
+  byte-identical, but the tree hashes are two, and the record should say why.
+
 - **§12.146 within-scenario seed-carry.** The v1.21 seed-carry claim was
   retracted (assurance #60): every cited pair compared a checkpoint with a
   bit-identical reproduction of itself, so the question is open — on the 20
