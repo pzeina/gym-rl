@@ -92,6 +92,12 @@ grammar lives in [command_language.md](command_language.md):
   formation station while the leader closes new ground earn
   `RewardConfig.formation_bonus` (watermark-gated: geometry is shaped,
   never forced or masked).
+  The shipping mechanic does **not** require LOS, continuous proximity or a
+  connected device, and the leader/subordinate observation slots remain live
+  at any range. The designed radio-less extension adds a finite same-element
+  visual-link graph, aging last-known friendly state and a bounded rupture
+  penalty without turning formation into a hard movement mask; see
+  [degraded-communications.md](degraded-communications.md#37-visual-link-proximity-and-formation-coherence).
 * **Trinôme sync** — `SYNC_PROPOSE` / `SYNC_GO`, by *voice* (voice_range ≈
   6 cells, never net-arbitrated, but charged like every learned speech act):
   the manual's bond par binôme.

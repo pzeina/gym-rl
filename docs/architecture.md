@@ -150,10 +150,12 @@ the one frequency, so simultaneous transmissions still contend.
 
 > **Designed, not implemented:** [`degraded-communications.md`](degraded-communications.md)
 > specifies a third, radio-less `comm_model="voice_only"`. It uses low voice
-> range, removes the HQ and global-frequency exceptions, and permits physical
-> store-and-forward delivery by an agent of liaison. The existing `"range"`
-> model remains a radio model and is the control, not an approximation of that
-> design.
+> range, makes movement/voice/signals/weapons produce uncertain acoustic cues
+> for both sides, adds silent gestures and a continuous local visual-link
+> graph, removes remote friendly telemetry plus the HQ/global-frequency
+> exceptions, and permits physical store-and-forward delivery by an agent of
+> liaison. The existing `"range"` model remains a radio model and is the
+> control, not an approximation of that design.
 
 ## The OpFor
 

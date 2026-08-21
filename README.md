@@ -294,10 +294,12 @@ callsigns). Per agent, per step:
   per-listener (euclidean `comm_range`; HQ is a high-power station): CONTACT reports
   feed only the pictures of stations in earshot, and an order to an out-of-earshot
   subordinate is transmitted but never received — no WILCO comes back, so silence
-  carries information. A distinct radio-less `"voice_only"` mode, including physical
-  message carriage by a detached liaison agent, is specified but not yet implemented in
-  [`docs/degraded-communications.md`](docs/degraded-communications.md); it must not be
-  simulated by merely shrinking `comm_range`.
+  carries information. A distinct radio-less `"voice_only"` mode is specified but not
+  yet implemented in [`docs/degraded-communications.md`](docs/degraded-communications.md).
+  Its essential mechanics are terrain-sensitive movement noise, enemy-detectable voice
+  and sound signals, silent gestures, continuous visual-link/formation state, local
+  friendly knowledge, and physical message carriage by a detached liaison agent; it
+  must not be simulated by merely shrinking `comm_range`.
 * **Comms discipline**: the net is a single frequency — at most one *learned*
   transmission (CONTACT / SITREP / MISSION COMPLETE / order) per tick, arbitrated by
   priority (CONTACT > DONE > orders > SITREP, ties by agent order); losers get a NET
