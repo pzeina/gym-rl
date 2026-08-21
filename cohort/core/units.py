@@ -56,6 +56,17 @@ class CombatParams:
     #                                      later friendly shooters at the same enemy in
     #                                      the same step (active support required)
     max_hit: float = 0.95                # hard cap on any final hit probability
+    # --- AREA FIRE (dispersion made tactically real; owner-decided 2026-08-21) ---
+    burst_radius: float = 1.5            # splash footprint around a struck target —
+    #                                      deliberately the stacked-rate metric's own
+    #                                      radius (cohort.metrics.STACK_RADIUS, tied
+    #                                      by test), so the fault the suite measures
+    #                                      and the one the world prices are the same
+    burst_fraction: float = 0.0          # fraction of the round's damage every OTHER
+    #                                      living unit of the struck side within
+    #                                      burst_radius takes when a shot hits.
+    #                                      0.0 = no splash — the shipped default keeps
+    #                                      every existing scenario byte-identical
 
 
 @dataclass
