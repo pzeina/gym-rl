@@ -131,3 +131,35 @@ ROADMAP handoff with the night's ledger (landings, reads, launches, commits,
 every miss with its diagnosis, and the provenance correction above); commit and
 push; note PUBLISH PENDING boards for the owner's `/boards`; one push
 notification with the outcome the owner would act on.
+
+---
+
+# Ledger (written as the night runs)
+
+- **00:04 — `logs/d4_ledger_six_arms.log` lands** (idle job 1 of 2). The
+  question it was launched to answer — is net-positive idle income unique to
+  the arm that captured, or do other comm regimes sit near the line? — comes
+  back unambiguous. Seed-14 final policy, per agent-step:
+
+  | arm | terminal | non-time | TOTAL | at −0.03 | mean ep len |
+  |---|---|---|---|---|---|
+  | ctrl | +0.806 | +0.841 | **+0.832** | +0.814 | 81 |
+  | global-acoustic | +0.492 | +0.518 | **+0.508** | +0.489 | 132 |
+  | **range-control** | **0.000** | **+0.0127** | **+0.0032** | **−0.0158** | **450** |
+  | no-acoustic ablation | +0.634 | +0.657 | **+0.649** | +0.632 | 90 |
+  | voice-direct | +0.705 | +0.736 | **+0.727** | +0.708 | 92 |
+  | voice-liaison | +0.770 | +0.797 | **+0.787** | +0.769 | 94 |
+
+  The five converged arms earn +0.51 to +0.83/step, all dominated by terminal;
+  the capture earns **+0.0032 with terminal exactly zero**. They are 150–250×
+  above the line it sits on. Net-positive idle income is not a property of the
+  comm regimes in general — it is what the captured policy alone is left with.
+
+  The mechanism is sharper than "the trickle is too generous." The captured
+  policy earns **less** compliance than the healthy ones (+0.0086 against
+  +0.018 to +0.025) — it is not farming the trickle, it is merely staying
+  barely above water once terminal is unreachable. Its whole margin is
+  **+0.0032/agent-step**, so any time price above ~0.013 flips it; −0.03 is
+  well past that, and costs a healthy arm ~2% of its income.
+
+  Recorded as measurement. The comm-regime verdict is not drawn here.
