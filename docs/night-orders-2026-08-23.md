@@ -163,3 +163,38 @@ notification with the outcome the owner would act on.
   well past that, and costs a healthy arm ~2% of its income.
 
   Recorded as measurement. The comm-regime verdict is not drawn here.
+
+- **00:07 — `logs/n100_seed14_slice.log` lands** (idle job 2 of 2), all six
+  evals ok. The matched seed-14 slice at N=100, final policy, one seed and one
+  tree across six comm regimes:
+
+  | | ctrl | glob-ac | range-ctl | no-ac abl | v-direct | v-liaison |
+  |---|---|---|---|---|---|---|
+  | success | 0.980 | 0.960 | **0.000** | 0.960 | 0.950 | 0.980 |
+  | closed on root report | 0.398 | 0.885 | — | 0.000 | 0.000 | 0.000 |
+  | report recall | 0.815 | 0.804 | 0.033 | 0.059 | 0.010 | 0.192 |
+  | report precision | 0.859 | 0.936 | 1.000 | 0.700 | 1.000 | 0.685 |
+  | messages/ep | 97.9 | 95.9 | 65.8 | 71.9 | 28.5 | 38.6 |
+  | root sitreps/ep | 4.17 | 3.54 | 5.01 | 0.000 | 0.000 | 0.000 |
+  | timeout | 0.000 | 0.020 | **1.000** | 0.010 | 0.010 | 0.000 |
+  | stacked | 0.220 | 0.441 | **0.829** | 0.280 | 0.389 | 0.273 |
+
+  95% CIs on success: ctrl [0.953, 1.000], glob-ac [0.922, 0.998], no-ac abl
+  [0.922, 0.998], v-direct [0.907, 0.993], v-liaison [0.953, 1.000],
+  range-ctl [0.000, 0.000].
+
+  **Recorded, not interpreted.** The reporting columns separate the arms by
+  far more than the success column does, and root-close and sitrep rate split
+  the six into two groups — but naming what the comm regime *does* is the
+  verdict this watch is forbidden to draw. It is the first matched N=100 row
+  the project has across all six regimes at a fixed seed, and it is now on
+  file for the owner.
+
+  One thing inside tonight's own thread, and so fair to state: the captured
+  policy's **stacked rate is 0.829, over the shipped bunching gate of 0.70**,
+  against 0.22–0.44 for the five converged arms. The D4 capture at squad depth
+  is also a bunching failure — the squad piles into a blob and sits in it for
+  all 450 steps. The gate merged this evening on `dispersion-mechanic` would
+  fail this policy on spatial grounds alone, independently of its 0.000
+  success. Whether that is coincidence or mechanism is a question for the
+  owner, not a claim for tonight.
