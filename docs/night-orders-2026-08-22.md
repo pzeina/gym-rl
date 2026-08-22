@@ -111,3 +111,8 @@ monitor and the loop.
   best window). Spatial: stacked 0.498 best / 0.365 latest, nn 1.3–1.7 —
   the highest ctrl-arm stacking read so far but under the pending gate;
   seed 12's ctrl read 0.331/0.287, so seed noise spans ~0.15 on this axis.
+- 04:00 — `squad_global_acoustic_control_v1_seed13` lands (job 8/18),
+  committed. Final 92%, converged, PUBLISHABLE; root mute at the best
+  window (0.000). Spatial replicates the seed-12 signature: dispersed
+  (no_close 0.17, stacked 0.11, nn 4.2 vs seed 12's 0.26/0.09/5.1) — the
+  comm regime, not the seed, is setting the cohort's spatial shape.
