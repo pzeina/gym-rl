@@ -154,6 +154,29 @@ NOT_BASELINE = {
     "platoon_hard_flat": "B3 ablation arm of platoon_hard — measures, not ships",
     "squad_short_vision": "information-asymmetry probe, not a shipping configuration",
     "squad_screen_core": "observation-width bisect arm, superseded by the bisect's answer",
+    # degraded communications (docs/degraded-communications.md §9): the matched
+    # voice-only experiment — arms measured against the shipped squad, never
+    # shipped in its place until the owner decides the degraded mode ships
+    "squad_voice_direct": (
+        "degraded-communications direct arm (voice only, tactical acoustics) — "
+        "an experiment arm of squad until the owner decides it ships"
+    ),
+    "squad_voice_no_acoustic_ablation": (
+        "degraded-communications ablation (voice only, sound off) — isolates enemy "
+        "hearing; not an operational mode, never ships"
+    ),
+    "squad_voice_liaison": (
+        "degraded-communications final arm (voice only, acoustics, liaison) — an "
+        "experiment arm of squad until the owner decides the degraded mode ships"
+    ),
+    "squad_global_acoustic_control": (
+        "degraded-communications control (global radio, acoustics on) — measures "
+        "sound exposure against the shipped squad; not a shipping configuration"
+    ),
+    "squad_range_control": (
+        "degraded-communications control (range radio, acoustics on) — the "
+        "range-radio comparison arm; not a shipping configuration"
+    ),
 }
 
 
