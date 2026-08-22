@@ -1,6 +1,28 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-21 evening, **platoon_hard IS SHIPPED: v1.22, nine scenarios, `platoon_hard_v5_seed12` a member with its root-report FAIL and its one-commit-ahead tree DISCLOSED via the manifest's new `exceptions` block (owner-decided); flat confirm seeds + acoustics breaking cycle both in flight**)
+## ⟳ Session handoff — resume here (2026-08-22 morning, **night watch complete: jobs 6–11 of the matched voice campaign landed and committed, all publishable; the spatial-consistency axis SHIPPED — metric, provenance probe, and the platoon-pile finding; gate + AREA FIRE wait on branch `dispersion-mechanic`**)
+
+**The night's ledger is `docs/night-orders-2026-08-22.md`** — six landings
+(liaison seed12, then ctrl / global-acoustic / range-control /
+voice-no-acoustic / voice-direct at seed 13), each committed, digested,
+spatially read; all publishable; the comm regime (not the seed) sets the
+cohort's spatial shape. The queue continues alone: liaison seed13 running,
+seed-14 round after, **drain ~18:00 — then merge `dispersion-mechanic` into
+`multi-agent-dev` BEFORE any acoustics fleet retrain** (rider + evidence in
+docs/next-cycles.md; the branch carries the owner-decided stacked_rate ≤
+0.70 gate and the AREA FIRE mechanic, shipped OFF).
+
+**The spatial-consistency work (owner-requested 2026-08-21), all landed on
+`multi-agent-dev`**: `stacked_rate` / `spatially_sound_rate` /
+`mean_nearest_teammate_dist` in the behavior suite (`1f6d2cd`);
+`scripts/spatial_probe_provenance.py` replays any run against its own tree
+(`fa6b9be`); fleet sweep found `fireteam_defend_v23` wins DEFEND stacked
+0.940 — and the platoon-depth sweep found **flat wins by piling** (0.84–0.94
+all seeds, reproduces at hard difficulty, absent at squad depth): B3's
+outcome verdict rests on a tactic the world never prices. Boards PUBLISH
+PENDING → `/boards`.
+
+## ⟳ Previous handoff (2026-08-21 evening, **platoon_hard IS SHIPPED: v1.22, nine scenarios, `platoon_hard_v5_seed12` a member with its root-report FAIL and its one-commit-ahead tree DISCLOSED via the manifest's new `exceptions` block (owner-decided); flat confirm seeds + acoustics breaking cycle both in flight**)
 
 **Owner decision executed (2026-08-21 evening): "ship v5_seed12 with the
 FAIL disclosed."** Done as v1.22 — `platoon_hard` joined

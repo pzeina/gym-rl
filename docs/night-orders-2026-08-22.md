@@ -125,3 +125,16 @@ monitor and the loop.
   committed. Final 98%, converged, PUBLISHABLE; root mute at best window;
   ckpt_best very early (14% of the run — the best-window flag to note).
   Spatial normal (stacked 0.239/0.304, nn 2.0–2.3).
+- 07:52 — `squad_voice_direct_v2_seed13` lands (job 11/18), committed.
+  Final 97%, converged, PUBLISHABLE; root mute at best window. Spatial
+  normal (stacked 0.229/0.242, nn 2.1–2.2).
+- 07:58 — MORNING WRAP. Six landings processed tonight (jobs 6–11), all
+  publishable, all committed, every one spatially under the pending gate.
+  Cross-seed regularity for the campaign's read: the comm regime sets the
+  spatial shape (global-acoustic disperses, everything else sits in the
+  normal squad band); root muteness recurs at best windows across arms —
+  the campaign's own analysis owns the verdicts. The queue continues on
+  its own (liaison seed13 running, then the seed-14 round, drain ~18:00);
+  landings after this point await the day session, and the
+  `dispersion-mechanic` merge waits on the drain per the rider. Watch
+  stood down.
