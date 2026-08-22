@@ -1477,6 +1477,7 @@ class CohortEnv(ParallelEnv):
                 target.alive = False
                 ledger.add(soldier.callsign, "combat", cfg.kill_enemy * discipline)
                 enemy_kills.append((soldier, target))
+            self._burst_on_enemies(soldier, target, damage, discipline, ledger, enemy_kills)
 
     def _report_contact(self, soldier: Soldier, ledger: RewardLedger) -> None:
         cfg = self.rewards_cfg
@@ -2456,6 +2457,53 @@ class CohortEnv(ParallelEnv):
             ledger.add(target.callsign, "combat", cfg.death * weight)
             player_deaths.append(target)
 
+    def _burst_on_soldiers(
+        self, struck: Soldier, damage: int, ledger: RewardLedger, player_deaths: list[Soldier]
+    ) -> None:
+        """AREA FIRE (owner-decided 2026-08-21): a round that hits sprays the
+        struck unit's neighbors. Every OTHER living soldier within
+        ``combat.burst_radius`` of the struck soldier takes
+        ``int(damage * combat.burst_fraction)`` through the ordinary casualty
+        path (``took_hit`` price, rank-weighted death, succession) — existing
+        prices only, no new reward term. Deterministic: no hit roll, so the
+        RNG stream is identical with the mechanic on or off, and
+        ``burst_fraction=0.0`` (the shipped default) is a structural no-op."""
+        splash = int(damage * self.combat.burst_fraction)
+        if splash <= 0:
+            return
+        for s in list(self.roster.living):
+            if s is struck:
+                continue
+            if dist(s.pos, struck.pos) <= self.combat.burst_radius:
+                self._damage_soldier(s, splash, ledger, player_deaths)
+
+    def _burst_on_enemies(
+        self,
+        shooter: Soldier,
+        struck: Enemy,
+        damage: int,
+        discipline: float,
+        ledger: RewardLedger,
+        enemy_kills: list[tuple[Soldier, Enemy]],
+    ) -> None:
+        """The same world rule from the other muzzle: a friendly hit splashes
+        the struck enemy's living neighbors, the shooter credited through the
+        same discipline-scaled prices as the direct round."""
+        cfg = self.rewards_cfg
+        splash = int(damage * self.combat.burst_fraction)
+        if splash <= 0:
+            return
+        for e in self.enemies:
+            if e is struck or not e.alive:
+                continue
+            if dist(e.pos, struck.pos) <= self.combat.burst_radius:
+                e.health -= splash
+                ledger.add(shooter.callsign, "combat", cfg.hit_enemy * discipline)
+                if e.health <= 0:
+                    e.alive = False
+                    ledger.add(shooter.callsign, "combat", cfg.kill_enemy * discipline)
+                    enemy_kills.append((shooter, e))
+
     def _enemy_turn(self, enemy: Enemy, ledger: RewardLedger, player_deaths: list[Soldier]) -> None:
         visible_players = [
             s
@@ -2525,6 +2573,7 @@ class CohortEnv(ParallelEnv):
             )
             if hit:
                 self._damage_soldier(target, damage, ledger, player_deaths)
+                self._burst_on_soldiers(target, damage, ledger, player_deaths)
 
     # ------------------------------------------------------------------ #
     # views, masks, observations, compliance
