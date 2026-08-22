@@ -106,3 +106,8 @@ monitor and the loop.
   pending gate). Flags for the campaign's read, no verdict drawn: root is
   MUTE (closed-on-root 0.000 both windows — the shape the mute gate
   refuses) and root death 0.250 at ckpt_best behavior.
+- 02:48 — `squad_ctrl_v1_seed13` lands (job 7/18), committed. Final 98%,
+  converged, PUBLISHABLE; reporting healthy (closed-on-root 0.770 at the
+  best window). Spatial: stacked 0.498 best / 0.365 latest, nn 1.3–1.7 —
+  the highest ctrl-arm stacking read so far but under the pending gate;
+  seed 12's ctrl read 0.331/0.287, so seed noise spans ~0.15 on this axis.
