@@ -121,3 +121,7 @@ monitor and the loop.
   PUBLISHABLE; root mute at best window; ckpt_best sits early (34% of the
   run). Spatial normal (stacked 0.335/0.273, nn 1.8–2.2) — range-limited
   comms do not disperse the cohort the way global acoustics does.
+- 06:32 — `squad_voice_no_acoustic_ablation_v2_seed13` lands (job 10/18),
+  committed. Final 98%, converged, PUBLISHABLE; root mute at best window;
+  ckpt_best very early (14% of the run — the best-window flag to note).
+  Spatial normal (stacked 0.239/0.304, nn 2.0–2.3).
