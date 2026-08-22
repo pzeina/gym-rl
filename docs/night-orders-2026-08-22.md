@@ -116,3 +116,8 @@ monitor and the loop.
   window (0.000). Spatial replicates the seed-12 signature: dispersed
   (no_close 0.17, stacked 0.11, nn 4.2 vs seed 12's 0.26/0.09/5.1) — the
   comm regime, not the seed, is setting the cohort's spatial shape.
+- 05:27 — `squad_range_control_v1_seed13` lands (job 9/18), committed.
+  Final 93% (the monitor's 80% was one rolling window), converged,
+  PUBLISHABLE; root mute at best window; ckpt_best sits early (34% of the
+  run). Spatial normal (stacked 0.335/0.273, nn 1.8–2.2) — range-limited
+  comms do not disperse the cohort the way global acoustics does.
