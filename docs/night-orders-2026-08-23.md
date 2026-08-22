@@ -251,3 +251,36 @@ notification with the outcome the owner would act on.
   `reward_overrides` is touched tonight; whether `squad_range_control` should
   carry −0.03 as its own economics the way `platoon_hard` does is the owner's
   decision, and the morning write-up will present it as one.
+
+- **01:10 — CORRECTION to the Gate 1 blemish (idle-time probe).** I flagged
+  `false_complete_rate` 1.000 as "the first thing the owner should look at" and
+  wrote that the timecost policy's "DONE claims stay untrustworthy". **That
+  overstated a two-event denominator.** The metric is
+  `done_rejected / done_reports`, and across 100 episodes:
+
+  | | timecost_s14 | rescue_s14 | v1_s15 | v1_s12 | ctrl_s14 |
+  |---|---|---|---|---|---|
+  | done_reports | **2** | 58 | 26 | **0** | 270 |
+  | done_rejected | **2** | 51 | 14 | 0 | 176 |
+  | claiming episodes | **2** | 41 | 24 | 0 | 93 |
+  | false_complete_rate | 1.000 | 0.879 | 0.538 | — | 0.652 |
+
+  The 1.000 is 2/2. `cohort/metrics.py::_false_complete` says this in its own
+  docstring — the ratio "cannot see the difference between a root that files
+  one claim in each episode where the end state holds and a root that files
+  eight an episode and is right an eighth of the time", and the denominator
+  that separates them is claiming episodes. Two of them is not a rate.
+
+  What is actually true, and is a different statement: **the timecost policy
+  almost never files a DONE claim** — 2 claiming episodes in 100, against 24
+  for `v1_s15` and 93 for `ctrl_s14`. And low claiming is normal for this arm,
+  not a timecost effect: `v1_s12` is healthy at 0.920 success and files
+  **zero**. So `v1_s15` is the outlier here, not the timecost run.
+
+  Meanwhile `successes_announced_rate` is **1.000 for every member** — every
+  success is announced. The completion signal works; the DONE-claim channel is
+  a separate and largely unused one in this arm.
+
+  **Net effect on the Gate 1 verdict: none** — no pre-registered clause moved,
+  the PASS stands. What changes is the morning framing: this is not a defect
+  the price introduced, and it should not be presented to the owner as one.
