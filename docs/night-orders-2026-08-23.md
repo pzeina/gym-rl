@@ -198,3 +198,56 @@ notification with the outcome the owner would act on.
   fail this policy on spatial grounds alone, independently of its 0.000
   success. Whether that is coincidence or mechanism is a question for the
   owner, not a claim for tonight.
+
+- **00:34 — GATE 1: `squad_range_control_timecost_v1_seed14` lands, and PASSES
+  all four pre-registered clauses.** Curve 52%→96%, best rolling 100%, final
+  96%, `[converged]` `[PUBLISHABLE]`. Scored verbatim against the bar written
+  before it landed:
+
+  | clause | bar | measured | |
+  |---|---|---|---|
+  | 1 final rolling success | ≥ 0.50 | **0.957** | PASS |
+  | 2 best-final gap | < 10 pts | **4 pts** | PASS |
+  | 3 ran-clock-out | < 0.50 | **0.016** | PASS |
+  | 4 retasks_priced/ep @ N=100 | ≤ 2.0 | **0.560** | PASS |
+
+  Against the capture it replaces, at the same seed and tree: ran-clock-out
+  0.016 vs 1.000, episode length 102 vs 450, terminal reward 0.8268 vs 0.0000.
+  The attractor is gone, not survived.
+
+  N=100 on the final policy, against the arm's other members:
+
+  | | timecost_s14 | rescue_s14 | v1_s15 | v1_s12 | v1_s14 |
+  |---|---|---|---|---|---|
+  | success | **0.960** | 0.830 | 0.940 | 0.920 | 0.000 |
+  | retasks priced/ep | 0.560 | 7.260 | 1.790 | 0.290 | 0.160 |
+  | timeout | 0.010 | 0.090 | 0.060 | 0.020 | 1.000 |
+  | stacked | 0.244 | 0.119 | 0.236 | 0.333 | 0.829 |
+  | ep length | 102.3 | 159.6 | 112.6 | 108.2 | 450.0 |
+
+  timecost vs `v1_s15` p = 0.52, vs `v1_s12` p = 0.23 — **statistically
+  indistinguishable from the seeds that never captured**; vs `rescue_s14`
+  p = 0.0027, significantly better than the salvage. The price does not merely
+  keep the run alive: it returns an ordinary healthy policy, where the rescue
+  returned a thrashing one (0.56 priced retasks against 7.26).
+
+  **Blemish, recorded not buried**: `false_complete_rate` is **1.000** at
+  N=100, against `v1_s15`'s 0.538 — the worst of the three measurable members.
+  `doctrine_preference_rate` 0.313 also sits below `v1_s15`'s 0.563. So the
+  policy reaches the objective reliably and cleanly while its DONE claims stay
+  untrustworthy. That is not what clause 4 was watching for and it does not
+  fail any pre-registered clause, so the gate verdict stands as PASS — but it
+  is the first thing the owner should look at, and it is not evidence the price
+  fixed reporting.
+
+- **00:38 — neutrality gate launched** (decision rule "all four PASS"):
+  `campaigns/range_control_timecost_neutrality_2026-08-23.jobs`, two jobs
+  sequential, `squad_range_control_timecost_v1_seed15` then `_seed12`, both at
+  `--reward time_penalty=-0.03`, baselines the same seeds at the default price
+  (N=100 0.940 and 0.920). Question: does the tripled price damage a seed that
+  never needed it? Land ~01:40 and ~02:40.
+
+  **This remains an experiment, not a proposal.** Nothing in `config.py` or
+  `reward_overrides` is touched tonight; whether `squad_range_control` should
+  carry −0.03 as its own economics the way `platoon_hard` does is the owner's
+  decision, and the morning write-up will present it as one.
