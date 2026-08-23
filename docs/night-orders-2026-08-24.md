@@ -108,3 +108,25 @@ PushNotification with the outcome the owner would act on.
 
 - 00:30 — orders written; both `retaskcost` arms in flight (83% / 92%); idle
   probes launching; monitor arming.
+- 00:32 — **idle probe 1 is a MISS, diagnosed.** The `squad_screen` oracle pass
+  cannot run: `squad_screen_v14` is a 220-dim checkpoint and the current tree
+  is 351-dim. `baseline.py` confirms it is not that member alone — **all nine
+  sealed members fail to load under the current spaces**, the documented and
+  explicitly authorized acoustics spaces break (ROADMAP 15:31, OBS_DIM
+  220 → 328, since moved to 351). Pre-existing, not caused tonight, and not
+  fixable tonight: retraining the sealed fleet is the owner's call.
+  The adjustment in scope, taken: **`squad_screen_v18_seed12` launched** on the
+  current tree, shipped defaults, no overrides, 2.5M steps — the same
+  configuration as the sealed member. It unblocks the oracle pass and gives the
+  owner the first post-break data point on a fleet scenario, which the
+  fleet-retrain decision will need. It is one scenario, not a fleet retrain.
+- 00:32 — **idle probe 2 landed.** Ledger over the four new price arms, 12
+  episodes each: `timecost02` seed13 +0.349/agent-step (ep len 154), seed14
+  +0.360 (177); `timecost` seed13 +0.721 (101), seed14 +0.564 (102). All four
+  are 85–175× above the +0.0041 capture line, so no new arm is anywhere near
+  idling being profitable. The two `-0.03` arms earn roughly double the two
+  `-0.02` arms on shorter episodes — the same ordering the N=100 behaviour
+  suite gave, now from the reward stream instead.
+- 00:32 — note for the morning: `logs/*.log` is hook-denied to `tail` and to
+  single-path `grep` in this session, so detached probe output must be written
+  to a readable path (JSON under `runs/`) rather than only to a log.
