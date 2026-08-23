@@ -130,3 +130,56 @@ PushNotification with the outcome the owner would act on.
 - 00:32 — note for the morning: `logs/*.log` is hook-denied to `tail` and to
   single-path `grep` in this session, so detached probe output must be written
   to a readable path (JSON under `runs/`) rather than only to a log.
+- 00:52 — **Queue item 1 resolves: SEPARATES.** Both `retaskcost` arms landed
+  and both N=100 evals are down. Criterion was seed 13 churn < 2.0 AND seed 14
+  not recapturing; both hold. Seeds 12 and 15 launched at the same two
+  overrides per the rule.
+
+  | N=100 final | success | retasksP | ep len | closed-on-root | hdr |
+  |---|---|---|---|---|---|
+  | s13 default | 0.86 | 0.25 | 159.2 | 0.000 | 0.380 |
+  | s13 −0.03 | 0.93 | 2.97 | 97.8 | 0.000 | 0.050 |
+  | **s13 −0.03/−1.0** | **0.97** | **0.14** | **73.5** | **0.938** | 0.170 |
+  | s14 default | 0.00 | 0.16 | 450.0 | — | 0.020 |
+  | s14 −0.03 | 0.96 | 0.56 | 102.3 | 0.000 | 0.030 |
+  | s14 −0.03/−1.0 | 0.94 | 1.95 | 111.0 | 0.000 | 0.020 |
+
+  **The two seeds move in opposite directions, both significantly.** Seed 13's
+  churn collapses 2.97 → 0.14 (p < 1e-4, 21×) on shorter episodes and higher
+  success; seed 14's *rises* 0.56 → 1.95 (p < 1e-4) on slightly longer
+  episodes. So the retask cost does not govern churn either — it moves it, hard,
+  in a seed-dependent direction. The economic story that motivated this arm
+  (churn as rational time-trading priced against break-even 0.677) predicted a
+  uniform fall and did not get one. Seeds 12 and 15 will say which behaviour is
+  typical; the four-seed row is the deliverable, not a verdict.
+
+  **The result the owner will actually want**: seed 13 reads
+  `closed_on_root_report_rate` **0.938** against 0.000 for every other member of
+  this arm (p ≈ 4e-50) — the shipped `>= 0.5` gate has never once passed in
+  `squad_range_control` and here it passes emphatically, with report recall
+  0.529 → 0.883. **It is one seed**: seed 14 at the identical configuration
+  reads 0.000. Not a property of the configuration until 12/15 say so. Its cost
+  is visible too — human death 0.050 → 0.170 (p = 0.012) and stacked 0.224 →
+  0.525, still inside the 0.70 gate.
+- 00:52 — **bookkeeping blocked, deliberately.** `squad_screen_v18_seed12` is a
+  same-config draw, so `test_the_shipped_record_holds_no_draw_outside_the_declared_blocks`
+  fails until `BASELINE.json` declares it — but declaring it now fails the
+  companion gate, which requires a tracked identity-bearing checkpoint, and a
+  mid-flight `ckpt_latest.pt` is not the run's identity. So the declaration and
+  every artifact commit wait for that run to land (~01:30) and go in together
+  with the suite green. The `retaskcost` results are on disk and lose nothing by
+  waiting. My earlier reformat of `BASELINE.json` (indent churn across 165
+  lines) was reverted rather than committed.
+- 01:22 — **what the seed-13 root close actually is** (per-episode counters,
+  N=100, zero tokens). It is not a scoring artifact: seed 13 at −0.03/−1.0 is
+  the only policy in the arm where the **root files a DONE claim at all**
+  (`done_reports_root` 1.77/episode against 0.00 for the other three arms), and
+  the mission closes on that claim in 91% of episodes (`endex_on_root_report`
+  0.91 vs 0.00 everywhere else). `endex_sent` is ~0.95 in all four arms, so the
+  missions were always ending — what changed is *who* ends them.
+  Two honest qualifications: the root files eagerly, and 0.86 of its 1.77 claims
+  are rejected (~51% precision on root claims); and routine root chatter falls
+  at the same time (`root_sitreps` 5.43 → 0.33), so the root talks less overall
+  while finally saying the one thing the gate asks for. `succession_events`
+  0.29 is consistent with the raised human-death rate — sometimes it is a
+  successor closing, not the original root.
