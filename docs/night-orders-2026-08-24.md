@@ -183,3 +183,23 @@ PushNotification with the outcome the owner would act on.
   while finally saying the one thing the gate asks for. `succession_events`
   0.29 is consistent with the raised human-death rate — sometimes it is a
   successor closing, not the original root.
+- 01:42 — **the standing `squad_screen` oracle gap is CLOSED** (next-cycles
+  §332), on `squad_screen_v18_seed12` at 30 episodes, seeds 500–529. The
+  hypothesis in next-cycles was right: **it is exposure, not indiscipline.**
+  - **94.1% of deaths happen out of cover**, and cover occupancy under threat is
+    0.137 for the team, 0.068 for the human. Friendly deaths in the open are
+    1.00/episode against 0.13 at the objective.
+  - Deaths by mission-at-death: OBSERVE 0.382 (92% of them in the open), SCREEN
+    0.324 (100% in the open), COVER 0.176, HOLD 0.088. The agents are dying
+    while doing exactly the doctrinally correct thing, standing up.
+  - Human death rate 0.200 here against the sealed member's 0.24 — the exposure
+    survived the spaces break, so it is a property of the scenario rather than
+    of one checkpoint.
+  - Fire rate under threat is 0.660 team-wide on a scenario whose doctrine is
+    observe-without-engaging, but weapons-tight is mask-enforced, so this is
+    permitted return fire, not a discipline failure. Outcomes are 0.967 success
+    / 0.033 defeat: the scenario is not degenerate, it is won expensively.
+  - **Read-only, as the orders said.** Cover occupancy is priced by the reward
+    config, so acting on this is a design decision and belongs to the owner. The
+    fact sheet is at `runs/squad_screen_v18_seed12/oracle_night.txt`, raw
+    counters beside it as `oracle_night.json`.
