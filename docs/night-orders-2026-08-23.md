@@ -284,3 +284,52 @@ notification with the outcome the owner would act on.
   **Net effect on the Gate 1 verdict: none** — no pre-registered clause moved,
   the PASS stands. What changes is the morning framing: this is not a defect
   the price introduced, and it should not be presented to the owner as one.
+
+- **01:59 / 03:00 — GATE 2: both neutrality seeds land, and the price is
+  NEUTRAL on seeds that never needed it.** Both converged, PUBLISHABLE, gap
+  5 pts each (seed15 57%→95%, seed12 44%→95%). N=100 final policy, price-on
+  against price-off at a fixed seed:
+
+  | seed | default price | −0.03 | two-proportion |
+  |---|---|---|---|
+  | 12 | 0.920 | **0.970** | p = 0.12, ns |
+  | 15 | 0.940 | **0.970** | p = 0.31, ns |
+  | 14 | **0.000 (capture)** | **0.960** | categorical |
+
+  So the arm at −0.03 reads 0.960 / 0.970 / 0.970 across three seeds, against
+  0.000 / 0.920 / 0.940 at the default. **The tripled time price removes the
+  capture and makes the arm uniform, and it costs a healthy seed nothing
+  measurable.** Neither neutrality comparison is significant in either
+  direction, which is exactly the null the gate was built to look for.
+
+  **Two costs, recorded because they are the real ones** (neither is a
+  pre-registered clause, and neither changes the Gate verdicts):
+
+  - **Human death rate on seed 15: 0.240 at −0.03 against 0.000 at the
+    default.** Seeds 12 (0.020 vs 0.060) and 14 (0.030 vs 0.020) show nothing,
+    so this is one seed, not a trend — but a price that rewards hurrying is
+    exactly the shape of change that would buy success with casualties, and
+    this is the number that would show it. It deserves the owner's eye more
+    than anything else in the night's ledger.
+  - **Priced retasks rise in both neutrality seeds**: 1.47 vs 0.29 (s12) and
+    3.71 vs 1.79 (s15). Seed 14 went the other way (0.56). Directionally the
+    price buys some churn back.
+
+  **And a genuine surprise, one seed only**: `timecost_v1_seed15` scores
+  `closed_on_root_report_rate` **0.340** — the only non-zero root close in the
+  entire `squad_range_control` record, where every other member of every arm
+  reads 0.000. Its DONE traffic also jumps (239 reports / 89 claiming episodes
+  against the baseline's 26 / 24), as does seed 12's (252 / 92 against **0**).
+  This is NOT presented as a price effect: `timecost_v1_seed14` filed 2 claims,
+  so the spread inside the timecost arm alone is 2 → 252. It is seed-level
+  behavioural variance of the kind this arm has shown all along, and it is the
+  second-best reason to look at the arm in the morning.
+
+## Night complete — queue exhausted 03:00, watch closed 09:2x
+
+The 01:38 fallback wakeup did not fire and the Monitor events for both
+neutrality landings arrived only when the network returned at ~09:25, so both
+runs sat finished for ~6h. No harm: the queue was empty behind them, nothing
+was gated on a faster read, and both were read, evaluated at N=100 and
+committed on reconnection. Recording it because a watch that silently slept
+through its own landings should say so.
