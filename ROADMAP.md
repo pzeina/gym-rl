@@ -1,6 +1,89 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-22 morning, **night watch complete: jobs 6–11 of the matched voice campaign landed and committed, all publishable; the spatial-consistency axis SHIPPED — metric, provenance probe, and the platoon-pile finding; gate + AREA FIRE wait on branch `dispersion-mechanic`**)
+## ⟳ Session handoff — resume here (2026-08-23 morning, **the squad-depth D4 capture is DIAGNOSED AND BEATEN: `time_penalty=-0.03` turns `squad_range_control` seed 14 from 0.000 to 0.960 and is neutral on the seeds that never captured — the knob is on the owner's desk, nothing is shipped**)
+
+**The night's ledger is `docs/night-orders-2026-08-23.md`** — one thread, run
+to completion with both gates pre-registered before their runs landed.
+
+**What was established.** `squad_range_control` seed 14 captures under
+range-limited radio: every episode to the clock, terminal reward 0.000, 450
+steps. Three arms were run against it and the third worked.
+
+| seed | default price | `time_penalty=-0.03` |
+|---|---|---|
+| 12 | 0.920 | **0.970** (p = 0.12, ns) |
+| 14 | **0.000 — captured** | **0.960** |
+| 15 | 0.940 | **0.970** (p = 0.31, ns) |
+
+*(N=100 final policy throughout.)* The price removes the capture, makes the arm
+uniform across seeds, and costs a healthy seed nothing measurable.
+
+**Why it works, measured not guessed** (`scripts/d4_ledger_probe.py`, new and
+tested): the captured policy earns **+0.0041/agent-step** — compliance
++0.0096, command +0.0042, terminal 0.000, against time −0.0100. *Idling is
+net-positive income.* At −0.03 that becomes −0.0159 while a healthy policy
+loses ~2.5% of its +0.586. The six-arm sweep showed this is not a property the
+comm regimes share: the five converged arms sit at +0.51 to +0.83/step,
+**150–250× above the line**, and only the captured policy is near it.
+
+**Two rejected explanations, both worth not re-running.** (1) *Exploration
+collapse* — `--ent-coef 0.02` preserved entropy (1.263 → **1.333**, higher
+than the converged seed15's 0.991) and captured anyway. (2) *The D4 rescue* —
+`--rescue-max 3` salvaged the run to 0.830 but returned a thrashing policy:
+7.26 priced retasks/episode against 0.29–1.79, significantly worse than the
+price arm (p = 0.0027). **Salvage is not cure.**
+
+### The owner's decision, and it is the only one open
+
+Should `squad_range_control` carry `time_penalty=-0.03` as its own
+`ScenarioSpec.reward_overrides`, the way `platoon_hard` already does? The
+evidence above is the case for. **Nothing was shipped** — no `config.py`, no
+`reward_overrides`, no default touched. Every run above is an experiment arm.
+
+**Look at this before deciding**: **human death rate on seed 15 is 0.240 at
+−0.03 against 0.000 at the default.** Seeds 12 (0.020 vs 0.060) and 14 (0.030
+vs 0.020) show nothing, so it is one seed and not a trend — but a price that
+rewards hurrying is exactly the change that would buy success with casualties,
+and that is the number that would show it. A fourth seed would settle it and
+costs an hour.
+
+**Second thing to look at**: `timecost_v1_seed15` scores
+`closed_on_root_report_rate` **0.340** — the only non-zero root close anywhere
+in the `squad_range_control` record, every other member of every arm reading
+0.000. Not a price effect (timecost seed 14 filed 2 DONE claims, seed 12 filed
+252), but the arm has never produced a talking root before.
+
+### Also landed overnight
+
+- **Provenance correction.** Commit `19c56f7` claimed the matched voice
+  campaign's 18 jobs share one `cohort/` tree. They do not:
+  `squad_ctrl_v1_seed12` is on `54a1305`, the other 17 plus the seed15 reseed
+  on `d28592f`. The delta is `cohort/metrics.py` alone (STACK_RADIUS), verified
+  behaviourally identical by rollout hashing rather than by reading the diff.
+  `docs/next-cycles.md` had already required this disclosure. Corrected in
+  `64ca38f`.
+- **First matched N=100 row across all six comm regimes** at one seed and one
+  tree (`03d4bf6`). Success is flat (0.95–0.98) everywhere except the capture;
+  closed-on-root reads 0.398 / 0.885 / — / 0.000 / 0.000 / 0.000 and root
+  sitreps 4.17 / 3.54 / 5.01 / 0.000 / 0.000 / 0.000. **The comm-regime verdict
+  was deliberately not drawn** — it is a claim about the project's results and
+  it is yours. The row is on file.
+- **The capture is also a bunching failure**: stacked 0.829, over the shipped
+  0.70 gate, against 0.22–0.44 for the five converged arms. Coincidence or
+  mechanism is open.
+- **A blemish I raised and then retracted**: I flagged timecost seed 14's
+  `false_complete_rate` of 1.000 as the headline concern; it is 2 rejected out
+  of 2 claims in 100 episodes, which `cohort/metrics.py` itself warns is not a
+  rate. Retracted in `cf4d6cd` before it reached this handoff as a finding.
+
+**Boards are PUBLISH PENDING** (fleet, gallery, program) → `/boards`.
+
+**Watch honesty**: the network dropped after 01:38. Both neutrality landings
+sat finished ~6h until reconnection at 09:25, then were read, evaluated at
+N=100 and committed. Nothing was gated behind them, but a watch that slept
+through its own landings should say so.
+
+## ⟳ Previous handoff — resume here (2026-08-22 morning, **night watch complete: jobs 6–11 of the matched voice campaign landed and committed, all publishable; the spatial-consistency axis SHIPPED — metric, provenance probe, and the platoon-pile finding; gate + AREA FIRE wait on branch `dispersion-mechanic`**)
 
 **The night's ledger is `docs/night-orders-2026-08-22.md`** — six landings
 (liaison seed12, then ctrl / global-acoustic / range-control /
