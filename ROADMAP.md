@@ -1,6 +1,91 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission, the gate that has never passed in this scenario, but only at FOUR SEEDS IN EIGHT and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
+## ⟳ Session handoff — resume here (2026-08-24 night, **the retask knob is DECIDED NO; jamming measured against a clean same-tree control at two seeds; and a bit-identity check caught a fleet-retrain justification that was wrong**)
+
+### Decided tonight (owner)
+
+**`order_retask_cost_base` stays at −0.5. The answer is NO.** The −1.0 arm buys
+`closed_on_root_report_rate`, a gate that has never passed in
+`squad_range_control` — but at four seeds in eight, with all three proposed
+mechanisms refuted on their own data, and human death pooled 41/600 → 70/600
+(p = 0.0051). A coin-flip effect with a significant casualty price and no story
+is a finding, not a default. It is written up as the strongest negative result
+in the record; no `config.py`, no `reward_overrides`, nothing shipped.
+
+That decision was on the critical path for one reason: it was the last pending
+change to a shipping scenario's economics, and a fleet retrain launched before
+it would have had to be run twice.
+
+### `comm_model="jammed"` measured — single-variable A/B, both seeds
+
+`squad_ctrl_v2_seed12/13` were trained tonight as the matched clear-net controls
+(scenario `squad`, same seeds, same 3M steps, same commit `7247122`). Both
+comparisons now read **"single-variable A/B — one price, same code"**. FINAL
+policy, N=20:
+
+| | s12 clear | s12 jammed | s13 clear | s13 jammed |
+|---|---|---|---|---|
+| success | 0.95 | 0.95 | 1.00 | 0.90 |
+| closed-on-root | 0.842 | **0.211** | 0.800 | **0.000** |
+| root claims | 10 | 41 | 35 | 0 |
+| first-claim precision | 0.900 | 0.067 | — | — |
+| obedience latency | 2.66 | 2.76 | 2.26 | **4.39** |
+| orders / ep | 8.35 | 12.70 | 10.45 | 16.40 |
+| messages / ep | 107.7 | 97.2 | 69.5 | 110.2 |
+| human death | 0.450 | 0.050 | 0.400 | 0.000 |
+
+**What replicates at both seeds.** (i) Mission success survives — a 35% duty
+cycle with 15-step mean outages does not stop the squad finishing. (ii) **The
+root's DONE channel does not.** Both controls PASS the ≥ 0.5 gate; both jammed
+arms FAIL it. (iii) Command traffic inflates — orders/episode +52% and +57%,
+the signature of retransmitting into a dead net. (iv) Human death FALLS at both
+seeds, which is counter-intuitive and currently unexplained — do not build on it.
+
+**One mechanism fits both seeds, and it is the scenario's own design turned
+back on it.** HQ is exempt, so the root can always SPEAK; only lateral traffic
+goes dark, so the root cannot always HEAR. Jamming therefore severs the root's
+*evidence* for closure while leaving its voice intact — and a commander with a
+voice and no evidence either invents claims (seed 12: 41 claims at precision
+0.067) or goes silent (seed 13: zero). Same gate failure, opposite pathologies,
+one cause. **Not yet tested**; it is a hypothesis with a clean prediction.
+
+### The correction that matters most tonight
+
+A fleet-retrain campaign (`scripts/campaigns/v1_23_fleet.jobs`) was written and
+its preflight overridden on the argument that the acoustics break moved OBS_DIM
+so no job could reproduce an existing run. **The number was wrong and the
+argument was too broad.** Current OBS_DIM is **351**, not 328. And the decisive
+counter-example was already on disk: `squad_ctrl_v1_seed12` (trained days ago,
+five `cohort/` commits back) and `squad_ctrl_v2_seed12` (trained tonight at HEAD)
+have **bit-identical** `ckpt_best.pt` and `ckpt_latest.pt` — c5451457, c93bd342.
+A tree transition at constant OBS_DIM moves nothing. Assurance #60, live.
+
+The campaign did not run — the launch never took — so nothing was burned. Its
+justification is now rewritten against measured checkpoint dimensions: the nine
+sealed members and every archived prior the preflight names sit at 220 against a
+current 351, which is what makes those jobs real. One job, `squad_screen_v19`,
+has a prior at 351 and may legitimately reproduce it; that is documented as an
+acceptable outcome rather than a hidden one.
+
+**Corollary worth keeping**: the two controls added no new policy — they
+re-derived `squad_ctrl_v1` exactly — but they were not wasted. They converted a
+CONFOUNDED verdict into a single-variable A/B by construction, which is the only
+thing that made the jamming table above sayable.
+
+### Next
+
+1. **Launch the fleet retrain** — `FORCE=1 scripts/train_queue.sh
+   scripts/campaigns/v1_23_fleet.jobs`, 11 jobs, ~6.5–8h. It freezes `cohort/` at
+   `7247122`. No `squad` job: `squad_ctrl_v2_seed12` is on the frozen tree and
+   stands as that member.
+2. **Then** publish_baseline.py at N=100 → baseline.py --seal →
+   results_table.py --write. `platoon_hard`'s `provenance:cohort_tree` waiver
+   should be dropped at seal; its gate waiver stays.
+3. **Open, untested**: the speak-but-cannot-hear mechanism above. The prediction
+   that would settle it is a probe of root claim rate conditional on jam state at
+   the moment of claiming.
+
+## ⟳ Previous handoff (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission, the gate that has never passed in this scenario, but only at FOUR SEEDS IN EIGHT and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
 
 **The night's ledger is `docs/night-orders-2026-08-24.md`** — the queue, the
 pre-registered decision rules, and every reversal, in the order they happened.

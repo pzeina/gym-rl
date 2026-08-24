@@ -1,0 +1,115 @@
+# v1.23 FLEET RETRAIN — the fleet made reproducible again.
+#
+# WHY. `scripts/baseline.py` reports all nine sealed v1.22 members FAIL TO LOAD
+# under the current spaces: the authorized acoustics break moved OBS_DIM
+# 220 -> 351 (ROADMAP 2026-08-24 15:31 records the 328 waypoint). Every number is
+# currently un-rederivable against the tree in the repository. That is not a
+# defect in any member — each was honest when trained — but a fleet whose
+# evidence cannot be re-run is not a baseline, it is a screenshot. This campaign
+# retrains every member onto the tree at HEAD so `baseline.py --seal` can mean
+# something again.
+#
+# WHAT THIS CAMPAIGN FREEZES. `cohort/` at `7247122` (comm_model="jammed").
+# A queue launches each job when it reaches it and `train.py` imports the tree
+# that exists at that moment, so no commit may touch `cohort/` until the last
+# job lands. Tooling, tests, docs, boards and runs/ stay free to move.
+#
+# WHY IT COULD START TONIGHT AND NOT BEFORE. The last pending change to a
+# shipping scenario's economics was resolved first: `order_retask_cost_base`
+# stays at -0.5. The owner decided NO on 2026-08-24 (see ROADMAP). Had it landed,
+# `squad_range_control`'s prices would have moved and this fleet would have been
+# trained against economics that were about to change — i.e. retrained twice.
+# The time price it does carry (`time_penalty=-0.03`) is already in the spec as
+# of `8ab3876`, so it needs no flag here: what ships is what was trained.
+#
+# NO `squad` JOB, AND THAT IS DELIBERATE. `squad_ctrl_v2_seed12` and
+# `squad_ctrl_v2_seed13` are training right now as the matched clear-net controls
+# for the jamming arm, and their config is bit-identical to what a `squad` fleet
+# job would be: scenario `squad`, 3,000,000 steps, seeds 12/13, shipped defaults,
+# no `--reward`. The manifest's own rule is that a bit-identical re-execution
+# counts once (owner decision 2026-08-18, refs assurance #63), so re-running them
+# under a prettier name would manufacture a duplicate draw the dedupe would then
+# have to collapse. `test_the_shipped_record_holds_no_draw_outside_the_declared_blocks`
+# reached the same conclusion independently: it fails right now naming both runs
+# as undeclared same-config draws of the `squad` member. They are declared in
+# `seed_spread` in the commit that lands their artifacts, and seed 12 stands as
+# the v1.23 `squad` candidate.
+#
+# THE SEED BUDGET. Six scenarios have never shown the bimodal reporting
+# pathology at the shipped config and run one seed each. `patrol_brique` has:
+# 0.43 reporting over 14 runs, with runs landing at 0.750-1.000 or at exactly
+# 0.000 and nothing between. It runs FOUR seeds, ordered 12 (continuity with the
+# v1.21/v1.22 members) then 18, 19, 14 — every seed that has reported at the
+# current default. Ordered last so the cheap fleet completes first and the
+# spares only cost what they are needed for.
+#
+# AND THIS TIME THE SEED QUESTION IS REALLY ASKED. The v1.21 campaign's
+# within-scenario transfer test never ran (assurance #60): training is
+# bit-deterministic in (seed, scenario, steps, lr, price) and no tree transition
+# into `becc3ec4` touched a trajectory, so every "does it report again" pair
+# compared a checkpoint with a copy of itself. The acoustics break DOES move
+# every trajectory — OBS_DIM changed — so these four seeds are a genuinely fresh
+# draw against the 0.43 rate. Whether the reporting seed carries across a tree
+# change is answered here for the first time, at no extra cost.
+#
+# THE platoon_hard PIN RESOLVES ITSELF. Its v1.22 exception waives
+# `provenance:cohort_tree` because it trained one commit ahead of the fleet tree.
+# Retrained here alongside everything else, that waiver has nothing left to
+# waive and should be dropped at seal time. Its `gate:closed_on_root_report_rate`
+# waiver is a separate, diagnosed finding and stays.
+#
+# AFTER THIS LANDS: publish_baseline.py at N=100 (detached), then baseline.py
+# --seal, then results_table.py --write. The v1.22 members stay in place until
+# their replacements beat them; a MISS supersedes nothing without an ask.
+#
+# THE PREFLIGHT IS OVERRIDDEN, AND THE FIRST ATTEMPT TO JUSTIFY IT WAS WRONG.
+# `train_queue.sh` refuses all 11 jobs: every one re-derives a config the record
+# already holds, and it is right to ask. The first answer written here claimed
+# OBS_DIM moved 220 -> 328 so no checkpoint could be bit-identical. Both halves
+# were unchecked. The correct facts, measured off the checkpoints themselves:
+#
+#   current OBS_DIM                                     351
+#   the nine sealed v1.22 members                       220   <- cannot load
+#   every archived prior the preflight names            220
+#   squad_ctrl_v1_seed12 / squad_ctrl_v2_seed12         351   <- BIT-IDENTICAL
+#
+# That last row is the evidence that matters, and it cuts against the careless
+# version of the argument. `squad_ctrl_v2_seed12` was trained tonight at HEAD;
+# `squad_ctrl_v1_seed12` was trained days ago, five `cohort/` commits back. Their
+# `ckpt_best.pt` AND `ckpt_latest.pt` sha256 match exactly (c5451457, c93bd342).
+# A tree transition at CONSTANT OBS_DIM moves nothing — assurance #60's lesson,
+# reproduced live. So "the tree moved" is never on its own a reason to re-run.
+#
+# The reason these 11 jobs are real is narrower and checkable: every prior the
+# preflight names for them is at OBS_DIM 220 against a current 351, so the input
+# layer is a different shape, initialisation consumes different RNG, and the
+# trajectories cannot coincide. That is the condition the preflight's own wording
+# carves out, and it is now asserted against measured dimensions rather than a
+# remembered number.
+#
+# ONE JOB IS NOT COVERED BY THAT ARGUMENT, and it stays in deliberately.
+# `squad_screen_v19`'s priors include `runs/squad_screen_v18_seed12`, which is at
+# 351 — trained on the post-break tree. If the commits since then leave
+# `squad_screen` trajectories untouched, this job reproduces it bit-for-bit. That
+# is a fine outcome and the cheapest way to buy the answer: 2.5M steps, ~30 min.
+# Reproduction PROVES the frozen tree does not move this scenario and the dedupe
+# collapses the pair to one draw with v18 as the member; a distinct checkpoint
+# means a commit did move it and the retrain was required. Either way
+# `squad_screen` ends up on the frozen tree without inventing a provenance
+# exception. What must NOT happen is reading a comparison across that pair as a
+# measurement if it reproduces — it would be an identity, exactly as #60 warns.
+#
+# Launched with FORCE=1 on 2026-08-24.
+#
+# ~11 runs x 25-45 min, sequential in one nohup'd queue.
+fireteam_v14               --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v25        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_recon_v13            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v19           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v19          --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v13                --scenario platoon         --total-steps 3000000 --seed 12
+platoon_hard_v6_seed12     --scenario platoon_hard    --total-steps 3000000 --seed 12
+patrol_brique_v42_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v43_seed18   --scenario patrol_brique   --total-steps 3000000 --seed 18
+patrol_brique_v44_seed19   --scenario patrol_brique   --total-steps 3000000 --seed 19
+patrol_brique_v45_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
