@@ -362,3 +362,39 @@ PushNotification with the outcome the owner would act on.
   controls, so "4 of 6 close" currently leans on a 4-seed control arm. These two
   make the six-seed row matched and land ~05:05. Nothing about them can settle
   whether the override ships; that stays the owner's.
+- 04:20 — **a third candidate mechanism, tested and killed before it was
+  written up as a finding.** Scanning nine behavioural variables across the six
+  −1.0 seeds for anything separating the four closers {12,13,15,17} from the two
+  mute ones {14,16}, three separate without overlap besides the definitional
+  `done_reports_root`: `succession_events` (17–34 per 100 episodes for closers
+  against 0–2), `doctrine_preference_rate` and `obedience_latency_mean`.
+  **The arithmetic of that scan first**: with six points split 4/2, a variable
+  separates perfectly by chance with probability 2/C(6,2) = 0.133, so across
+  nine variables ~1.2 separations are expected from noise alone. Three is not
+  much of a signal. `succession_events` was promoted above the others only
+  because it had a mechanism and an independent witness — the 03:27 transcript,
+  where SL1 dies, TL1 assumes command, and it is *the successor* that files
+  COMPLETE. The story: the root close is really a successor effect.
+  **It is not.** Tested within-run on the closing seeds' own 400 episodes, where
+  cross-seed variation cannot confound it:
+
+  | seed | succ+close | succ+no close | no succ+close | no succ+no close | p |
+  |---|---|---|---|---|---|
+  | 12 | 24 | 4 | 64 | 8 | 0.735 |
+  | 13 | 17 | 4 | 74 | 5 | 0.089 |
+  | 15 | 11 | 2 | 80 | 7 | 0.331 |
+  | 17 | 1 | 13 | 69 | 17 | **0.0000** |
+  | pooled | 53 | 23 | 287 | 37 | **0.0001** |
+
+  **287 of the 340 closes happen with no succession at all** — the original root
+  closes the mission the overwhelming majority of the time — and the pooled
+  association runs *backwards*: a root that survives closes 89% of the time, one
+  that was replaced only 70% (p = 0.0001). Seed 17 is starkest: when its root
+  dies it closes once in fourteen. The transcript was a real episode of a real
+  behaviour and still not the typical case; one episode was never evidence of a
+  rate, which is the same error `cf4d6cd` corrected earlier this week.
+  So the cross-seed succession correlation is a confound, and **the effect
+  remains unexplained by anything measured.** That is now three mechanisms
+  proposed and three refuted (bunching regime, churn co-occurrence, succession).
+  The honest state for the morning is an effect with a strong measurement and no
+  story — which is a finding, not a gap in the work.
