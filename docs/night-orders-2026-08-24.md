@@ -256,3 +256,109 @@ PushNotification with the outcome the owner would act on.
   rather than four, for that reason. Confirm seeds are pre-authorised.
   **No verdict is drawn**: whether `squad_range_control` carries either override
   is the owner's decision, and this is now a two-knob decision, not one.
+- 02:55 — **what separates the closing seeds, from data already on disk.** The
+  eight N=100 arms split cleanly in two, and seed 14 at −1.0 sits on the wrong
+  side of the split:
+
+  | arm | stacked | closed-on-root | ep len |
+  |---|---|---|---|
+  | s15 −0.03 | 0.204 | 0.340 | 93.5 |
+  | **s14 −1.0** | **0.206** | **0.000** | **111.0** |
+  | s13 −0.03 | 0.224 | 0.000 | 97.8 |
+  | s14 −0.03 | 0.244 | 0.000 | 102.3 |
+  | s12 −0.03 | 0.246 | 0.000 | 96.4 |
+  | s12 −1.0 | 0.503 | 0.907 | 77.1 |
+  | s13 −1.0 | 0.525 | 0.938 | 73.5 |
+  | s15 −1.0 | 0.559 | 0.919 | 68.5 |
+
+  Every arm above stacked 0.50 closes on root; every arm below 0.25 does not
+  (except s15 −0.03 at 0.340). The three closing arms are also the three
+  shortest. Spearman over the eight arms: stacked vs closed-on-root rho = +0.660
+  (leave-one-out [+0.473, +0.867]), episode length vs closed-on-root
+  rho = −0.913 (leave-one-out [−0.927, −0.867]). Neither range straddles zero,
+  so by `jackknife_rho`'s own criterion neither relation is carried by a single
+  arm. **Seed 14 did not fail to close so much as it never made the transition**
+  — the −1.0 cost moved three seeds into a bunched-and-fast regime and left seed
+  14 in the old one.
+  This is association across eight arms, not a mechanism, and it is the kind of
+  thing seeds 16/17 can break. It is also the tradeoff to put in front of the
+  owner: `stacked_rate` is a shipped gate with a 0.70 bound, and the regime that
+  finally closes on root sits at 0.50–0.56 — inside the gate, but at roughly
+  double the arm's historical bunching.
+  (Correction for the record: I first read `jackknife_rho`'s return as
+  (rho, standard error) and took its second value as a negative SE, i.e. as a
+  tooling bug. It returns (min, max) over leave-one-out. No defect; my misread.)
+- 03:25 — **pre-registered, before seeds 16/17 land** (they are at 82%, ~15 min
+  out; nothing below is written with knowledge of their N=100 numbers). The
+  02:55 regime split says the −1.0 configuration moves a seed into a
+  bunched-and-fast regime, and that closing on root is a property of that regime
+  rather than of the seed. If that is right, then for each of seeds 16 and 17:
+  - a seed with `closed_on_root_report_rate` ≥ 0.5 will ALSO show
+    `stacked_rate` ≥ 0.45 and `episode_length_mean` ≤ 85;
+  - a seed that stays at ≈ 0.000 will show `stacked_rate` ≤ 0.30 and
+    `episode_length_mean` ≥ 95, the way seed 14 does.
+  A seed that closes on root while bunching like seed 14 (stacked ~0.2, long
+  episodes), or one that bunches and stays mute, **breaks the split** and the
+  02:55 note should be struck rather than reworded.
+  Rate prediction: if 3-of-4 is the true rate, the likeliest outcome is one of
+  the two closing; two closing or none are both unremarkable at n=2. **No
+  outcome here settles whether the override ships — that stays the owner's.**
+- 03:27 — **a concrete look at the eager-root caveat**, from
+  `runs/squad_range_control_retaskcost_v1_seed13/eval_transcript.txt` (the run's
+  own single-episode eval, not the N=100 protocol — one episode, illustrative
+  only). It happens to show the failure mode rather than the headline:
+
+  ```
+  [t= 68] ALL STATIONS: SL1 IS DOWN. OUT.
+  [t= 68] ALL STATIONS, THIS IS TL1: SL1 IS DOWN. I AM ASSUMING COMMAND. OUT.
+  [t= 77] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+  [t= 77] TL1, THIS IS HQ: NEGATIVE, CONTINUE MISSION. OUT.
+  [t= 91] HQ, THIS IS TL1: SEIZE OBJ ALPHA — COMPLETE. OVER.
+  [t= 91] TL1, THIS IS HQ: NEGATIVE, CONTINUE MISSION. OUT.
+  [t= 98] TL1, THIS IS HQ: ENDEX. OUT.
+  ```
+
+  The root here is a *successor* — SL1 dies at t=68 and TL1 assumes command,
+  which is what `succession_events` 0.29 and the raised human-death rate look
+  like on the net. It then files COMPLETE twice, is refused both times, and the
+  mission ends on ENDEX after a SITREP rather than on its claim. That is the
+  0.86-rejected-of-1.77-filed number as radio traffic: **the new behaviour is the
+  root speaking up, and its precision is the open question, not its silence.**
+  Worth the owner seeing next to the 0.938 headline.
+- 03:55 — **the pre-registered test BREAKS the split, and both mechanism notes
+  are STRUCK.** Seeds 16 and 17 landed (94%/96%, gaps 5 and 4 pts) with N=100.
+
+  | seed | success | closed-on-root | stacked | ep len | retasksP | hdr | repR |
+  |---|---|---|---|---|---|---|---|
+  | 12 | 0.97 | 0.907 | 0.503 | 77.1 | 0.05 | 0.220 | 0.889 |
+  | 13 | 0.97 | 0.938 | 0.525 | 73.5 | 0.14 | 0.170 | 0.883 |
+  | 14 | 0.94 | 0.000 | 0.206 | 111.0 | 1.95 | 0.020 | 0.708 |
+  | 15 | 0.99 | 0.919 | 0.559 | 68.5 | 0.11 | 0.110 | 0.938 |
+  | 16 | 0.95 | 0.000 | 0.215 | 97.5 | 0.11 | 0.040 | 0.546 |
+  | **17** | 0.94 | **0.745** | **0.211** | **90.6** | 1.26 | 0.140 | 0.665 |
+
+  **Seed 17 closes on root at 0.745 while bunching like the mute seeds**
+  (stacked 0.211 against seed 14's 0.206) and with a 90.6-step episode. The
+  03:25 pre-registration named this exact case as fatal — "a seed that closes on
+  root while bunching like seed 14 breaks the split and the 02:55 note should be
+  struck rather than reworded" — so **the 02:55 regime-split note is struck.**
+  Closing on root does not require the bunched-and-fast regime; the ρ = +0.660
+  over eight arms was association that a ninth arm falsified.
+
+  **The 02:26 co-occurrence claim is struck too**, by the other new seed: seed
+  16 has priced retasks 0.11 — as collapsed as any closer — and closes 0.000. So
+  churn and the root close do not travel together inside the −1.0 configuration
+  either. I asserted 4/4 co-occurrence at 02:26 on four seeds; two more seeds
+  broke it in both directions at once.
+
+  **What survives is the effect itself, with no mechanism attached.** At
+  `order_retask_cost_base=-1.0` the root closes the mission at **four of six
+  seeds** (0.907 / 0.938 / 0.919 / 0.745) and stays mute at two (0.000, 0.000),
+  against the −0.03 arm's 0.000 / 0.000 / 0.000 / 0.340. Which seeds close is
+  currently unexplained by anything measured: not bunching, not churn, not
+  episode length, not success.
+- 03:55 — **launched**: `squad_range_control_timecost_v1_seed16` and `_seed17`
+  at `time_penalty=-0.03` only. Seeds 16 and 17 were run at −1.0 without matched
+  controls, so "4 of 6 close" currently leans on a 4-seed control arm. These two
+  make the six-seed row matched and land ~05:05. Nothing about them can settle
+  whether the override ships; that stays the owner's.
