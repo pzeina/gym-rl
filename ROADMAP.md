@@ -1,6 +1,127 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-23 morning, **the squad-depth D4 capture is DIAGNOSED AND BEATEN: `time_penalty=-0.03` turns `squad_range_control` seed 14 from 0.000 to 0.960 and is neutral on the seeds that never captured — the knob is on the owner's desk, nothing is shipped**)
+## ⟳ Session handoff — resume here (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission at four seeds in six, the gate that has never passed in this scenario, and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
+
+**The night's ledger is `docs/night-orders-2026-08-24.md`** — the queue, the
+pre-registered decision rules, and every reversal, in the order they happened.
+
+### What the night was for, and what it found
+
+The evening left one open question: `time_penalty=-0.03` removes the
+`squad_range_control` D4 capture at every seed and does not buy that with
+casualties, but priced retasks rise at 4/4 seeds and two of four breach the
+clause-4 health bar of 2.0. Was the churn tunable?
+
+**It is not tunable by the time price.** `-0.02` is strictly worse than `-0.03`:
+identical churn at seed 13 (3.12 vs 2.97, p = 0.88), 6.6× worse at seed 14
+(3.68 vs 0.56, p < 1e-4), and at seed 14 the `-0.02` policy stops reporting
+entirely — it sees 3.70 enemies an episode and reports 0.00. Recorded so it is
+not re-run.
+
+**The churn is a rational trade against a price the repo already ships.**
+Retasks cost `order_retask_cost_base = -0.5`. At seed 13 the `-0.03` policy
+spends 2.72 extra retasks (−1.36) to save 61.4 steps (+1.84): net **+0.48**.
+Break-even is a retask cost of **0.677**, so −0.5 sits under the line and buying
+time with orders is correctly-priced income. That arithmetic is what the night's
+main arm tested.
+
+### The headline: a second knob, and a gate that has never passed
+
+Moving `order_retask_cost_base` to **−1.0**, past break-even, alongside
+`time_penalty=-0.03`. Matched at six seeds, N=100 on the final policy:
+
+| seed | arm | success | closed-on-root | retasksP | stacked | ep len | hdr | repR |
+|---|---|---|---|---|---|---|---|---|
+| 12 | −0.03 | 0.97 | 0.000 | 1.47 | 0.246 | 96.4 | 0.020 | 0.477 |
+| 12 | −1.0 | 0.97 | **0.907** | 0.05 | 0.503 | 77.1 | 0.220 | 0.889 |
+| 13 | −0.03 | 0.93 | 0.000 | 2.97 | 0.224 | 97.8 | 0.050 | 0.529 |
+| 13 | −1.0 | 0.97 | **0.938** | 0.14 | 0.525 | 73.5 | 0.170 | 0.883 |
+| 14 | −0.03 | 0.96 | 0.000 | 0.56 | 0.244 | 102.3 | 0.030 | 0.654 |
+| 14 | −1.0 | 0.94 | 0.000 | 1.95 | 0.206 | 111.0 | 0.020 | 0.708 |
+| 15 | −0.03 | 0.97 | 0.340 | 3.71 | 0.204 | 93.5 | 0.240 | 0.470 |
+| 15 | −1.0 | 0.99 | **0.919** | 0.11 | 0.559 | 68.5 | 0.110 | 0.938 |
+| 16 | −0.03 | 0.93 | 0.000 | 2.66 | 0.223 | 111.3 | 0.040 | 0.239 |
+| 16 | −1.0 | 0.95 | 0.000 | 0.11 | 0.215 | 97.5 | 0.040 | 0.546 |
+| 17 | −0.03 | 0.95 | 0.000 | 1.00 | 0.204 | 105.8 | 0.030 | 0.561 |
+| 17 | −1.0 | 0.94 | **0.745** | 1.26 | 0.211 | 90.6 | 0.140 | 0.665 |
+
+**`closed_on_root_report_rate` pooled: 34/600 → 351/600, p = 6.8e-95.** The
+shipped `>= 0.5` gate has never once passed in `squad_range_control`; here it
+passes at four seeds of six. Success is unchanged in both arms (0.93–0.99) and
+report recall improves at five of six. *(Seeds 18 and 19 were in flight at the
+time of writing to turn "four of six" into eight draws — see the ledger's tail
+for their result.)*
+
+**What it costs, and this is the part that decides it.** Human death pooled
+**41/600 → 70/600, p = 0.0051** — and note that on the four-seed row this was
+p = 0.052, so the fuller data *sharpened* the cost rather than softening it. It
+is heterogeneous: up at seeds 12 (0.020 → 0.220), 13 (0.050 → 0.170) and 17
+(0.030 → 0.140); **down** at 15 (0.240 → 0.110); flat at 14 and 16. `stacked`
+rises to 0.50–0.56 at three of the four closers, inside the 0.70 gate.
+
+**The behaviour, on the net.** The closers are the only policies where the root
+files a DONE claim at all (1.77/episode against 0.00), and the mission closes on
+that claim. `endex_sent` is ~0.95 in every arm — the missions always ended; what
+changed is *who* ends them. The root files eagerly: 0.86 of 1.77 claims are
+rejected. **Its precision is the open question, not its silence.**
+
+### Three mechanisms proposed, three refuted — the effect has no story
+
+1. **Bunching regime** — closers bunch (stacked ≥ 0.50) and finish fast;
+   ρ = +0.660 over eight arms, leave-one-out range not straddling zero. **Struck**:
+   seed 17 closes at 0.745 with stacked 0.211 and a 90.6-step episode.
+2. **Churn co-occurrence** — churn collapse and the root close travel together,
+   4/4. **Struck**: seed 16's churn collapsed 2.66 → 0.11 (24×) and it closes 0.000.
+3. **Succession** — the root close is really a *successor* effect, supported by a
+   transcript where SL1 dies and TL1 files COMPLETE. **Struck on its own data**:
+   287 of 340 closes happen with no succession at all, and the association runs
+   backwards (surviving root closes 89%, replaced root 70%, p = 0.0001).
+
+Each was pre-registered as falsifiable before its test. **The bifurcation is
+total and early**: closers are already above 0.50 at their best checkpoint
+(19–70% through the run), the mute seeds read *exactly* 0.000 at every
+checkpoint and sample size, and no seed partially closes or crosses between
+modes. A mechanism, if there is one, lives in the first third of training — none
+of the three refuted candidates was looking there.
+
+### The decision, and it is the only one open
+
+The evening's one-knob question is now **two knobs**: whether
+`squad_range_control` carries `time_penalty=-0.03`, and separately whether it
+carries `order_retask_cost_base=-1.0`. The second buys a gate that has never
+passed and costs a significant rise in human death. **Nothing is shipped** — no
+`config.py`, no `reward_overrides`, no default touched. Every run above is an
+arm.
+
+### Also settled overnight
+
+- **The `squad_screen` oracle gap is CLOSED** (next-cycles §332). It is
+  **exposure, not indiscipline**: 94.1% of deaths happen out of cover, cover
+  occupancy under threat is 0.137 team-wide and 0.068 for the human, deaths in
+  the open run 1.00/episode against 0.13 at the objective. Split by
+  mission-at-death: OBSERVE 0.382 (92% of them in the open), SCREEN 0.324 (100%
+  in the open). They die doing the doctrinally correct thing, standing up.
+  Success 0.967 — won expensively, not degenerate. Left read-only: cover
+  occupancy is priced by the reward config, so acting on it is yours.
+- **A finding you should see before any publishing decision**: `baseline.py`
+  reports **all nine sealed members fail to load under the current spaces**. This
+  is the documented, explicitly authorized acoustics spaces break (ROADMAP 15:31,
+  OBS_DIM 220 → 328, since 351) — pre-existing, not caused overnight. It means
+  the shipped fleet is not reproducible against the current `cohort/` tree.
+  Retraining the fleet is your call and was not taken. `squad_screen_v18_seed12`
+  was trained on the current tree as one data point toward it (and to unblock the
+  oracle pass above); it is declared in `seed_spread`.
+
+### Commits (all on `multi-agent-dev`, pushed, suite green at each)
+
+`26555ec` night orders · `4279462` spaces-break diagnosis + ledger sweep ·
+`b91b7a4` retaskcost seeds 13/14 + squad_screen_v18 · `d253d5a` squad_screen
+oracle · `b2e2c5b` four-seed row · `670ea89` both mechanisms falsified ·
+`ff8e559` succession refuted · `abd7353` matched six-seed row
+
+**Boards are PUBLISH PENDING** (many runs landed overnight) → `/boards`.
+
+## ⟳ Previous handoff (2026-08-23 morning, **the squad-depth D4 capture is DIAGNOSED AND BEATEN: `time_penalty=-0.03` turns `squad_range_control` seed 14 from 0.000 to 0.960 and is neutral on the seeds that never captured — the knob is on the owner's desk, nothing is shipped**)
 
 **The night's ledger is `docs/night-orders-2026-08-23.md`** — one thread, run
 to completion with both gates pre-registered before their runs landed.
