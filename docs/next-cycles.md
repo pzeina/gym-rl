@@ -15,6 +15,65 @@ box, three lanes in parallel, and **zero model tokens**. So the question is neve
 
 ---
 
+## The jamming cycle — owner-decided 2026-08-24, NOT YET SPECCED
+
+**The three design choices are made** (owner, 2026-08-24). A fourth comm model,
+`comm_model="jammed"`: outages are **unobservable**, **stochastic**, and layered
+on **`global`**. Everything below follows from those three and should not be
+relitigated without the owner.
+
+**Why it is a new scenario and not a re-parameterisation.** The comm layer today
+has exactly three models — `global`, `range`, `voice_only` — validated in
+`config.py` so a fourth name raises until it is built. Audibility is one
+deterministic geometric test, `dist(sender, listener) <= comm_range`; there is
+no RNG and no time dependence anywhere in delivery, and nothing named
+jam/outage/blackout/dropout exists in `cohort/`. `range` degrades comms by
+*where you are* and a policy can fix it by closing distance — which is what it
+learns. Jamming degrades them by *when it is*, and cannot be walked out of. The
+adaptive repertoire is different in kind: pre-arranged fallbacks, scheduled
+contact windows, redundancy, burst-on-restore.
+
+**What this cycle does NOT need, which is the point of the three choices.**
+- **No obs change, so NOT a breaking cycle.** Unobservable means no "net is
+  down" bit beside `ACOUSTIC_VOICE_ONLY`, so `OBS_DIM` is untouched and existing
+  checkpoints stay loadable. This matters twice over right now: `baseline.py`
+  already reports all nine sealed members failing to load under the current
+  spaces (the disclosed acoustics break), and this cycle must not add a second
+  such debt on top of one the owner has not yet decided to pay.
+- **No new metrics.** `reports_lost`, `orders_lost` and `reports_expired` are
+  already per-episode counters and carry the whole story.
+- **Layering on `global` isolates the time axis.** On `range` it would confound
+  two degradations at once and the result would not be attributable.
+
+**The question it actually asks**: does a cohort notice the net has died and
+fall back, or keep transmitting into silence? Unobservable is the sharper
+version precisely because the policy must *infer* the outage from unanswered
+traffic rather than read it off an input.
+
+**Open parameters for the spec** (mechanics, not the decided axes):
+1. Outage process — two parameters at most: duty cycle and mean outage length.
+   Stochastic was chosen, so a two-state Markov chain over steps is the natural
+   shape; the alternative (Bernoulli per message) is a *lossy* net rather than a
+   *jammed* one and answers a different question.
+2. **Is HQ exempt?** Today HQ is a high-power station always heard under
+   `range`. If it stays exempt, jamming only hits lateral traffic and the root's
+   up-channel survives — a materially different scenario from a total blackout.
+   This is the biggest remaining choice and belongs to the owner.
+3. Does the sender learn its own transmission failed? Existing `range` semantics
+   say no — the transmission "goes out but is not heard" — and consistency says
+   jamming should behave the same. Follow the precedent unless the owner says
+   otherwise.
+4. Determinism: the outage process must draw from `env._rng`, never global
+   `np.random`, per the repo's determinism rule.
+
+**Blocked on**: the `squad_range_control_v2` campaign (4 runs, launched
+2026-08-24 10:55, ~6.5h sequential). A campaign freezes `cohort/` — a commit to
+the tree mid-campaign trains later jobs against a different environment — so
+this lands after the campaign, or on a branch. Docs, tools and tests stay free
+to move meanwhile.
+
+---
+
 ## Addendum (2026-08-17) — standing riders for the next breaking cycle
 
 The v1.20 succession cycle below has shipped, and v1.21 sealed the fleet on one
