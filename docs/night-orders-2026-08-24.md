@@ -203,3 +203,56 @@ PushNotification with the outcome the owner would act on.
     config, so acting on this is a design decision and belongs to the owner. The
     fact sheet is at `runs/squad_screen_v18_seed12/oracle_night.txt`, raw
     counters beside it as `oracle_night.json`.
+- 02:08 — **a tempting story about the root close, tested and rejected.** The
+  obvious reading of seed 13 is "fewer retasks frees the root to report". The
+  record does not support it. Across the six N=100 arms there is no monotone
+  relation between priced retasks and `closed_on_root_report_rate`: s14 at −0.03
+  has the second-lowest churn in the whole set (0.56) and closes on root 0.000,
+  while s15 at −0.03 has the highest (3.71) and closes 0.340. Low churn is
+  neither sufficient nor necessary. Whatever produced the root close at seed 13,
+  it is not the churn collapse that came with it.
+  What the root close *is*, is stable within its own run rather than a
+  last-checkpoint fluke: 0.500 at `ckpt_best` (N=20), 0.947 at the final policy
+  (N=20), 0.938 at N=100 — rising and consistent across two checkpoints and two
+  sample sizes.
+- 02:26 — **Queue item 2 resolves, and it reframes the seed-13 finding.** Seeds
+  12 and 15 landed (97%/98%, gaps 3 and 2 pts) and their N=100 evals are down.
+  The four-seed row at `time_penalty=-0.03` vs `-0.03` + `order_retask_cost_base=-1.0`:
+
+  | seed | success | retasksP | ep len | closed-on-root | hdr | report recall | stacked |
+  |---|---|---|---|---|---|---|---|
+  | 12 −0.03 | 0.97 | 1.47 | 96.4 | 0.000 | 0.020 | 0.477 | 0.246 |
+  | **12 −1.0** | 0.97 | **0.05** | 77.1 | **0.907** | 0.220 | 0.889 | 0.503 |
+  | 13 −0.03 | 0.93 | 2.97 | 97.8 | 0.000 | 0.050 | 0.529 | 0.224 |
+  | **13 −1.0** | 0.97 | **0.14** | 73.5 | **0.938** | 0.170 | 0.883 | 0.525 |
+  | 14 −0.03 | 0.96 | 0.56 | 102.3 | 0.000 | 0.030 | 0.654 | 0.244 |
+  | 14 −1.0 | 0.94 | **1.95** | 111.0 | **0.000** | 0.020 | 0.708 | 0.206 |
+  | 15 −0.03 | 0.97 | 3.71 | 93.5 | 0.340 | 0.240 | 0.470 | 0.204 |
+  | **15 −1.0** | 0.99 | **0.11** | 68.5 | **0.919** | 0.110 | 0.938 | 0.559 |
+
+  **Seed 13 was not special — seed 14 is.** At three of four seeds the doubled
+  retask cost collapses churn by 10–30× (1.47→0.05, 2.97→0.14, 3.71→0.11, each
+  p < 1e-4), shortens episodes, raises report recall from ~0.49 to ~0.90, and
+  **passes `closed_on_root_report_rate`** at 0.907/0.938/0.919 — the shipped
+  `>= 0.5` gate that has never once passed in this scenario. Pooled, root closes
+  go 34/400 → 277/400 (p ≈ 8e-76). Seed 14 alone moves the other way on churn
+  (0.56 → 1.95, p < 1e-4) and stays at 0.000 root closes.
+  My 02:08 note stands but needs narrowing: low churn alone still does not
+  produce the root close (s14 at −0.03 has churn 0.56 and closes 0.000). What is
+  true is that *within* the −1.0 configuration the churn collapse and the root
+  close co-occur at 4/4 seeds, seed 14 resisting both.
+  **The honest cost, which is heterogeneous and must not be averaged away**:
+  human death is pooled 34/400 → 52/400, p = 0.052 — borderline — but the seeds
+  disagree in direction. It rises at 12 (0.020 → 0.220, p < 1e-4) and 13 (0.050
+  → 0.170, p = 0.012), *falls* at 15 (0.240 → 0.110, p = 0.025) and is flat at
+  14. Stacked rises to 0.50–0.56 at the three closing seeds, still inside the
+  0.70 gate.
+- 02:26 — **launched beyond the written queue, deliberately**:
+  `squad_range_control_retaskcost_v1_seed16` and `_seed17` at the same two
+  overrides. The queue stopped at four seeds; the one question the row leaves
+  open is whether seed 14 is an exception or whether 3-of-4 is the rate, and
+  that needs only the −1.0 arm at fresh seeds — the −0.03 control is already
+  0/100, 0/100, 0/100, 34/100 and its effect size is not in doubt. Two runs
+  rather than four, for that reason. Confirm seeds are pre-authorised.
+  **No verdict is drawn**: whether `squad_range_control` carries either override
+  is the owner's decision, and this is now a two-knob decision, not one.
