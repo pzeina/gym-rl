@@ -1,89 +1,97 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-24 night, **the retask knob is DECIDED NO; jamming measured against a clean same-tree control at two seeds; and a bit-identity check caught a fleet-retrain justification that was wrong**)
+## ⟳ Session handoff — resume here (2026-08-25, **THE ONE THING BLOCKING EVERYTHING IS A COMMAND ONLY YOU CAN RUN: the v1.23 fleet retrain. Jamming is measured and its mechanism half-refuted; the retask knob is decided NO**)
 
-### Decided tonight (owner)
+### Do this first — nothing else in the project moves until it lands
 
-**`order_retask_cost_base` stays at −0.5. The answer is NO.** The −1.0 arm buys
-`closed_on_root_report_rate`, a gate that has never passed in
-`squad_range_control` — but at four seeds in eight, with all three proposed
-mechanisms refuted on their own data, and human death pooled 41/600 → 70/600
-(p = 0.0051). A coin-flip effect with a significant casualty price and no story
-is a finding, not a default. It is written up as the strongest negative result
-in the record; no `config.py`, no `reward_overrides`, nothing shipped.
+```
+FORCE=1 scripts/train_queue.sh scripts/campaigns/v1_23_fleet.jobs
+```
 
-That decision was on the critical path for one reason: it was the last pending
-change to a shipping scenario's economics, and a fleet retrain launched before
-it would have had to be run twice.
+11 jobs, ~6.5–8h sequential, freezes `cohort/` at `7247122`. **Two launch
+attempts have already failed**: the harness auto-mode classifier blocks the
+`FORCE=1` prefix from inside a session, and a hand-launch on 2026-08-24 left no
+`logs/queue_*.log`, so it never started. Verify it took with
+`scripts/train_status.py` — you should see `fireteam_v14` live within a minute.
 
-### `comm_model="jammed"` measured — single-variable A/B, both seeds
+**Why it matters more than anything else open**: `scripts/baseline.py` reports
+all nine sealed v1.22 members FAIL TO LOAD under the current spaces. They are at
+`OBS_DIM` 220; the tree is at 351. Every published number is currently
+un-rederivable against the repository, and each new run widens the gap.
 
-`squad_ctrl_v2_seed12/13` were trained tonight as the matched clear-net controls
-(scenario `squad`, same seeds, same 3M steps, same commit `7247122`). Both
-comparisons now read **"single-variable A/B — one price, same code"**. FINAL
-policy, N=20:
+**Why `FORCE=1` is needed and why it is safe here**: the preflight refuses all 11
+jobs because each re-derives a config the record already holds. That guard is
+right to fire — see the correction below — and the override is justified against
+*measured* checkpoint dimensions: every prior it names sits at 220 against a
+current 351, so no trajectory can coincide. The jobs file argues this in full.
+One job (`squad_screen_v19`) has a prior at 351 and may legitimately reproduce
+it; that is documented as an acceptable outcome, not a hidden one.
 
-| | s12 clear | s12 jammed | s13 clear | s13 jammed |
-|---|---|---|---|---|
-| success | 0.95 | 0.95 | 1.00 | 0.90 |
-| closed-on-root | 0.842 | **0.211** | 0.800 | **0.000** |
-| root claims | 10 | 41 | 35 | 0 |
-| first-claim precision | 0.900 | 0.067 | — | — |
-| obedience latency | 2.66 | 2.76 | 2.26 | **4.39** |
-| orders / ep | 8.35 | 12.70 | 10.45 | 16.40 |
-| messages / ep | 107.7 | 97.2 | 69.5 | 110.2 |
-| human death | 0.450 | 0.050 | 0.400 | 0.000 |
+**No `squad` job**, deliberately: `squad_ctrl_v2_seed12` was trained on the
+frozen tree and stands as that member. Both controls are declared in
+`BASELINE.json` `seed_spread`.
 
-**What replicates at both seeds.** (i) Mission success survives — a 35% duty
-cycle with 15-step mean outages does not stop the squad finishing. (ii) **The
-root's DONE channel does not.** Both controls PASS the ≥ 0.5 gate; both jammed
-arms FAIL it. (iii) Command traffic inflates — orders/episode +52% and +57%,
-the signature of retransmitting into a dead net. (iv) Human death FALLS at both
-seeds, which is counter-intuitive and currently unexplained — do not build on it.
+**After it lands**: `publish_baseline.py` at N=100 (detach it) → `baseline.py
+--seal` → `results_table.py --write`. `platoon_hard`'s `provenance:cohort_tree`
+waiver should be dropped at seal; its gate waiver stays.
 
-**One mechanism fits both seeds, and it is the scenario's own design turned
-back on it.** HQ is exempt, so the root can always SPEAK; only lateral traffic
-goes dark, so the root cannot always HEAR. Jamming therefore severs the root's
-*evidence* for closure while leaving its voice intact — and a commander with a
-voice and no evidence either invents claims (seed 12: 41 claims at precision
-0.067) or goes silent (seed 13: zero). Same gate failure, opposite pathologies,
-one cause. **Not yet tested**; it is a hypothesis with a clean prediction.
+### Decided (owner, 2026-08-24)
 
-### The correction that matters most tonight
+**`order_retask_cost_base` stays at −0.5 — the answer is NO.** The −1.0 arm buys
+a gate that has never passed, at four seeds in eight, with all three proposed
+mechanisms refuted and human death 41/600 → 70/600 (p = 0.0051). Shipped as a
+negative result; no `config.py` touched. This was on the critical path: it was
+the last pending change to a shipping scenario's economics, so the fleet is now
+retrained once rather than twice.
 
-A fleet-retrain campaign (`scripts/campaigns/v1_23_fleet.jobs`) was written and
-its preflight overridden on the argument that the acoustics break moved OBS_DIM
-so no job could reproduce an existing run. **The number was wrong and the
-argument was too broad.** Current OBS_DIM is **351**, not 328. And the decisive
-counter-example was already on disk: `squad_ctrl_v1_seed12` (trained days ago,
-five `cohort/` commits back) and `squad_ctrl_v2_seed12` (trained tonight at HEAD)
-have **bit-identical** `ckpt_best.pt` and `ckpt_latest.pt` — c5451457, c93bd342.
-A tree transition at constant OBS_DIM moves nothing. Assurance #60, live.
+### `comm_model="jammed"` — measured, then its own story half-refuted
 
-The campaign did not run — the launch never took — so nothing was burned. Its
-justification is now rewritten against measured checkpoint dimensions: the nine
-sealed members and every archived prior the preflight names sit at 220 against a
-current 351, which is what makes those jobs real. One job, `squad_screen_v19`,
-has a prior at 351 and may legitimately reproduce it; that is documented as an
-acceptable outcome rather than a hidden one.
+Against matched clear-net controls on the same commit (single-variable A/B at
+both seeds): **success survives a 35% duty cycle, the root's MISSION COMPLETE
+channel does not.** `closed_on_root_report_rate` 0.842 → 0.211 (s12) and 0.800 →
+0.000 (s13); both controls PASS the ≥ 0.5 gate, both jammed arms FAIL. Command
+traffic inflates ~55%. Human death FALLS at both seeds — unexplained, flagged.
 
-**Corollary worth keeping**: the two controls added no new policy — they
-re-derived `squad_ctrl_v1` exactly — but they were not wasted. They converted a
-CONFOUNDED verdict into a single-variable A/B by construction, which is the only
-thing that made the jamming table above sayable.
+`scripts/jam_evidence_probe.py` then tested the explanation with three checks
+pre-registered before it ran. **One supported, two refuted**: the outage does
+halve the evidence reaching the root (8.57 → 4.23 msgs/ep at s12), but claim
+precision is identical with the net UP and DOWN (0.093 vs 0.095), and confirmed
+claims sit on *staler* evidence than rejected ones (18.0 vs 8.2 steps). So
+jamming changes the policy the root **learned**, not the decision it makes when
+cut off. "The root claims blind during outages" is dead — do not repeat it.
 
-### Next
+Dose-response is the strongest evidence against evidence-volume being the
+operative variable: seed 13 loses 17% of its evidence and stops claiming
+entirely (53 → 0); seed 12 loses 50.6% and claims *more* (49 → 64) at a sixth of
+the precision.
 
-1. **Launch the fleet retrain** — `FORCE=1 scripts/train_queue.sh
-   scripts/campaigns/v1_23_fleet.jobs`, 11 jobs, ~6.5–8h. It freezes `cohort/` at
-   `7247122`. No `squad` job: `squad_ctrl_v2_seed12` is on the frozen tree and
-   stands as that member.
-2. **Then** publish_baseline.py at N=100 → baseline.py --seal →
-   results_table.py --write. `platoon_hard`'s `provenance:cohort_tree` waiver
-   should be dropped at seal; its gate waiver stays.
-3. **Open, untested**: the speak-but-cannot-hear mechanism above. The prediction
-   that would settle it is a probe of root claim rate conditional on jam state at
-   the moment of claiming.
+### The correction to carry forward
+
+A tree transition at **constant `OBS_DIM` moves nothing**. `squad_ctrl_v1_seed12`
+and `squad_ctrl_v2_seed12` — five `cohort/` commits apart — have bit-identical
+`ckpt_best` and `ckpt_latest` (c5451457, c93bd342). "The tree moved" is never on
+its own a reason to re-run; the dimension change is. An earlier version of the
+campaign's justification claimed `OBS_DIM` 220 → 328 and asserted no job could
+reproduce — both wrong, corrected in `9324676`. Assurance #60, reproduced live.
+
+### Open, in priority order
+
+1. The fleet retrain above.
+2. **Untested lead**: confirmed root claims follow quiet periods, rejected ones
+   follow fresh chatter — consistent with the root claiming in response to
+   *traffic* rather than to evidence of completion. The probe already carries
+   the harness.
+3. Human death falling under jamming, at both seeds. No hypothesis.
+4. Boards are **PUBLISH PENDING** → `/boards`.
+
+### Commits this session (all on `multi-agent-dev`)
+
+`9324676` jamming measured against a clean control + the retask NO + the
+campaign file · `caf0c11` the evidence probe, its five mutation-checked
+attribution tests, and the half-refutation · plus a `docs/next-cycles.md`
+correction (the jamming section said "NOT YET SPECCED" for shipped work).
+`9324676` is pushed; `caf0c11` and the doc fix are **local only** — autocycle
+forbids `git push`.
 
 ### 2026-08-25 — autocycle: the jamming mechanism is HALF REFUTED by its own probe
 

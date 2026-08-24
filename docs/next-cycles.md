@@ -15,9 +15,19 @@ box, three lanes in parallel, and **zero model tokens**. So the question is neve
 
 ---
 
-## The jamming cycle — owner-decided 2026-08-24, NOT YET SPECCED
+## The jamming cycle — LANDED 2026-08-24 (`7247122`), MEASURED 2026-08-25
 
-**The three design choices are made** (owner, 2026-08-24). A fourth comm model,
+**Status.** Built, trained at two seeds, and measured against matched clear-net
+controls. The four open parameters below were all decided and implemented; they
+are kept as the record of what was chosen and why, not as questions. What the
+cycle FOUND is in the ROADMAP progress log (2026-08-24 night and 2026-08-25):
+success survives a 35% duty cycle, the root's MISSION COMPLETE channel does not
+(`closed_on_root_report_rate` 0.842 -> 0.211 and 0.800 -> 0.000), and the
+speak-but-cannot-hear explanation is HALF REFUTED by `scripts/jam_evidence_probe.py`
+— the outage does halve the root's evidence, but claim precision is flat across
+the instantaneous jam state, so what changed is the policy the root learned.
+
+**The three design choices were made** (owner, 2026-08-24). A fourth comm model,
 `comm_model="jammed"`: outages are **unobservable**, **stochastic**, and layered
 on **`global`**. Everything below follows from those three and should not be
 relitigated without the owner.
@@ -50,15 +60,15 @@ fall back, or keep transmitting into silence? Unobservable is the sharper
 version precisely because the policy must *infer* the outage from unanswered
 traffic rather than read it off an input.
 
-**Open parameters for the spec** (mechanics, not the decided axes):
+**The parameters, as decided and implemented** (mechanics, not the decided axes):
 1. Outage process — two parameters at most: duty cycle and mean outage length.
    Stochastic was chosen, so a two-state Markov chain over steps is the natural
    shape; the alternative (Bernoulli per message) is a *lossy* net rather than a
    *jammed* one and answers a different question.
-2. **Is HQ exempt?** Today HQ is a high-power station always heard under
-   `range`. If it stays exempt, jamming only hits lateral traffic and the root's
-   up-channel survives — a materially different scenario from a total blackout.
-   This is the biggest remaining choice and belongs to the owner.
+2. **Is HQ exempt? YES** (owner, 2026-08-24). Jamming hits only lateral traffic
+   and the root's up-channel survives. This turned out to be the choice that
+   shaped the result: it is precisely because the root keeps its VOICE while
+   losing its EVIDENCE that the MISSION COMPLETE gate is what breaks.
 3. Does the sender learn its own transmission failed? Existing `range` semantics
    say no — the transmission "goes out but is not heard" — and consistency says
    jamming should behave the same. Follow the precedent unless the owner says
@@ -66,11 +76,16 @@ traffic rather than read it off an input.
 4. Determinism: the outage process must draw from `env._rng`, never global
    `np.random`, per the repo's determinism rule.
 
-**Blocked on**: the `squad_range_control_v2` campaign (4 runs, launched
-2026-08-24 10:55, ~6.5h sequential). A campaign freezes `cohort/` — a commit to
-the tree mid-campaign trains later jobs against a different environment — so
-this lands after the campaign, or on a branch. Docs, tools and tests stay free
-to move meanwhile.
+**Was blocked on** the `squad_range_control_v2` campaign; that campaign landed
+2026-08-24 16:37 and the cycle went in after it, as planned.
+
+**What is still open here.** One lead, named and untested: confirmed root claims
+follow QUIET periods (evidence 18.0 steps old) and rejected ones follow fresh
+chatter (8.2 steps) — backwards from what the evidence story predicts, and
+consistent with the root claiming in response to TRAFFIC rather than to evidence
+of completion. `scripts/jam_evidence_probe.py` already carries the harness to
+test it. Also unexplained: human death FALLS under jamming at both seeds
+(0.450 -> 0.050, 0.400 -> 0.000). Neither is a reason to touch a reward.
 
 ---
 
