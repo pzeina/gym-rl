@@ -85,6 +85,72 @@ thing that made the jamming table above sayable.
    that would settle it is a probe of root claim rate conditional on jam state at
    the moment of claiming.
 
+### 2026-08-25 — autocycle: the jamming mechanism is HALF REFUTED by its own probe
+
+**Item taken** (cycle rule c, an open diagnosis with a named mechanism): the
+speak-but-cannot-hear story logged hours earlier for `comm_model="jammed"` —
+*HQ exemption leaves the root its voice, jamming takes its evidence, so it
+either claims blind or goes silent*. New probe `scripts/jam_evidence_probe.py`,
+read-only, three checks pre-registered in its docstring before it was run.
+
+**Result: one check supported, two refuted.** N=30 per arm, jammed vs the
+matched clear-net control at the same seed, `ckpt_latest`, seeds 900-929.
+
+| | s12 clear | s12 jammed | s13 clear | s13 jammed |
+|---|---|---|---|---|
+| observed duty cycle | 0.000 | 0.292 | 0.000 | 0.315 |
+| evidence reaching the root / ep | 8.57 | **4.23** | 3.73 | **3.10** |
+| audibility to the root | 1.000 | 0.776 | 1.000 | 0.760 |
+| root claims | 49 | 64 | 53 | **0** |
+| claim precision | 0.551 | **0.094** | 0.509 | — |
+| precision \| net UP | 0.551 | 0.093 | — | — |
+| precision \| net DOWN | — | 0.095 | — | — |
+| staleness at claim, confirmed | 2.2 | 18.0 | 2.0 | — |
+| staleness at claim, rejected | 2.4 | 8.2 | 2.3 | — |
+
+1. **`evidence_to_root` — SUPPORTED at both seeds.** The outage does cost the
+   root its evidence: 50.6% less at seed 12, 17.0% less at seed 13, with
+   audibility to the root at 0.76-0.78 against the control's 1.000.
+2. **`precision by jam state` — REFUTED.** 0.093 with the net UP against 0.095
+   with it DOWN. The root's claims are *not* worse when it is actually cut off.
+3. **`staleness by verdict` — REFUTED, and backwards.** Confirmed claims sit on
+   evidence 18.0 steps old; rejected ones on evidence 8.2 steps old. The
+   prediction was the opposite.
+
+**What survives.** Jamming halves the root's evidence — that half is real. But
+the claim pathology is **not a within-episode reaction to the net being down**.
+Precision collapses uniformly (0.551 -> 0.094) regardless of the instantaneous
+jam state, so what the outage changes is the policy the root *learned*, not the
+decision it makes at the moment of claiming. "The root claims blind during
+outages" is dead and should not be repeated.
+
+**And the dose-response is badly non-linear**, which is the strongest argument
+that evidence volume is not the operative variable: seed 13 loses only 17% of
+its evidence and stops claiming *entirely* (53 -> 0), while seed 12 loses 50.6%
+and claims *more* (49 -> 64) at a sixth of the precision. A 17% input change
+producing a 100% output collapse is not a dose-response curve.
+
+Check 3 running backwards is the one positive lead: the root's confirmed claims
+follow quiet periods and its rejected ones follow fresh chatter, which fits
+*the root claims in response to traffic rather than to evidence of completion*.
+Untested, and named here so the next cycle can take it or drop it.
+
+**Probe hygiene.** It reported ZERO root claims on its first run — for a control
+the behaviour suite scores at 0.842 — because it filtered claims by recipient
+(`== HQ_ID`), and a root's DONE is addressed to its leader. A silent zero reads
+exactly like a finding. Both attribution rules are now extracted and pinned by
+`tests/test_jam_evidence_probe.py` (5 tests, mutation-checked: restoring the
+recipient filter fails test 1). `--audit` replays an episode with and without
+the instrumentation and refuses to report unless the transcripts match; it does.
+The headline count is taken off the transcript, not off `_audible_to`, because
+the env consults that predicate for action masks and `useful=` flags too and it
+therefore overstates attempts.
+
+**No reward, scenario or vocabulary change** — this cycle measured, it did not
+touch the environment. Nothing retrained: the finding is about policies already
+on disk.
+
+
 ## ⟳ Previous handoff (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission, the gate that has never passed in this scenario, but only at FOUR SEEDS IN EIGHT and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
 
 **The night's ledger is `docs/night-orders-2026-08-24.md`** — the queue, the
