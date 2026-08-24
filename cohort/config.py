@@ -159,6 +159,18 @@ class ScenarioSpec:
     #                               telemetry gated behind local perception, gestures
     #                               and pre-arranged signals, cohesion priced.
     comm_range: float = 12.0      # audible radius under comm_model="range"
+    jam_duty_cycle: float = 0.35  # under comm_model="jammed": the long-run fraction of
+    #                               steps the net is down. With jam_mean_outage_steps
+    #                               this fixes a two-state Markov chain over steps —
+    #                               P(clear→jammed) and P(jammed→clear) are derived, not
+    #                               configured, so the two knobs a reader cares about are
+    #                               the two that exist.
+    jam_mean_outage_steps: float = 15.0  # mean length of one outage, in steps. Length is
+    #                               the axis that separates jamming from a merely lossy
+    #                               net: per-message Bernoulli loss at the same duty
+    #                               cycle is a different scenario, because an outage you
+    #                               can wait out is a thing a policy can have doctrine
+    #                               about.
     sound_model: str = "off"      # tactical acoustic layer (degraded-communications
     #                               cycle, §3.6): "off" (the shipped behavior — no
     #                               sound events, no cues, no OpFor hearing, zero new
@@ -279,12 +291,22 @@ class ScenarioSpec:
         if self.sound_model not in ("off", "tactical"):
             msg = f"Unknown sound model {self.sound_model!r} (expected off | tactical)"
             raise ValueError(msg)
-        if self.comm_model not in ("global", "range", "voice_only"):
+        if self.comm_model not in ("global", "range", "voice_only", "jammed"):
             msg = (
                 f"Unknown comm model {self.comm_model!r} "
-                "(expected global | range | voice_only)"
+                "(expected global | range | voice_only | jammed)"
             )
             raise ValueError(msg)
+        if self.comm_model == "jammed":
+            if not 0.0 <= self.jam_duty_cycle < 1.0:
+                msg = f"jam_duty_cycle must be in [0, 1), got {self.jam_duty_cycle!r}"
+                raise ValueError(msg)
+            if self.jam_mean_outage_steps < 1.0:
+                msg = (
+                    "jam_mean_outage_steps must be at least 1 step, got "
+                    f"{self.jam_mean_outage_steps!r}"
+                )
+                raise ValueError(msg)
         if self.liaison_enabled and self.comm_model != "voice_only":
             msg = "liaison_enabled requires comm_model='voice_only' (a radio net needs no courier)"
             raise ValueError(msg)
@@ -735,6 +757,25 @@ SCENARIOS["squad_range_control"] = replace(
     sound_model="tactical",
     experiment_arm="range radio · acoustics",
     reward_overrides=(("time_penalty", -0.03),),
+)
+SCENARIOS["squad_jammed_control"] = replace(
+    SCENARIOS["squad"],
+    name="squad_jammed_control",
+    description=(
+        "Degraded-communications control: the squad scenario on a global radio "
+        "net that is periodically jammed (owner-decided 2026-08-24). The net "
+        "carries everything or nothing, switching on a two-state Markov chain "
+        "over steps — 35% duty cycle, mean outage 15 steps. Three properties "
+        "make it the TIME axis of degradation, where comm_range=12 is the "
+        "SPACE axis: (i) outages are UNOBSERVABLE — no agent input says the "
+        "net is down, so a cohort must infer it from not being answered; (ii) "
+        "HQ is exempt, so the root's up-channel survives and only lateral "
+        "cohort traffic goes dark; (iii) a sender is never told its "
+        "transmission failed, following the comm_model='range' precedent. "
+        "Sound stays off so the outage is the only degradation under test."
+    ),
+    comm_model="jammed",
+    experiment_arm="jammed radio",
 )
 
 

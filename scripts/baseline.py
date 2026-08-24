@@ -177,6 +177,11 @@ NOT_BASELINE = {
         "degraded-communications control (range radio, acoustics on) — the "
         "range-radio comparison arm; not a shipping configuration"
     ),
+    "squad_jammed_control": (
+        "degraded-communications control (global radio, periodically jammed) — "
+        "the TIME axis against range radio's SPACE axis; not a shipping "
+        "configuration"
+    ),
 }
 
 

@@ -157,6 +157,10 @@ class CohortEnv(ParallelEnv):
         self._known_enemies: dict[int, tuple[float, float, int]] = {}  # id → (x, y, step)
         #: per-listener enemy pictures, used only when comm_model="range"
         self._agent_known: dict[str, dict[int, tuple[float, float, int]]] = {}
+        #: comm_model="jammed": is the net down THIS step, and for how many
+        #: steps has it been down this episode? Never observed by an agent.
+        self._net_jammed = False
+        self._jammed_steps = 0
         self._illegal_actions = 0
         self._episode_outcome: str | None = None  # success | defeat | timeout
         self._support_umbrellas: list[tuple[Soldier, set[int]]] = []  # per-step (P2)
@@ -277,9 +281,45 @@ class CohortEnv(ParallelEnv):
         return self.spec_cfg.comm_model == "voice_only"
 
     @property
+    def _jammed_net(self) -> bool:
+        """Is this a scenario whose net can be jammed at all?"""
+        return self.spec_cfg.comm_model == "jammed"
+
+    def _advance_jamming(self) -> None:
+        """Step the two-state outage chain (docs/degraded-communications.md §6).
+
+        Unobservable by design: nothing here reaches an observation. A cohort
+        learns the net is down the way a real one does — by not being answered.
+        Draws come from ``self._rng`` like every other env randomness, so a
+        seeded episode replays its outages exactly.
+        """
+        if not self._jammed_net:
+            return
+        cfg = self.spec_cfg
+        # Two-state chain from the two knobs a reader cares about: mean outage
+        # length fixes P(jammed→clear); the duty cycle then fixes P(clear→jammed).
+        p_recover = 1.0 / cfg.jam_mean_outage_steps
+        duty = cfg.jam_duty_cycle
+        p_jam = 0.0 if duty <= 0.0 else p_recover * duty / (1.0 - duty)
+        if self._net_jammed:
+            if self._rng.random() < p_recover:
+                self._net_jammed = False
+        elif self._rng.random() < p_jam:
+            self._net_jammed = True
+        if self._net_jammed:
+            self._jammed_steps += 1
+
+    @property
     def _local_pictures(self) -> bool:
-        """Per-listener enemy pictures (range radio and voice_only)."""
-        return self.spec_cfg.comm_model in ("range", "voice_only")
+        """Per-listener enemy pictures (range radio, voice_only and jammed).
+
+        ``jammed`` needs them for the same reason ``range`` does: if a contact
+        report is lost, the listeners it did not reach must keep a stale
+        picture. A globally-shared picture would hand the cohort the situational
+        awareness the outage is supposed to take away, and the scenario would
+        measure nothing.
+        """
+        return self.spec_cfg.comm_model in ("range", "voice_only", "jammed")
 
     @property
     def outcome(self) -> str | None:
@@ -413,6 +453,10 @@ class CohortEnv(ParallelEnv):
         self.last_messages = []
         self._step_count = 0
         self._team_observe_steps = 0
+        # An episode always opens with the net up: the OPORD goes out at step 0
+        # and every scenario must brief identically.
+        self._net_jammed = False
+        self._jammed_steps = 0
         self._known_enemies = {}
         self._agent_known = (
             {cs: {} for cs in self._callsigns} if self._local_pictures else {}
@@ -789,6 +833,8 @@ class CohortEnv(ParallelEnv):
         """Advance the simulation one tick."""
         self._step_count += 1
         step = self._step_count
+        # Before anything this tick consults audibility.
+        self._advance_jamming()
         cfg = self.rewards_cfg
         ledger = RewardLedger()
         self.last_messages = []
@@ -1503,9 +1549,11 @@ class CohortEnv(ParallelEnv):
         for e in visible:
             self._known_enemies[e.id] = (float(e.pos[0]), float(e.pos[1]), self._step_count)
             soldier.reported_enemy_ids.add(e.id)
-        if self.spec_cfg.comm_model == "range":
-            # the report only reaches stations within earshot: their pictures
-            # update; everyone else's stays stale (the sender hears itself)
+        if self.spec_cfg.comm_model in ("range", "jammed"):
+            # the report only reaches stations the net actually delivers to:
+            # their pictures update; everyone else's stays stale (the sender
+            # hears itself). Under "range" that set is geometric, under
+            # "jammed" it is everyone or no-one depending on the outage.
             for listener in self.roster.living:
                 if self._audible_to(listener, soldier.id):
                     picture = self._agent_known.setdefault(listener.callsign, {})
@@ -2711,7 +2759,21 @@ class CohortEnv(ParallelEnv):
         ``comm_range`` (euclidean). The sender always hears itself. HQ is a
         high-power station: its traffic is always heard, and it always hears
         the root (the root's up-channel reports are adjudicated regardless).
+        ``"jammed"``: global, except that during an outage lateral traffic is
+        lost — HQ stays exempt (owner-decided 2026-08-24), so the up-channel
+        survives the jamming and only cohort-to-cohort traffic goes dark.
         """
+        if self._jammed_net:
+            # HQ's high-power station rides through the outage, in both
+            # directions: its traffic is heard and it still hears the root.
+            if sender_id == HQ_ID:
+                return True
+            sender = self.roster.by_id.get(sender_id)
+            if sender is None or sender.id == listener.id:
+                # A sender always hears itself — and, per `range` precedent, is
+                # never told its transmission failed to reach anyone else.
+                return True
+            return not self._net_jammed
         if self._voice_only:
             # §3.1 / §3.3: low voice only — no radio, no high-power HQ
             # station, no umpire bypass for anyone after the briefing
