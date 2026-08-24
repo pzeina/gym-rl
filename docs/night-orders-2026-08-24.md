@@ -398,3 +398,57 @@ PushNotification with the outcome the owner would act on.
   proposed and three refuted (bunching regime, churn co-occurrence, succession).
   The honest state for the morning is an effect with a strong measurement and no
   story — which is a finding, not a gap in the work.
+- 04:50 — **the bifurcation is total, and it is early.** Closed-on-root at the
+  best checkpoint (N=20) / final policy (N=20) / final policy (N=100), across
+  the six −1.0 seeds:
+
+  | seed | ckpt_best | final N=20 | final N=100 |
+  |---|---|---|---|
+  | 12 | 0.632 | 0.895 | 0.907 |
+  | 13 | 0.500 | 0.947 | 0.938 |
+  | 15 | 0.526 | 0.900 | 0.919 |
+  | 17 | 0.842 | 0.722 | 0.745 |
+  | 14 | **0.000** | **0.000** | **0.000** |
+  | 16 | **0.000** | **0.000** | **0.000** |
+
+  The four closers are already above 0.50 at their best checkpoint — 19% to 70%
+  of the way through the run — and the two mute seeds read *exactly* 0.000 at
+  every checkpoint and every sample size. **No seed partially closes.** The
+  outcome is binary rather than a continuum, it is settled well before
+  convergence, and no run crosses between the modes. That makes the unexplained
+  seed variation sharper, not vaguer: it is not noise around a mean, it is a
+  fork taken early and never revisited.
+- 05:20 — **the matched six-seed row is complete.** Controls at seeds 16 and 17
+  landed (94%/98%) with N=100.
+
+  | seed | arm | success | closed-on-root | retasksP | stacked | ep len | hdr | repR |
+  |---|---|---|---|---|---|---|---|---|
+  | 12 | −0.03 | 0.97 | 0.000 | 1.47 | 0.246 | 96.4 | 0.020 | 0.477 |
+  | 12 | −1.0 | 0.97 | **0.907** | 0.05 | 0.503 | 77.1 | 0.220 | 0.889 |
+  | 13 | −0.03 | 0.93 | 0.000 | 2.97 | 0.224 | 97.8 | 0.050 | 0.529 |
+  | 13 | −1.0 | 0.97 | **0.938** | 0.14 | 0.525 | 73.5 | 0.170 | 0.883 |
+  | 14 | −0.03 | 0.96 | 0.000 | 0.56 | 0.244 | 102.3 | 0.030 | 0.654 |
+  | 14 | −1.0 | 0.94 | 0.000 | 1.95 | 0.206 | 111.0 | 0.020 | 0.708 |
+  | 15 | −0.03 | 0.97 | 0.340 | 3.71 | 0.204 | 93.5 | 0.240 | 0.470 |
+  | 15 | −1.0 | 0.99 | **0.919** | 0.11 | 0.559 | 68.5 | 0.110 | 0.938 |
+  | 16 | −0.03 | 0.93 | 0.000 | 2.66 | 0.223 | 111.3 | 0.040 | 0.239 |
+  | 16 | −1.0 | 0.95 | 0.000 | 0.11 | 0.215 | 97.5 | 0.040 | 0.546 |
+  | 17 | −0.03 | 0.95 | 0.000 | 1.00 | 0.204 | 105.8 | 0.030 | 0.561 |
+  | 17 | −1.0 | 0.94 | **0.745** | 1.26 | 0.211 | 90.6 | 0.140 | 0.665 |
+
+  **Closed-on-root pooled: 34/600 → 351/600, p = 6.8e-95.** Four of six seeds
+  close; the control arm closes at one seed out of six and only at 0.340.
+  Success is unchanged everywhere (0.93–0.99 both arms). Report recall improves
+  at five of six.
+  **The cost is now significant, where at four seeds it was borderline**: human
+  death pooled 41/600 → 70/600, **p = 0.0051** (it was p = 0.052 on four seeds —
+  the fuller data sharpened it rather than softening it). It is still
+  heterogeneous: up at 12, 13, 17; *down* at 15 (0.240 → 0.110); flat at 14, 16.
+  Seed 16 is also the cleanest single refutation of the churn story on the
+  record — its retask cost collapsed churn 2.66 → 0.11, a 24× fall, and bought
+  no root close at all.
+- 05:20 — **launched** `squad_range_control_retaskcost_v1_seed18` and `_seed19`
+  at −1.0. "Four of six" is the number the owner's decision rests on and six
+  draws is a thin estimate of a rate; these two make it eight and land ~06:30,
+  before morning. No controls: the −0.03 arm is now 34/600 and its behaviour is
+  not in question.
