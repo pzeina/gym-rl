@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission at four seeds in six, the gate that has never passed in this scenario, and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
+## ⟳ Session handoff — resume here (2026-08-24 morning, **NIGHT WATCH COMPLETE: a SECOND knob found — `order_retask_cost_base=-1.0` makes the root close the mission, the gate that has never passed in this scenario, but only at FOUR SEEDS IN EIGHT and it costs blood; three mechanisms proposed and all three refuted; nothing shipped, the decision is yours and it is now a TWO-KNOB decision**)
 
 **The night's ledger is `docs/night-orders-2026-08-24.md`** — the queue, the
 pre-registered decision rules, and every reversal, in the order they happened.
@@ -47,10 +47,15 @@ Moving `order_retask_cost_base` to **−1.0**, past break-even, alongside
 
 **`closed_on_root_report_rate` pooled: 34/600 → 351/600, p = 6.8e-95.** The
 shipped `>= 0.5` gate has never once passed in `squad_range_control`; here it
-passes at four seeds of six. Success is unchanged in both arms (0.93–0.99) and
-report recall improves at five of six. *(Seeds 18 and 19 were in flight at the
-time of writing to turn "four of six" into eight draws — see the ledger's tail
-for their result.)*
+passes. Success is unchanged in both arms (0.93–0.99) and report recall improves
+at five of six.
+
+**But the rate is a coin flip.** Seeds 18 and 19, run to turn six draws into
+eight, are **both mute** (0.000 at every checkpoint), so the knob closes the
+mission at **four seeds in eight, not four in six** — 50%, not 67%. Six draws
+would have overstated it, which is why the extra pair was worth an hour. Those
+two have no matched control, so they estimate the *rate*; the causal numbers
+above stay on the matched six.
 
 **What it costs, and this is the part that decides it.** Human death pooled
 **41/600 → 70/600, p = 0.0051** — and note that on the four-seed row this was

@@ -452,3 +452,33 @@ PushNotification with the outcome the owner would act on.
   draws is a thin estimate of a rate; these two make it eight and land ~06:30,
   before morning. No controls: the −0.03 arm is now 34/600 and its behaviour is
   not in question.
+- 06:35 — **the rate is 4 of 8, not 4 of 6.** Seeds 18 and 19 landed (97%/97%,
+  gaps 5 and 5) and **both are mute** — closed-on-root 0.000 at `ckpt_best` and
+  0.000 at N=100, with the mute profile throughout (retasksP 0.73 / 0.39,
+  stacked 0.236 / 0.232, ep len 99.1 / 111.0).
+
+  | seed | success | closed-on-root | retasksP | stacked | ep len | hdr | repR |
+  |---|---|---|---|---|---|---|---|
+  | 12 | 0.97 | 0.907 | 0.05 | 0.503 | 77.1 | 0.220 | 0.889 |
+  | 13 | 0.97 | 0.938 | 0.14 | 0.525 | 73.5 | 0.170 | 0.883 |
+  | 14 | 0.94 | 0.000 | 1.95 | 0.206 | 111.0 | 0.020 | 0.708 |
+  | 15 | 0.99 | 0.919 | 0.11 | 0.559 | 68.5 | 0.110 | 0.938 |
+  | 16 | 0.95 | 0.000 | 0.11 | 0.215 | 97.5 | 0.040 | 0.546 |
+  | 17 | 0.94 | 0.745 | 1.26 | 0.211 | 90.6 | 0.140 | 0.665 |
+  | 18 | 0.94 | 0.000 | 0.73 | 0.236 | 99.1 | 0.050 | 0.563 |
+  | 19 | 0.92 | 0.000 | 0.39 | 0.232 | 111.0 | 0.080 | 0.684 |
+
+  **Four of eight. The knob is a coin flip, not a two-thirds bet**, and that is
+  exactly why the two extra seeds were worth an hour: six draws read 67% and
+  eight read 50%. The 05:37 ROADMAP handoff was written on the six-seed number
+  and has been corrected.
+  The causal claim is unaffected and stays on the **matched six seeds** — those
+  are the ones with controls: closed-on-root 34/600 → 351/600, p = 6.8e-95;
+  human death 41/600 → 70/600, p = 0.0051. Seeds 18 and 19 have no matched
+  control, so they estimate the *rate*, not the effect, and are not pooled into
+  the causal test. Success is 0.92–0.99 across all eight.
+- 06:35 — **queue exhausted; the watch closes.** Every thread the night opened
+  is resolved or explicitly documented as unresolved. Nothing further is
+  launched: more seeds would refine 4-of-8 but cannot answer the question that
+  matters, which is whether a knob that works half the time and costs a
+  significant rise in human death should ship — and that is the owner's.
