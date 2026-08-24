@@ -416,7 +416,17 @@ def test_presets_and_provenance():
     for f in fields(squad):
         if f.name in ("name", "description", "sound_model", "comm_model", "experiment_arm"):
             continue
+        # `reward_overrides` is the ONE disclosed asymmetry (owner-decided
+        # 2026-08-24): squad_range_control prices idle time at -0.03 because the
+        # D4 attractor captures it at the default price, and its two controls do
+        # not. The three arms are therefore NO LONGER matched on economics, and
+        # any comm-regime comparison across them must say so — see
+        # docs/degraded-communications.md. Everything else still must match.
+        if f.name == "reward_overrides":
+            continue
         assert getattr(squad, f.name) == getattr(ga, f.name) == getattr(rc, f.name), f.name
+    assert squad.reward_overrides == ga.reward_overrides == ()
+    assert rc.reward_overrides == (("time_penalty", -0.03),)
     b = make_env("squad_voice_liaison").briefing()
     assert b["liaison_enabled"] is True and b["packet_ttl"] == lia.PACKET_TTL
     snap = make_env("squad_voice_liaison")

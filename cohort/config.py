@@ -722,11 +722,19 @@ SCENARIOS["squad_range_control"] = replace(
     description=(
         "Degraded-communications control: the squad scenario on a range-limited "
         "radio net (comm_range=12) with the tactical acoustic layer ON — the "
-        "range-radio comparison under the same sound environment."
+        "range-radio comparison under the same sound environment. The scenario "
+        "prices idle time at -0.03 (owner-decided 2026-08-24): at the default "
+        "price seed 14 sits in the D4 attractor — 0.00 success, every episode "
+        "to the clock — because idling earns +0.0041/agent-step against a "
+        "-0.0100 time price, and at -0.03 that income turns negative. The "
+        "price removes the capture (0.00 -> 0.96) and is neutral-to-positive "
+        "on the seeds that never captured, with casualties flat "
+        "(46/400 -> 34/400, p = 0.19)."
     ),
     comm_model="range",
     sound_model="tactical",
     experiment_arm="range radio · acoustics",
+    reward_overrides=(("time_penalty", -0.03),),
 )
 
 
