@@ -93,6 +93,48 @@ correction (the jamming section said "NOT YET SPECCED" for shipped work).
 `9324676` is pushed; `caf0c11` and the doc fix are **local only** — autocycle
 forbids `git push`.
 
+### 2026-08-25 — the waiver reaches checkpoint SELECTION too (owner-decided)
+
+Follow-on to the gate waiver, taken on the owner's instruction after it was
+flagged as the open half: `best_save_gate` now drops the reporting key entirely
+for any scenario whose comm model waives `closed_on_root_report_rate`.
+Selection reverts to rolling success alone.
+
+**Why keeping the preference would not have been neutral.** The un-waived rule
+is lexicographic and absorbing — the first REPORTING window takes `ckpt_best`
+whatever the success numbers say, and a mute window may never take it back.
+Under jamming the rate is success-conditioned AND sparse, so that rule promotes
+whichever window happened to catch a close — an artefact of when the net was up
+— and then pins it. Seed 13 shows the same hazard inverted: it reads exactly
+0.000 at every checkpoint, so the key never fires and contributes nothing but
+the risk. Lifting the requirement while keeping the preference was the
+incoherent half-measure.
+
+**One waiver table, two consumers.** `Trainer` resolves
+`_report_gate_waived` from `metrics.COMM_MODEL_GATE_WAIVERS` — the same table
+the gate reads — so the rule that judges a run and the rule that selects its
+checkpoint can never disagree about which scenarios are waived. A test pins it.
+
+**`scripts/checkpoint_selection.py` was made waiver-aware in the same change**,
+and this was the part worth care: it replays the shipped rule over the corpus,
+so leaving it un-waived would have had it report a selection the trainer never
+made. It resolves the waiver from each run's OWN recorded `spec.comm_model` in
+`economics.json`, not from the current scenario table — a run is replayed as it
+was trained, and a scenario whose comm model changes later must not have its
+history re-selected under the new rule.
+
+**Measured effect on what exists: none, and that is the honest result.** Both
+jammed runs replay to the same `ckpt_best` under the waived rule as under the
+old one — seed 12 iteration 2684, seed 13 iteration 2275, "replay agrees" in
+both. They are the only two runs the waiver touches. So this changes the rule
+for future jammed runs and is **not** a reason to retrain either of them.
+
+Suite green (1204). One pre-existing test needed updating: the spy in
+`test_the_gate_is_called_not_reimplemented` pinned the gate's exact signature
+and refused the new keyword-only argument; it now takes `**kw`, so it tracks
+the shipped signature instead of freezing it.
+
+
 ### 2026-08-25 — the root-report gate is WAIVED under jamming (owner-decided)
 
 **The decision** (owner, 2026-08-25): *"lift the root report when jamming,

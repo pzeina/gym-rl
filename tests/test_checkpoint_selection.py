@@ -25,6 +25,7 @@ import json
 import pytest
 
 from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR
+from cohort.training.train import best_save_gate
 from scripts import checkpoint_selection as cs
 
 
@@ -68,7 +69,11 @@ def test_an_unmeasured_reporting_window_reads_as_none_not_zero():
 def test_the_gate_is_called_not_reimplemented(monkeypatch):
     seen = []
 
-    def spy(episodes_seen, window, rolling, best_so_far, close=None, best_was_reporting=False):
+    def spy(episodes_seen, window, rolling, best_so_far, close=None,
+            best_was_reporting=False, **kw):
+        # **kw so this spy tracks the shipped signature rather than pinning it:
+        # v1.23 added keyword-only `report_gate_waived`, and a spy that refuses
+        # unknown keywords fails the call it is supposed to be observing.
         seen.append((episodes_seen, rolling, close, best_was_reporting))
         return False
 
@@ -286,3 +291,65 @@ def test_every_run_shape_prints_without_raising(tmp_path, capsys, printer):
         spec = [(10, 0.5, None)] if name == "short" else V19_SHAPE
         printer(cs.run_facts(_run(tmp_path, name, spec, **kwargs)))
     assert capsys.readouterr().out
+
+
+# --------------------------------------------------------------------------- #
+# v1.23: a waived comm model drops the reporting key from SELECTION too
+# --------------------------------------------------------------------------- #
+
+def test_a_waived_comm_model_selects_on_success_alone():
+    """The reporting key is dropped, so a mute higher-success window wins.
+
+    Un-waived, the first REPORTING window takes ckpt_best whatever the success
+    numbers say, and a mute one may never take it back. Waived, that ordering
+    is gone: 0.90 mute must beat a 0.80 reporting best.
+    """
+    args = dict(episodes_seen=100, window=100)
+    # un-waived: the reporting best is absorbing, so the better mute window loses
+    assert not best_save_gate(
+        **args, rolling=0.90, best_so_far=0.80,
+        root_report_close=0.0, best_was_reporting=True,
+    )
+    # waived: success alone decides, so it wins
+    assert best_save_gate(
+        **args, rolling=0.90, best_so_far=0.80,
+        root_report_close=0.0, best_was_reporting=True,
+        report_gate_waived=True,
+    )
+
+
+def test_a_waived_comm_model_does_not_promote_a_worse_reporting_window():
+    """The other direction: a reporting window no longer jumps the queue.
+
+    This is the half that matters under jamming. The rate is
+    success-conditioned and sparse, so an un-waived run promotes whichever
+    window happened to catch a close — and the absorbing clause then pins it.
+    """
+    assert best_save_gate(
+        episodes_seen=100, window=100, rolling=0.60, best_so_far=0.95,
+        root_report_close=1.0, best_was_reporting=False,
+    ), "un-waived, the first reporting window wins on the key alone"
+    assert not best_save_gate(
+        episodes_seen=100, window=100, rolling=0.60, best_so_far=0.95,
+        root_report_close=1.0, best_was_reporting=False,
+        report_gate_waived=True,
+    ), "waived, a worse window may not take ckpt_best"
+
+
+def test_the_turnover_guard_survives_the_waiver():
+    """D4: ckpt_best still may not be written before the window turns over."""
+    assert not best_save_gate(
+        episodes_seen=20, window=100, rolling=1.0, best_so_far=-1.0,
+        report_gate_waived=True,
+    )
+
+
+def test_selection_and_the_gate_read_the_same_waiver_table():
+    """One table, so the two can never disagree about which scenarios are waived.
+
+    If a comm model is ever waived in `metrics` but not honoured in selection
+    (or vice versa), a run would be judged by one rule and selected by another.
+    """
+    from cohort.metrics import COMM_MODEL_GATE_WAIVERS
+    assert "closed_on_root_report_rate" in COMM_MODEL_GATE_WAIVERS["jammed"]
+    assert "global" not in COMM_MODEL_GATE_WAIVERS

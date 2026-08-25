@@ -29,7 +29,11 @@ from cohort.env.actions import N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
-from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR, SUCCESS_RATE_FLOOR
+from cohort.metrics import (
+    COMM_MODEL_GATE_WAIVERS,
+    ROOT_REPORT_CLOSE_FLOOR,
+    SUCCESS_RATE_FLOOR,
+)
 from cohort.training import provenance
 from cohort.training.ppo import PolicyNet, PPOConfig, RolloutBuffer, ppo_update, trajectory_config
 
@@ -141,6 +145,8 @@ def best_save_gate(
     best_so_far: float,
     root_report_close: float | None = None,
     best_was_reporting: bool = False,
+    *,
+    report_gate_waived: bool = False,
 ) -> bool:
     """Should the rolling-best checkpoint be (re)written this iteration?
 
@@ -198,9 +204,31 @@ def best_save_gate(
     ``SUCCESS_RATE_FLOOR``. Replayed over the whole corpus with
     ``scripts/checkpoint_selection.py``, this moves **1 of 104 runs** — that
     one, from 0.020 @ iter 25 to 1.000 @ iter 550 — and no other.
+
+    **v1.23 (owner-decided 2026-08-25): ``report_gate_waived`` drops the
+    reporting key entirely.** Where a scenario's comm model waives
+    ``closed_on_root_report_rate`` (``metrics.COMM_MODEL_GATE_WAIVERS`` — today
+    ``comm_model="jammed"``), the rate measures the net rather than the
+    commander, and selection reverts to rolling success alone.
+
+    Waiving the *gate* alone would have left this preference chasing the waived
+    quantity, and under jamming that is not neutral. The rate is
+    success-conditioned and the outage makes it sparse, so the lexicographic
+    rule would promote whichever window happened to catch a close — an artefact
+    of when the net was up — and the "a mute window may never take it back"
+    clause then makes that artefact absorbing. `squad_jammed_control` seed 13
+    shows the same hazard from the other side: it reads exactly 0.000 at every
+    checkpoint, so the reporting key never fires and contributes nothing but the
+    risk. Lifting the requirement while keeping the preference would have been
+    the incoherent half-measure.
     """
     if episodes_seen < window:
         return False
+    if report_gate_waived:
+        # The comm model puts the reporting rate out of reach, so it carries no
+        # information about which window holds the better policy — fall back to
+        # rolling success alone.
+        return rolling > best_so_far
     reporting = is_reporting(root_report_close, rolling)
     if reporting != best_was_reporting:
         return reporting  # the first reporting window wins; a mute one cannot
@@ -344,6 +372,13 @@ class Trainer:
         # runs pay for the per-step disposition scan.
         spec = self.envs[0].spec_cfg
         self._track_disposition = spec.root_mission is MissionType.DEFEND
+        # Does this scenario's comm model waive the root-report gate? If so the
+        # same quantity is dropped from checkpoint SELECTION too (best_save_gate).
+        # Read from the same table the gate reads, so the two can never disagree
+        # about which scenarios are waived.
+        self._report_gate_waived = "closed_on_root_report_rate" in (
+            COMM_MODEL_GATE_WAIVERS.get(spec.comm_model, {})
+        )
         self._threat_radius = float(spec.combat.weapon_range)
 
         self.env_steps = 0
@@ -636,6 +671,7 @@ class Trainer:
                 self.best_rolling_success,
                 root_close,
                 self.best_was_reporting,
+                report_gate_waived=self._report_gate_waived,
             ):
                 self.best_rolling_success = stats["success_rate_rolling"]
                 self.best_was_reporting = is_reporting(

@@ -74,7 +74,10 @@ ROOT = Path(__file__).resolve().parent.parent
 RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
-from cohort.metrics import ROOT_REPORT_CLOSE_FLOOR  # noqa: E402
+from cohort.metrics import (  # noqa: E402
+    COMM_MODEL_GATE_WAIVERS,
+    ROOT_REPORT_CLOSE_FLOOR,
+)
 from cohort.training.train import best_save_gate, is_reporting  # noqa: E402
 from scripts.fleet_status import run_dirs  # noqa: E402
 from scripts.run_report import checkpoint_stamp, fnum, run_dir  # noqa: E402
@@ -142,8 +145,15 @@ def episodes_and_windows(rows: list[dict]) -> list[tuple[int, float, float | Non
     return out
 
 
-def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[int]:
+def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW,
+           report_gate_waived: bool = False) -> list[int]:
     """Indices of the rows that would have written ``ckpt_best``, under one floor.
+
+    ``report_gate_waived`` must match the run's scenario (v1.23): a jammed run
+    is SELECTED without the reporting key, so replaying it with the key would
+    report a selection the trainer never made. Resolved by ``run_facts`` from
+    the run's own recorded comm model, never defaulted per-run — the default
+    here is for the historical sweeps, whose runs all predate the waiver.
 
     ``floor`` is applied in the one place that makes it a floor rather than a
     veto: a window whose rolling success is below it may not claim the REPORTING
@@ -162,7 +172,8 @@ def replay(rows: list[dict], floor: float = 0.0, window: int = WINDOW) -> list[i
     best_success, best_reporting = -1.0, False
     for i, (seen, success, close) in enumerate(episodes_and_windows(rows)):
         rate = None if (floor > 0.0 and success < floor) else close
-        if best_save_gate(seen, window, success, best_success, rate, best_reporting):
+        if best_save_gate(seen, window, success, best_success, rate, best_reporting,
+                          report_gate_waived=report_gate_waived):
             best_success = success
             best_reporting = is_reporting(rate, success)
             saves.append(i)
@@ -233,6 +244,22 @@ def missing_columns(rows: list[dict]) -> list[str]:
     return [] if not rows else [c for c in REQUIRED if c not in rows[0]]
 
 
+def _report_gate_waived_for(run: Path) -> bool:
+    """Was this run SELECTED without the reporting key? (v1.23)
+
+    Read from the run's own recorded `comm_model` rather than from the current
+    scenario table: a run is replayed as it was trained, and a scenario whose
+    comm model changed later must not have its history re-selected under the
+    new rule.
+    """
+    try:
+        econ = json.loads((run / "economics.json").read_text())
+    except (OSError, ValueError):
+        return False
+    comm = (econ.get("spec") or {}).get("comm_model") or econ.get("comm_model")
+    return "closed_on_root_report_rate" in COMM_MODEL_GATE_WAIVERS.get(comm, {})
+
+
 def run_facts(run: Path) -> dict | None:
     """One run's selection story, or None if it has no iterations to replay."""
     rows = rows_of(run)
@@ -241,9 +268,10 @@ def run_facts(run: Path) -> dict | None:
     if gaps := missing_columns(rows):
         return {"run": run.name, "rows": len(rows), "replayable": False, "missing": gaps}
     windows = episodes_and_windows(rows)
+    waived = _report_gate_waived_for(run)
     sweep = {}
     for floor in FLOORS:
-        saves = replay(rows, floor)
+        saves = replay(rows, floor, report_gate_waived=waived)
         sweep[floor] = None if not saves else {
             "row": saves[-1],
             "iteration": int(fnum(rows[saves[-1]], "iteration") or 0),
