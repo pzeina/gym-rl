@@ -93,6 +93,55 @@ correction (the jamming section said "NOT YET SPECCED" for shipped work).
 `9324676` is pushed; `caf0c11` and the doc fix are **local only** — autocycle
 forbids `git push`.
 
+### 2026-08-25 — autocycle: the jamming "safety gain" is a vanished denominator
+
+**Item taken** (cycle rule e — a measurement that did not exist for an effect
+already observed): human death FALLS under jamming at both seeds, 0.450 ->
+0.050 (s12) and 0.400 -> 0.000 (s13), and the record carried "no hypothesis".
+A degraded net making a cohort *safer* is exactly the shape this project's own
+reading rule distrusts.
+
+**`scripts/jam_exposure_probe.py`**, three checks pre-registered before the
+numbers were read, computed entirely from the `per_episode` blocks already
+committed in each run's `behavior_final.json` — **zero rollouts**, so it
+re-derives from published evidence instead of generating new evidence to
+explain old evidence.
+
+| FINAL policy, N=20 | s12 clear | s12 jam | s13 clear | s13 jam |
+|---|---|---|---|---|
+| human death rate | 0.450 | 0.050 | 0.400 | 0.000 |
+| human entries into enemy ring | 0.65 | **0.00** | 1.05 | **0.00** |
+| human mean distance to enemy | 17.75 | 28.79 (+62%) | 18.21 | 30.31 (+66%) |
+| human mean distance to OBJ | 21.22 | **39.30 (+85%)** | 19.49 | **41.90 (+115%)** |
+| agent-steps under threat | 52.15 | 44.30 (−15%) | 59.75 | 38.15 (−36%) |
+| enemies seen (team) | 3.30 | 3.30 (+0%) | 3.10 | 3.00 (−3%) |
+
+1. **exposure fell — SUPPORTED.** The human enters the enemy's threat ring
+   **zero times** under jamming, at both seeds, against 0.65 and 1.05.
+2. **team disengagement — REFUTED.** `enemies_seen` is flat (+0%, −3%). The
+   team still finds and fights; this is specific to the human.
+3. **the human is left behind — SUPPORTED.** It ends the episode 85% and 115%
+   further from the objective.
+
+**The verdict, and it qualifies a headline.** `human_death_rate` did **not**
+improve under jamming — its denominator did. The human stops being brought
+forward: it never closes with the enemy, ends up roughly twice as far from the
+objective, and therefore cannot die. Success is unchanged because the rest of
+the squad still prosecutes the mission. **The metric must not be quoted as a
+safety result for this arm**, and the earlier "human death FALLS, unexplained"
+line in this log is now explained rather than open.
+
+**Hazard caught by the repo's own test.** The probe first read
+`runs/<name>/behavior_final.json` by direct join, and
+`tests/test_run_archive.py::test_every_reader_goes_through_the_resolver` failed
+it — archiving is a move, so a cited run may live under `runs/archive/`. Now
+resolved through `run_report.run_dir`. Three further tests pin the probe's own
+reading rules: an unscored episode is not a survival, an unrecorded field reads
+absent rather than 0.00, and the counters `global`/`jammed` never exercise are
+declared blank rather than averaged — printing "orders lost: 0.00" for a jammed
+net would state something false.
+
+
 ### 2026-08-25 — autocycle: the jammed runs' committed evaluations re-scored under the waiver
 
 **Item taken** (cycle rule b, finished runs whose artifacts no longer match the
