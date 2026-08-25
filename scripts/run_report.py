@@ -30,6 +30,7 @@ from cohort.metrics import (  # noqa: E402
     format_order_availability,
     format_order_task_mix,
     format_staging,
+    gate_mark,
 )
 
 
@@ -528,8 +529,10 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
     # two sides of a comparison were measured at the same N (refs #34)
     summary[f"{prefix}episodes"] = b.get("episodes")
     for g in b.get("gates", []):
-        mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
+        mark = gate_mark(g)
         print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
+        if g.get("waived"):
+            print(f"           waived — {g['waived']}")
     return m
 
 

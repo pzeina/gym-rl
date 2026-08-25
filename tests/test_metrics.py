@@ -22,6 +22,7 @@ from cohort.metrics import (
     format_gate_report,
     format_order_task_mix,
     format_root_claim_shape,
+    gate_mark,
     regression_gates,
     split_gates,
 )
@@ -1729,3 +1730,88 @@ def test_split_gates_keeps_unmeasured_out_of_the_failures():
     failed, unmeasured = split_gates(gates)
     assert failed == ["timeout_rate"]
     assert unmeasured == ["closed_on_root_report_rate"]
+
+
+# --------------------------------------------------------------------------- #
+# the jammed-net waiver on closed_on_root_report_rate (owner-decided 2026-08-25)
+# --------------------------------------------------------------------------- #
+
+def _agg_with(comm_model, rate=0.0):
+    """Minimal aggregate that reaches the root-report gate with a real value."""
+    return {
+        "timeout_rate": 0.0,
+        "success_rate": 1.0,
+        "closed_on_root_report_rate": rate,
+        "stacked_rate": 0.0,
+        "comm_model": comm_model,
+        "root_mission": "SEIZE",
+    }
+
+
+def _root_gate(agg):
+    return next(g for g in regression_gates(agg)
+                if g["name"] == "closed_on_root_report_rate")
+
+
+def test_a_jammed_net_waives_the_root_report_gate_without_hiding_it():
+    """The waiver disqualifies the FAIL; it does not suppress the number.
+
+    Owner's reason (2026-08-25): under jamming only local information can be
+    assumed to be consistently delivered, so a root that never closes the
+    mission is reporting a fact about the net.
+    """
+    g = _root_gate(_agg_with("jammed", rate=0.0))
+    assert g["waived"], "a jammed run must carry the waiver reason"
+    assert g["value"] == 0.0, "the measurement stays visible"
+    assert g["passed"] is False, "and it still records that it did not clear the floor"
+    assert split_gates(regression_gates(_agg_with("jammed"))) [0] == [], (
+        "a waived gate must not be counted among the failures"
+    )
+
+
+def test_the_waiver_does_not_leak_to_any_other_comm_model():
+    """Only `jammed` is waived — `global` and `range` must still fail."""
+    for comm_model in ("global", "range", "voice_only", None):
+        g = _root_gate(_agg_with(comm_model, rate=0.0))
+        assert not g["waived"], f"{comm_model} must not be waived"
+        assert split_gates(regression_gates(_agg_with(comm_model)))[0] == [
+            "closed_on_root_report_rate"
+        ], f"{comm_model} must still fail the gate"
+
+
+def test_a_waived_gate_is_not_reclassified_as_unmeasured():
+    """Waived is a fourth state, not a rebranding of the other three.
+
+    Filing it under `unmeasured` would be the same silent absorption
+    `split_gates` was written to prevent — the run DID measure it.
+    """
+    gates = regression_gates(_agg_with("jammed", rate=0.0))
+    failed, unmeasured = split_gates(gates)
+    assert "closed_on_root_report_rate" not in failed
+    assert "closed_on_root_report_rate" not in unmeasured
+
+
+def test_every_surface_marks_a_waived_gate_as_waived():
+    """`gate_mark` is the one place the four states are decided."""
+    waived = _root_gate(_agg_with("jammed", rate=0.0))
+    assert gate_mark(waived) == "WAIV"
+    assert gate_mark({"passed": True}) == "PASS"
+    assert gate_mark({"passed": False}) == "FAIL"
+    assert gate_mark({"passed": None}) == "—"
+    report = format_gate_report(regression_gates(_agg_with("jammed", rate=0.0)))
+    assert "WAIV" in report and "only local information" in report
+
+
+def test_a_mixed_comm_model_pool_waives_nothing():
+    """Disagreeing episodes read None, and None waives nothing.
+
+    Same rule `root_mission` already follows: a pool that cannot say what it
+    was flown under does not get the benefit of a scenario-specific waiver.
+    Built through `episode_behavior` rather than from a hand-written dict, so
+    the carry-through from trace to episode to aggregate is what is tested.
+    """
+    jammed = episode_behavior({**_defend_leader_orders("ADVANCE"), "comm_model": "jammed"})
+    clear = episode_behavior({**_defend_leader_orders("ADVANCE"), "comm_model": "global"})
+    assert jammed["comm_model"] == "jammed", "the trace's comm_model must survive episode_behavior"
+    assert aggregate_behavior([jammed, jammed])["comm_model"] == "jammed"
+    assert aggregate_behavior([jammed, clear])["comm_model"] is None

@@ -214,6 +214,35 @@ SUCCESS_RATE_FLOOR: float = 0.5
 #: through ``_gate``: unmeasured is not passed.
 ROOT_REPORT_CLOSE_FLOOR: float = 0.5
 
+#: Gates a scenario's own communications make unattainable — waived, never
+#: hidden. Keyed by ``comm_model``, then by gate name, with the reason the
+#: waiver exists carried alongside so no surface can print the pass/fail mark
+#: without also being able to print why it does not count.
+#:
+#: ``jammed`` (owner-decided 2026-08-25): *only local information can be
+#: assumed to be consistently delivered.* The outage takes the root's LATERAL
+#: traffic at random while HQ exemption leaves its up-channel intact, so the
+#: root keeps its voice and loses its evidence — it cannot reliably RECEIVE
+#: word that the mission is done, and ``closed_on_root_report_rate`` then
+#: measures the net rather than the policy. Measured, not assumed: against
+#: matched clear-net controls on the same commit the rate goes 0.842 -> 0.211
+#: (seed 12) and 0.800 -> 0.000 (seed 13), while evidence reaching the root
+#: halves (8.57 -> 4.23 msgs/ep). The value keeps being computed and printed;
+#: it simply stops counting as a regression.
+#:
+#: This is a WAIVER, not a pass. ``split_gates`` keeps a waived gate out of the
+#: failures, every formatter marks it ``WAIV``, and the number stays on screen —
+#: the same discipline that ships ``platoon_hard``'s mute-root FAIL visibly
+#: rather than quietly dropping the gate.
+COMM_MODEL_GATE_WAIVERS: dict[str, dict[str, str]] = {
+    "jammed": {
+        "closed_on_root_report_rate": (
+            "jammed net: only local information is consistently delivered, so "
+            "the root cannot reliably receive word the mission is done"
+        ),
+    },
+}
+
 #: The bunching gate (owner-decided 2026-08-21): the ceiling on
 #: ``stacked_rate`` a retrain must stay under. It encodes a measured exploit:
 #: ``fireteam_defend_v23`` wins DEFEND at success 1.00 while stacked on 0.940
@@ -1741,6 +1770,9 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         "length": trace.get("length"),
         # carried through so the aggregate knows which regression gates apply
         "root_mission": trace.get("root_mission"),
+        # ...and which of them the scenario's own comms put out of reach
+        # (COMM_MODEL_GATE_WAIVERS)
+        "comm_model": trace.get("comm_model"),
         "obedience_latencies": latencies,
         "obedience_censored": censored,
         "obedience_by_task": obedience_by_task,
@@ -1871,6 +1903,10 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
     recovery = [v for ep in episodes for v in ep["succession_recovery"]]
     humans = [ep for ep in episodes if ep["human_died"] is not None]
     roots = {ep.get("root_mission") for ep in episodes} - {None}
+    # The comm model the pool was flown under. Carried for the same reason
+    # `root_mission` is — `regression_gates` keys a waiver off it — and with
+    # the same mixed-pool rule: disagreement reads None, which waives nothing.
+    comms = {ep.get("comm_model") for ep in episodes} - {None}
     # refs #35: the freshness interval the off-cadence count was scored
     # against, carried so the density reads against its own bound the way
     # episode length reads against max_steps. None on a mixed pool.
@@ -1882,6 +1918,7 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         # the run's root mission when the pooled episodes agree on one; the
         # regression gates key off it (a mixed pool gates on nothing)
         "root_mission": roots.pop() if len(roots) == 1 else None,
+        "comm_model": comms.pop() if len(comms) == 1 else None,
         "success_rate": _ratio(n_successes, n_eps),
         "obedience_latency_mean": _mean(latencies),
         "obedience_orders": len(latencies) + total("obedience_censored"),
@@ -2294,6 +2331,9 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
             agg.get("closed_on_root_report_rate"),
             ROOT_REPORT_CLOSE_FLOOR,
             "min",
+            waived=COMM_MODEL_GATE_WAIVERS.get(
+                agg.get("comm_model") or "", {}
+            ).get("closed_on_root_report_rate"),
         )
     )
     # the bunching gate (owner-decided 2026-08-21): unconditional for the same
@@ -2319,12 +2359,21 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def _gate(name: str, value: float | None, bound: float, direction: str) -> dict[str, Any]:
+def _gate(name: str, value: float | None, bound: float, direction: str,
+          waived: str | None = None) -> dict[str, Any]:
+    """One gate verdict. ``waived`` carries the reason it does not count.
+
+    A waived gate still computes and reports ``value`` and ``passed`` — the
+    measurement is not suppressed, it is disqualified from failing the run.
+    Readers must consult ``waived`` before treating ``passed is False`` as a
+    regression; ``split_gates`` does this for them.
+    """
     if value is None:
         passed = None
     else:
         passed = value >= bound if direction == "min" else value <= bound
-    return {"name": name, "value": value, "bound": bound, "direction": direction, "passed": passed}
+    return {"name": name, "value": value, "bound": bound, "direction": direction,
+            "passed": passed, "waived": waived}
 
 
 def split_gates(gates: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
@@ -2337,10 +2386,33 @@ def split_gates(gates: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
     ``squad_v21_seed16`` never completed an episode, so
     ``closed_on_root_report_rate`` had nothing to measure, and it was the run
     that surfaced this. Callers that need one bucket should say which.
+
+    A gate carrying a ``waived`` reason is disqualified from the failures: the
+    scenario's own communications put it out of reach, so failing it is a fact
+    about the net and not a regression (see ``COMM_MODEL_GATE_WAIVERS``). It is
+    NOT moved to ``unmeasured`` — it was measured, and every formatter still
+    prints its value — so neither bucket silently absorbs it.
     """
-    failed = [g["name"] for g in gates if g.get("passed") is False]
+    failed = [g["name"] for g in gates
+              if g.get("passed") is False and not g.get("waived")]
     unmeasured = [g["name"] for g in gates if g.get("passed") is None]
     return failed, unmeasured
+
+
+def gate_mark(gate: dict[str, Any]) -> str:
+    """The four-state mark for one gate: PASS / FAIL / WAIV / —.
+
+    One function so every surface agrees. Readers that reduced this to
+    ``"pass" if g["passed"] else "FAIL"`` printed FAIL for a gate that was
+    never measured; adding a fourth state to that same two-way expression
+    would have printed FAIL for a waived one, which is the opposite of what a
+    waiver means.
+    """
+    if gate.get("waived"):
+        return "WAIV"
+    if gate.get("passed") is None:
+        return "—"
+    return "PASS" if gate["passed"] else "FAIL"
 
 
 def format_gate_report(gates: list[dict[str, Any]]) -> str:
@@ -2349,10 +2421,12 @@ def format_gate_report(gates: list[dict[str, Any]]) -> str:
         return ""
     lines = ["regression gates:"]
     for g in gates:
-        mark = "—" if g["passed"] is None else ("PASS" if g["passed"] else "FAIL")
+        mark = gate_mark(g)
         value = "—" if g["value"] is None else f"{g['value']:.3f}"
         rel = ">=" if g["direction"] == "min" else "<="
         lines.append(f"  [{mark:^4}] {g['name']:<42} {value:>7}  ({rel} {g['bound']})")
+        if g.get("waived"):
+            lines.append(f"         waived — {g['waived']}")
     return "\n".join(lines)
 
 

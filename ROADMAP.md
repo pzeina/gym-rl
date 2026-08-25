@@ -93,6 +93,55 @@ correction (the jamming section said "NOT YET SPECCED" for shipped work).
 `9324676` is pushed; `caf0c11` and the doc fix are **local only** — autocycle
 forbids `git push`.
 
+### 2026-08-25 — the root-report gate is WAIVED under jamming (owner-decided)
+
+**The decision** (owner, 2026-08-25): *"lift the root report when jamming,
+because only local information can be assumed to be consistently delivered."*
+
+`closed_on_root_report_rate` no longer counts as a regression for any scenario
+whose `comm_model` is `jammed`. It is **waived, not hidden** — the value is
+still computed, still printed, and still says whether it cleared the floor;
+what changes is that failing it is no longer charged to the policy.
+
+**Why the evidence supports it.** The gate was measuring the net, not the
+commander. HQ exemption leaves the root its voice and takes its evidence: under
+jamming the root cannot reliably RECEIVE word that the mission is done. Measured
+against matched clear-net controls on the same commit — 0.842 -> 0.211 (s12),
+0.800 -> 0.000 (s13), evidence reaching the root 8.57 -> 4.23 msgs/ep — while
+success is unchanged. `platoon_hard` carries the same shape of finding as a
+manifest exception; this one belongs in the metric because it follows from the
+comm model rather than from one member's draw.
+
+**How it is implemented.** `COMM_MODEL_GATE_WAIVERS` in `cohort/metrics.py`,
+keyed by comm model then gate name, carrying the reason as text so no surface
+can print the mark without being able to print why. `_gate` gained a `waived`
+field; `split_gates` keeps waived gates out of the failures **and** out of
+`unmeasured` (it WAS measured — filing it under unmeasured would be the same
+silent absorption that function exists to prevent); a new `gate_mark` is the
+single place the four states PASS/FAIL/WAIV/— are decided, because the two
+surfaces that render gates had each written their own two-way expression and a
+fourth state would have printed FAIL for a waiver.
+
+`comm_model` now rides trace -> episode -> aggregate the way `root_mission`
+already did, with the same mixed-pool rule: episodes that disagree read None,
+and None waives nothing.
+
+**Spot-checked** on `squad_jammed_control_v1_seed12`: the gate renders
+`[WAIV] closed_on_root_report_rate 0.200 (>= 0.5)` with its reason, and no
+longer appears among the failures.
+
+**Left to the owner, deliberately not decided here**: `train.py`'s
+`best_save_gate` still *prefers* a reporting window when selecting `ckpt_best`,
+under jamming as everywhere else. That remains coherent with the existing
+design — "training prefers; the gate refuses" — and lifting a preference is a
+separate call from lifting a requirement. Flagged rather than taken.
+
+**Hazard observed, not fixed**: `cohort.training.evaluate` writes
+`behavior.json` into the run directory by default, so a spot-check at N=10
+silently overwrote a committed N=20 artifact (restored from git immediately).
+Any future spot-check on a committed run should pass an explicit output path.
+
+
 ### 2026-08-25 — autocycle: the jamming mechanism is HALF REFUTED by its own probe
 
 **Item taken** (cycle rule c, an open diagnosis with a named mechanism): the

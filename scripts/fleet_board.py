@@ -229,7 +229,10 @@ def _tip(row: dict) -> str:
         if g.get("passed") is None:
             bits.append(f"{g['name']} unmeasured ({g['direction']} {g['bound']:g})")
             continue
-        mark = "pass" if g["passed"] else "FAIL"
+        # A waived gate keeps its number on the board and loses its verdict:
+        # the scenario's own comms put it out of reach, so "FAIL" would be a
+        # claim about the policy that the measurement does not support.
+        mark = "WAIVED" if g.get("waived") else ("pass" if g["passed"] else "FAIL")
         bits.append(f"{g['name']} {g['value']:.3g} ({g['direction']} {g['bound']:g}) {mark}")
     if row["overrides"]:
         bits.append("rewards: " + ", ".join(row["overrides"]))
