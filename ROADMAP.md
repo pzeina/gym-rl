@@ -77,6 +77,73 @@ handoff/plan correction · `297cf35` gate waiver · `de1f53d` selection waiver �
 probe. `9324676` and earlier are pushed. Autocycle forbids `git push`, so these
 are waiting on you.
 
+### 2026-08-26 — v1.23 fleet, first six members: five clean, one mute root, two first-ever bunching measurements
+
+The campaign launched 2026-08-25 17:26 and is at job 7 of 11
+(`platoon_hard_v6_seed12`, then four `patrol_brique` seeds). `cohort/` stays
+frozen until it lands.
+
+**The override was correct, and its one caveat came true exactly as written.**
+Five members produced genuinely distinct policies (OBS_DIM 220 -> 351, so no
+trajectory could coincide). `squad_screen_v19` reproduced
+`squad_screen_v18_seed12` **bit-for-bit** — the outcome the jobs file
+pre-registered as acceptable, and it now PROVES the frozen tree does not move
+that scenario. The dedupe collapses the pair to one draw; no comparison within
+it is a measurement.
+
+| member | final succ | closed-on-root | stacked | incumbent closed-on-root |
+|---|---|---|---|---|
+| fireteam_v14 | 0.95 | 0.895 | 0.166 | 0.915 (v12) |
+| fireteam_defend_v25 | 1.00 | 1.000 | **0.927 FAIL** | 1.000 (v23) |
+| squad_recon_v13 | 1.00 | 0.750 | 0.576 | 0.990 (v11) |
+| squad_screen_v19 | 1.00 | 0.950 | 0.255 | 0.950 (v14) |
+| defend_brique_v19 | 1.00 | 1.000 | **0.931 FAIL** | 1.000 (v17) |
+| platoon_v13 | 0.95 | **0.000 FAIL** | 0.367 | 0.930 (v8) |
+
+All six converged and are PUBLISHABLE (best-final gaps 0-5 pts). Success is at
+or above every incumbent.
+
+**The two bunching FAILs are NOT regressions, and saying otherwise would be the
+error.** Every incumbent reads `stacked_rate = —`: the metric did not exist when
+they were trained (bunching pole `1f6d2cd`, gate owner-decided 2026-08-21, both
+after the v1.22 fleet). Unmeasured is not passed. These are the **first
+measurements** of those scenarios on that axis, and the pattern is clean — the
+gate fails exactly the two DEFEND-root scenarios (0.927, 0.931) while the four
+others sit at 0.166-0.576. Both also PASS their cover and positional gates, so
+the shape is *holding the position, in cover, bunched*. Whether 0.70 is
+miscalibrated for DEFEND roots or DEFEND policies genuinely pile up is a
+diagnosis nobody has run, and changing a gate is the owner's call either way.
+
+**The one real regression is `platoon_v13`: closed-on-root 0.000 against the
+incumbent's 0.930.** Like-for-like — both measured — and 0.000 vs 0.930 is not a
+CI question. Diagnosed with `done_probe.py` before recommending anything, per
+this repo's rule:
+
+- the channel is **fully reachable**: 164 golden root steps over 20 episodes,
+  804 team-wide after T0, **20/20 episodes with at least one**, and oracle-forced
+  root claims confirm at **accept rate 1.000**;
+- the policy transmits **zero** claims — root AND subordinate, 0/20 episodes with
+  a confirm.
+
+So this is not "the root cannot report", it is **total DONE silence, declined**.
+That is the reachability-vs-policy fork the probe exists to settle, and it lands
+on policy. It is also NOT the `platoon_hard` shape, whose flat ablation still
+reported at 0.83 under identical economics.
+
+**Launched: `platoon_v14_seed13`** (scenario `platoon`, 3M steps, seed 13, same
+frozen tree, no overrides). This repo has documented the reporting channel as
+bimodal three times — `patrol_brique` at 0.43 over 14 runs, `squad` mute at 2 of
+4 seeds, runs landing at 0.750-1.000 or exactly 0.000 with nothing between — and
+one seed cannot say which mode `platoon` is in. **What changes the verdict**: if
+seed 13 reports, `platoon_v13` was an unlucky draw and `platoon` needs a declared
+`seed_search` like `patrol_brique` has; if seed 13 is ALSO mute, the tree
+transition has cost `platoon` its reporting channel, and that is a finding for
+the owner rather than a seed to re-roll.
+
+**Not decided here**: `platoon_v13` fails a gate its incumbent passes, so it
+cannot supersede `platoon_v8` without an ask. Nothing is published.
+
+
 ### 2026-08-25 — autocycle: the jamming "safety gain" is a vanished denominator
 
 **Item taken** (cycle rule e — a measurement that did not exist for an effect
