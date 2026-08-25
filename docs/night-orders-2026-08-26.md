@@ -149,3 +149,39 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
 - 01:10 — orders written. 6/11 campaign jobs landed; `platoon_hard_v6_seed12`
   and `platoon_v14_seed13` in flight. N=100 sweep launched for the 6 landed
   members. Monitor armed.
+- 01:12 — **N=100 sweep DONE**, all six landed members scored to publish grade
+  (`behavior_final_n100.json`). It confirms the N=20 picture and sharpens three
+  things:
+
+  | member | succ N=100 | closed-on-root | stacked | failing |
+  |---|---|---|---|---|
+  | fireteam_v14 | 0.93 ± 0.05 | 0.882 | 0.167 | — |
+  | fireteam_defend_v25 | 1.00 ± 0.00 | 1.000 | **0.960** | stacked_rate |
+  | squad_recon_v13 | 0.98 ± 0.03 | 0.939 | 0.572 | — |
+  | squad_screen_v19 | 1.00 ± 0.00 | 0.940 | 0.234 | — |
+  | defend_brique_v19 | 1.00 ± 0.00 | 0.990 | **0.976** | stacked_rate |
+  | platoon_v13 | 0.99 ± 0.02 | **0.000** | 0.371 | closed_on_root_report_rate |
+
+  1. **`platoon_v13`'s mute root is not a small-sample artefact** — 0.000 at
+     N=100, on a policy that wins 0.99 ± 0.02. The MISS against `platoon_v8`'s
+     0.930 is definitive, and G1 is the read that matters tonight.
+  2. **`squad_recon_v13` was under-read at N=20**: 0.750 → **0.939**. It was
+     never a problem; N=20 was pessimistic. Nothing to do.
+  3. **The two bunching FAILs got WORSE with more episodes** (0.927 → 0.960,
+     0.931 → 0.976), so they are not noise.
+
+- 01:14 — **bunching negative control launched** (idle-time, zero-token). The
+  morning's real question is whether the 0.70 ceiling is *reachable at all* by a
+  DEFEND policy that also passes its cover and positional gates. A masked-random
+  policy has no incentive to pile up, so it separates the two readings:
+  random ≈ 0.95 ⇒ the bunching is **geometric** (a DEFEND root holding a small
+  objective cannot spread beyond STACK_RADIUS) and the gate is unsatisfiable by
+  construction for these scenarios; random low ⇒ the trained policies **chose**
+  to bunch. `defend_brique` and `fireteam_defend` against `squad` as a
+  non-DEFEND reference, N=100 each.
+
+  **Note the limit this control exists to work around**: the incumbents can
+  never be measured on this axis. `stacked_rate` postdates them AND their
+  checkpoints are at OBS_DIM 220, so they cannot be loaded to score. "Did the
+  old fleet bunch too?" is permanently unanswerable — a second, quieter cost of
+  the spaces break, and worth the owner knowing.
