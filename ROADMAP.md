@@ -93,6 +93,40 @@ correction (the jamming section said "NOT YET SPECCED" for shipped work).
 `9324676` is pushed; `caf0c11` and the doc fix are **local only** — autocycle
 forbids `git push`.
 
+### 2026-08-25 — autocycle: the jammed runs' committed evaluations re-scored under the waiver
+
+**Item taken** (cycle rule b, finished runs whose artifacts no longer match the
+shipped rule): both `squad_jammed_control` runs carried `behavior.json` and
+`behavior_final.json` written BEFORE the waiver, so every surface that reads
+them — the fleet board included — still rendered
+`closed_on_root_report_rate` as a **FAIL** for a gate the project had just
+waived. Confirmed before acting: the stored gate objects had `passed: false`
+and no `waived` key, and the stored aggregate had no `comm_model` to key one
+off, so nothing downstream could have derived the waiver on its own.
+
+**Re-scored, not rewritten.** Evaluation in this repo is deterministic —
+`_seeded_episode(env, net, seed + i)` — so re-running each artifact at its own
+recorded parameters (N=20, seed 123, non-greedy, same checkpoint) reproduces
+the same episodes rather than drawing new ones. Verified against `git show
+HEAD:<path>` for all four artifacts: **every metric is bit-identical**, the
+only key that moved is the newly-carried `comm_model`. No published number
+changed — `behavior_final` still reads 0.2105 at seed 12 and 0.0000 at seed 13,
+the values already in this log.
+
+That mattered enough to check rather than assume. Hand-editing the `gates`
+block would have been faster and would have left an artifact whose
+`eval_commit` pointed at a commit that never produced it.
+
+**Result.** All four gate objects now carry `waived`, `split_gates` returns no
+failures for either run, and the board renders `WAIVED` for the two jammed runs
+while still printing `FAIL` for the seven non-jammed runs that genuinely miss
+the floor (0.343, 0.385, 0.45, 0.474 …) and `pass` for those above it. The
+waiver did not leak.
+
+**No code change in this item** — the rule shipped in `297cf35`/`de1f53d`; this
+is the artifacts catching up to it.
+
+
 ### 2026-08-25 — the waiver reaches checkpoint SELECTION too (owner-decided)
 
 Follow-on to the gate waiver, taken on the owner's instruction after it was

@@ -1,7 +1,7 @@
 {
  "checkpoint": "runs/squad_jammed_control_v1_seed13/ckpt_latest.pt",
  "checkpoint_sha256": "59f5f4ef23bd9196406e6de04176418a7c0de5bc1c4e1bf3e2f4c763569961d2",
- "eval_commit": "724712267bf1cd98df6688f4c9c13318f1a242fe",
+ "eval_commit": "de1f53d323f27fdb4f4f563cdd6c630356c6c71b",
  "scenario": "squad_jammed_control",
  "episodes": 20,
  "seed": 123,
@@ -10,6 +10,7 @@
  "metrics": {
   "episodes": 20,
   "root_mission": "SEIZE",
+  "comm_model": "jammed",
   "success_rate": 0.9,
   "obedience_latency_mean": 4.390350877192983,
   "obedience_orders": 240,
@@ -271,28 +272,32 @@
    "value": 0.1,
    "bound": 0.5,
    "direction": "max",
-   "passed": true
+   "passed": true,
+   "waived": null
   },
   {
    "name": "success_rate",
    "value": 0.9,
    "bound": 0.5,
    "direction": "min",
-   "passed": true
+   "passed": true,
+   "waived": null
   },
   {
    "name": "closed_on_root_report_rate",
    "value": 0.0,
    "bound": 0.5,
    "direction": "min",
-   "passed": false
+   "passed": false,
+   "waived": "jammed net: only local information is consistently delivered, so the root cannot reliably receive word the mission is done"
   },
   {
    "name": "stacked_rate",
    "value": 0.1736280487804878,
    "bound": 0.7,
    "direction": "max",
-   "passed": true
+   "passed": true,
+   "waived": null
   }
  ],
  "per_episode": [
@@ -300,6 +305,7 @@
    "outcome": "success",
    "length": 74,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     24,
     12,
@@ -536,6 +542,7 @@
    "outcome": "success",
    "length": 84,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     9,
     7,
@@ -792,6 +799,7 @@
    "outcome": "success",
    "length": 87,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     13,
     8,
@@ -1064,6 +1072,7 @@
    "outcome": "success",
    "length": 75,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     14,
     11,
@@ -1336,6 +1345,7 @@
    "outcome": "success",
    "length": 116,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     28,
     8,
@@ -1588,6 +1598,7 @@
    "outcome": "success",
    "length": 78,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     20,
     7,
@@ -1829,6 +1840,7 @@
    "outcome": "success",
    "length": 75,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     10,
     19,
@@ -2071,6 +2083,7 @@
    "outcome": "success",
    "length": 73,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     3,
     12,
@@ -2338,6 +2351,7 @@
    "outcome": "success",
    "length": 110,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     20,
     12,
@@ -2590,6 +2604,7 @@
    "outcome": "timeout",
    "length": 450,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     27,
     11,
@@ -3026,6 +3041,7 @@
    "outcome": "success",
    "length": 118,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     26,
     14,
@@ -3297,6 +3313,7 @@
    "outcome": "success",
    "length": 75,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     13,
     9,
@@ -3543,6 +3560,7 @@
    "outcome": "success",
    "length": 76,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     19,
     4,
@@ -3789,6 +3807,7 @@
    "outcome": "success",
    "length": 104,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     6,
     14,
@@ -4053,6 +4072,7 @@
    "outcome": "timeout",
    "length": 450,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     9,
     5,
@@ -4314,6 +4334,7 @@
    "outcome": "success",
    "length": 73,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     35,
     8,
@@ -4590,6 +4611,7 @@
    "outcome": "success",
    "length": 76,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     23,
     9,
@@ -4846,6 +4868,7 @@
    "outcome": "success",
    "length": 75,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     19,
     6,
@@ -5104,6 +5127,7 @@
    "outcome": "success",
    "length": 75,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     13,
     11,
@@ -5350,6 +5374,7 @@
    "outcome": "success",
    "length": 85,
    "root_mission": "SEIZE",
+   "comm_model": "jammed",
    "obedience_latencies": [
     18,
     3,
