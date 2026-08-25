@@ -185,3 +185,44 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
   checkpoints are at OBS_DIM 220, so they cannot be loaded to score. "Did the
   old fleet bunch too?" is permanently unanswerable — a second, quieter cost of
   the spaces break, and worth the owner knowing.
+
+- 01:45 — **bunching thread CLOSED, and the gate is vindicated rather than
+  miscalibrated.** My hypothesis (geometric: holding a small objective in cover
+  forces stacking, so 0.70 is unreachable for DEFEND) is **refuted**.
+
+  The masked-random control I launched for it turned out **unable to settle the
+  question** — random reads stacked 0.05–0.07 but wins 0.00, so it never holds
+  the objective and therefore never faces the thing that would force bunching.
+  Recording that rather than quoting it as evidence: a control whose arm does
+  not do the task cannot separate the hypotheses.
+
+  What settled it is `mean_nearest_teammate_dist` against `STACK_RADIUS = 1.5`:
+
+  | run | stacked | nearest-teammate | spatially sound | cover under threat |
+  |---|---|---|---|---|
+  | defend_brique_v19 | 0.976 | **0.205** | 0.024 | 0.996 |
+  | fireteam_defend_v25 | 0.960 | **0.225** | 0.040 | 0.999 |
+  | squad_screen_v19 | 0.234 | 1.688 | 0.753 | 0.380 |
+  | squad_recon_v13 | 0.572 | 1.367 | 0.417 | — |
+  | platoon_v13 | 0.371 | 2.939 | 0.531 | — |
+  | random (3 scenarios) | 0.05–0.07 | 3.44–4.42 | 0.69–0.87 | 0.04–0.23 |
+
+  0.21 is not "as spread as the objective allows" — a team on adjacent distinct
+  cells reads ~1.0. It is **the entire team in effectively one cell**, at a
+  seventh of the stack radius, spatially unsound 96–98% of the time, with cover
+  occupancy at 0.996–0.999 (everyone in the same cover). They win 1.00 doing it.
+
+  **So the bunching gate is doing exactly the job it was created for** (owner
+  decision, 2026-08-21) and is catching a degenerate DEFEND solution on its
+  first contact with these two scenarios: hold the objective by piling the whole
+  element into the best cover cell. One grenade.
+
+  **Thread stopped here, deliberately.** The remedy is a reward or gate change,
+  and both are design decisions reserved to the owner. No knob touched.
+
+  **The caveat that must travel with this finding**: we cannot know whether the
+  v1.22 incumbents did the same. `stacked_rate` postdates them AND their
+  checkpoints are OBS_DIM 220 and will not load, so they can never be scored on
+  this axis. This may be long-standing DEFEND behaviour that only became visible
+  now — the retrain did not necessarily cause it, and the write-up must not
+  imply that it did.
