@@ -1000,6 +1000,18 @@ class CohortEnv(ParallelEnv):
             if not soldier.alive:
                 continue  # a casualty accrues nothing per step, not even the clock
             ledger.add(callsign, "time", cfg.time_penalty)
+            if cfg.bunching_penalty:
+                # The pile pays; a pair does not. Counted over LIVING teammates so
+                # the price and cohort.metrics' stacked_rate see the same world —
+                # a term that charged for dead neighbours would bill an element
+                # for its own casualties.
+                crowd = sum(
+                    other is not soldier and dist(soldier.pos, other.pos) <= cfg.bunching_radius
+                    for other in self.roster.living
+                )
+                excess = crowd - cfg.bunching_free_teammates
+                if excess > 0:
+                    ledger.add(callsign, "bunching", cfg.bunching_penalty * excess)
             ctx = self._compliance_ctx(soldier, prev_dist.get(callsign), views[callsign])
             if soldier.mission is not None:
                 self._update_crossing(soldier)

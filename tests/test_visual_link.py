@@ -30,6 +30,12 @@ def _env(comm="voice_only", seed=1):
                     "TL2": (10, 12), "RFN3": (10, 13), "RFN4": (11, 13)}.items():
         env.roster.by_callsign[cs].pos = pos
     env._update_visual_links()
+    # The bunching price is OFF in this fixture. These agents are placed on
+    # adjacent cells to exercise a different channel entirely, and the tests
+    # below assert an exact per-step total — a second always-on term would
+    # make them assertions about two mechanisms at once. The price has its own
+    # suite in tests/test_bunching_price.py.
+    env.rewards_cfg = replace(env.rewards_cfg, bunching_penalty=0.0)
     return env
 
 

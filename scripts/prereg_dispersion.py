@@ -64,7 +64,11 @@ STACKED_BAR = 0.70          # the marker bound the cycle is trying to clear
 STACKED_MOVE = 0.10         # absolute fall that counts as the mechanism doing anything
 NEAREST_RISE = 0.50         # cells the element must actually spread, not just thin out
 ALPHA = 0.05                # one-sided, non-inferiority
-LADDER = ("0.5", "0.75", "1.0")   # declared burst_fraction ladder, weakest first
+LADDER = ("-0.05", "-0.10", "-0.20")   # declared bunching_penalty ladder, weakest
+#                                        first. Was the AREA FIRE burst_fraction
+#                                        ladder (0.5/0.75/1.0), withdrawn 2026-08-26
+#                                        when measurement showed a casualty coupling
+#                                        cannot reach a cohort nobody shoots at.
 
 VERDICTS = {
     "SEPARATES": "bunching cleared the bar, the element genuinely spread, and no "

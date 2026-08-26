@@ -239,3 +239,72 @@ per episode), which is where the rider's original evidence came from: the flat
 platoon arms win by piling at stacked 0.84–0.94. Whether it prices *that* pile
 is untested — the archived flat arms are OBS_DIM 220 against a tree at 351 and
 cannot be loaded, so answering it needs a retrain and it is not claimed here.
+
+---
+
+# Amendment 2 — 2026-08-26, before job 1: the mechanism and its ladder
+
+**Owner-decided, replacing AREA FIRE: a THRESHOLD price (shape 2) at N = 1.**
+`RewardConfig.bunching_penalty` charges each living agent, each step, for every
+teammate inside `bunching_radius` **beyond the first**.
+
+## Why N = 1, and why this is not a free parameter
+
+`stacked_rate` — the marker the whole cycle is about — is defined as *the share
+of agent-steps with **≥ 2** living teammates within `STACK_RADIUS`*. One free
+teammate therefore makes **the first charged step exactly the first stacked
+step**: the priced quantity and the measured quantity are the same quantity.
+This is the same discipline that tied `CombatParams.burst_radius` to
+`STACK_RADIUS`, and `tests/test_bunching_price.py` pins both halves.
+
+It also answers the objection the spec raised against shape (1): a buddy pair
+pays **nothing**, so the cohesion this project measures and wants is untaxed.
+The pile is what pays.
+
+## The ladder, sized from measurement rather than taste
+
+Arming the price cannot move a trajectory of an already-trained policy — a
+policy acts on observations, not on rewards — so what each member *would* pay
+today is arithmetic over rollouts that already exist, at zero training cost.
+`scripts/bunching_price_calibration.py`, N=20, per agent per episode, at a unit
+price of −0.01 (the charge is exactly linear in the price):
+
+| scenario | stacked | charge @ −0.01 | **@ −0.05 (rung 1)** | vs `success_team` = 60 |
+|---|---|---|---|---|
+| `fireteam_defend` | 0.960 | −1.95 | **−9.75** | 16% |
+| `platoon` | 0.567 | −1.84 | −9.20 | 15% |
+| `defend_brique` | 0.976 | −1.58 | **−7.90** | 13% |
+| `platoon_hard` | 0.370 | −0.96 | −4.80 | 8% |
+| `squad_recon` | 0.572 | −0.70 | −3.50 | 6% |
+| `squad` | 0.291 | −0.34 | −1.70 | 3% |
+| `squad_screen` | 0.234 | −0.20 | −1.00 | 2% |
+| `patrol_brique` | 0.227 | −0.14 | −0.70 | 1% |
+| `fireteam` | 0.167 | −0.11 | −0.55 | 1% |
+
+**Declared ladder: `bunching_penalty` = −0.05 → −0.10 → −0.20.** Rung 3 puts the
+worst piler at 65% of its team terminal, which is deliberately near the point
+where holding stops being worth it — that is what WALKS is for, and it is the
+strongest price this registration will ask for.
+
+**Amendment 1's new clause is satisfied up front.** A CEILING requires showing
+the mechanism actually charged the DEFEND pair; at rung 1 it bills them 16% and
+13% of their team terminal, measured above, before any job runs. This is exactly
+what AREA FIRE could not show.
+
+## Declared risks, so they are not discovered as surprises
+
+- **`platoon` and `squad_recon` are exposed too** (15% and 6% at rung 1) — they
+  sit mid-band at 0.567 and 0.572 stacked. They are in the **fleet guard**, not
+  the primary pair, so a success loss there reads WALKS. That is the correct
+  reading and it is registered here rather than argued afterwards.
+- **Over-dispersal is a real hazard and is NOT in the bar.** An element could
+  answer the price by scattering past the point where teammates can see each
+  other. That would show as `no_close_teammate` rising while
+  `spatially_sound_rate` fails to improve — `spatially_sound` is `close AND seen
+  AND NOT crowded`, so genuine dispersion raises it and scattering does not.
+  Both are measured and will be reported beside the verdict. They are **not**
+  promoted to gates: that is a decision, and the owner has made this project's
+  gating calls.
+- **The term is global, not per-scenario**, for the same reason AREA FIRE would
+  have been: a price that exists in `fireteam` but not in `squad` is not one
+  environment, and the fleet ships as one system.

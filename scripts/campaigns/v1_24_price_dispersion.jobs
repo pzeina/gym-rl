@@ -1,0 +1,106 @@
+# v1.24 FLEET RETRAIN — the price-dispersion cycle, rung 1.
+#
+# WHY. Both DEFEND-root members hold their objective as one pile and win every
+# episode: stacked 0.976 / 0.960 with nearest-teammate distance 0.205 / 0.225
+# against a STACK_RADIUS of 1.5 — the whole element in effectively one cell,
+# spatially unsound 96-98% of the time. The piling is CHOSEN, not geometric:
+# that hypothesis was tested and refuted (2026-08-26). `stacked_rate` became a
+# MARKER the same day, so the behaviour now ships and is visible rather than
+# blocked; this cycle is the response — make it cost something.
+#
+# WHAT CHANGED IN cohort/, AND IT IS ONE FIELD. `RewardConfig.bunching_penalty`
+# = -0.05: each living agent, each step, pays for every teammate inside
+# `bunching_radius` BEYOND THE FIRST. A threshold price at N=1, not a per-step
+# one, so a buddy pair pays nothing and the pile pays. N=1 is not a free
+# parameter — `stacked_rate` is defined as ">= 2 living teammates within
+# STACK_RADIUS", so one free teammate makes the first charged step exactly the
+# first stacked step. The priced quantity IS the measured quantity.
+#
+# THIS IS NOT THE MECHANISM WE STARTED WITH, and the reason is on the record.
+# The owner first chose AREA FIRE (casualty coupling) on my recommendation. It
+# was armed at burst_fraction=0.5 and REFUTED before job 1: dropping the two
+# DEFEND incumbents into the armed world without retraining moved nothing
+# (success 1.000->0.980 and 1.000->1.000, nn 0.205->0.207 and 0.225->0.227).
+# scripts/burst_engagement_probe.py says why — the two members that pile up are
+# the two that are never shot at (0.9 and 0.5 enemy hits/ep against
+# platoon_hard's 17.6, cover occupancy under threat 0.996/0.999). A price
+# coupled to incoming fire has no channel to charge them. AREA FIRE is reverted
+# to OFF and is NOT refuted as a mechanic — it bites hardest where fire is heavy.
+#
+# THE RUNG IS SIZED FROM MEASUREMENT. Arming a price cannot move a trajectory of
+# an already-trained policy, so what each member WOULD pay is arithmetic over
+# rollouts that already exist. scripts/bunching_price_calibration.py, N=20, per
+# agent per episode at -0.05, against success_team = 60:
+#
+#   fireteam_defend  -9.75 (16%)    platoon_hard  -4.80 ( 8%)    squad_screen -1.00 (2%)
+#   platoon          -9.20 (15%)    squad_recon   -3.50 ( 6%)    patrol_brique -0.70 (1%)
+#   defend_brique    -7.90 (13%)    squad         -1.70 ( 3%)    fireteam      -0.55 (1%)
+#
+# Ladder -0.05 -> -0.10 -> -0.20 declared in docs/prereg-price-dispersion.md.
+# This is rung 1. Climbing is a new decision and a new campaign.
+#
+# THE BAR WAS WRITTEN BEFORE THE MECHANISM WAS PICKED, on purpose.
+# docs/prereg-price-dispersion.md, scored by scripts/prereg_dispersion.py against
+# incumbents frozen in the matching .json, thresholds pinned by
+# tests/test_prereg_dispersion.py. SEPARATES needs, in BOTH DEFEND members:
+# stacked < 0.70, nearest-teammate distance up >= 0.50 cells (the DENOMINATOR
+# guard — a marker that falls because teammates died is not a win), and success
+# non-inferior by one-sided Fisher; plus a Holm-corrected success guard over the
+# other seven. platoon and squad_recon are exposed (15% and 6%) and sit in that
+# guard: a success loss there reads WALKS, and that is registered, not argued
+# after the fact.
+#
+# WHAT THIS CAMPAIGN FREEZES. `cohort/` at the commit that arms the price.
+# A queue launches each job when it reaches it and train.py imports the tree
+# that exists at that moment, so no commit may touch `cohort/` until the last
+# job lands. Tooling, tests, docs, boards and runs/ stay free to move.
+#
+# THE SEED BUDGET IS 18 JOBS, NOT 11, and the reason is a finding rather than
+# caution: A SEED SEARCH DOES NOT SURVIVE A TREE CHANGE. On the v1.23 transition
+# patrol_brique carried 2 of 4 seeds, with one flipping 0.949 -> 0.000. So the
+# three scenarios with a bimodal reporting channel — patrol_brique, platoon,
+# platoon_hard — each re-run their declared search at 4 seeds. The six
+# single-seed scenarios run once. Ordered so the cheap fleet completes first and
+# the spares only cost what they are needed for.
+#
+# AND squad's PROVENANCE EXCEPTION RESOLVES HERE. squad_ctrl_v2_seed12 is the
+# one member on a different tree (81a9cec6 vs ee378f01) — my planning error,
+# disclosed in the manifest. It gets a job this time.
+#
+# THE PREFLIGHT WILL REFUSE THESE JOBS AND FORCE=1 IS THE RIGHT ANSWER, for a
+# reason that is checkable rather than remembered. Every job re-derives a config
+# the record holds. But the v1.23 lesson is that "the tree moved" is NEVER on
+# its own a reason to re-run — a tree change at constant OBS_DIM produced
+# bit-identical checkpoints five commits apart. OBS_DIM does NOT move here
+# (a reward field is not an observation), so that argument is unavailable and
+# something stronger is needed: the reward function itself changed, and every
+# priced member's per-episode return changes by the measured amounts in the
+# table above — 0.55 to 9.75 per agent — which enters the advantage estimate
+# from the first update. Trajectories cannot coincide. That is measured, not
+# assumed: scripts/bunching_price_calibration.py prints the deltas.
+#
+# AFTER THIS LANDS: score the bar with
+#   scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
+# BEFORE anything is published. Then publish_baseline.py at N=100 (detached),
+# baseline.py --seal, results_table.py --write. A MISS supersedes nothing
+# without an ask, and WALKS is a miss.
+#
+# ~18 runs x 25-45 min, sequential in one nohup'd queue.
+fireteam_v15               --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v26        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_v30                  --scenario squad          --total-steps 3000000 --seed 12
+squad_recon_v14            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v20           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v20          --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v15_seed12         --scenario platoon         --total-steps 3000000 --seed 12
+platoon_v16_seed13         --scenario platoon         --total-steps 3000000 --seed 13
+platoon_v17_seed14         --scenario platoon         --total-steps 3000000 --seed 14
+platoon_v18_seed15         --scenario platoon         --total-steps 3000000 --seed 15
+platoon_hard_v8_seed12     --scenario platoon_hard    --total-steps 3000000 --seed 12
+platoon_hard_v9_seed13     --scenario platoon_hard    --total-steps 3000000 --seed 13
+platoon_hard_v10_seed14    --scenario platoon_hard    --total-steps 3000000 --seed 14
+platoon_hard_v11_seed15    --scenario platoon_hard    --total-steps 3000000 --seed 15
+patrol_brique_v46_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v47_seed18   --scenario patrol_brique   --total-steps 3000000 --seed 18
+patrol_brique_v48_seed19   --scenario patrol_brique   --total-steps 3000000 --seed 19
+patrol_brique_v49_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14

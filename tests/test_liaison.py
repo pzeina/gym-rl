@@ -59,6 +59,12 @@ def _env(seed=1, **over):
     for e in env.enemies:
         e.pos = (40, 40)
         e.home = e.pos
+    # The bunching price is OFF in this fixture. These agents are placed on
+    # adjacent cells to exercise a different channel entirely, and the tests
+    # below assert an exact per-step total — a second always-on term would
+    # make them assertions about two mechanisms at once. The price has its own
+    # suite in tests/test_bunching_price.py.
+    env.rewards_cfg = replace(env.rewards_cfg, bunching_penalty=0.0)
     return env
 
 

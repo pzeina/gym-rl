@@ -261,6 +261,37 @@ class RewardConfig:
     #                                   preservation is now measured, not priced, via the
     #                                   human_death_rate / exposure metrics.
 
+    # --- Bunching price (the price-dispersion cycle, owner-decided 2026-08-26) ---
+    # A THRESHOLD price, not a per-step one: teammates inside the radius are free
+    # up to `bunching_free_teammates`, and every one beyond that is charged, per
+    # living agent-step. Chosen over a flat per-step price because that would tax
+    # the buddy pair doctrine wants at the same rate as the five-man blob it does
+    # not, and this project ships cohesion metrics that assume teammates stay near
+    # enough to see each other.
+    #
+    # The priced quantity is the MEASURED one. `stacked_rate` is defined as the
+    # share of agent-steps with >= 2 living teammates within STACK_RADIUS, so one
+    # free teammate makes the first charged step exactly the first stacked step.
+    # `bunching_radius` and `bunching_free_teammates` are tied to the metric by
+    # test rather than imported, the same way `CombatParams.burst_radius` is —
+    # cohort.metrics imports cohort.env, so the arrow cannot point back.
+    #
+    # WHY A DIRECT PRICE AND NOT AREA FIRE. AREA FIRE was the owner's first pick
+    # and was refuted before job 1 (2026-08-26): it charges bunching through
+    # incoming fire, and the two members that pile up are the two that are never
+    # shot at — defend_brique takes 0.9 enemy hits per episode, fireteam_defend
+    # 0.5, against platoon_hard's 17.6. This term charges the behaviour itself, so
+    # it reaches a cohort nobody is shooting at. See scripts/burst_engagement_probe.py.
+    #
+    # ARMED at -0.05 on 2026-08-26 (owner-decided): rung 1 of the declared ladder
+    # -0.05 -> -0.10 -> -0.20 in docs/prereg-price-dispersion.md, Amendment 2.
+    # Sized from measurement, not taste: at this rung the two DEFEND members pay
+    # 16% and 13% of their team terminal (success_team = 60) for standing where
+    # they stand today, and the four best-spread members pay 1-3%.
+    bunching_penalty: float = -0.05     # charged per EXCESS teammate, per agent-step
+    bunching_free_teammates: int = 1    # teammates within the radius that cost nothing
+    bunching_radius: float = 1.5        # == cohort.metrics.STACK_RADIUS (tied by test)
+
     # Terminal rewards must DOMINATE any achievable per-step shaping accrual:
     # with ~0.09/step of positive shaping over a 600-step episode (the v1.4
     # platoon cap; the B5 tenure multiplier raises the per-step ceiling from
@@ -627,7 +658,9 @@ def _coerce(key: str, raw: str, annotation: str) -> float | int | bool:
 
 
 #: Component names, fixed so metrics stay aligned across runs.
-COMPONENTS: tuple[str, ...] = ("time", "compliance", "report", "command", "combat", "terminal")
+COMPONENTS: tuple[str, ...] = (
+    "time", "compliance", "report", "command", "combat", "bunching", "terminal",
+)
 
 
 @dataclass
