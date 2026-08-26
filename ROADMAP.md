@@ -1,6 +1,60 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-26, **v1.23 IS SEALED and the fleet is reproducible again; behaviour MARKERS replace two gates; the next cycle is price-dispersion and it is specced**)
+## ⟳ Session handoff — resume here (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
+
+### The campaign in flight
+
+**`scripts/campaigns/v1_24_price_dispersion.jobs`, 18 jobs, launched 2026-08-26
+13:19 (pid 83598, `logs/queue_20260826_131922_83502.log`).** `cohort/` is FROZEN
+at `3a24fd7` until the last job lands — tooling, tests, docs, boards and `runs/`
+stay free.
+
+- **The mechanism**: `RewardConfig.bunching_penalty = -0.05` — a THRESHOLD price
+  at N=1, charging each living agent per teammate inside the radius **beyond the
+  first**. N=1 is not a free parameter: `stacked_rate` is defined as ">= 2 living
+  teammates within STACK_RADIUS", so the first charged step is exactly the first
+  stacked step. A buddy pair pays nothing.
+- **The rung was sized from measurement**, not taste — arming a price cannot move
+  an already-trained policy's trajectory, so `scripts/bunching_price_calibration.py`
+  reads what each member WOULD pay off rollouts that already exist, at zero
+  training cost. At −0.05: `fireteam_defend` −9.75 (16% of its team terminal),
+  `platoon` −9.20 (15%), `defend_brique` −7.90 (13%), and the four best-spread
+  members 1–3%.
+- **When it lands**: `scripts/prereg_dispersion.py --manifest --setting
+  bunching_penalty=-0.05` BEFORE anything is published. Then
+  `publish_baseline.py` at N=100, `baseline.py --seal`, `results_table.py
+  --write`. **WALKS is a miss and a miss supersedes nothing without an ask.**
+- **Registered risk**: `platoon` and `squad_recon` are exposed too (15% and 6%)
+  and sit in the fleet guard, so a success loss there reads WALKS. Registered in
+  Amendment 2 rather than argued afterwards.
+
+### AREA FIRE was approved and then refuted — read this before re-proposing it
+
+You chose AREA FIRE on my recommendation. It was armed at `burst_fraction=0.5`
+and the two DEFEND incumbents were dropped into the armed world **without
+retraining** — the cheapest check that a lever has teeth. It moved nothing
+(success 1.000→0.980 and 1.000→1.000, nearest 0.205→0.207 and 0.225→0.227).
+
+`scripts/burst_engagement_probe.py` says why, and it is **not** "the price is too
+low": **the two members that pile up are the two that are never shot at.** Enemy
+hits per episode — `defend_brique` 0.9, `fireteam_defend` 0.5, `platoon_hard`
+17.6 — with cover occupancy under threat at 0.996 and 0.999. A price coupled to
+incoming fire has no channel to charge them. And the ladder **inverts** past rung
+1: at 0.75 and 1.0 `defend_brique`'s enemy hits FALL to 0.2, because the splash
+is symmetric and clears the attackers faster. More price, less pressure.
+
+Reverted to `burst_fraction=0.0`, pinned by `tests/test_burst_fire.py`. **NOT
+refuted as a mechanic** — it bites hardest exactly where fire is heavy
+(`platoon_hard` deaths 4.55→6.10), which is where the rider's flat-platoon
+evidence came from. Whether it prices *that* pile is untested: the archived flat
+arms are OBS_DIM 220 against a tree at 351 and will not load.
+
+**The bar caught this before the fleet did.** Amendment 1 adds the clause that
+generalises it: **a CEILING requires a mechanism that can reach the members.**
+Run as originally registered, the AREA FIRE ladder would have returned NO EFFECT
+at every rung and then CEILING — whose registered meaning is "DEFEND cannot be
+held dispersed on these maps", a claim about the maps published off a price that
+never arrived.
 
 ### State: green
 
@@ -109,12 +163,15 @@ unloadable; nothing published was re-derivable. That is fixed.
 
 ### Next command
 
-`/boards`, then launch the price-dispersion cycle per `docs/next-cycles.md`
-once you have picked its mechanism. The bar it will be scored against is
-already written and frozen — `docs/prereg-price-dispersion.md` — so the only
-thing standing between here and job 1 is the mechanism choice (and, if it is a
-reward term rather than AREA FIRE, the three-rung price ladder to declare in
-AREA FIRE's place).
+`/train-status` — nothing to do until the queue drains (~10h from 13:19).
+Then, in order and BEFORE publishing anything:
+
+```
+scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
+```
+
+`/boards` is still PUBLISH PENDING from before this cycle and is independent of
+it — safe to run at any time.
 
 ### 2026-08-26 — AREA FIRE cannot price the DEFEND pile, and the probe cost no training at all
 
