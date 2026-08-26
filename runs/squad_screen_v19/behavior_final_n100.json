@@ -1,7 +1,7 @@
 {
  "checkpoint": "runs/squad_screen_v19/ckpt_latest.pt",
  "checkpoint_sha256": "24717af785ae2848f06665e50f6e604099573d7fc6d61d8057421d29d23ed1c6",
- "eval_commit": "8f184925354de8d65461844be03587b681d84554",
+ "eval_commit": "1935b9fc2aab23d2f04bf18bdda47288351f19e1",
  "scenario": "squad_screen",
  "episodes": 100,
  "seed": 123,
@@ -173,6 +173,7 @@
   "human_mean_enemy_dist": 18.849683335499478,
   "human_mean_objective_dist": 15.322010492126072,
   "human_ring_entries_mean": 1.01,
+  "human_in_action_rate": 0.99,
   "cover_occupancy_under_threat": 0.3795513056270688,
   "mean_distance_from_objective_under_threat": 8.39285425023388,
   "threat_pairs": 2719,
@@ -281,22 +282,29 @@
    "direction": "min",
    "passed": true,
    "waived": null
-  },
+  }
+ ],
+ "markers": [
   {
    "name": "closed_on_root_report_rate",
+   "label": "root closes its own operation",
    "value": 0.94,
-   "bound": 0.5,
-   "direction": "min",
-   "passed": true,
-   "waived": null
+   "meaning": "share of won episodes whose ENDEX came from the root's own report",
+   "not_attributable": null
   },
   {
    "name": "stacked_rate",
+   "label": "element bunching",
    "value": 0.23409924288390008,
-   "bound": 0.7,
-   "direction": "max",
-   "passed": true,
-   "waived": null
+   "meaning": "share of agent-steps with >=2 living teammates within 1.5",
+   "not_attributable": null
+  },
+  {
+   "name": "human_in_action_rate",
+   "label": "human goes forward",
+   "value": 0.99,
+   "meaning": "share of scored episodes where the human entered the objective ring",
+   "not_attributable": null
   }
  ],
  "per_episode": [

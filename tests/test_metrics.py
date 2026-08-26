@@ -1856,3 +1856,21 @@ def test_every_marker_is_registered_with_a_label_and_a_meaning():
     assert keys == ["closed_on_root_report_rate", "stacked_rate", "human_in_action_rate"]
     for key, label, meaning in BEHAVIOUR_MARKERS:
         assert label and meaning and len(meaning) > 20, key
+
+
+def test_the_evaluation_artifact_carries_its_markers():
+    """Markers must reach `behavior.json`, not just the printed summary.
+
+    They were written into `summary` and not into the payload on the first
+    attempt, so nine freshly-scored fleet members all wrote `"markers": null`
+    while printing them correctly to a terminal nobody kept. The boards and the
+    README table read the FILE.
+    """
+    import inspect
+
+    from cohort.training import evaluate as ev
+    src = inspect.getsource(ev)
+    payload = src[src.index('payload |= {'):]
+    assert '"markers": marks' in payload, (
+        "the written payload must include markers, not only summary[...]"
+    )

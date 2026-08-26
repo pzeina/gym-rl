@@ -1,28 +1,32 @@
 {
-  "version": "v1.22",
+  "version": "v1.23",
   "commit": null,
-  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults, seed 12 except where a declared seed_search chose the member. Sealed by scripts/baseline.py --seal once the fleet lands; audited by scripts/baseline.py. seed_search declares the seeds a member was CHOSEN from; seed_spread declares every other same-config draw the record holds, live or archived, cross-tree included \u2014 audited for completeness and deduped by model-tensor digest, so a bit-identical re-execution counts once (owner decision 2026-08-18, refs assurance #63).",
+  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults. v1.23 (2026-08-26): retrained onto the post-acoustics tree because every v1.22 member was OBS_DIM 220 against a tree at 351 and could not be loaded \u2014 the fleet was unreproducible. Members for patrol_brique, platoon and platoon_hard come from DECLARED seed searches, never laundered: their reporting channel is bimodal and the search is recorded in seed_search with every seed tried. closed_on_root_report_rate and stacked_rate are BEHAVIOUR MARKERS as of 2026-08-26 (owner-decided), not gates: they are measured and printed on every surface and no longer block a seal. seed_search declares the seeds a member was CHOSEN from; seed_spread declares every other same-config draw the record holds.",
   "runs": {
-    "fireteam": "fireteam_v12",
-    "fireteam_defend": "fireteam_defend_v23",
-    "squad": "squad_v27",
-    "squad_recon": "squad_recon_v11",
-    "squad_screen": "squad_screen_v14",
-    "patrol_brique": "patrol_brique_v41_seed14",
-    "defend_brique": "defend_brique_v17",
-    "platoon": "platoon_v8",
-    "platoon_hard": "platoon_hard_v5_seed12"
+    "fireteam": "fireteam_v14",
+    "fireteam_defend": "fireteam_defend_v25",
+    "squad": "squad_ctrl_v2_seed12",
+    "squad_recon": "squad_recon_v13",
+    "squad_screen": "squad_screen_v19",
+    "patrol_brique": "patrol_brique_v44_seed19",
+    "defend_brique": "defend_brique_v19",
+    "platoon": "platoon_v14_seed13",
+    "platoon_hard": "platoon_hard_v7_seed13"
   },
   "seed_search": {
     "patrol_brique": [
-      "patrol_brique_v38_seed12",
-      "patrol_brique_v39_seed18",
-      "patrol_brique_v40_seed19",
-      "patrol_brique_v41_seed14"
+      "patrol_brique_v42_seed12",
+      "patrol_brique_v43_seed18",
+      "patrol_brique_v44_seed19",
+      "patrol_brique_v45_seed14"
     ],
-    "squad": [
-      "squad_v27",
-      "squad_v28_seed13"
+    "platoon": [
+      "platoon_v13",
+      "platoon_v14_seed13"
+    ],
+    "platoon_hard": [
+      "platoon_hard_v6_seed12",
+      "platoon_hard_v7_seed13"
     ]
   },
   "seed_spread": {
@@ -31,7 +35,7 @@
       "fireteam_v10",
       "fireteam_v11",
       "fireteam_v13_seed13",
-      "fireteam_v14"
+      "fireteam_v12"
     ],
     "fireteam_defend": [
       "fireteam_defend_v11",
@@ -40,7 +44,7 @@
       "fireteam_defend_v21",
       "fireteam_defend_v22",
       "fireteam_defend_v24_seed13",
-      "fireteam_defend_v25"
+      "fireteam_defend_v23"
     ],
     "squad": [
       "squad_v8",
@@ -61,8 +65,9 @@
       "squad_ctrl_v1_seed12",
       "squad_ctrl_v1_seed13",
       "squad_ctrl_v1_seed14",
-      "squad_ctrl_v2_seed12",
-      "squad_ctrl_v2_seed13"
+      "squad_ctrl_v2_seed13",
+      "squad_v27",
+      "squad_v28_seed13"
     ],
     "squad_recon": [
       "squad_recon_v8",
@@ -70,7 +75,7 @@
       "squad_recon_v10",
       "squad_recon_v7",
       "squad_recon_v12_seed13",
-      "squad_recon_v13"
+      "squad_recon_v11"
     ],
     "squad_screen": [
       "squad_screen_v11",
@@ -78,7 +83,7 @@
       "squad_screen_v13",
       "squad_screen_v15_seed13",
       "squad_screen_v18_seed12",
-      "squad_screen_v19"
+      "squad_screen_v14"
     ],
     "patrol_brique": [
       "patrol_brique_v6",
@@ -97,16 +102,16 @@
       "patrol_brique_v29_rdb1_seed19",
       "patrol_brique_v31_rdb1_seed20",
       "patrol_brique_v33_rdb1_seed21",
-      "patrol_brique_v42_seed12",
-      "patrol_brique_v43_seed18",
-      "patrol_brique_v44_seed19",
-      "patrol_brique_v45_seed14"
+      "patrol_brique_v41_seed14",
+      "patrol_brique_v38_seed12",
+      "patrol_brique_v39_seed18",
+      "patrol_brique_v40_seed19"
     ],
     "defend_brique": [
       "defend_brique_v15",
       "defend_brique_v16",
       "defend_brique_v18_seed13",
-      "defend_brique_v19"
+      "defend_brique_v17"
     ],
     "platoon": [
       "platoon_v6",
@@ -115,8 +120,13 @@
       "platoon_v10_seed12",
       "platoon_v11_seed14",
       "platoon_v12_seed12",
-      "platoon_v13",
-      "platoon_v14_seed13"
+      "platoon_v8"
+    ],
+    "platoon_hard": [
+      "platoon_hard_v1_seed12",
+      "platoon_hard_v2_seed13",
+      "platoon_hard_v3_seed14",
+      "platoon_hard_v4_seed15"
     ]
   },
   "referenced_history": {
@@ -126,60 +136,61 @@
     "squad_abl_flat_s3": "B3 2026-08-06, Box(137): the flat arm of that original \u2014 the 2.2x wipe rate the robustness claim rests on.",
     "squad_v10b": "Confirmation seed (13) for the flagship squad scenario. squad_v10 published at 0.92 \u00b1 0.05 against squad_v8's 0.98 \u00b1 0.03 and squad_v9's 0.97 \u00b1 0.03 \u2014 overlapping intervals, Fisher p = 0.10 and 0.21, so not a difference by this repo's own rule, but at the low end of the band with root death 0.30 vs 0.23/0.18 (p = 0.34 / 0.068). One seed cannot say whether that is the scenario or the draw; two can bound it. The manifest member stays seed 12 either way, because it is also the ablation's control arm and the three arms must share a seed.",
     "squad_v11": "Price arm, done_false=-2.0, single-variable against squad_v10 (same tree, seed, steps). CONFIRMED the mechanism: root claims 178 -> 0, give-back -7pt -> +2pt, messages/ep 101 -> 78, distance from objective under threat 11.21 -> 9.53. REJECTED as a fix: root-closed 84% -> 0%, so the price does not repair the DONE channel, it closes it \u2014 the exact failure rewards.py warns about. Final success 0.92 -> 0.96 is NOT significant (Fisher p = 0.37; pooled p = 0.076).",
-    "squad_v12": "Price arm, root_done_bonus_first_claim_only=true at the shipped done_false=-0.5. The lever squad_v11 argues for: at squad_v10's own claim precision of 0.433 it leaves the FIRST truthful claim at EV +1.014 and drops the second and later to -0.284, so spam stops paying without the honest report going -EV. Single-variable against squad_v10."
+    "squad_v12": "Price arm, root_done_bonus_first_claim_only=true at the shipped done_false=-0.5. The lever squad_v11 argues for: at squad_v10's own claim precision of 0.433 it leaves the FIRST truthful claim at EV +1.014 and drops the second and later to -0.284, so spam stops paying without the honest report going -EV. Single-variable against squad_v10.",
+    "platoon_hard_v5_seed12": "The v1.22 platoon_hard member, and NOT a same-config draw of the v1.23 one: it was trained with the D4 rescue ARMED (rescue_max=3, rescue_patience=700, rescue_kl_scale=0.5) while every v1.23 job ran with the rescue off. That difference was NOT intended \u2014 scripts/campaigns/v1_23_fleet.jobs simply carried no rescue flags, so the campaign silently dropped a setting the shipped member had. Disclosed rather than reconciled, because the outcome argues for the new configuration: platoon_hard_v7_seed13 converges to PUBLISHABLE (gap 7) with no salvage at all, and 'the rescue is a converter, not a cure' is this project's own finding (ROADMAP 2026-08-21). It also plausibly explains why v6_seed12 missed the bar at gap 13 \u2014 no rescue to catch its mid-run dip. Any comparison between v5 and a v1.23 platoon_hard run is therefore NOT single-variable."
   },
-  "cohort_tree": "becc3ec433db1d61e7fc2789a32dae0306532c01",
+  "cohort_tree": "ee378f0167a23078f79a04f311d4dc0e8855b887",
   "commits": [
-    "1515e79cc0fbc90a1afd4fdfa109d916776e0355",
-    "3a32d3e8dfe1ce0d72428ac147bdafa9fbf0105d",
-    "cde45ab8121e3072eae151e16500b65cebc10dbf"
+    "45b38d4ef090bd184852353320c426712a84d34c",
+    "724712267bf1cd98df6688f4c9c13318f1a242fe",
+    "a09fcc302491f8061d82728a250c09a800b86c65",
+    "a4f999d27a438cb7b83dc2719fa23aebdbac303f"
   ],
   "artifacts": {
-    "fireteam_v12": {
-      "behavior_final.json": "ebc57a5586f7f93b1041ee1477161fe12f0c83af59a3cf29a62543aa7a8b5c21",
-      "behavior.json": "51db2a8183a08cdfdb80cbde56e04067555adb68675806322b79af4d0954ccd6"
+    "fireteam_v14": {
+      "behavior_final.json": "a41769c1b08be2834ba2622cc2d41afa0c7d9dec3acc31851bfc3412b869c20b",
+      "behavior.json": "6d95c9c17dd0d14013df66deccfacfd3abb60f3a600bdc31e9138868f5285a44"
     },
-    "fireteam_defend_v23": {
-      "behavior_final.json": "44cb3a1c8b9abe3506ad64a221e5110f02a45e3fbfbcc0616d912fda6ef6734b",
-      "behavior.json": "2eabff6619e786b37e91cc0be7dbc4dc7e53e1b66e4fe8403afd396ea8b3b11b"
+    "fireteam_defend_v25": {
+      "behavior_final.json": "0779109a791ff1bd19aa69c758dbde1adc918631a275f74908449a78e59a52ab",
+      "behavior.json": "358ffa9059121bff8a03c324e60c9ee65aadce9134802193935c34d74b598e2d"
     },
-    "squad_v27": {
-      "behavior_final.json": "05506f99ff7812c64cf793d1313a227ad66f392b700fb9710142d511a63e24d2",
-      "behavior.json": "39df922c69c6cd72e4d704985d08a5fb418772e87294fe3c73f4dbf2253834c5"
+    "squad_ctrl_v2_seed12": {
+      "behavior_final.json": "1665ae2f8e3ae4788a10aaa365c7b0e26df384128554125406cfd48c44936017",
+      "behavior.json": "3411d3b7600e1280e6bf27bc20cb25ebbb50f54e90772d8a8d63cd3c61a66958"
     },
-    "squad_recon_v11": {
-      "behavior_final.json": "46d58b94d9f28ca248dce26fa0b75c9fd6d99a2895f58b1adaf4f1ae4dba5c36",
-      "behavior.json": "0be88d173d94a1e916c9caa9ac069d00885b5866e1b7263cd2ff3c0bbefcdcf0"
+    "squad_recon_v13": {
+      "behavior_final.json": "76c2c024c94ecf9d1bc98cfff0b212a8160dd4875c0478f50005b5c7d4208ef5",
+      "behavior.json": "e041286a83f7d16583453854fb85fe87535008fc43ed9bbd746558e86c8bd0f2"
     },
-    "squad_screen_v14": {
-      "behavior_final.json": "95b1ac75fb56b673621d0935f4befeb07df001fb7fb23cfbdeecec6f1c4258a9",
-      "behavior.json": "ea4008244b9f466e45c1361b64d45d28c3200de09354ee9096bd4c12af8f876a"
+    "squad_screen_v19": {
+      "behavior_final.json": "7a9d76c32cc4b0832bf23f8f510cdfad8e1c2a00161455c10b917b2deeabec48",
+      "behavior.json": "d81281b00eb2b7c867e7acc56b6f694dbe913d2120a48916d3c4100707e71e2e"
     },
-    "patrol_brique_v41_seed14": {
-      "behavior_final.json": "03499aba54acd94a51f5053298c63f258569c30459ba38c6e976c529253710ae",
-      "behavior.json": "6808163a6585d07425224fab30bee327af69865f93a4bdef785e2d44b985099d"
+    "patrol_brique_v44_seed19": {
+      "behavior_final.json": "1f50c4bb70c571e6d62359fb8a2f5e47ad68a472ce9a633d027c708ccdebcf44",
+      "behavior.json": "64a065e92e63954c151af671a35e2205e7da20af234cd7154e617f16afa8b8ac"
     },
-    "defend_brique_v17": {
-      "behavior_final.json": "caab6dffe1152c4011fb7cade22c0b4a5b4127c78ab38ca8fcbe83f402da9503",
-      "behavior.json": "e3731722f560841ab24664e8535a15b83878f14ccd3660fccf71365adb4cd3f1"
+    "defend_brique_v19": {
+      "behavior_final.json": "e9cd964146919e705bc1f549fb0e6528e1d9a561255954c2ee0bfb9bda76c738",
+      "behavior.json": "f1e51c5f9472791b48079873af3c3b93803356a379a20139029a87b44e669f37"
     },
-    "platoon_v8": {
-      "behavior_final.json": "fb4677604a23cb4df984a1d83ccd54e8b82df81122fabddbec944bcc710236a8",
-      "behavior.json": "7c1b39bed3dc27a352a1e346744ed80b8d70ff3dac9ca5eea930d23fa1a4b70e"
+    "platoon_v14_seed13": {
+      "behavior_final.json": "bc87590b44fad25ee1caa2f9cdde5f8d90190f97ade66808d538b0b65181ccd3",
+      "behavior.json": "aa10af623f911dbebf4df2ce4d3591c1916ff8d34d67d64620c8a29fc2840bf8"
     },
-    "platoon_hard_v5_seed12": {
-      "behavior_final.json": "ba3fc51e656d53c6c51a975b5c6e280a069f1250b56f422472677c89a523db74",
-      "behavior.json": "8ccdebc34bb9e767eb09b9b5fbdc2cfa62a7fa4c38d201243d3c4ae645a4dd80"
+    "platoon_hard_v7_seed13": {
+      "behavior_final.json": "6db1719a6c5e2b1bc539b6b8bdafabdb96c5fba5ebe226714d32145a4a70c3d2",
+      "behavior.json": "ddab51bced7ce7571ae1d6100b7559381def5b9c80aee9d2c409486f1ad53a7f"
     }
   },
   "exceptions": {
-    "platoon_hard": {
-      "decided": "2026-08-21",
-      "by": "owner",
-      "member_tree": "079f78f0e36087396f6bd0a7037b5ff5d3707ccd",
+    "squad": {
+      "decided": "2026-08-26",
+      "by": "assistant, disclosed for the owner",
+      "member_tree": "81a9cec6c754cbb718e1575ae67ff02347d91cb7",
       "waives": {
-        "gate:closed_on_root_report_rate": "0.000 at N=100, both checkpoints - the diagnosed mute-root cost of a three-echelon hierarchy, not a policy defect this member could have avoided: truthful claims are reachable (~9 golden steps/ep, oracle-forced claims confirm at 0.977) and declined at root_done_bonus 1.0 AND 3.0, while the flat ablation under identical economics reports at 0.83. Repricing is measured dead (ROADMAP 2026-08-21); shipped with the FAIL visible on every surface until a deep-hierarchy claim mechanism exists.",
-        "provenance:cohort_tree": "trained one commit ahead of the fleet tree (cde45ab8, which IS this scenario's shipped semantics: the idle-time price as ScenarioSpec.reward_overrides). No other member's environment moved; retraining the fleet onto this tree was mooted the same day by the acoustics spaces break. Pinned so any further movement is drift."
+        "provenance:cohort_tree": "squad_ctrl_v2_seed12 trained at commit 7247122 (tree 81a9cec6); the other eight members trained during the v1.23 campaign at tree ee378f01. The delta is commits 297cf35 and de1f53d \u2014 the comm-model marker waiver and the checkpoint-selection change that reads it. BOTH ARE INERT FOR THIS MEMBER: COMM_MODEL_MARKER_WAIVERS has a single entry, keyed 'jammed', and `squad` is comm_model='global', so `report_gate_waived` resolves False and best_save_gate takes exactly the pre-change branch. The training path is therefore identical, and only the recorded tree differs. ROOT CAUSE, recorded because it was a planning error and not bad luck: scripts/campaigns/v1_23_fleet.jobs deliberately carried NO squad job, on the reasoning that squad_ctrl_v2_seed12 was bit-identical in CONFIG to one. That was true and beside the point \u2014 it was trained before the campaign froze the tree, so it is not on the frozen tree. A squad job in the campaign would have cost 45 minutes and avoided this. The clean fix is a squad retrain on the fleet tree; it is NOT taken now because the price-dispersion cycle retrains every member imminently, which resolves it at no extra cost."
       }
     }
   }

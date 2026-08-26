@@ -249,6 +249,11 @@ def evaluate(
                 "success_ci95": summary["success_ci95"],
                 "metrics": agg,
                 "gates": gates,
+                # Markers ride in the artifact beside the gates, not only in the
+                # printed summary: the boards and results_table read this file,
+                # and a marker that exists only on a terminal nobody kept is not
+                # "reported on every surface".
+                "markers": marks,
                 "per_episode": per_episode,
             }
             Path(out).write_text(json.dumps(payload, indent=1) + "\n")

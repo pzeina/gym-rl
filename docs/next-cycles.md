@@ -89,6 +89,86 @@ test it. Also unexplained: human death FALLS under jamming at both seeds
 
 ---
 
+## The price-dispersion cycle — CHOSEN BY THE OWNER 2026-08-26, ready to launch
+
+**Status**: specced, not started. `cohort/` is free — v1.23 is sealed, so this
+cycle owns the tree.
+
+**What it is for.** `stacked_rate` is now a MARKER, not a gate: it no longer
+refuses a run, so the piling it measures is shipped and visible rather than
+blocked. This cycle is the response — make the behaviour cost something instead
+of gating the number.
+
+**What was measured, so this does not start from a story** (2026-08-26,
+`behavior_final_n100.json`, both DEFEND-root members):
+
+| | stacked | nearest teammate | spatially sound | cover under threat | success |
+|---|---|---|---|---|---|
+| defend_brique_v19 | 0.976 | **0.205** | 0.024 | 0.996 | 1.00 |
+| fireteam_defend_v25 | 0.960 | **0.225** | 0.040 | 0.999 | 1.00 |
+| squad_screen_v19 | 0.234 | 1.688 | 0.753 | 0.380 | 1.00 |
+| platoon_v14_seed13 | 0.567 | — | — | — | 1.00 |
+| masked random, 3 scenarios | 0.05–0.07 | 3.44–4.42 | 0.69–0.87 | 0.04–0.23 | 0.00 |
+
+`STACK_RADIUS` is 1.5. **0.21 is not "as spread as a small objective allows"** —
+a team on adjacent distinct cells reads ~1.0. It is the whole element in
+effectively one cell, spatially unsound 96–98% of the time, holding the
+objective and winning every episode. One grenade.
+
+**The hypothesis I tested and it was REFUTED**: that the bunching is geometric,
+i.e. that holding a small objective in cover forces the element inside
+`STACK_RADIUS`. It does not — the nearest-teammate distance is a seventh of the
+radius, far tighter than "forced". The piling is chosen.
+
+**A control that could NOT settle it, recorded so it is not re-run**: a
+masked-random policy reads stacked 0.05–0.07, which looks decisive — but it wins
+0.00, never holds the objective, and so never faces what would force bunching.
+A control whose arm does not do the task cannot separate the hypotheses.
+
+### The design decision this cycle needs from the owner
+
+Three shapes, and the choice is yours because it prices behaviour:
+
+1. **A per-step dispersion price** — cost each agent-step spent within
+   `STACK_RADIUS` of a living teammate. Simple, and symmetrical with how
+   `time_penalty` and `order_retask_cost_base` already work. Risk: it prices
+   *cohesion* as well as *piling*, and this project already ships cohesion
+   metrics that assume teammates stay near enough to see each other.
+2. **A threshold price** — free up to N teammates within the radius, priced
+   beyond. Targets the pile without taxing a pair. Needs N chosen, which is a
+   second knob.
+3. **A casualty coupling** — make AREA FIRE live (branch `dispersion-mechanic`,
+   commit `358ee13`, shipped OFF) so a hit sprays neighbours. Prices bunching
+   through the enemy rather than through the reward, which is the more
+   doctrinally honest mechanism and needs no new reward term.
+
+**My recommendation: (3), then re-measure before considering (1) or (2).**
+AREA FIRE is already built, already tested, and shipped OFF specifically so it
+could be switched on in a cycle like this one. It makes bunching *dangerous*
+instead of *expensive*, which is why real elements disperse, and it introduces
+no reward term that could be gamed the way `done_false` was. If the marker does
+not move, (2) is the fallback.
+
+### What the cycle costs
+
+**A full fleet retrain.** Whichever shape is chosen changes the environment for
+every scenario, not just the DEFEND pair. That is 11 jobs, ~7–8h wall-clock, and
+it re-rolls every bimodal reporting draw (see the seed-carry finding below), so
+`patrol_brique`, `platoon` and `platoon_hard` will each need their declared
+searches re-run — **the searches are NOT reusable**. Budget 4 seeds for each of
+those three, i.e. ~18 jobs rather than 11.
+
+### The pre-registered read
+
+Before launching, write the bar. Proposed: the cycle **separates** if
+`stacked_rate` falls below 0.70 in BOTH DEFEND members with success inside the
+incumbents' CI (1.00 ± 0.00 today); it **walks** if bunching falls but success
+drops outside that CI — a cohort that disperses and loses is a worse cohort; it
+**hits the ceiling** if bunching does not move at the strongest price the owner
+will accept, and then the answer is that DEFEND cannot be held dispersed on
+these maps and the marker is documentation, not a defect.
+
+
 ## Addendum (2026-08-17) — standing riders for the next breaking cycle
 
 The v1.20 succession cycle below has shipped, and v1.21 sealed the fleet on one

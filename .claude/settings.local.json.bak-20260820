@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m cohort.training.train --help)",
+      "Bash(.venv/bin/python -m cohort.training.evaluate --help)",
+      "Bash(chmod +x scripts/*.sh scripts/*.py)",
+      "Bash(.venv/bin/python scripts/train_status.py)",
+      "Bash(.venv/bin/python scripts/train_status.py fireteam_defend_v7)",
+      "Bash(.venv/bin/python scripts/run_report.py fireteam_defend_v7 --vs fireteam_defend_v6)",
+      "Bash(scripts/train.sh _smoke_workflow *)",
+      "Bash(.venv/bin/python scripts/train_status.py _smoke_workflow)",
+      "Bash(scripts/train_queue.sh /private/tmp/claude-502/-Users-pzeinaty-Documents-gym-rl/9f5ca7ec-ceb8-4e02-9434-dd248cfde3fc/scratchpad/jobs.txt)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pzeinaty/Documents/epistream-rl/scripts/gymrl-task-hook.sh",
+            "timeout": 10,
+            "statusMessage": "Signaling the assurance layer (epistream-rl sync queue)"
+          }
+        ]
+      }
+    ]
+  }
+}
