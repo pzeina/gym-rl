@@ -52,6 +52,19 @@ unloadable; nothing published was re-derivable. That is fixed.
    choice that is yours (per-step price / threshold price / AREA FIRE) and my
    recommendation (**AREA FIRE first** — already built and shipped OFF, makes
    bunching dangerous rather than expensive, adds no gameable reward term).
+   **Its bar is now registered and frozen** (2026-08-26,
+   `docs/prereg-price-dispersion.md`, scored by `scripts/prereg_dispersion.py`,
+   incumbents in the matching `.json`, thresholds pinned by
+   `tests/test_prereg_dispersion.py`) — written before the mechanism is picked,
+   on purpose, since it reads only quantities that exist today. Two corrections
+   to the prose bar it supersedes: "success inside the incumbents' CI (1.00 ±
+   0.00)" refuses one lost episode in a hundred and is replaced by a one-sided
+   Fisher non-inferiority test (tolerates 96/100, convicts at 95/100); and
+   `stacked_rate` counts LIVING teammates, so AREA FIRE can lower it by killing
+   them — the bar therefore also requires nearest-teammate distance to rise
+   ≥ 0.50 cells and calls the failure DENOMINATOR, which is the jamming
+   finding's exact shape. **Nothing is launched**: arming AREA FIRE runs through
+   `config.py`, and that is your decision, not an override a probe can carry.
 2. **`patrol_brique` human-goes-forward is 0.000** — brand new, surfaced by the
    marker on its first run. The human never enters the objective ring. **This
    may be correct for a patrol** (the mission is not to seize) or may be the
@@ -97,7 +110,11 @@ unloadable; nothing published was re-derivable. That is fixed.
 ### Next command
 
 `/boards`, then launch the price-dispersion cycle per `docs/next-cycles.md`
-once you have picked its mechanism.
+once you have picked its mechanism. The bar it will be scored against is
+already written and frozen — `docs/prereg-price-dispersion.md` — so the only
+thing standing between here and job 1 is the mechanism choice (and, if it is a
+reward term rather than AREA FIRE, the three-rung price ladder to declare in
+AREA FIRE's place).
 
 ### 2026-08-26 — v1.23 fleet, first six members: five clean, one mute root, two first-ever bunching measurements
 
