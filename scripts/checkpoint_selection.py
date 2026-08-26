@@ -75,7 +75,7 @@ RUNS = ROOT / "runs"
 sys.path.insert(0, str(ROOT))
 
 from cohort.metrics import (  # noqa: E402
-    COMM_MODEL_GATE_WAIVERS,
+    COMM_MODEL_MARKER_WAIVERS,
     ROOT_REPORT_CLOSE_FLOOR,
 )
 from cohort.training.train import best_save_gate, is_reporting  # noqa: E402
@@ -257,7 +257,7 @@ def _report_gate_waived_for(run: Path) -> bool:
     except (OSError, ValueError):
         return False
     comm = (econ.get("spec") or {}).get("comm_model") or econ.get("comm_model")
-    return "closed_on_root_report_rate" in COMM_MODEL_GATE_WAIVERS.get(comm, {})
+    return "closed_on_root_report_rate" in COMM_MODEL_MARKER_WAIVERS.get(comm, {})
 
 
 def run_facts(run: Path) -> dict | None:

@@ -214,10 +214,52 @@ SUCCESS_RATE_FLOOR: float = 0.5
 #: through ``_gate``: unmeasured is not passed.
 ROOT_REPORT_CLOSE_FLOOR: float = 0.5
 
-#: Gates a scenario's own communications make unattainable — waived, never
-#: hidden. Keyed by ``comm_model``, then by gate name, with the reason the
-#: waiver exists carried alongside so no surface can print the pass/fail mark
-#: without also being able to print why it does not count.
+#: BEHAVIOUR MARKERS (owner-decided 2026-08-26) — measured, reported, never gating.
+#:
+#: A **gate** is a bound a run must clear: failing one says the run is defective
+#: and blocks a seal. A **marker** says what a policy *does*. The distinction
+#: exists because three numbers this project tracks turned out to vary
+#: legitimately by scenario rather than by policy quality, and gating them was
+#: charging a run for its scenario's shape:
+#:
+#: * ``closed_on_root_report_rate`` — a deep hierarchy's root goes mute for
+#:   diagnosed structural reasons (`platoon_hard`: truthful claims reachable,
+#:   declined at root_done_bonus 1.0 AND 3.0) and a jammed net removes the
+#:   evidence a root would close on. It has never passed in `squad_range_control`
+#:   at any price.
+#: * ``stacked_rate`` — measured 2026-08-26 at 0.96-0.98 in BOTH DEFEND-root
+#:   scenarios, with nearest-teammate distance 0.205/0.225 against a
+#:   STACK_RADIUS of 1.5. Real piling, and worth seeing; but it is a property of
+#:   how DEFEND is solved, and the incumbents it would be compared against can
+#:   never be scored on it (metric postdates them, checkpoints will not load).
+#: * ``human_in_action_rate`` — new. Does the human go forward with the element
+#:   or hold back? Jamming drove it to 0.00 while the team still fought, which
+#:   is exactly the behaviour `human_death_rate` hid: deaths fell because
+#:   exposure vanished, not because anything got safer.
+#:
+#: Markers are printed on every surface, carried in ``behavior.json`` under
+#: ``markers``, and excluded from ``regression_gates``. **Demoting a gate to a
+#: marker weakens enforcement by design** — the number stays visible so a
+#: reviewer can still refuse a run on it; the machine no longer does.
+BEHAVIOUR_MARKERS: tuple[tuple[str, str, str], ...] = (
+    ("closed_on_root_report_rate", "root closes its own operation",
+     "share of won episodes whose ENDEX came from the root's own report"),
+    ("stacked_rate", "element bunching",
+     f"share of agent-steps with >=2 living teammates within {STACK_RADIUS}"),
+    ("human_in_action_rate", "human goes forward",
+     "share of scored episodes where the human entered the objective ring"),
+)
+
+#: Markers a scenario's own communications make unattainable. Keyed by
+#: ``comm_model``, then by marker name, with the reason carried alongside so no
+#: surface can print the number without being able to print why it is not the
+#: policy's doing.
+#:
+#: **Since 2026-08-26 this waives no GATE** — ``closed_on_root_report_rate``
+#: became a marker, so nothing here blocks a seal. Its one remaining consumer is
+#: ``train.best_save_gate``, which must not chase an unattainable marker when
+#: choosing ``ckpt_best``. Renamed from ``COMM_MODEL_MARKER_WAIVERS`` for that
+#: reason: a constant that waives no gate must not be called one.
 #:
 #: ``jammed`` (owner-decided 2026-08-25): *only local information can be
 #: assumed to be consistently delivered.* The outage takes the root's LATERAL
@@ -234,7 +276,7 @@ ROOT_REPORT_CLOSE_FLOOR: float = 0.5
 #: failures, every formatter marks it ``WAIV``, and the number stays on screen —
 #: the same discipline that ships ``platoon_hard``'s mute-root FAIL visibly
 #: rather than quietly dropping the gate.
-COMM_MODEL_GATE_WAIVERS: dict[str, dict[str, str]] = {
+COMM_MODEL_MARKER_WAIVERS: dict[str, dict[str, str]] = {
     "jammed": {
         "closed_on_root_report_rate": (
             "jammed net: only local information is consistently delivered, so "
@@ -1771,7 +1813,7 @@ def episode_behavior(trace: dict) -> dict[str, Any]:
         # carried through so the aggregate knows which regression gates apply
         "root_mission": trace.get("root_mission"),
         # ...and which of them the scenario's own comms put out of reach
-        # (COMM_MODEL_GATE_WAIVERS)
+        # (COMM_MODEL_MARKER_WAIVERS)
         "comm_model": trace.get("comm_model"),
         "obedience_latencies": latencies,
         "obedience_censored": censored,
@@ -2051,6 +2093,17 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "human_mean_enemy_dist": _mean([ep["human_mean_enemy_dist"] for ep in humans]),
         "human_mean_objective_dist": _mean([ep["human_mean_objective_dist"] for ep in humans]),
         "human_ring_entries_mean": _mean([ep["human_ring_entries"] for ep in humans]),
+        # BEHAVIOUR MARKER (owner-decided 2026-08-26): does the human go forward
+        # with the element, or hold back? An EPISODE share rather than a mean of
+        # entry counts, because "went in at all" is the question and a single
+        # episode with many ring crossings must not read as several humans
+        # advancing. None where the scenario has no human, or where no episode
+        # could be scored — absent, never 0.00, which would assert the human
+        # stayed back when in truth nobody looked.
+        "human_in_action_rate": _ratio(
+            sum(1 for ep in humans if (ep.get("human_ring_entries") or 0) > 0),
+            sum(1 for ep in humans if ep.get("human_ring_entries") is not None),
+        ),
         # fight disposition (issue #11): pooled over threatened (soldier,
         # step) pairs, so a long firefight weighs more than a brief brush —
         # which is the intent, the question being where the fighting happens
@@ -2323,23 +2376,12 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
     # leaves the shape unknown, so the gate is skipped rather than guessed.
     if timeout_rate is not None and timeout_rate <= TIMEOUT_RATE_CEILING:
         gates.append(_gate("success_rate", agg.get("success_rate"), SUCCESS_RATE_FLOOR, "min"))
-    # refs v1.20: unconditional, because muteness is not a collapse shape — a
-    # run can pass every other gate and still never have reported anything.
-    gates.append(
-        _gate(
-            "closed_on_root_report_rate",
-            agg.get("closed_on_root_report_rate"),
-            ROOT_REPORT_CLOSE_FLOOR,
-            "min",
-            waived=COMM_MODEL_GATE_WAIVERS.get(
-                agg.get("comm_model") or "", {}
-            ).get("closed_on_root_report_rate"),
-        )
-    )
-    # the bunching gate (owner-decided 2026-08-21): unconditional for the same
-    # reason the mute gate is — winning stacked is not a collapse shape, so it
-    # must be able to fail alone. See STACKED_RATE_CEILING.
-    gates.append(_gate("stacked_rate", agg.get("stacked_rate"), STACKED_RATE_CEILING, "max"))
+    # `closed_on_root_report_rate` (gated v1.20-v1.23) and `stacked_rate`
+    # (gated 2026-08-21 to 2026-08-26) are no longer gates. Both are
+    # BEHAVIOUR_MARKERS as of the owner's 2026-08-26 decision: they describe
+    # what a policy does, and they vary by scenario shape rather than by policy
+    # quality, so failing a run on them charged it for its scenario. They are
+    # still measured and still printed on every surface — see `markers()`.
     if agg.get("root_mission") != MissionType.DEFEND.name:
         return gates
     return [
@@ -2357,6 +2399,45 @@ def regression_gates(agg: dict[str, Any]) -> list[dict[str, Any]]:
             "max",
         ),
     ]
+
+
+def markers(agg: dict[str, Any]) -> list[dict[str, Any]]:
+    """The behaviour markers for one aggregated summary.
+
+    Markers are measured and reported, never gating (owner decision,
+    2026-08-26). Each carries its value, a label, what it means, and — where a
+    scenario's comm model puts it out of reach — the reason it is not the
+    policy's doing. A marker whose value is None was not measured: it is
+    reported as absent rather than as zero, because "the human never went
+    forward" and "this scenario has no human" are different statements.
+
+    Deliberately NOT returning a pass/fail: nothing downstream should be able to
+    turn a marker back into a gate by reading a boolean off it.
+    """
+    waivers = COMM_MODEL_MARKER_WAIVERS.get(agg.get("comm_model") or "", {})
+    out = []
+    for key, label, meaning in BEHAVIOUR_MARKERS:
+        out.append({
+            "name": key,
+            "label": label,
+            "value": agg.get(key),
+            "meaning": meaning,
+            "not_attributable": waivers.get(key),
+        })
+    return out
+
+
+def format_marker_report(marks: list[dict[str, Any]]) -> str:
+    """Human-readable markers; empty string when nothing was measured."""
+    if not marks:
+        return ""
+    lines = ["behaviour markers (measured, not gating):"]
+    for m in marks:
+        value = "—" if m["value"] is None else f"{m['value']:.3f}"
+        lines.append(f"  {m['label']:<34} {value:>7}")
+        if m.get("not_attributable"):
+            lines.append(f"      not attributable to the policy — {m['not_attributable']}")
+    return "\n".join(lines)
 
 
 def _gate(name: str, value: float | None, bound: float, direction: str,
@@ -2389,7 +2470,7 @@ def split_gates(gates: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
 
     A gate carrying a ``waived`` reason is disqualified from the failures: the
     scenario's own communications put it out of reach, so failing it is a fact
-    about the net and not a regression (see ``COMM_MODEL_GATE_WAIVERS``). It is
+    about the net and not a regression (see ``COMM_MODEL_MARKER_WAIVERS``). It is
     NOT moved to ``unmeasured`` — it was measured, and every formatter still
     prints its value — so neither bucket silently absorbs it.
     """

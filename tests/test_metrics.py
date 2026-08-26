@@ -20,9 +20,11 @@ from cohort.metrics import (
     episode_behavior,
     format_behavior_table,
     format_gate_report,
+    format_marker_report,
     format_order_task_mix,
     format_root_claim_shape,
     gate_mark,
+    markers,
     regression_gates,
     split_gates,
 )
@@ -660,24 +662,35 @@ def test_sole_survivor_cannot_be_stacked():
     assert aggregate_behavior([ep])["mean_nearest_teammate_dist"] is None
 
 
-def test_stacked_gate_refuses_the_pile_and_stays_unmeasured_on_legacy():
-    # fireteam_defend_v23's shape — win everything while stacked (owner-decided
-    # gate, 2026-08-21). Unconditional: it must be able to fail alone.
+def test_the_bunching_marker_still_measures_the_pile_after_demotion():
+    """fireteam_defend_v23's shape — win everything while stacked.
+
+    Gated 2026-08-21, demoted to a MARKER 2026-08-26. The exploit did not go
+    away when the gate did: the two DEFEND members measured at 0.96-0.98 are
+    the whole element in one cell. What must survive is the MEASUREMENT — if
+    `stacked_rate` ever stops being computed, this pile reads as absent rather
+    than as 1.0 and nothing on any surface would say otherwise.
+    """
     pile = [
         sold(f"RFN{i}", pos=(5, 5), teammate_close=True, teammate_sees=True) for i in range(3)
     ]
     agg = aggregate_behavior([episode_behavior(trace([step(0, pile)]))])
-    g = next(x for x in regression_gates(agg) if x["name"] == "stacked_rate")
-    assert g["passed"] is False and g["value"] == 1.0
+    m = next(x for x in markers(agg) if x["name"] == "stacked_rate")
+    assert m["value"] == 1.0, "the pile must still be measured"
+    assert "stacked_rate" not in [g["name"] for g in regression_gates(agg)], (
+        "demoted: it must not gate"
+    )
+    assert "passed" not in m, "a marker must not expose a pass/fail to read back"
+
     spread = [
         sold(f"RFN{i}", pos=(0, 2 * i), teammate_close=True, teammate_sees=True) for i in range(3)
     ]
     agg = aggregate_behavior([episode_behavior(trace([step(0, spread)]))])
-    g = next(x for x in regression_gates(agg) if x["name"] == "stacked_rate")
-    assert g["passed"] is True and g["value"] == 0.0
+    assert next(x for x in markers(agg) if x["name"] == "stacked_rate")["value"] == 0.0
+
     legacy = aggregate_behavior([episode_behavior(trace([step(0, [sold("RFN1")])]))])
-    g = next(x for x in regression_gates(legacy) if x["name"] == "stacked_rate")
-    assert g["passed"] is None  # a pre-metric behavior.json is unmeasured, not passed
+    m = next(x for x in markers(legacy) if x["name"] == "stacked_rate")
+    assert m["value"] is None, "a pre-metric run is absent, never 0.0"
 
 
 def test_recorder_cohesion_two_agents_and_a_wall():
@@ -736,24 +749,16 @@ def _defend_agg(*, cover, dist_from_obj):
 
 def test_positional_gate_fails_the_v7_disposition():
     # fireteam_defend_v7: cover 0.060 at 9.09 cells — both bounds broken.
-    # `_defend_agg` traces default to outcome="success" (timeout_rate 0.0), so
-    # the success-axis gate (issue #21) is also in scope and passes (1.0);
-    # it is excluded from `positional` below alongside timeout_rate.
+    # The two demoted markers (closed_on_root_report_rate, stacked_rate) are no
+    # longer in this list; the positional pair and the two universal axes are.
     gates = regression_gates(_defend_agg(cover=False, dist_from_obj=9))
     assert [g["name"] for g in gates] == [
         "timeout_rate",
         "success_rate",
-        "closed_on_root_report_rate",
-        "stacked_rate",
         "cover_occupancy_under_threat",
         "mean_distance_from_objective_under_threat",
     ]
-    positional = [
-        g
-        for g in gates
-        if g["name"]
-        not in ("timeout_rate", "success_rate", "closed_on_root_report_rate", "stacked_rate")
-    ]
+    positional = [g for g in gates if g["name"] not in ("timeout_rate", "success_rate")]
     assert [g["passed"] for g in positional] == [False, False]
     assert "FAIL" in format_gate_report(positional)
     assert "PASS" not in format_gate_report(positional)
@@ -787,12 +792,7 @@ def test_positional_gate_applies_to_defend_roots_only():
     # success axis (issue #21), both root-mission-agnostic.
     seize = _defend_agg(cover=False, dist_from_obj=9)
     seize["root_mission"] = "SEIZE"
-    assert [g["name"] for g in regression_gates(seize)] == [
-        "timeout_rate",
-        "success_rate",
-        "closed_on_root_report_rate",
-        "stacked_rate",
-    ]
+    assert [g["name"] for g in regression_gates(seize)] == ["timeout_rate", "success_rate"]
     assert format_gate_report([]) == ""
 
 
@@ -1122,48 +1122,41 @@ def test_success_axis_is_silent_on_a_genuine_stall():
     the point of gating the success axis on timeout_rate already passing is
     that a collapsed run fails exactly one axis, never both, so the report
     always says which shape it was.
+
+    Since the 2026-08-26 demotion this is the whole gate list for a SEIZE root,
+    which makes the property easier to state, not weaker.
     """
     agg = _shape_agg(0, 0, 30, root_mission="SEIZE")  # SEIZE: no positional gate in play
     gates = regression_gates(agg)
-    # the command-report and bunching gates are unconditional (axes, not
-    # shapes), but this synthetic stall sends no ENDEX and carries no cohesion
-    # booleans, so both read unmeasured here
-    assert [g["name"] for g in gates] == [
-        "timeout_rate",
-        "closed_on_root_report_rate",
-        "stacked_rate",
-    ]
+    assert [g["name"] for g in gates] == ["timeout_rate"]
     assert gates[0]["passed"] is False
-    assert gates[1]["passed"] is None
-    assert gates[2]["passed"] is None
     report = format_gate_report(gates)
     assert "FAIL" in report
     assert "success_rate" not in report
 
 
-def test_the_command_report_gate_fails_a_mute_commander_that_wins_everything():
-    """v1.20's gate, on the exact corpora that motivated it.
+def test_the_mute_commander_is_still_measured_after_demotion():
+    """v1.20's gate, on the exact corpora that motivated it — now a marker.
 
     ``successes_announced_rate`` counts the ENDEX, not who claimed it, so it
     reads 1.00 for a commander that never transmits — and did, on three runs in
-    one day. Each won 0.93-0.98 of its episodes and filed ZERO root claims:
-    ``squad_v11``, ``squad_v14b_nobonus``, ``squad_v14c_nobonus``. Every other
-    gate on the board passes them. This one must not.
+    one day (``squad_v11``, ``squad_v14b_nobonus``, ``squad_v14c_nobonus``),
+    each winning 0.93-0.98 with ZERO root claims.
+
+    Demoting the gate (owner, 2026-08-26) does NOT make that acceptable; it
+    moves the refusal from the machine to the reader. So the number must still
+    be measured and still be visible — a mute commander that reads as absent
+    instead of 0.00 is the failure this test now guards.
     """
     for realised in (0.0, 0.01):  # the two mute values ever measured
         agg = _shape_agg(98, 1, 1, root_mission="SEIZE")
         agg["closed_on_root_report_rate"] = realised
-        gates = {g["name"]: g for g in regression_gates(agg)}
-        assert gates["success_rate"]["passed"] is True, "the run wins — that is the point"
-        assert gates["timeout_rate"]["passed"] is True
-        assert gates["closed_on_root_report_rate"]["passed"] is False
-        assert "FAIL" in format_gate_report(list(gates.values()))
-
-    # and the weakest non-mute corpus on record still passes: squad_v10b, 0.784
-    agg = _shape_agg(88, 10, 2, root_mission="SEIZE")
-    agg["closed_on_root_report_rate"] = 0.784
-    gates = {g["name"]: g for g in regression_gates(agg)}
-    assert gates["closed_on_root_report_rate"]["passed"] is True
+        gate_names = [g["name"] for g in regression_gates(agg)]
+        assert "closed_on_root_report_rate" not in gate_names, "demoted: it must not gate"
+        m = next(x for x in markers(agg) if x["name"] == "closed_on_root_report_rate")
+        assert m["value"] == realised, "the muteness must still be measured"
+        assert m["label"] in format_marker_report(markers(agg))
+        assert f"{realised:.3f}" in format_marker_report(markers(agg))
 
 
 def test_command_report_bound_sits_in_the_empty_band():
@@ -1753,30 +1746,30 @@ def _root_gate(agg):
                 if g["name"] == "closed_on_root_report_rate")
 
 
-def test_a_jammed_net_waives_the_root_report_gate_without_hiding_it():
-    """The waiver disqualifies the FAIL; it does not suppress the number.
+def test_a_jammed_net_marks_the_root_report_as_not_attributable():
+    """The waiver survived the demotion, with a narrower job.
 
     Owner's reason (2026-08-25): under jamming only local information can be
-    assumed to be consistently delivered, so a root that never closes the
-    mission is reporting a fact about the net.
+    assumed delivered, so a mute root is reporting a fact about the net. Since
+    2026-08-26 `closed_on_root_report_rate` is a MARKER, so there is no gate to
+    waive — what remains is the annotation, so a reader seeing 0.000 is told why
+    it is not the policy's doing.
     """
-    g = _root_gate(_agg_with("jammed", rate=0.0))
-    assert g["waived"], "a jammed run must carry the waiver reason"
-    assert g["value"] == 0.0, "the measurement stays visible"
-    assert g["passed"] is False, "and it still records that it did not clear the floor"
-    assert split_gates(regression_gates(_agg_with("jammed"))) [0] == [], (
-        "a waived gate must not be counted among the failures"
-    )
+    m = next(x for x in markers(_agg_with("jammed", rate=0.0))
+             if x["name"] == "closed_on_root_report_rate")
+    assert m["value"] == 0.0, "the measurement stays visible"
+    assert m["not_attributable"], "and carries the reason"
+    assert "only local information" in m["not_attributable"]
+    assert "not attributable" in format_marker_report(markers(_agg_with("jammed", rate=0.0)))
 
 
 def test_the_waiver_does_not_leak_to_any_other_comm_model():
-    """Only `jammed` is waived — `global` and `range` must still fail."""
+    """Only `jammed` is annotated — a mute root elsewhere is the policy's."""
     for comm_model in ("global", "range", "voice_only", None):
-        g = _root_gate(_agg_with(comm_model, rate=0.0))
-        assert not g["waived"], f"{comm_model} must not be waived"
-        assert split_gates(regression_gates(_agg_with(comm_model)))[0] == [
-            "closed_on_root_report_rate"
-        ], f"{comm_model} must still fail the gate"
+        m = next(x for x in markers(_agg_with(comm_model, rate=0.0))
+                 if x["name"] == "closed_on_root_report_rate")
+        assert not m["not_attributable"], f"{comm_model} must not be annotated"
+        assert m["value"] == 0.0
 
 
 def test_a_waived_gate_is_not_reclassified_as_unmeasured():
@@ -1791,15 +1784,21 @@ def test_a_waived_gate_is_not_reclassified_as_unmeasured():
     assert "closed_on_root_report_rate" not in unmeasured
 
 
-def test_every_surface_marks_a_waived_gate_as_waived():
-    """`gate_mark` is the one place the four states are decided."""
-    waived = _root_gate(_agg_with("jammed", rate=0.0))
-    assert gate_mark(waived) == "WAIV"
+def test_a_marker_never_exposes_a_pass_fail():
+    """Nothing downstream may turn a marker back into a gate.
+
+    The demotion is only real if no reader can recover a boolean verdict from
+    a marker and act on it — that is how a "measured, not gating" number
+    quietly becomes gating again.
+    """
+    for m in markers(_agg_with("jammed", rate=0.0)):
+        assert "passed" not in m
+        assert "bound" not in m
+    # gate_mark still serves the REAL gates, and still has its four states
     assert gate_mark({"passed": True}) == "PASS"
     assert gate_mark({"passed": False}) == "FAIL"
     assert gate_mark({"passed": None}) == "—"
-    report = format_gate_report(regression_gates(_agg_with("jammed", rate=0.0)))
-    assert "WAIV" in report and "only local information" in report
+    assert gate_mark({"waived": "because"}) == "WAIV"
 
 
 def test_a_mixed_comm_model_pool_waives_nothing():
@@ -1815,3 +1814,45 @@ def test_a_mixed_comm_model_pool_waives_nothing():
     assert jammed["comm_model"] == "jammed", "the trace's comm_model must survive episode_behavior"
     assert aggregate_behavior([jammed, jammed])["comm_model"] == "jammed"
     assert aggregate_behavior([jammed, clear])["comm_model"] is None
+
+
+def test_the_human_in_action_marker_separates_going_forward_from_holding_back():
+    """The marker the jamming arm made necessary (owner-decided 2026-08-26).
+
+    `human_death_rate` fell 0.450 -> 0.050 under jamming and read as a safety
+    gain; it was the human never going forward. An EPISODE share, not a mean of
+    ring-entry counts, so one episode with many crossings cannot read as several
+    humans advancing.
+    """
+    eps = [
+        {"human_died": False, "human_ring_entries": 3},   # went in
+        {"human_died": False, "human_ring_entries": 1},   # went in
+        {"human_died": False, "human_ring_entries": 0},   # held back
+        {"human_died": False, "human_ring_entries": 0},   # held back
+    ]
+    from cohort.metrics import _ratio
+    got = _ratio(sum(1 for e in eps if e["human_ring_entries"] > 0), len(eps))
+    assert got == 0.5, "two of four went forward — counts must not inflate it"
+
+
+def test_a_scenario_without_a_human_reads_absent_not_zero():
+    """No human is not the same as a human that stayed back.
+
+    0.00 would assert the human held back in a scenario that has none — the
+    denominator error this project has now made twice and caught twice.
+    """
+    from cohort.metrics import _ratio
+    assert _ratio(0, 0) is None
+
+
+def test_every_marker_is_registered_with_a_label_and_a_meaning():
+    """A marker with no meaning is a number nobody can act on.
+
+    Markers replaced gates precisely so a reader can judge them; that requires
+    each to say what it measures on the surface that prints it.
+    """
+    from cohort.metrics import BEHAVIOUR_MARKERS
+    keys = [k for k, _, _ in BEHAVIOUR_MARKERS]
+    assert keys == ["closed_on_root_report_rate", "stacked_rate", "human_in_action_rate"]
+    for key, label, meaning in BEHAVIOUR_MARKERS:
+        assert label and meaning and len(meaning) > 20, key

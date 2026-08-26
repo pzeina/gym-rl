@@ -30,7 +30,7 @@ from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import obs_dim
 from cohort.env.rewards import COMPONENTS, RewardConfig
 from cohort.metrics import (
-    COMM_MODEL_GATE_WAIVERS,
+    COMM_MODEL_MARKER_WAIVERS,
     ROOT_REPORT_CLOSE_FLOOR,
     SUCCESS_RATE_FLOOR,
 )
@@ -207,7 +207,7 @@ def best_save_gate(
 
     **v1.23 (owner-decided 2026-08-25): ``report_gate_waived`` drops the
     reporting key entirely.** Where a scenario's comm model waives
-    ``closed_on_root_report_rate`` (``metrics.COMM_MODEL_GATE_WAIVERS`` — today
+    ``closed_on_root_report_rate`` (``metrics.COMM_MODEL_MARKER_WAIVERS`` — today
     ``comm_model="jammed"``), the rate measures the net rather than the
     commander, and selection reverts to rolling success alone.
 
@@ -377,7 +377,7 @@ class Trainer:
         # Read from the same table the gate reads, so the two can never disagree
         # about which scenarios are waived.
         self._report_gate_waived = "closed_on_root_report_rate" in (
-            COMM_MODEL_GATE_WAIVERS.get(spec.comm_model, {})
+            COMM_MODEL_MARKER_WAIVERS.get(spec.comm_model, {})
         )
         self._threat_radius = float(spec.combat.weapon_range)
 

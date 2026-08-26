@@ -206,17 +206,23 @@ def evaluate(
             aggregate_behavior,
             format_behavior_table,
             format_gate_report,
+            format_marker_report,
+            markers,
             regression_gates,
         )
 
         per_episode = [episode_behavior(r.trace) for r in recorders]
         agg = aggregate_behavior(per_episode)
         gates = regression_gates(agg)
+        marks = markers(agg)
         summary["behavior"] = agg
         summary["gates"] = gates
+        summary["markers"] = marks
         print(format_behavior_table(agg))
         if gates:
             print(format_gate_report(gates))
+        if marks:
+            print(format_marker_report(marks))
         out = behavior_path
         if out is None and checkpoint is not None:
             out = str(Path(checkpoint).parent / "behavior.json")

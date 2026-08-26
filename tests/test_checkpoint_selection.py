@@ -350,6 +350,6 @@ def test_selection_and_the_gate_read_the_same_waiver_table():
     If a comm model is ever waived in `metrics` but not honoured in selection
     (or vice versa), a run would be judged by one rule and selected by another.
     """
-    from cohort.metrics import COMM_MODEL_GATE_WAIVERS
-    assert "closed_on_root_report_rate" in COMM_MODEL_GATE_WAIVERS["jammed"]
-    assert "global" not in COMM_MODEL_GATE_WAIVERS
+    from cohort.metrics import COMM_MODEL_MARKER_WAIVERS
+    assert "closed_on_root_report_rate" in COMM_MODEL_MARKER_WAIVERS["jammed"]
+    assert "global" not in COMM_MODEL_MARKER_WAIVERS

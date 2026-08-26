@@ -533,6 +533,11 @@ def behavior_block(path: Path, header: str, summary: dict, prefix: str, *, diagn
         print(f"    gate [{mark}] {g['name']} ({'>=' if g['direction'] == 'min' else '<='} {g['bound']})")
         if g.get("waived"):
             print(f"           waived — {g['waived']}")
+    for mk in b.get("markers", []):
+        val = "—" if mk["value"] is None else f"{mk['value']:.3f}"
+        print(f"    marker   {mk['label']:<34} {val}")
+        if mk.get("not_attributable"):
+            print(f"             not attributable — {mk['not_attributable']}")
     return m
 
 
