@@ -226,3 +226,34 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
   this axis. This may be long-standing DEFEND behaviour that only became visible
   now — the retrain did not necessarily cause it, and the write-up must not
   imply that it did.
+
+- 03:15 — **G2 LANDED: `platoon_hard_v6_seed12` is NOT PUBLISHABLE.** Neither
+  branch I pre-registered fits it exactly, so both the outcome and that fact are
+  recorded.
+
+  | | v6_seed12 (new) | v5_seed12 (incumbent) |
+  |---|---|---|
+  | final success | 0.90 ± 0.13 (N=20) | 0.94 ± 0.05 (N=100) |
+  | best-final gap | **13 pts — bar is < 10** | — |
+  | closed-on-root | 0.000 | 0.000 |
+  | stacked | 0.309 | — (metric postdates it) |
+
+  Curve `▁▄▇▇█▅▆▆▆▇`: peaked at 99% around 40% of the run, then settled at 86%.
+  **It did NOT collapse** — no D4 event, the guard never armed, and the dip to
+  17% rolling I flagged at 02:14 recovered to 86%. So the failure is
+  **stability, not quality**: success overlaps the incumbent's CI heavily and is
+  not a difference by this repo's rule, and `closed_on_root_report_rate` is
+  0.000 in BOTH, so its documented waiver is unchanged and still applies.
+
+  **Why this matters for the morning's seal.** `platoon_hard` now has **no
+  viable v1.23 member**: v6 misses the publish bar, and the v1.22 incumbent is
+  OBS_DIM 220 and will not load. That is a second, independent reason the fleet
+  cannot be sealed tonight — alongside `platoon_v13`'s MISS.
+
+  **Action taken (the one honest-DoD adjustment for this thread)**: launched
+  `platoon_hard_v7_seed13` — a confirm seed, not a redesign, and this scenario
+  has the precedent (`platoon_hard_confirm_seed13.jobs`). It answers whether the
+  13-pt gap is this seed or the scenario's known instability. Also launched a
+  N=100 score of v6's final policy so the morning compares like with like.
+  **This thread now stops** whatever seed 13 does: any further move is a reward
+  or budget change, which is the owner's.
