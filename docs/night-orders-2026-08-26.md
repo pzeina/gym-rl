@@ -389,3 +389,29 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
   N=100 score launched. **Two of the three blockers are now resolved** —
   `platoon` (seed 13 matches its incumbent) and `platoon_hard` (seed 13 is
   publishable). Only `patrol_brique` remains open, on seeds 19 and 14.
+
+- 07:10 — **G3 seed 19 REPORTS at 0.850 — and my 05:55 conclusion was too
+  strong. Correcting it here rather than leaving it to the morning.**
+
+  `patrol_brique_v44_seed19`: closed-on-root **0.850** final (0.550 at best),
+  success 1.00 ± 0.00, gap 1 pt, PUBLISHABLE, first-claim precision 0.737.
+
+  | seed | old tree (220) | new tree (351) | carried? |
+  |---|---|---|---|
+  | 12 | 0.000 mute | 0.000 mute | **yes** |
+  | 18 | 0.949 REPORTS | 0.000 mute | **NO — flipped** |
+  | 19 | 0.786 REPORTS | 0.850 REPORTS | **yes** |
+  | 14 | 0.878 REPORTS | pending | |
+
+  **The correction**: at 05:55, on seed 18 alone, I wrote *"a seed search is NOT
+  reusable across a tree change; every search is a fresh ~0.43 draw."* That was
+  one flip generalised into a rule, and seed 19 contradicts it. The supportable
+  statement is narrower: **the carry is PARTIAL — 2 of 3 so far, with one clear
+  flip.** One flip is enough to show a search is not *reliably* reusable, which
+  still matters for how much a declared `seed_search` can be trusted after a
+  tree change; it is not enough to say the draw is simply re-rolled.
+
+  **The third blocker is resolved.** `patrol_brique` has a reporting member on
+  the new tree at seed 19 — subject to its N=100, now launched. All three
+  scenarios that looked blocked at 01:10 (`platoon`, `platoon_hard`,
+  `patrol_brique`) now have a viable v1.23 candidate.
