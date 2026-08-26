@@ -297,3 +297,40 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
   intervals, not a difference by this repo's rule. `closed_on_root` 0.011 vs
   0.000, both mute as its waiver documents. So the ONLY thing disqualifying v6
   remains the 13-pt stability gap; on quality it matches its incumbent.
+
+- 04:45 — **G1 upgraded at N=100, and it is no longer a MISS story at all.**
+
+  | | succ N=100 | closed-on-root | stacked | failing |
+  |---|---|---|---|---|
+  | platoon_v14_seed13 | **1.00 ± 0.00** | **0.940** | 0.567 | **none** |
+  | platoon_v13 | 0.99 ± 0.02 | 0.000 | 0.371 | closed_on_root |
+  | platoon_v8 (incumbent) | 1.00 | 0.930 | — | — |
+
+  Seed 13 **matches the incumbent on both axes at publish grade** (1.00 vs 1.00,
+  0.940 vs 0.930) and fails nothing. So `platoon` has a viable v1.23 member; the
+  morning's question is only whether to take it, which is the owner's.
+
+- 04:50 — **G3 first seed: `patrol_brique_v42_seed12` is MUTE** (0.000 at both
+  checkpoints, zero root claims, success 0.95, PUBLISHABLE otherwise). The
+  search is therefore **not** self-truncating and seeds 18/19/14 are a genuine
+  search, exactly as the ordering was designed to allow.
+
+  **And it sets up the seed-carry test cleanly — the question assurance #60 made
+  unreachable last time.** The v1.21-era search on the OLD tree (OBS_DIM 220),
+  read from committed N=100 artifacts:
+
+  | seed | old tree (220) | new tree (351) |
+  |---|---|---|
+  | 12 | 0.000 **mute** | **0.000 mute** — carries |
+  | 18 | 0.949 REPORTS | pending |
+  | 19 | 0.786 REPORTS | pending |
+  | 14 | 0.878 REPORTS | pending (this is the current member) |
+
+  First data point says the seed **carries**: 12 was mute then and is mute now,
+  across a change that moved every trajectory. If 18/19/14 all report again the
+  seed carries completely and a seed search is reusable across trees; if any
+  flips, the draw is re-rolled by the tree and every search is a fresh ~0.43.
+  Recording only — the reading is the morning's.
+
+  N=100 scoring for the `patrol_brique` seeds is deferred to one sweep after all
+  four land, rather than a job per landing.
