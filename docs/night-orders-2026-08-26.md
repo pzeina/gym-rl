@@ -361,3 +361,31 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
 
   Recording only. Nothing about this is a knob to turn at night: the reporting
   channel's price and the gate floor are both owner-decided.
+
+- 06:00 — **G2 confirm seed SEPARATES: `platoon_hard_v7_seed13` is
+  PUBLISHABLE.** The blocker is resolved.
+
+  | | v6_seed12 | v7_seed13 |
+  |---|---|---|
+  | best-final gap | **13 pts — over the bar** | **7 pts — under it** |
+  | publish gate | NOT PUBLISHABLE | **PUBLISHABLE** |
+  | final success | 0.90 ± 0.06 (N=100) | 0.95 ± 0.10 (N=20) |
+  | closed-on-root | 0.011 | 0.000 |
+  | root death (final) | 0.400 | 0.300 |
+
+  So the 13-pt gap was **the draw, not the scenario**. `platoon_hard` has a
+  viable v1.23 member after all, and the honest-DoD adjustment paid: one confirm
+  seed, one answer, thread closed as promised.
+
+  `closed_on_root_report_rate` is 0.000 here too — unchanged from the incumbent
+  and covered by the scenario's owner-decided waiver, which is diagnosed
+  (truthful claims reachable, declined at rdb 1.0 AND 3.0) and stays.
+
+  Worth flagging for the morning without over-reading it: **root death is high
+  in both draws** (0.400 and 0.300 at final). That is a `platoon_hard`
+  characteristic rather than a retrain effect, but it is the kind of number that
+  should not pass unremarked in a member.
+
+  N=100 score launched. **Two of the three blockers are now resolved** —
+  `platoon` (seed 13 matches its incumbent) and `platoon_hard` (seed 13 is
+  publishable). Only `patrol_brique` remains open, on seeds 19 and 14.
