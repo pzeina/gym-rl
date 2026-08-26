@@ -257,3 +257,43 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
   N=100 score of v6's final policy so the morning compares like with like.
   **This thread now stops** whatever seed 13 does: any further move is a reward
   or budget change, which is the owner's.
+
+- 04:00 — **G1 LANDED, branch A: `platoon_v14_seed13` REPORTS at 0.850.** The
+  night's sharpest read, and it is decisive.
+
+  | | v13 (seed 12) | v14 (seed 13) |
+  |---|---|---|
+  | final success | 0.99 ± 0.02 (N=100) | 1.00 ± 0.00 (N=20) |
+  | best-final gap | 1 pt | 1 pt |
+  | **closed-on-root** | **0.000** | **0.850** |
+  | first-claim precision | — (no claims) | **0.875** (14/16) |
+  | report precision / recall | — | 0.96 / 0.95 |
+  | publish gate | PUBLISHABLE | PUBLISHABLE |
+  | gates | closed_on_root FAIL | **all PASS** |
+
+  **`platoon`'s reporting channel is bimodal**, exactly as documented for
+  `patrol_brique` (0.43 over 14 runs) and `squad` (mute at 2 of 4 seeds): runs
+  land at 0.750–1.000 or at exactly 0.000, with nothing in between. This pair is
+  0.850 against 0.000 — textbook, and 0.850 at BOTH checkpoints.
+
+  **So `platoon_v13` was an unlucky draw, NOT a channel destroyed by the tree
+  transition.** The alternative hypothesis I pre-registered — "the 220 → 351
+  move cost `platoon` its reporting channel" — is **refuted**, and the confirm
+  seed that branch would have launched is not needed. This is the single most
+  useful thing the night produced: it turns a blocking MISS into a declared
+  seed search.
+
+  Note the root is not merely talking but talking *well*: first-claim precision
+  0.875, report precision 0.96, recall 0.95.
+
+  **Actions**: N=100 score launched for the morning's decision. The
+  `seed_search` declaration itself is deferred to **G4** by design — declared ⇒
+  tracked, and the manifest is edited once at campaign end rather than
+  rewritten after each landing. **The member is NOT swapped**: choosing seed 13
+  over the published `platoon_v8` is the owner's call.
+
+- 04:00 — **G2 follow-up, N=100**: `platoon_hard_v6_seed12` scores
+  **0.90 ± 0.06** against the incumbent's **0.94 ± 0.05** — overlapping
+  intervals, not a difference by this repo's rule. `closed_on_root` 0.011 vs
+  0.000, both mute as its waiver documents. So the ONLY thing disqualifying v6
+  remains the 13-pt stability gap; on quality it matches its incumbent.
