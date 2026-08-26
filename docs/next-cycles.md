@@ -158,15 +158,43 @@ it re-rolls every bimodal reporting draw (see the seed-carry finding below), so
 searches re-run — **the searches are NOT reusable**. Budget 4 seeds for each of
 those three, i.e. ~18 jobs rather than 11.
 
-### The pre-registered read
+### The pre-registered read — WRITTEN AND FROZEN (2026-08-26)
 
-Before launching, write the bar. Proposed: the cycle **separates** if
-`stacked_rate` falls below 0.70 in BOTH DEFEND members with success inside the
-incumbents' CI (1.00 ± 0.00 today); it **walks** if bunching falls but success
-drops outside that CI — a cohort that disperses and loses is a worse cohort; it
-**hits the ceiling** if bunching does not move at the strongest price the owner
-will accept, and then the answer is that DEFEND cannot be held dispersed on
-these maps and the marker is documentation, not a defect.
+**`docs/prereg-price-dispersion.md`**, scored by
+`scripts/prereg_dispersion.py`, incumbents frozen to
+`docs/prereg-price-dispersion.json`, thresholds pinned by
+`tests/test_prereg_dispersion.py`. It does not depend on which mechanism the
+owner picks, so it was registered before the choice — a bar written afterwards
+is a bar written by someone who already knows which way they would like it to
+go.
+
+The prose bar proposed above is superseded, and two things in it were wrong:
+
+- **"success inside the incumbents' CI (1.00 ± 0.00)" is unusable.** A
+  zero-width CI refuses one lost episode in a hundred; the exact test says one
+  lost episode across two arms of 100 is a coin flip (p = 0.5). The registered
+  bar is a one-sided Fisher non-inferiority test, which tolerates **96/100**
+  and convicts at **95/100** — arithmetic over margins that exist before job 1.
+- **The marker can be bought with casualties.** `stacked_rate` counts agent-steps
+  with ≥ 2 *living* teammates inside 1.5, so AREA FIRE lowers it by killing
+  teammates without one agent having learned to disperse. That is the jamming
+  finding's exact shape — the human's death rate "improved" because its
+  denominator vanished. The bar therefore also requires
+  `mean_nearest_teammate_dist` to RISE by ≥ 0.50 cells, and names the failure
+  **DENOMINATOR** instead of letting it read as a win.
+
+Seven verdicts, checked in order so the read-out names the first thing that
+failed: INCOMPLETE, NO EFFECT AT THIS PRICE, **CEILING** (only at the top of a
+declared price ladder — a ceiling is a claim about the maps, not about a price),
+**DENOMINATOR**, PARTIAL, **WALKS**, **SEPARATES**. The other seven scenarios
+are a success-only fleet guard, Holm-corrected as one family so a cycle is not
+convicted of breaking a scenario by multiplicity alone. The reporting and
+human-forward markers are deliberately NOT scored: they are bimodal across
+seeds, and scoring them charges the mechanism for a seed draw.
+
+**Still open, and still the owner's**: which mechanism, and — if it is a reward
+term rather than AREA FIRE — the three-rung price ladder to declare in its
+place.
 
 
 ## Addendum (2026-08-17) — standing riders for the next breaking cycle

@@ -1,0 +1,112 @@
+{
+  "cycle": "price-dispersion",
+  "frozen_against": "v1.23",
+  "primary": [
+    "fireteam_defend",
+    "defend_brique"
+  ],
+  "thresholds": {
+    "stacked_bar": 0.7,
+    "stacked_move": 0.1,
+    "nearest_rise": 0.5,
+    "alpha": 0.05,
+    "ladder": [
+      "0.5",
+      "0.75",
+      "1.0"
+    ]
+  },
+  "incumbents": {
+    "fireteam": {
+      "run": "fireteam_v14",
+      "episodes": 100,
+      "successes": 93,
+      "success_rate": 0.93,
+      "stacked_rate": 0.16732373009855953,
+      "mean_nearest_teammate_dist": 2.133052977222128,
+      "spatially_sound_rate": 0.8115238817285823,
+      "checkpoint_sha256": "1c71ee82444a52948ff84355c6d2679050cdfef8a3ca0eaf3945cfbcfc16b806"
+    },
+    "fireteam_defend": {
+      "run": "fireteam_defend_v25",
+      "episodes": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "stacked_rate": 0.9597637652919788,
+      "mean_nearest_teammate_dist": 0.22511905266101315,
+      "spatially_sound_rate": 0.03965368313211868,
+      "checkpoint_sha256": "76ce2ec4020861e47130dd767ce49d2222743a27c2c434cdc224b1be67fab192"
+    },
+    "squad": {
+      "run": "squad_ctrl_v2_seed12",
+      "episodes": 100,
+      "successes": 92,
+      "success_rate": 0.92,
+      "stacked_rate": 0.2911878647204015,
+      "mean_nearest_teammate_dist": 1.9143562539223546,
+      "spatially_sound_rate": 0.6862219461562352,
+      "checkpoint_sha256": "c93bd342e2188e8c4a3162d70f0e3287a91396b8c0d8a7f43334ebf66f682601"
+    },
+    "squad_recon": {
+      "run": "squad_recon_v13",
+      "episodes": 100,
+      "successes": 98,
+      "success_rate": 0.98,
+      "stacked_rate": 0.5716707144302773,
+      "mean_nearest_teammate_dist": 1.3670872590041783,
+      "spatially_sound_rate": 0.4166160696215341,
+      "checkpoint_sha256": "3faad541fd242e013949c86388c73c054831546b4ebae35841dae709df442082"
+    },
+    "squad_screen": {
+      "run": "squad_screen_v19",
+      "episodes": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "stacked_rate": 0.23409924288390008,
+      "mean_nearest_teammate_dist": 1.6883576565314695,
+      "spatially_sound_rate": 0.7529743846782916,
+      "checkpoint_sha256": "24717af785ae2848f06665e50f6e604099573d7fc6d61d8057421d29d23ed1c6"
+    },
+    "patrol_brique": {
+      "run": "patrol_brique_v44_seed19",
+      "episodes": 100,
+      "successes": 98,
+      "success_rate": 0.98,
+      "stacked_rate": 0.2272894605773187,
+      "mean_nearest_teammate_dist": 2.662122977030843,
+      "spatially_sound_rate": 0.7051690162194937,
+      "checkpoint_sha256": "1211947142096426225197129df89beed00f08fd9a99777d15ca24ef74c588d8"
+    },
+    "defend_brique": {
+      "run": "defend_brique_v19",
+      "episodes": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "stacked_rate": 0.9761077212224196,
+      "mean_nearest_teammate_dist": 0.20508035292735943,
+      "spatially_sound_rate": 0.023892278777580392,
+      "checkpoint_sha256": "6e0de76e19a1d03070a445830e80c65851af8a4cefc2ed1aa99ecdaaeddd4057"
+    },
+    "platoon": {
+      "run": "platoon_v14_seed13",
+      "episodes": 100,
+      "successes": 100,
+      "success_rate": 1.0,
+      "stacked_rate": 0.5665253629866274,
+      "mean_nearest_teammate_dist": 1.565834519132032,
+      "spatially_sound_rate": 0.40374625408722603,
+      "checkpoint_sha256": "700631c25b2921772d765b442f126228dd55ad822f882f08617a15815339d532"
+    },
+    "platoon_hard": {
+      "run": "platoon_hard_v7_seed13",
+      "episodes": 100,
+      "successes": 93,
+      "success_rate": 0.93,
+      "stacked_rate": 0.37043184199334034,
+      "mean_nearest_teammate_dist": 2.213295215380594,
+      "spatially_sound_rate": 0.5895530129355505,
+      "checkpoint_sha256": "952968eba5dfb2c51951031e90e77f19c722c0a366951238b6c618be1d4f39c3"
+    }
+  },
+  "note": "Written before the first job of the price-dispersion cycle. The bar is scored by scripts/prereg_dispersion.py against these numbers and no others; tests/test_prereg_dispersion.py fails if either the thresholds or these incumbent readings drift."
+}

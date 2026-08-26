@@ -64,6 +64,59 @@ def fisher_two_sided(a: int, b: int, c: int, d: int) -> float:
                         if (p := prob(x)) <= observed * (1 + 1e-9)))
 
 
+def fisher_one_sided_less(a: int, b: int, c: int, d: int) -> float:
+    """One-sided Fisher exact on ``[[a, b], [c, d]]``: is row 1's rate LOWER?
+
+    ``P(X <= a)`` in the lower tail of the hypergeometric with the observed
+    margins. Non-inferiority is directional — the question is whether the new
+    arm LOST episodes against the incumbent, not whether the two differ — so
+    the two-sided test is the wrong one here and halving its p-value is not
+    the right one either on asymmetric tables.
+
+    The arithmetic this repo cares about, worked once so the bar can be written
+    before the runs: against a **100/100 incumbent at N=100**, conditioning on
+    the margins puts every failure equally likely in either arm, so an arm at
+    ``k`` successes reads ``C(100, 100 - k) / C(200, 100 - k)`` —
+
+        k = 99 -> 0.5000   k = 97 -> 0.1231   k = 95 -> 0.0297
+        k = 98 -> 0.2487   k = 96 -> 0.0606   k = 94 -> 0.0145
+
+    which is why "inside the incumbent's CI" cannot be the bar when that CI is
+    ``1.00 +/- 0.00``: it refuses a single lost episode out of a hundred, and
+    the exact test says one lost episode is a coin flip.
+    """
+    n = a + b + c + d
+    row1, col1 = a + b, a + c
+    if not n or not row1 or not col1 or row1 == n or col1 == n:
+        return 1.0
+
+    lo = max(0, col1 - (n - row1))
+    return min(1.0, sum(comb(row1, x) * comb(n - row1, col1 - x)
+                        for x in range(lo, a + 1)) / comb(n, col1))
+
+
+def holm_reject(pvalues: dict[str, float], alpha: float = 0.05) -> dict[str, bool]:
+    """Holm-Bonferroni over a family of one-sided tests: which are rejected.
+
+    A fleet guard reads one test per member, and nine tests at alpha 0.05 raise
+    one false alarm better than a third of the time. That matters here in the
+    direction people forget: the family is a GUARD, so a false alarm does not
+    invent an effect, it wrongly convicts a cycle of having broken a scenario
+    it did not break. Holm controls that at family alpha while staying uniformly
+    more powerful than Bonferroni.
+
+    Step down the sorted p-values; the first that fails ``p <= alpha / (m - i)``
+    stops the procedure and everything from there on is retained.
+    """
+    ordered = sorted(pvalues.items(), key=lambda kv: kv[1])
+    m = len(ordered)
+    out, still_rejecting = {}, True
+    for i, (name, p) in enumerate(ordered):
+        still_rejecting = still_rejecting and p <= alpha / (m - i)
+        out[name] = still_rejecting
+    return out
+
+
 def mcnemar_two_sided(one_way: int, other_way: int) -> float:
     """Exact two-sided McNemar over the two counts of DISCORDANT pairs.
 

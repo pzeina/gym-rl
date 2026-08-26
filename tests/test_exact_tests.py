@@ -13,7 +13,9 @@ from __future__ import annotations
 import pytest
 
 from scripts.exact_tests import (
+    fisher_one_sided_less,
     fisher_two_sided,
+    holm_reject,
     jackknife_rho,
     mcnemar_two_sided,
     spearman_rho,
@@ -134,3 +136,48 @@ def test_a_constant_column_has_no_rank_correlation():
 def test_paired_inputs_of_different_length_are_refused():
     with pytest.raises(ValueError):
         spearman_rho([1, 2, 3], [1, 2])
+
+
+# --------------------------------------------------- one-sided Fisher, Holm ---
+
+@pytest.mark.parametrize("k, expected", [
+    (99, 0.5000), (98, 0.2487), (97, 0.1231),
+    (96, 0.0606), (95, 0.0297), (94, 0.0145),
+])
+def test_one_sided_fisher_against_a_perfect_incumbent(k, expected):
+    """The arithmetic the price-dispersion bar is built on, pinned.
+
+    Conditioning on the margins makes every failure equally likely in either
+    arm, so ``k`` successes against 100/100 is ``C(100, 100-k) / C(200, 100-k)``.
+    """
+    assert fisher_one_sided_less(k, 100 - k, 100, 0) == pytest.approx(expected, abs=5e-5)
+
+
+def test_one_sided_is_never_larger_than_two_sided_on_an_asymmetric_table():
+    assert fisher_one_sided_less(1, 9, 8, 2) <= fisher_two_sided(1, 9, 8, 2)
+
+
+def test_an_arm_that_did_better_is_never_evidence_that_it_did_worse():
+    assert fisher_one_sided_less(100, 0, 90, 10) == 1.0
+
+
+def test_one_sided_fisher_degenerate_margins_are_one_not_a_crash():
+    assert fisher_one_sided_less(0, 0, 5, 5) == 1.0
+    assert fisher_one_sided_less(5, 0, 5, 0) == 1.0
+
+
+def test_holm_steps_down_and_stops_at_the_first_retention():
+    """Once one hypothesis is retained, everything above it is retained too."""
+    out = holm_reject({"a": 0.001, "b": 0.02, "c": 0.04, "d": 0.9})
+    assert out == {"a": True, "b": False, "c": False, "d": False}
+
+
+def test_holm_is_bonferroni_on_the_smallest_p_and_looser_after():
+    """0.0297 rejects alone and is retained in a family of seven."""
+    assert holm_reject({"only": 0.0297})["only"] is True
+    family = {f"m{i}": p for i, p in enumerate([0.0297, .3, .4, .5, .6, .7, .8])}
+    assert not any(holm_reject(family).values())
+
+
+def test_holm_over_nothing_is_nothing():
+    assert holm_reject({}) == {}
