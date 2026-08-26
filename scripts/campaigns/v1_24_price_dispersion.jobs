@@ -77,7 +77,17 @@
 # priced member's per-episode return changes by the measured amounts in the
 # table above — 0.55 to 9.75 per agent — which enters the advantage estimate
 # from the first update. Trajectories cannot coincide. That is measured, not
-# assumed: scripts/bunching_price_calibration.py prints the deltas.
+# assumed: scripts/bunching_price_calibration.py prints the deltas, and
+# tests/test_degraded_regression.py::test_a_reward_price_cannot_move_the_world
+# pins the other half — the price moves the reward and NOTHING else, at a
+# magnitude 100x the shipped one. So the change is confined to exactly the
+# signal the optimizer consumes, and it is non-zero for all nine scenarios.
+#
+# AND IF THAT ARGUMENT IS WRONG, IT SELF-DISCLOSES. baseline.py's reproduction
+# digests report bit-identical pairs, so a member that re-derives its
+# predecessor cannot pass silently the way squad_v29_seed14 did (#63). The
+# cost of being wrong here is CPU and zero tokens, and it surfaces at seal
+# time rather than at publication.
 #
 # AFTER THIS LANDS: score the bar with
 #   scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
