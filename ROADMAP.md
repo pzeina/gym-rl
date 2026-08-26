@@ -20,7 +20,7 @@ overnight. At 01:10 three scenarios looked unsealable. **All three resolved.**
 | squad | squad_ctrl_v2_seed12 | 0.97 | — | — | on the frozen tree |
 | squad_recon | squad_recon_v13 | 0.98 ± 0.03 | 0.939 | 0.572 | clean |
 | squad_screen | squad_screen_v19 | 1.00 ± 0.00 | 0.940 | 0.234 | clean; **bit-identical to `squad_screen_v18_seed12`** |
-| patrol_brique | **v44_seed19** | 1.00 (N=20) | **0.850** | — | 4-seed search: 12 mute, 18 mute, **19 REPORTS**, 14 in flight |
+| patrol_brique | **v44_seed19** | 1.00 (N=20) | **0.850** | — | 4-seed search: **only 19 of 4 reports** (12, 18, 14 mute) |
 | defend_brique | defend_brique_v19 | 1.00 ± 0.00 | 0.990 | **0.976** | **bunching FAIL** |
 | platoon | **v14_seed13** | **1.00 ± 0.00** | **0.940** | 0.567 | matches incumbent (1.00 / 0.930) |
 | platoon_hard | **v7_seed13** | 0.95 (N=20) | 0.000 | — | PUBLISHABLE (gap 7); waiver applies |
@@ -53,23 +53,38 @@ and never faces what forces bunching. Recorded as inconclusive rather than
 quoted.)*
 
 **The reporting seed carries only PARTIALLY across a tree change** — the
-question assurance #60 made unreachable. `patrol_brique`, old tree → new:
-seed 12 mute→mute, seed 18 **0.949→0.000 (flipped)**, seed 19 0.786→0.850.
-2 of 3 carried, one clear flip. **I over-read this at 05:55** — on seed 18 alone
-I wrote "a seed search is NOT reusable"; seed 19 contradicted it and the ledger
-carries the correction. The supportable claim: a search is not *reliably*
-reusable after a tree change, which bounds how far a declared `seed_search` can
-be trusted.
+question assurance #60 made unreachable, now answered on all four seeds:
 
-### Still in flight, and what remains
+| seed | old tree (220) | new tree (351) | carried? |
+|---|---|---|---|
+| 12 | 0.000 mute | 0.000 mute | yes |
+| 18 | 0.949 REPORTS | 0.000 mute | **NO** |
+| 19 | 0.786 REPORTS | 0.850 REPORTS | yes |
+| 14 | 0.878 REPORTS | 0.000 mute | **NO** |
 
-- **`patrol_brique_v45_seed14`** lands ~08:21 (the 4th search seed; it reported
-  0.878 on the old tree, so it is also the last seed-carry data point).
-- **G4 bookkeeping is NOT done**: nine scenarios have undeclared same-config
-  draws, and the manifest cannot be declared complete until seed 14 lands
-  (declared ⇒ tracked). **The suite is RED on exactly that one assertion** —
-  `test_the_shipped_record_holds_no_draw_outside_the_declared_blocks` — and
-  ruff is green. I complete it on one final wake.
+**2 of 4 carried, and both flips ran reports → mute.** The reporting rate on the
+same four seeds went 3/4 → 1/4 — suggestive, but **Fisher two-tailed p = 0.4857,
+so four seeds cannot establish it**; do not quote it as a rate change. What IS
+established is that a declared `seed_search` does not survive a tree change
+intact, so a search must be re-run rather than reused.
+
+**I over-read this twice and both are corrected in the ledger**: at 05:55, on
+seed 18 alone, I wrote "a seed search is NOT reusable" — seed 19 then
+contradicted it; the final four-seed picture supports the narrower claim above.
+
+### G4 complete — the campaign is done and the books are square
+
+- **All 11 jobs landed.** `patrol_brique_v45_seed14` came in mute (0.000) and
+  weakest of the four at 0.80 ± 0.18.
+- **Every new draw is declared** in `BASELINE.json` `seed_spread` (13 runs
+  across 7 scenarios), artifacts committed alongside them. **Suite GREEN, 1207
+  passed; ruff clean.**
+- **The neutrality gate reads exactly as it should**: `baseline.py` reports
+  `BASELINE NOT READY — 9 problems`, all of them *"checkpoint does not load
+  under the current spaces"* on the **v1.22 incumbents**. The undeclared-draw
+  problem is gone (10 → 9). The manifest still points at the old, unloadable
+  members **because swapping them is your decision** — that is the campaign's
+  whole result sitting one decision away from being sealable.
 - **A deliberate deviation from my own orders**: I wrote "declare a
   `seed_search` for `platoon`". I will not. `seed_search` means *the seeds a
   member was chosen from*, and `platoon_v8` predates these runs — declaring them
