@@ -334,3 +334,30 @@ fallback and sleep. Never poll in a tight loop, never read a raw log or
 
   N=100 scoring for the `patrol_brique` seeds is deferred to one sweep after all
   four land, rather than a job per landing.
+
+- 05:55 — **G3 seed 18: `patrol_brique_v43_seed18` is MUTE — and the seed does
+  NOT carry.** 0.000 at both checkpoints, zero root claims, success 0.95,
+  PUBLISHABLE otherwise.
+
+  | seed | old tree (220) | new tree (351) | carried? |
+  |---|---|---|---|
+  | 12 | 0.000 mute | 0.000 mute | yes |
+  | 18 | **0.949 REPORTS** | **0.000 mute** | **NO — flipped** |
+  | 19 | 0.786 REPORTS | pending | |
+  | 14 | 0.878 REPORTS | pending *(current member)* | |
+
+  **This is the answer to the question assurance #60 made unreachable**, and it
+  is the negative one: a seed that reported at 0.949 on the old tree is silent
+  on the new one. Seed 12's match was therefore not evidence of carry — mute is
+  simply the more common mode, and agreeing by chance is likely. **A seed search
+  is NOT reusable across a tree change; every search is a fresh ~0.43 draw.**
+  That is worth more than the member it was run to find.
+
+  **And it raises a third blocker for the seal.** Two of two `patrol_brique`
+  seeds are mute. If 19 and 14 are also mute, `patrol_brique` has no reporting
+  member on the new tree, joining `platoon_hard` (no publishable member) on the
+  list of scenarios that cannot be sealed. `platoon` is now the only one of the
+  three that resolved cleanly.
+
+  Recording only. Nothing about this is a knob to turn at night: the reporting
+  channel's price and the gate floor are both owner-decided.
