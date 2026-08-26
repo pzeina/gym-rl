@@ -1,7 +1,11 @@
-"""AREA FIRE (owner-decided 2026-08-21): a hit sprays the struck unit's
-neighbors — the mechanic that makes dispersion tactically real. Shipped OFF
-(``burst_fraction=0.0``); every test that turns it on does so on its own env
-instance, so no shipped scenario is touched."""
+"""AREA FIRE: a hit sprays the struck unit's neighbors — the mechanic that
+makes dispersion tactically real.
+
+Built 2026-08-21 and shipped OFF; **ARMED at ``burst_fraction=0.5`` on
+2026-08-26** (owner-decided) as rung 1 of the declared ladder in
+``docs/prereg-price-dispersion.md``. Every test below that wants a specific
+fraction sets it on its own env instance, so the shipped value is asserted in
+exactly one place — here."""
 
 from dataclasses import replace
 
@@ -9,6 +13,7 @@ from cohort.core.units import CombatParams
 from cohort.env.cohort_env import make_env
 from cohort.env.rewards import RewardLedger
 from cohort.metrics import STACK_RADIUS
+from scripts.prereg_dispersion import LADDER
 
 
 def _env(fraction: float):
@@ -18,12 +23,23 @@ def _env(fraction: float):
     return env
 
 
-def test_shipped_default_is_off_and_the_radius_matches_the_metric():
+def test_the_mechanic_ships_off_and_is_on_no_rung_of_the_ladder():
+    """OFF, and the measurement that put it back there is on the record.
+
+    Armed at 0.5 on 2026-08-26 and reverted the same day: the DEFEND pair it
+    was chosen to price takes 0.5-0.9 enemy hits per episode, so a splash
+    coupled to incoming fire never reaches them. Re-arming is a decision, and
+    it needs a mechanism that can demonstrably reach the members in the bar.
+    """
     p = CombatParams()
     assert p.burst_fraction == 0.0
+    assert str(p.burst_fraction) not in LADDER, "the fleet is on a rung with no cycle behind it"
+
+
+def test_the_footprint_is_the_metrics_own_radius():
     # the fault the suite measures and the one the world prices must be the
-    # same fault, or a run could pass the gate while dying to the mechanic
-    assert p.burst_radius == STACK_RADIUS
+    # same fault, or a run could pile up while dying to a different geometry
+    assert CombatParams().burst_radius == STACK_RADIUS
 
 
 def test_burst_off_touches_nobody():

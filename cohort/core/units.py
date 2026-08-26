@@ -65,8 +65,20 @@ class CombatParams:
     burst_fraction: float = 0.0          # fraction of the round's damage every OTHER
     #                                      living unit of the struck side within
     #                                      burst_radius takes when a shot hits.
-    #                                      0.0 = no splash — the shipped default keeps
-    #                                      every existing scenario byte-identical
+    #                                      0.0 = no splash — a structural no-op.
+    #                                      ARMED at 0.5 on 2026-08-26 for the
+    #                                      price-dispersion cycle and REVERTED the
+    #                                      same day: measurement showed the mechanic
+    #                                      cannot reach the two scenarios it was
+    #                                      chosen for. defend_brique takes 0.9 enemy
+    #                                      hits per episode and fireteam_defend 0.5,
+    #                                      so their pile is essentially never sprayed;
+    #                                      platoon_hard takes 17.6 and is taxed hard
+    #                                      (deaths 4.55 -> 6.10). A casualty-coupled
+    #                                      price reaches the cohorts that get shot at,
+    #                                      and the DEFEND pair does not.
+    #                                      See scripts/burst_engagement_probe.py and
+    #                                      docs/prereg-price-dispersion.md (amendment).
 
 
 @dataclass

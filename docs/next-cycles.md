@@ -142,12 +142,30 @@ Three shapes, and the choice is yours because it prices behaviour:
    through the enemy rather than through the reward, which is the more
    doctrinally honest mechanism and needs no new reward term.
 
-**My recommendation: (3), then re-measure before considering (1) or (2).**
-AREA FIRE is already built, already tested, and shipped OFF specifically so it
-could be switched on in a cycle like this one. It makes bunching *dangerous*
-instead of *expensive*, which is why real elements disperse, and it introduces
-no reward term that could be gamed the way `done_false` was. If the marker does
-not move, (2) is the fallback.
+**My recommendation was (3), the owner agreed on 2026-08-26, and MEASUREMENT
+REFUTED IT before a single job launched.** AREA FIRE was armed at
+`burst_fraction=0.5` and the two DEFEND incumbents were dropped into the armed
+world without retraining. The pile paid essentially nothing: success 1.000 ->
+0.980 and 1.000 -> 1.000, nearest-teammate distance 0.205 -> 0.207 and 0.225 ->
+0.227.
+
+`scripts/burst_engagement_probe.py` says why, and it is not "the price is too
+low": **the two members that pile up are the two that are never shot at.**
+Enemy hits per episode — `defend_brique` 0.9, `fireteam_defend` 0.5,
+`platoon_hard` 17.6. Cover occupancy under threat 0.996 and 0.999. The pile is
+safe because it is in cover and outguns what reaches it, so a price coupled to
+incoming fire has no channel to charge it. Climbing the ladder inverts: at 0.75
+and 1.0 `defend_brique`'s enemy hits FALL to 0.2, because the splash is
+symmetric and clears the attackers faster.
+
+**So the mechanism is open again and (1) or (2) is where it goes** — both charge
+the behaviour directly rather than through the enemy, so both reach a cohort
+that is never shot at. AREA FIRE is reverted to OFF and is not refuted as a
+mechanic: it bites hard exactly where fire is heavy (`platoon_hard` deaths
+4.55 -> 6.10), which is where the rider's flat-platoon evidence came from.
+Whether it prices THAT pile is untested — the archived flat arms are OBS_DIM 220
+against a tree at 351 and cannot be loaded. Full record:
+`docs/prereg-price-dispersion.md` -> Amendment 1.
 
 ### What the cycle costs
 

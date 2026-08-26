@@ -116,6 +116,59 @@ thing standing between here and job 1 is the mechanism choice (and, if it is a
 reward term rather than AREA FIRE, the three-rung price ladder to declare in
 AREA FIRE's place).
 
+### 2026-08-26 — AREA FIRE cannot price the DEFEND pile, and the probe cost no training at all
+
+**The owner chose AREA FIRE (shape 3) on my recommendation. The measurement
+refuted it before job 1.** Armed at `burst_fraction=0.5`, the two DEFEND
+incumbents were dropped into the armed world WITHOUT retraining — the cheapest
+possible check that the chosen lever has teeth, and the one that saved an
+18-job campaign and a wrong published conclusion.
+
+| N=100, final policy | success | stacked | nearest |
+|---|---|---|---|
+| `defend_brique_v19` | 1.000 -> 0.980 | 0.976 -> 0.965 | 0.205 -> 0.207 |
+| `fireteam_defend_v25` | 1.000 -> 1.000 | 0.960 -> 0.960 | 0.225 -> 0.227 |
+
+Trajectories moved, so it is not a structural no-op — the pile just paid
+nothing. `scripts/burst_engagement_probe.py` separates "priced too cheaply"
+from "never fires", because those have opposite fixes, and the answer is the
+second:
+
+| N=20 at `burst_fraction=0.5` | enemy hits/ep | bursts/ep | splash dmg/ep | deaths/ep |
+|---|---|---|---|---|
+| `defend_brique_v19` | **0.6** | 0.5 | 22 | 0.20 |
+| `fireteam_defend_v25` | **0.2** | 0.1 | 8 | 0.00 |
+| `platoon_hard_v7_seed13` | **16.4** | 6.8 | 217 | 6.10 (from 4.55) |
+
+**The mechanism works on the scenarios that are not the problem.** The two
+members that pile up are the two that are essentially never shot at (0.9 and
+0.5 enemy hits per episode against `platoon_hard`'s 17.6), with cover occupancy
+under threat at 0.996 and 0.999. **The pile is safe because it is in cover and
+outguns what reaches it, not because bunching is unpriced** — so a price coupled
+to incoming fire has no channel to charge it. And the ladder inverts past rung
+1: at 0.75 and 1.0 `defend_brique`'s enemy hits FALL to 0.2, because the splash
+is symmetric and clears the attackers faster. More price, less pressure.
+
+**Reverted to `burst_fraction=0.0`** with the measurement recorded at the field
+and pinned by `tests/test_burst_fire.py`. Nothing was launched; no run exists;
+the fleet is untouched.
+
+**The bar itself is unchanged** — thresholds, verdicts, incumbents and the fleet
+guard all stand. One clause was ADDED (`docs/prereg-price-dispersion.md` →
+Amendment 1): **a CEILING requires a mechanism that can reach the members.**
+Had the ladder been run it would have returned NO EFFECT at every rung and then
+CEILING at the top, and CEILING's registered meaning is "DEFEND cannot be held
+dispersed on these maps" — a claim about the maps published off a price that
+never arrived.
+
+**Not decided here**: the mechanism is the owner's again. Shapes (1) per-step
+dispersion price and (2) threshold price both charge the behaviour directly, so
+both reach a cohort that is never shot at; (2) was the spec's own fallback.
+AREA FIRE is NOT refuted as a mechanic — it bites hardest exactly where fire is
+heavy, which is where the rider's flat-platoon evidence came from. Whether it
+prices that pile is untested: the archived flat arms are OBS_DIM 220 against a
+tree at 351 and will not load.
+
 ### 2026-08-26 — v1.23 fleet, first six members: five clean, one mute root, two first-ever bunching measurements
 
 The campaign launched 2026-08-25 17:26 and is at job 7 of 11

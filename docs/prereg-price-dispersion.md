@@ -161,3 +161,81 @@ scripts/prereg_dispersion.py --manifest --setting burst_fraction=1.0 --top-of-la
 ```
 
 Exit 0 on SEPARATES, 1 on everything else.
+
+---
+
+# Amendment 1 — 2026-08-26, before job 1
+
+**The bar above is unchanged.** Thresholds, verdicts, incumbents and the fleet
+guard all stand exactly as registered. What is withdrawn is the AREA FIRE
+**mechanism and its ladder**, and one clause is **added** to stop a mechanism
+that cannot reach the members from producing a false CEILING.
+
+## What happened
+
+The owner picked AREA FIRE (shape 3) on my recommendation. It was armed at
+`burst_fraction = 0.5` — rung 1 — and, before launching 18 jobs, the two DEFEND
+incumbents were dropped into the armed world **without retraining** to check
+that the mechanism had teeth:
+
+| N=100, final policy | success | stacked | nearest |
+|---|---|---|---|
+| `defend_brique_v19` | 1.000 → 0.980 | 0.976 → 0.965 | 0.205 → 0.207 |
+| `fireteam_defend_v25` | 1.000 → 1.000 | 0.960 → 0.960 | 0.225 → 0.227 |
+
+Trajectories moved, so the mechanic is not a structural no-op — but the pile
+paid essentially nothing. **`scripts/burst_engagement_probe.py`** was written to
+separate "priced too cheaply" from "never fires", because those have opposite
+fixes: a higher fraction multiplies a splash that fires and cannot multiply one
+that does not.
+
+| N=20, `burst_fraction` 0.5 | enemy hits/ep | bursts/ep | splash dmg/ep | deaths/ep |
+|---|---|---|---|---|
+| `defend_brique_v19` | **0.6** | 0.5 | 22 | 0.20 |
+| `fireteam_defend_v25` | **0.2** | 0.1 | 8 | 0.00 |
+| `platoon_hard_v7_seed13` | **16.4** | 6.8 | 217 | 6.10 (from 4.55) |
+
+## The finding
+
+**The mechanism works, on the scenarios that are not the problem.** The two
+members that pile up are the two that are essentially never shot at —
+`defend_brique` takes 0.9 enemy hits per episode with the mechanic off,
+`fireteam_defend` 0.5, against `platoon_hard`'s 17.6. Their cover occupancy
+under threat is 0.996 and 0.999. **The pile is safe because it is in cover and
+outguns what reaches it, not because bunching is unpriced** — so a price coupled
+to incoming fire has no channel to charge it.
+
+Climbing the ladder makes this worse rather than better. At `burst_fraction`
+0.75 and 1.0 `defend_brique`'s enemy hits *fall* to 0.2, because AREA FIRE is
+symmetric: heavier splash clears the attacking enemies faster, so the piled
+cohort is shot at less. **The ladder does not increase the pressure on the pile;
+past rung 1 it reduces it.**
+
+## What this changes
+
+1. **AREA FIRE's ladder (0.5 → 0.75 → 1.0) is withdrawn.** The mechanic is back
+   to `burst_fraction = 0.0`, shipped OFF, with the measurement recorded at the
+   field and pinned by `tests/test_burst_fire.py`. Re-arming is a decision.
+2. **New clause — a CEILING requires a mechanism that can reach the members.**
+   CEILING's registered meaning is *"DEFEND cannot be held dispersed on these
+   maps"*. Had the ladder been run, it would have returned NO EFFECT at every
+   rung and then CEILING at the top — and that sentence would have been
+   published as a finding about the maps when the true cause was a price that
+   never arrived. So: **before a CEILING may be written down, the cycle must show
+   that the chosen mechanism actually charged the DEFEND pair** — for a
+   casualty coupling, that the splash fired; for a reward term, that the priced
+   quantity was non-zero on those episodes. A mechanism that cannot bill the
+   member cannot license a claim about the member.
+3. **The mechanism is open again**, and it is the owner's. Shape (1) per-step
+   dispersion price and shape (2) threshold price both charge the behaviour
+   directly rather than through the enemy, so both reach a cohort that is never
+   shot at. Shape (2) remains the spec's own fallback.
+
+## What is NOT retracted
+
+AREA FIRE is not refuted as a mechanic — only as the lever for *this* bar. It
+bites hard exactly where fire is heavy (`platoon_hard`: +34% deaths, 6.8 bursts
+per episode), which is where the rider's original evidence came from: the flat
+platoon arms win by piling at stacked 0.84–0.94. Whether it prices *that* pile
+is untested — the archived flat arms are OBS_DIM 220 against a tree at 351 and
+cannot be loaded, so answering it needs a retrain and it is not claimed here.
