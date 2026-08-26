@@ -1,104 +1,103 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-26 morning, **THE v1.23 FLEET LANDED. All three scenarios that looked blocked at 01:10 now have a viable candidate — but the fleet MUST NOT be sealed without your decisions, and two of them are yours alone**)
+## ⟳ Session handoff — resume here (2026-08-26, **v1.23 IS SEALED and the fleet is reproducible again; behaviour MARKERS replace two gates; the next cycle is price-dispersion and it is specced**)
 
-**The night's ledger is `docs/night-orders-2026-08-26.md`** — the gated queue,
-every decision rule written before its number arrived, and every correction, in
-order.
+### State: green
 
-### What the night was for
+- **`baseline.py` reads `BASELINE OK`** with one disclosed exception. Nine
+  members, one `cohort/` tree (`ee378f01`), N=100 on both published evaluations,
+  all loadable, unchanged since the seal.
+- **Suite 1210 green, ruff clean, everything pushed to `multi-agent-dev`.**
+  Nothing is on `main`; no tag.
+- **Boards are PUBLISH PENDING** → `/boards` is the one step left that a shell
+  cannot do.
 
-The v1.23 fleet retrain (11 jobs, launched 2026-08-25 17:26) landed 10 of 11
-overnight. At 01:10 three scenarios looked unsealable. **All three resolved.**
-
-### The fleet, as it stands (N=100 on the FINAL policy unless noted)
-
-| scenario | candidate | succ | closed-on-root | stacked | verdict |
+| scenario | member | success (N=100) | root-report | bunching | human fwd |
 |---|---|---|---|---|---|
-| fireteam | fireteam_v14 | 0.93 ± 0.05 | 0.882 | 0.167 | clean |
-| fireteam_defend | fireteam_defend_v25 | 1.00 ± 0.00 | 1.000 | **0.960** | **bunching FAIL** |
-| squad | squad_ctrl_v2_seed12 | 0.97 | — | — | on the frozen tree |
-| squad_recon | squad_recon_v13 | 0.98 ± 0.03 | 0.939 | 0.572 | clean |
-| squad_screen | squad_screen_v19 | 1.00 ± 0.00 | 0.940 | 0.234 | clean; **bit-identical to `squad_screen_v18_seed12`** |
-| patrol_brique | **v44_seed19** | 1.00 (N=20) | **0.850** | — | 4-seed search: **only 19 of 4 reports** (12, 18, 14 mute) |
-| defend_brique | defend_brique_v19 | 1.00 ± 0.00 | 0.990 | **0.976** | **bunching FAIL** |
-| platoon | **v14_seed13** | **1.00 ± 0.00** | **0.940** | 0.567 | matches incumbent (1.00 / 0.930) |
-| platoon_hard | **v7_seed13** | 0.95 (N=20) | 0.000 | — | PUBLISHABLE (gap 7); waiver applies |
+| fireteam | fireteam_v14 | 0.93 ± 0.05 | 0.882 | 0.167 | 0.870 |
+| fireteam_defend | fireteam_defend_v25 | 1.00 ± 0.00 | 1.000 | **0.960** | 1.000 |
+| squad | squad_ctrl_v2_seed12 | 0.92 ± 0.05 | 0.880 | 0.291 | 0.690 |
+| squad_recon | squad_recon_v13 | 0.98 ± 0.03 | 0.939 | 0.572 | 0.870 |
+| squad_screen | squad_screen_v19 | 1.00 ± 0.00 | 0.940 | 0.234 | 0.990 |
+| patrol_brique | patrol_brique_v44_seed19 | 0.98 ± 0.03 | 0.837 | 0.227 | **0.000** |
+| defend_brique | defend_brique_v19 | 1.00 ± 0.00 | 0.990 | **0.976** | 1.000 |
+| platoon | platoon_v14_seed13 | 1.00 ± 0.00 | 0.940 | 0.567 | 0.890 |
+| platoon_hard | platoon_hard_v7_seed13 | 0.93 ± 0.05 | **0.000** | 0.370 | 0.740 |
 
-### The three decisions that are yours
+The last three columns are **markers, not gates** — measured and published, they
+refuse nothing. That is the change this session shipped.
 
-1. **Swap the published members?** `platoon` and `patrol_brique` and
-   `platoon_hard` candidates are all *seed-13/19 draws*, not seed 12. Promoting
-   them means declaring the search that found them. Nothing was swapped: the
-   `BASELINE.json` `runs` block is untouched and **the fleet is NOT sealed**.
-2. **The DEFEND bunching.** `fireteam_defend` and `defend_brique` fail
-   `stacked_rate` at 0.960/0.976 — measured, not inherited: every incumbent
-   reads `—` because the metric postdates them, and their checkpoints are
-   OBS_DIM 220 so they can never be scored on this axis. Diagnosed overnight
-   (below). The remedy is a reward or gate change; both are yours.
-3. **`platoon_hard`'s root death** — 0.300–0.400 at final in both draws. Reads
-   as a scenario characteristic, not a retrain effect, but it should not pass
-   unremarked in a member.
+### What changed, and why
 
-### The two findings worth more than the members
+**Behaviour markers (your decision, 2026-08-26).** A gate is a bound a run must
+clear; a marker says what a policy does. `closed_on_root_report_rate` and
+`stacked_rate` were demoted, and `human_in_action_rate` is new. All three vary
+by scenario shape rather than by policy quality, so gating them charged a run
+for its scenario. **Demotion weakens enforcement by design** — the numbers stay
+visible so a reviewer can still refuse a run; the machine no longer does. The
+eight gate tests this broke were converted, not deleted: each still guards the
+MEASUREMENT, and one pins that a marker exposes no `passed` field at all, so no
+reader can quietly turn one back into a gate.
 
-**The DEFEND bunching is real piling, not geometry.** I expected the 0.70
-ceiling to be unreachable for a DEFEND root. Refuted. `mean_nearest_teammate_dist`
-is **0.205 / 0.225** against a `STACK_RADIUS` of 1.5 — a team on adjacent
-distinct cells reads ~1.0. This is the whole element in effectively one cell,
-spatially unsound 96–98% of the time, cover occupancy 0.996–0.999, winning 1.00.
-The gate is vindicated, not miscalibrated. *(The masked-random control I launched
-for this could not settle it — random wins 0.00, so it never holds the objective
-and never faces what forces bunching. Recorded as inconclusive rather than
-quoted.)*
+**v1.23 sealed.** Every v1.22 member was OBS_DIM 220 against a tree at 351 and
+unloadable; nothing published was re-derivable. That is fixed.
 
-**The reporting seed carries only PARTIALLY across a tree change** — the
-question assurance #60 made unreachable, now answered on all four seeds:
+### Open problems, in the order I would take them
 
-| seed | old tree (220) | new tree (351) | carried? |
-|---|---|---|---|
-| 12 | 0.000 mute | 0.000 mute | yes |
-| 18 | 0.949 REPORTS | 0.000 mute | **NO** |
-| 19 | 0.786 REPORTS | 0.850 REPORTS | yes |
-| 14 | 0.878 REPORTS | 0.000 mute | **NO** |
+1. **The DEFEND bunching — the next cycle.** `fireteam_defend` 0.960 and
+   `defend_brique` 0.976, with nearest-teammate distance 0.205/0.225 against a
+   `STACK_RADIUS` of 1.5: the whole element in one cell, spatially unsound
+   96–98% of the time, winning every episode. **Specced in
+   `docs/next-cycles.md` → "The price-dispersion cycle"**, including the design
+   choice that is yours (per-step price / threshold price / AREA FIRE) and my
+   recommendation (**AREA FIRE first** — already built and shipped OFF, makes
+   bunching dangerous rather than expensive, adds no gameable reward term).
+2. **`patrol_brique` human-goes-forward is 0.000** — brand new, surfaced by the
+   marker on its first run. The human never enters the objective ring. **This
+   may be correct for a patrol** (the mission is not to seize) or may be the
+   same holding-back the jamming arm showed. Not diagnosed. One
+   `jam_exposure_probe.py`-style read would settle it.
+3. **`platoon_hard` root-report 0.000 and root death 0.30–0.40.** The mute root
+   is diagnosed (claims reachable, declined at rdb 1.0 AND 3.0) and now a
+   marker. The death rate is not diagnosed and should not pass unremarked.
+4. **`squad`'s provenance exception** — my planning error (below). Resolves free
+   in the next cycle's retrain.
+5. **Untested lead**: root claims appear to follow *traffic* rather than
+   evidence of completion (confirmed claims sit on staler evidence than rejected
+   ones). `jam_evidence_probe.py` carries the harness.
 
-**2 of 4 carried, and both flips ran reports → mute.** The reporting rate on the
-same four seeds went 3/4 → 1/4 — suggestive, but **Fisher two-tailed p = 0.4857,
-so four seeds cannot establish it**; do not quote it as a rate change. What IS
-established is that a declared `seed_search` does not survive a tree change
-intact, so a search must be re-run rather than reused.
+### Two mistakes of mine, disclosed rather than smoothed
 
-**I over-read this twice and both are corrected in the ledger**: at 05:55, on
-seed 18 alone, I wrote "a seed search is NOT reusable" — seed 19 then
-contradicted it; the final four-seed picture supports the narrower claim above.
+- **`squad` is on a different tree** (81a9cec6 vs ee378f01). I left a squad job
+  out of the campaign because `squad_ctrl_v2_seed12` was bit-identical in
+  *config* — true, and beside the point: it trained before the campaign froze
+  the tree. The delta is provably inert for this member (the waiver table has
+  one entry, keyed `jammed`; squad is `global`), and a squad job would have cost
+  45 minutes. Disclosed in the manifest's `exceptions`.
+- **`platoon_hard`'s rescue was silently dropped.** The v1.22 member trained
+  with the D4 rescue armed; the campaign carried no rescue flags, so both v1.23
+  draws trained without it. Unintended — though the outcome argues for the new
+  configuration, since `v7_seed13` reaches PUBLISHABLE with no salvage and this
+  project's own finding is that the rescue is a converter, not a cure. Any
+  v5-vs-v1.23 comparison is **not** single-variable. In `referenced_history`.
 
-### G4 complete — the campaign is done and the books are square
+### Findings from this cycle worth keeping
 
-- **All 11 jobs landed.** `patrol_brique_v45_seed14` came in mute (0.000) and
-  weakest of the four at 0.80 ± 0.18.
-- **Every new draw is declared** in `BASELINE.json` `seed_spread` (13 runs
-  across 7 scenarios), artifacts committed alongside them. **Suite GREEN, 1207
-  passed; ruff clean.**
-- **The neutrality gate reads exactly as it should**: `baseline.py` reports
-  `BASELINE NOT READY — 9 problems`, all of them *"checkpoint does not load
-  under the current spaces"* on the **v1.22 incumbents**. The undeclared-draw
-  problem is gone (10 → 9). The manifest still points at the old, unloadable
-  members **because swapping them is your decision** — that is the campaign's
-  whole result sitting one decision away from being sealable.
-- **A deliberate deviation from my own orders**: I wrote "declare a
-  `seed_search` for `platoon`". I will not. `seed_search` means *the seeds a
-  member was chosen from*, and `platoon_v8` predates these runs — declaring them
-  there would misstate how the published member was picked. They go in
-  `seed_spread`; promote them if you swap the member.
-- **Boards are PUBLISH PENDING** → `/boards`.
+- **The DEFEND bunching is chosen, not geometric** — refuted my own hypothesis.
+- **A seed search does not survive a tree change**: `patrol_brique` carried 2 of
+  4 seeds, with one flipping 0.949 → 0.000. Budget 4 seeds per bimodal scenario
+  on every breaking cycle; searches are not reusable.
+- **A tree change at constant `OBS_DIM` moves nothing** — bit-identical
+  checkpoints five commits apart. "The tree moved" is never on its own a reason
+  to re-run.
+- **Jamming**: success survives; the root's DONE channel does not; the apparent
+  safety gain is a vanished denominator (the human stops going forward) — which
+  is exactly why `human_in_action_rate` now exists.
 
-### Commits (all pushed to `multi-agent-dev`)
+### Next command
 
-`8f18492` night orders · `d89c8ce` N=100 sweep · `a09fcc3` bunching is piling ·
-`93928e9` platoon_hard v6 misses the bar · `0d5a6e6` the platoon root reports ·
-`a4f999d` platoon seed 13 matches its incumbent · `6c217d2` seed 18 flips ·
-`0cbc314` platoon_hard confirm seed separates · `14fda35` seed 19 reports +
-correction.
+`/boards`, then launch the price-dispersion cycle per `docs/next-cycles.md`
+once you have picked its mechanism.
 
 ### 2026-08-26 — v1.23 fleet, first six members: five clean, one mute root, two first-ever bunching measurements
 
