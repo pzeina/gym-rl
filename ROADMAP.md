@@ -173,6 +173,77 @@ scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
 `/boards` is still PUBLISH PENDING from before this cycle and is independent of
 it — safe to run at any time.
 
+### 2026-08-31 — `patrol_brique`'s human-goes-forward 0.000 is a VANISHED DENOMINATOR, not a patrol doing its job
+
+Open problem #2, settled by reading the record rather than by training anything.
+It was logged as *"this may be correct for a patrol (the mission is not to
+seize)"*. **That reading is refuted by the scenario definition:
+`patrol_brique.root_mission` is `MissionType.SEIZE` on `ALPHA`.** It is a seize,
+and the name is the only thing patrol about it.
+
+Better still, the record already holds a **controlled pair**. `squad` and
+`patrol_brique` are identical in org (squad), map (42×42), spawn (5,5), objective
+(ALPHA at 33,33), mission (SEIZE ALPHA) and step limit (450). The whole
+difference is the OpFor: 5 garrison enemies and no mines, against 6 brique-band
+ambushers and 3. Both members are evaluated at **N=100**, committed:
+
+| final policy, N=100 | `patrol_brique_v44_seed19` | `squad_ctrl_v2_seed12` |
+|---|---|---|
+| success | **0.98 ± 0.03** | 0.92 ± 0.05 |
+| human goes forward | **0.000** | 0.690 |
+| human ring entries / ep | **0.00** | 1.13 |
+| human death rate | **0.03** | 0.35 |
+| human mean distance from OBJ | **28.4** | 20.8 |
+| human mean distance from enemy | 18.20 | 18.27 |
+| element dist from OBJ under threat | 14.4 | 10.4 |
+| cover occupancy under threat | 0.062 | 0.144 |
+
+**On the harder map, with mines on the route, `patrol_brique` scores HIGHER
+success and a human death rate an order of magnitude LOWER.** Both are bought the
+same way: the human is parked 28 cells from the objective it is the mission to
+seize and enters the ring **zero times in a hundred episodes**.
+
+**The control that makes this airtight is `human_mean_enemy_dist`: 18.20 against
+18.27, identical.** The human is not further from danger — it is the same
+distance from the enemy in both scenarios. What changed is its distance from the
+OBJECTIVE. So this is not a human fleeing contact; it is a human that never
+advances. And it is not being killed on the way (death rate 0.03), so it is not
+attrition either — the element simply seizes ALPHA at 0.98 without it, and
+nothing in the reward asks it to bring the human along.
+
+This is exactly the shape the jamming arm produced and exactly why
+`human_in_action_rate` was created: **deaths fell because exposure vanished, not
+because anything got safer.** The marker did its job on its first fleet-wide run
+— it caught a scenario whose two headline numbers both flatter it for the same
+hidden reason. `patrol_brique` should not be read as the safest, most successful
+seize in the fleet; it is a seize the human sits out.
+
+**Diagnosed, NOT fixed, and deliberately so.** Making the human's advance matter
+means changing a reward term or the scenario's success condition, and both are
+the owner's call, not an autocycle's — and `cohort/` is frozen for the campaign
+regardless. The options, with the measurement that separates them:
+
+1. **Leave it and publish the marker.** Defensible: the doctrine question "must
+   the human enter the objective?" has a real answer of *no* for some missions.
+   Costs nothing, and the marker already makes it visible.
+2. **Price the human's absence** — a term for the human being outside the
+   objective ring at ENDEX. Direct, and gameable in the way this repo has been
+   burned by before: it pays for the human's position, not for the element
+   bringing it.
+3. **Make it a success condition** — SEIZE is not satisfied until the human is in
+   the ring. Cleanest and most doctrinally honest, matches the owner's stated
+   bias for redesign over patch, and is breaking: every squad-geometry checkpoint
+   would need retraining, and `squad`'s own 0.69 says even the easy map does not
+   clear it today.
+
+**What would settle the choice before anyone commits to it**, at zero training
+cost and by the same argument as the price calibration — a policy acts on
+observations, so a success-condition change cannot move a trained trajectory:
+re-score both members' existing N=100 rollouts under option 3's stricter
+predicate. `patrol_brique` would read 0.00 and `squad` about 0.69 by
+construction. That is a measurement of how far the fleet is from the stricter
+mission, and it is arithmetic over rollouts that already exist.
+
 ### 2026-08-31 — rung 1 SEPARATES both DEFEND members and collapses two others; the converge-tax mechanism is REFUTED
 
 **The campaign's target is hit.** Seven of eighteen jobs have landed. Both DEFEND
