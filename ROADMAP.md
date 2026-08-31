@@ -1,6 +1,110 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
+## ⟳ Session handoff — resume here (2026-08-31, **autocycle: rung 1 SEPARATES both DEFEND members, two scenarios collapsed and the collapse has NO identified mechanism; four diagnoses shipped, all of them refutations, none of them mine to fix**)
+
+### The campaign is still in flight — 8 of 21 jobs landed
+
+`scripts/campaigns/v1_24_price_dispersion.jobs`, queue pid **83598**, alive.
+`cohort/` remains **FROZEN** at `3a24fd7`; everything this pass touched is
+`scripts/`, `tests/` and docs. `platoon_v16_seed13` is running (86%, succ 98% —
+its seed-12 sibling collapsed in exactly this window, so it is not safe yet).
+**12 jobs left after it, ~9–10h**: platoon seeds 14/15, platoon_hard ×4,
+patrol_brique ×4, then the three squad spares this pass appended.
+
+**Nothing needs a decision until the queue drains.** Then, in order:
+`prereg_dispersion.py --manifest --setting bunching_penalty=-0.05` **before**
+anything is published, then `publish_baseline.py` at N=100, `baseline.py --seal`,
+`results_table.py --write`.
+
+### The headline: the price works on its target, and breaks two bystanders
+
+**Both DEFEND members separated at full success** — the entire point of the cycle:
+
+| final policy, N=20 | success | element bunching |
+|---|---|---|
+| `fireteam_defend_v26` | 1.00 (was 1.00) | **0.960 → 0.268** |
+| `defend_brique_v20` | 1.00 (was 1.00) | **0.976 → 0.060** |
+
+Both clear the registered `stacked < 0.70`. **This is not the bar being scored** —
+that is N=100 after the queue drains, and the nearest-teammate denominator guard
+is half of it. Five of the eight landed runs are PUBLISHABLE with converged
+curves (also `fireteam_v15` 93%, `squad_recon_v14` 97%, `squad_screen_v20` 100%).
+
+**Two collapsed, and it is an inversion rather than a loss.** `squad_v30`
+(EARLY-STOP, 64%) went 74% → **0%** with return 49.4 → 1.4 and the clock run out
+in every episode; `platoon_v15_seed12` went 97% → **0%** with return 18.8 → −1.1.
+Their pre-price incumbents converge the other way — `squad_ctrl_v2_seed12` return
+39.9 → 70.0, length 214 → 100. **`squad_v30`'s bunching marker is the best in the
+fleet at 0.013 and its success is zero**: the denominator clause in its purest
+form.
+
+**No mechanism was identified, and that is logged as the result rather than
+dressed up.** I proposed a *converge tax* and the new
+`scripts/bunching_phase_probe.py` refuted it (squad's charge is heaviest at
+SPAWN, Q5/Q1 = 0.22; platoon's is flat). The fallback died with it: **magnitude
+does not predict collapse either** — the two most expensive members throughout
+the episode (`defend_brique` −0.090, `fireteam_defend` −0.085 per agent-step) are
+exactly the two that survived and separated, while `squad`, which collapsed, is
+the second-cheapest at −0.018. The one live hypothesis is seed-contingent
+instability in two already-bimodal scenarios (platoon seed 12 collapsed, seed 13
+is at 98% on the same tree and price), and it is already a measurement: three
+squad spares were **appended** to the live jobs file (appended, never rewritten —
+the queue holds an open fd).
+
+### What is now on the owner's desk, and nothing else is
+
+Three findings that end in a design call, all diagnosed and none acted on:
+
+1. **`patrol_brique`'s human never enters the objective.** Its `root_mission` is
+   `SEIZE` — the "may be correct for a patrol" reading is refuted by the config.
+   Against the `squad` control (identical org/map/spawn/objective/mission/steps;
+   only the OpFor differs) it scores **higher** success (0.98 vs 0.92) and a human
+   death rate an order of magnitude **lower** (0.03 vs 0.35) — both bought by
+   parking the human 28 cells out, with **identical enemy distance** (18.20 vs
+   18.27). A vanished denominator, not safety. Three options and the zero-cost
+   measurement that separates them are in the log.
+2. **`platoon_hard`'s root never closes.** Six explanations eliminated: not dead
+   (68 alive-root wins, 1 claim), not masked (`done_admissible_root` 1.00), not
+   unreachable or untruthful (**190 golden root-steps against `platoon`'s 125**,
+   20/20 episodes, oracle accept **0.988**), not underpriced (rdb 1.0 and 3.0),
+   not contended (~1.4 SITREPs per 600-step episode — the channel is idle). What
+   survives is a hypothesis: the *uninformed* accept rate is 0.124 against
+   `platoon`'s 0.232, and platoon's false-DONE rate halves across training while
+   platoon_hard's does not move — **suppression of an unlearned act, not refusal
+   of a learned one**. The single-variable arm is `--reward done_false=0`, an
+   override and therefore an experiment arm, launchable when the queue drains.
+3. **Rung 2 is not this cycle's to take.** The ladder is declared; climbing it is
+   a decision.
+
+### One defect fixed, with its hazard encoded
+
+**A price that ships as a DEFAULT was invisible to the identity matcher.**
+`config.json` records no reward at all and `reward_overrides` only sees `--reward`
+flags — but CLAUDE.md *forbids* those in a baseline run, so the mandated way to
+change a price was seen by neither, and two runs either side of a reward change
+read as the same experiment. It had already cost something: preflight refused all
+18 v1.24 jobs as already-answered and the campaign launched under **`FORCE=1` over
+a populated record** to get past it. `baseline.reward_defaults(commit)` now
+resolves `RewardConfig`'s defaults from git — so every run already on disk
+answers — and `prices_match` is the union of both channels. Preflight over the
+campaign file now exits 0: *"21 job(s), no config already in the record."* The
+`FORCE=1` was never needed. Four regression tests, one of them guarding the ast
+reader itself.
+
+### State: green
+
+Suite **1262 passed**, ruff clean, `cohort/` untouched, five commits on
+`multi-agent-dev` (**not pushed** — the autocycle forbids it; a normal session
+may push). `baseline.py` still reads **BASELINE OK** with its one disclosed
+`squad` provenance exception, which the campaign's squad jobs resolve.
+**Boards are PUBLISH PENDING** → `/boards`, independent of all of the above and
+safe at any time.
+
+### Next command
+
+`/train-status`. Nothing to decide until the queue drains.
+
+## ⟳ Previous handoff (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
 
 ### The campaign in flight
 
