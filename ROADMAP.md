@@ -173,6 +173,140 @@ scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
 `/boards` is still PUBLISH PENDING from before this cycle and is independent of
 it — safe to run at any time.
 
+### 2026-08-31 — rung 1 SEPARATES both DEFEND members and collapses two others; the converge-tax mechanism is REFUTED
+
+**The campaign's target is hit.** Seven of eighteen jobs have landed. Both DEFEND
+members — the entire reason the cycle exists — separated, at full success:
+
+| final policy, N=20 | success | element bunching |
+|---|---|---|
+| `fireteam_defend_v26` | 1.00 (incumbent 1.00) | **0.960 → 0.268** |
+| `defend_brique_v20` | 1.00 (incumbent 1.00) | **0.976 → 0.060** |
+
+Both are under the registered `stacked < 0.70`. The bar is NOT scored yet and
+must not be: `prereg_dispersion.py` runs after the queue drains, at N=100, and
+the nearest-teammate denominator guard is half the test. Five of seven landed
+runs are PUBLISHABLE with converged curves (`fireteam_v15` 93%,
+`squad_recon_v14` 97%, `squad_screen_v20` 100%, plus the two above).
+
+**Two collapsed, and the collapse is an INVERSION rather than a loss.**
+
+| | success | ep return | ep length | ran clock out | bunching |
+|---|---|---|---|---|---|
+| `squad_v30` (EARLY-STOP 64%) | 74% → **0%** | 49.4 → 1.4 | 217 → 450 (max) | 0.18 → **1.00** | 0.291 → **0.013** |
+| `platoon_v15_seed12` | 97% → **0%** | 18.8 → **−1.1** | 405 → 600 (max) | 0.52 → **1.00** | — |
+
+Their pre-price incumbents, same scenarios and (for squad) the same seed, go the
+OPPOSITE way: `squad_ctrl_v2_seed12` return 39.9 → **70.0** with length 214 →
+**100**, `platoon_v14_seed13` return 43.4 → **76.0** with length 278 → **97**.
+Unpriced, these scenarios converge on finishing fast. Priced, they converge on
+never finishing. Both collapsed policies disperse almost perfectly and transmit
+almost nothing (tx/agent-step 0.14 → 0.02). **`squad_v30`'s bunching marker is
+the best in the fleet at 0.013 and its success is zero** — the denominator
+clause in its purest form: the marker did not improve, the mission vanished.
+
+**The mechanism I proposed was refuted by its own probe.** The claim was a
+*converge tax*: that the price is charged hardest in the final approach, because
+finishing requires the element to close on one point, so cheap and successful are
+in direct conflict. `scripts/bunching_phase_probe.py` (new, read-only, zero
+training — same exactness argument as the calibration: a policy acts on
+observations, so arming the price moves no trajectory of a trained checkpoint)
+decomposes the charge into fifths of each episode's realised length, where Q5 of
+a win IS the approach that scored it:
+
+| unit price −0.05, N=20, wins only | Q1 | Q3 | Q5 | Q5/Q1 |
+|---|---|---|---|---|
+| squad | −0.0368 | −0.0144 | **−0.0081** | **0.22** |
+| platoon | −0.0825 | −0.0954 | −0.0939 | 1.14 |
+| defend_brique | −0.0929 | −0.0916 | −0.0902 | 0.97 |
+| fireteam_defend | −0.0773 | −0.0833 | −0.0851 | 1.10 |
+
+`squad`'s charge is heaviest **at spawn** and lightest at the finish. The
+converge tax does not exist there, and platoon's profile is flat. **Claim dead.**
+
+**And the fallback explanation dies with it: magnitude does not predict collapse
+either.** The two most expensive members throughout the episode — `defend_brique`
+at −0.090 and `fireteam_defend` at −0.085 per agent-step, the pair rung 1 was
+sized for — are exactly the two that survived AND separated. `squad`, which
+collapsed, is the second-cheapest in the fleet (mean −0.018).
+
+**Verdict: NO MECHANISM IDENTIFIED.** What is established is negative and worth
+more than a story: the collapse is not explained by how much the price costs, nor
+by when in the episode it is charged. Logged as a miss rather than dressed up.
+The one live hypothesis left is that it is seed-contingent instability in two
+scenarios that were already bimodal — `platoon` seed 12 collapsed while seed 13
+is at 96% on the same tree and the same price, which is the shape of a seed
+effect and not of a systematic one.
+
+**That hypothesis is now a measurement, at zero token cost.** `squad` was
+budgeted ONE job because nobody thought it bimodal; it is now. Three spares
+(`squad_v31_seed13`, `_v32_seed14`, `_v33_seed15`) were APPENDED to
+`scripts/campaigns/v1_24_price_dispersion.jobs` while the queue was still reading
+it — appended, never rewritten, because the queue holds an open fd and a rewrite
+would point it at a deleted inode. Either a seed survives and the campaign lands
+with a squad member instead of a hole, or all four collapse and that uniformity
+is itself the finding rung 1 needs. Three of platoon's four declared seeds are
+still queued and settle the same question there.
+
+**Nothing about the price was changed and nothing should be until the queue
+drains.** `cohort/` stays frozen; a rung is a decision, and rung 2 is not this
+cycle's to take.
+
+### 2026-08-31 — a price that ships as a DEFAULT was invisible to the identity matcher
+
+Found while running the gate: `test_the_shipped_record_holds_no_draw_outside_the_declared_blocks`
+was red, naming every landed v1.24 run as an undeclared same-config draw of the
+v1.23 member it was testing.
+
+**The defect.** Run identity was split across two readings and a price could hide
+between them. `config_matches` reads `config.json`, which records the PPO
+hyper-parameters and **nothing about the reward**. `overrides_match` reads
+`economics.json`'s `reward_overrides`, which is populated **only from `--reward`
+flags**. But CLAUDE.md forbids a `--reward` override in a baseline run — *"what
+ships is what was trained"* — so the mandated way to change a price, editing the
+default in `cohort/env/rewards.py`, was seen by neither. **Two runs either side
+of a reward change read as the same experiment.**
+
+**It had already cost something, and the scar is in the record.** The v1.24
+campaign armed `bunching_penalty = -0.05` as a default; `campaign_preflight`
+then refused all 18 jobs as already answered, and the campaign launched under
+`FORCE=1` over a populated record with three paragraphs (`ea451ad`) arguing the
+refusal was wrong. The argument was correct. The refusal was a blind spot — and
+`FORCE=1` over a populated record is the one override this project treats as
+dangerous. It should not be the price of changing a price.
+
+**The fix.** `baseline.reward_defaults(commit)` resolves `RewardConfig`'s literal
+numeric field defaults from `git show <commit>:cohort/env/rewards.py`, memoized
+like `cohort_tree` and derived from git rather than recorded at train time, so
+**every run already on disk answers** — including the seven this campaign has
+landed. `prices_match` is the union of both channels and is now what the
+seed-spread completeness scan, the draw-grouping filter and `find_duplicates`
+all ask. Two conventions, both pointed the safe way: an unresolvable commit stays
+a *suspect* rather than a proven difference (a false match gets declared and
+read; a false difference goes silent), and a field present on only one side
+counts as a difference only when its default is non-zero — adding
+`burst_fraction = 0.0` to the dataclass must not retroactively split every run
+in the record into two experiments.
+
+**Evidence.** `reward_defaults` on `fireteam_v15`'s commit returns
+`bunching_penalty = -0.05`; on `fireteam_v14`'s the field does not exist yet, and
+the non-zero rule reads that as a difference. `prices_match` separates them.
+Preflight over the campaign file now reports *"21 job(s), no config already in
+the record"* and exits 0 — the `FORCE=1` was never needed. `baseline.py` still
+reads BASELINE OK with its one disclosed `squad` exception. Suite 1262 green,
+ruff clean, `cohort/` untouched (the freeze holds — this is `scripts/` and
+`tests/` only).
+
+**Hazard encoded**, four tests: the default-only price is a different experiment;
+an unarmed new field does not split the record; an unresolvable price stays a
+suspect while a recorded flag still separates; and the ast reader is exercised
+against the real dataclass, so a walk that silently stopped finding
+`RewardConfig` — returning `{}` and making every run match every other — fails
+loudly. `test_the_63_pair_is_caught_before_the_queue` now pins the launch PRICE
+the way it already pinned the launch TREE: the #63 pair legitimately stops being
+a duplicate of a job launched today, and the test says so rather than breaking
+every time a cycle arms something.
+
 ### 2026-08-26 — AREA FIRE cannot price the DEFEND pile, and the probe cost no training at all
 
 **The owner chose AREA FIRE (shape 3) on my recommendation. The measurement

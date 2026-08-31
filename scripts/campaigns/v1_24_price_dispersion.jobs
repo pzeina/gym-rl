@@ -114,3 +114,18 @@ patrol_brique_v46_seed12   --scenario patrol_brique   --total-steps 3000000 --se
 patrol_brique_v47_seed18   --scenario patrol_brique   --total-steps 3000000 --seed 18
 patrol_brique_v48_seed19   --scenario patrol_brique   --total-steps 3000000 --seed 19
 patrol_brique_v49_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
+
+# --- APPENDED 2026-08-31 (autocycle), while the queue was still reading this file ---
+# squad_v30 (the campaign's ONLY squad job) COLLAPSED: succ 74% -> 0%, ep return
+# 49.4 -> 1.4, ep length 217 -> 450 (clock out 1.000), bunching 0.291 -> 0.013.
+# The marker "improved" because the mission vanished. platoon seed 12 collapsed
+# the same way; platoon seed 13 is at 96%, so the failure is seed-CONTINGENT and
+# spares are the declared response (the v1.23 finding: a seed search does not
+# survive a tree change, and a reward change is a tree change).
+# squad was budgeted ONE job because it was not thought bimodal. It is now.
+# Three spares so the campaign can land with a squad member instead of a hole.
+# Appended, never rewritten: the queue holds an open fd on this file and a
+# rewrite would point it at a deleted inode.
+squad_v31_seed13           --scenario squad           --total-steps 3000000 --seed 13
+squad_v32_seed14           --scenario squad           --total-steps 3000000 --seed 14
+squad_v33_seed15           --scenario squad           --total-steps 3000000 --seed 15
