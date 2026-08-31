@@ -294,6 +294,117 @@ def cohort_tree(commit: str | None) -> str | None:
 _COHORT_TREES: dict[str, str | None] = {}
 
 
+def reward_defaults(commit: str | None) -> dict[str, float] | None:
+    """``RewardConfig``'s field defaults as of a commit — the price a run trained
+    against when nobody passed a flag.
+
+    **The blind spot this closes, which cost a campaign an override.** Identity
+    here was split across two readings: ``config_matches`` over ``config.json``,
+    which records the PPO hyperparameters and NOTHING about the reward, and
+    ``overrides_match`` over ``economics.json``'s ``reward_overrides``, which is
+    populated only from ``--reward`` flags. But ``CLAUDE.md`` forbids a
+    ``--reward`` override in a baseline run — "what ships is what was trained" —
+    so the repo's own mandated way of changing a price, editing the default in
+    ``cohort/env/rewards.py``, was invisible to both. Two runs either side of a
+    reward change read as the SAME experiment.
+
+    It was not hypothetical. The v1.24 price-dispersion campaign armed
+    ``bunching_penalty = -0.05`` as a default; ``campaign_preflight`` then
+    refused all 18 jobs as already answered by the record, and the campaign
+    launched under ``FORCE=1`` with three paragraphs arguing that the refusal
+    was wrong. The argument was correct and the refusal was a blind spot — but
+    ``FORCE=1`` over a populated record is the one override this project treats
+    as dangerous, and it should not be the price of changing a price.
+
+    Read from git rather than recorded at train time, so every run already on
+    disk answers — including the seven the campaign has already landed. Only
+    literal numeric defaults are read: a field whose default is computed is
+    reported as unresolvable rather than guessed, and unknown never reads as
+    agreement. Memoized like ``cohort_tree``, and for the same reason — the
+    audit asks about a handful of commits once per run in the corpus.
+    """
+    if not commit:
+        return None
+    if commit in _REWARD_DEFAULTS:
+        return _REWARD_DEFAULTS[commit]
+    import ast
+    import subprocess
+
+    try:
+        out = subprocess.run(["git", "show", f"{commit}:cohort/env/rewards.py"],
+                             cwd=ROOT, capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        _REWARD_DEFAULTS[commit] = None
+        return None
+    try:
+        tree = ast.parse(out.stdout)
+    except SyntaxError:
+        _REWARD_DEFAULTS[commit] = None
+        return None
+    fields: dict[str, float] | None = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.name == "RewardConfig":
+            fields = {}
+            for stmt in node.body:
+                if not isinstance(stmt, ast.AnnAssign) or stmt.value is None:
+                    continue
+                name = getattr(stmt.target, "id", None)
+                try:
+                    value = ast.literal_eval(stmt.value)
+                except ValueError:
+                    continue  # computed default — not guessed, just absent
+                if name and isinstance(value, (int, float)) and not isinstance(value, bool):
+                    fields[name] = float(value)
+            break
+    _REWARD_DEFAULTS[commit] = fields
+    return fields
+
+
+_REWARD_DEFAULTS: dict[str, dict[str, float] | None] = {}
+
+
+def current_reward_defaults() -> dict[str, float]:
+    """``RewardConfig``'s defaults in the WORKING TREE — what a job launched now
+    would train against. The live import, not git, because that is precisely what
+    ``train.py`` imports and an uncommitted edit to a price is still the price."""
+    from cohort.env.rewards import RewardConfig
+
+    cfg = RewardConfig()
+    return {f: float(v) for f in vars(cfg)
+            if isinstance(v := getattr(cfg, f), (int, float)) and not isinstance(v, bool)}
+
+
+def prices_match(recorded_commit: str | None, recorded_overrides: list | None,
+                 other_defaults: dict[str, float] | None,
+                 other_overrides: list[str]) -> bool:
+    """Same effective price — the defaults each side trained against, and the
+    flags either was given.
+
+    The union of ``overrides_match`` and ``reward_defaults``, because a price can
+    arrive either way and an identity check that sees only one of them is the
+    defect above.
+
+    **Two conventions, both pointed the safe way.** Unknown stays a suspect: a
+    commit this clone cannot resolve, or a pre-economics run with no recorded
+    override, reads as a possible match rather than a proven difference — what
+    ``cohort_tree`` and ``overrides_match`` already do, and the safe direction
+    here, since a false match gets declared and read while a false difference
+    goes silent. And a field on only ONE side counts as a difference only when
+    its default is non-zero: an unarmed price is not a price, so adding
+    ``burst_fraction = 0.0`` to the dataclass must not retroactively split every
+    run in the record into two experiments.
+    """
+    if not overrides_match(recorded_overrides, other_overrides):
+        return False
+    mine = reward_defaults(recorded_commit)
+    if mine is None or other_defaults is None:
+        return True  # unresolvable is not a finding
+    return all(mine.get(f, 0.0) == other_defaults.get(f, 0.0)
+               for f in set(mine) | set(other_defaults))
+
+
 def config_matches(existing: dict, config: dict, *, modulo: tuple[str, ...] = ()) -> bool:
     """Exact training-config identity, optionally ignoring named keys.
 
@@ -636,7 +747,9 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     search = list((manifest.get("seed_search") or {}).get(scenario) or [])
     member_dir = run_dir(member)
     member_cfg = _json_or_empty(member_dir / "config.json")
-    member_tree = cohort_tree(_json_or_empty(member_dir / "economics.json").get("git_commit"))
+    member_commit = _json_or_empty(member_dir / "economics.json").get("git_commit")
+    member_tree = cohort_tree(member_commit)
+    member_prices = reward_defaults(member_commit)
 
     rows = []
     for run in declared:
@@ -651,6 +764,12 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
             "overrides": econ.get("reward_overrides"),  # None = unrecorded, [] = none
             "config_matches": bool(cfg and member_cfg
                                    and config_matches(cfg, member_cfg, modulo=("seed",))),
+            # A price that shipped as a DEFAULT rather than a flag. Kept beside
+            # `overrides` instead of folded into `config_matches`, so the report
+            # still says which of the two made a row a different experiment.
+            "same_price": prices_match(econ.get("git_commit"),
+                                       econ.get("reward_overrides"),
+                                       member_prices, []),
             "reports": _reporting_gate(run),
         })
 
@@ -665,9 +784,14 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
             cfg = _json_or_empty(d / "config.json")
             if not cfg or not config_matches(cfg, member_cfg, modulo=("seed",)):
                 continue
-            recorded = _json_or_empty(d / "economics.json").get("reward_overrides")
-            if not overrides_match(recorded, []):
-                continue  # a different price is a different experiment
+            econ = _json_or_empty(d / "economics.json")
+            # A different price is a different experiment — whether it arrived as
+            # a --reward flag or as an edited default in cohort/env/rewards.py.
+            # Only the first was checked here, so every run of a reward-change
+            # campaign read as an undeclared draw of the member it was testing.
+            if not prices_match(econ.get("git_commit"), econ.get("reward_overrides"),
+                                member_prices, []):
+                continue
             undeclared.append(d.name)
 
     if not rows and not undeclared:
@@ -690,7 +814,8 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
     kinds: dict[str, str] = {}
     entries = ([("declared", member)] + [("declared", r) for r in search]
                + [("spread", r["run"]) for r in rows
-                  if r["exists"] and r["config_matches"] and not r["overrides"]])
+                  if r["exists"] and r["config_matches"] and not r["overrides"]
+                  and r["same_price"]])
     order: list[str] = []
     for kind, run in entries:
         if run not in kinds:

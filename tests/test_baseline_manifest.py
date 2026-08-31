@@ -1202,3 +1202,62 @@ def test_the_shipped_record_holds_no_draw_outside_the_declared_blocks():
             f"{scenario}: same-config draws in neither seed_search nor seed_spread: "
             f"{facts['undeclared']} — declare them in runs/BASELINE.json"
         )
+
+
+# --- The price that ships as a default, not as a flag (autocycle 2026-08-31) ---
+#
+# Identity was split across two readings and a price could hide between them:
+# `config_matches` reads config.json, which records the PPO hyperparameters and
+# NOTHING about the reward, and `overrides_match` reads economics.json's
+# `reward_overrides`, which is populated only from --reward flags. But CLAUDE.md
+# forbids a --reward override in a baseline run, so the mandated way to change a
+# price — editing the default in cohort/env/rewards.py — was invisible to both,
+# and two runs either side of a reward change read as the same experiment.
+#
+# It reached a campaign. v1.24 armed `bunching_penalty = -0.05` as a default;
+# campaign_preflight refused all 18 jobs as already-answered and the campaign
+# launched under FORCE=1 over a populated record to get past the refusal.
+
+
+def test_a_price_that_shipped_as_a_default_is_a_different_experiment(monkeypatch):
+    """The hazard itself: no overrides on either side, same config, different
+    default price. Before the fix this read as the same experiment."""
+    monkeypatch.setattr(baseline, "reward_defaults", lambda c: {"bunching_penalty": -0.05})
+
+    assert not baseline.prices_match("armed", [], {"bunching_penalty": 0.0}, [])
+    assert baseline.prices_match("armed", [], {"bunching_penalty": -0.05}, [])
+
+
+def test_an_unarmed_new_field_does_not_split_the_record(monkeypatch):
+    """Adding `burst_fraction = 0.0` to the dataclass must not retroactively make
+    every run in the record a different experiment from every other. A field on
+    one side only counts as a difference when its default is non-zero."""
+    monkeypatch.setattr(baseline, "reward_defaults", lambda c: {"time_penalty": -0.01})
+
+    assert baseline.prices_match("old", [], {"time_penalty": -0.01, "burst_fraction": 0.0}, [])
+    assert not baseline.prices_match("old", [], {"time_penalty": -0.01, "burst_fraction": 0.5}, [])
+
+
+def test_an_unresolvable_price_stays_a_suspect(monkeypatch):
+    """Unknown is not a finding — the convention `cohort_tree` and
+    `overrides_match` already keep. A commit this clone cannot resolve must read
+    as a possible match, because a false match is declared and read while a false
+    difference is silent."""
+    monkeypatch.setattr(baseline, "reward_defaults", lambda c: None)
+
+    assert baseline.prices_match(None, [], {"bunching_penalty": -0.05}, [])
+    assert baseline.prices_match("unknown-commit", [], None, [])
+    # A recorded FLAG still separates them: only the defaults half is unknown.
+    assert not baseline.prices_match("unknown-commit", ["a=1.0"], None, [])
+
+
+def test_reward_defaults_reads_the_shipped_dataclass():
+    """The reader is exercised against the real tree, not only against fakes —
+    an ast walk that silently stopped finding RewardConfig would return an empty
+    dict and make every run match every other."""
+    current = baseline.current_reward_defaults()
+
+    assert "time_penalty" in current and "bunching_penalty" in current
+    resolved = baseline.reward_defaults("HEAD")
+    if resolved is not None:  # a tarball export has no git; that is silence
+        assert "time_penalty" in resolved

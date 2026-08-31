@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts import campaign_preflight
+from scripts import baseline, campaign_preflight
 from scripts.baseline import cohort_tree
 from scripts.fleet_status import find_run
 
@@ -62,16 +62,21 @@ def test_the_63_pair_is_caught_before_the_queue():
     certain DUPLICATE, the cross-tree hit as the record plausibly already
     containing the policy.
 
-    The launch tree is pinned to the one `squad_v29_seed14` trained on (the
-    sealed tree), not HEAD — HEAD's cohort/ tree legitimately moves whenever a
-    cycle touches cohort/, and this test is about the record, not about where
-    HEAD happens to sit today.
+    The launch tree AND the launch price are pinned to the ones
+    `squad_v29_seed14` trained on (the sealed tree, unpriced), not to HEAD and
+    not to the working tree — both legitimately move whenever a cycle touches
+    cohort/ or arms a price, and this test is about the record, not about where
+    the current cycle happens to sit. Pinning only the tree was enough until
+    v1.24 armed `bunching_penalty` as a default: the pair then correctly stopped
+    being duplicates of a job launched TODAY, which is the fix working, not the
+    #63 identity going unnoticed.
     """
     run = find_run("squad_v29_seed14", ROOT / "runs")
     sealed_commit = json.loads((run / "economics.json").read_text())["git_commit"]
     config, overrides, _ = campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)
     matches = campaign_preflight.find_duplicates(
-        config, overrides, "squad_v30_seed14", ROOT / "runs", cohort_tree(sealed_commit))
+        config, overrides, "squad_v30_seed14", ROOT / "runs", cohort_tree(sealed_commit),
+        current_prices=baseline.reward_defaults(sealed_commit))
     by_run = {m.run: m for m in matches}
     assert "squad_v10c" in by_run, "the archived original must be found through the archive"
     assert "squad_v29_seed14" in by_run

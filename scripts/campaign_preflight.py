@@ -25,9 +25,13 @@ validation pass. Standalone:
 
 Exit 0: no job's config is already in the record. Exit 1: at least one is
 (details on stdout). Jobs with ``--init-from`` are exempt — a warm start makes
-the outcome depend on more than the config — and jobs whose ``--reward``
-overrides differ from a recorded run's are not duplicates of it (a different
-price is a different experiment).
+the outcome depend on more than the config — and jobs at a different price from a
+recorded run's are not duplicates of it (a different price is a different
+experiment). Price is read through BOTH channels it can arrive by: a ``--reward``
+flag, and the defaults in ``cohort/env/rewards.py`` resolved at each run's
+recorded commit. Reading only the flag is what made the v1.24 campaign — which
+armed ``bunching_penalty`` as a default, as a baseline run must — see all 18 of
+its jobs refused as already-answered, and launch under ``FORCE=1`` to get past it.
 """
 
 from __future__ import annotations
@@ -42,7 +46,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from cohort.training.ppo import PPOConfig, trajectory_config  # noqa: E402
-from scripts.baseline import cohort_tree, config_matches, overrides_match  # noqa: E402
+from scripts.baseline import (  # noqa: E402
+    cohort_tree,
+    config_matches,
+    current_reward_defaults,
+    prices_match,
+)
 from scripts.fleet_status import run_dirs  # noqa: E402
 
 
@@ -173,8 +182,18 @@ class Match:
 
 
 def find_duplicates(config: dict, overrides: list[str], run_name: str,
-                    runs_dir: Path, current_tree: str | None) -> list[Match]:
-    """Every run in the record (live or archived) this job would re-derive."""
+                    runs_dir: Path, current_tree: str | None,
+                    current_prices: dict[str, float] | None = None) -> list[Match]:
+    """Every run in the record (live or archived) this job would re-derive.
+
+    ``current_prices`` is passed in for the same reason ``current_tree`` is: both
+    describe the world the job WOULD launch into, and a caller reasoning about
+    the record — a test pinning a historical identity, say — needs to name that
+    world rather than inherit whichever one the working tree is in mid-cycle.
+    Defaults to the live dataclass, which is what a real launch trains against.
+    """
+    if current_prices is None:
+        current_prices = current_reward_defaults()
     matches = []
     for d in run_dirs(runs_dir):
         if d.name == run_name:  # a FORCE re-run of itself is the queue's call
@@ -192,10 +211,15 @@ def find_duplicates(config: dict, overrides: list[str], run_name: str,
             econ = json.loads((d / "economics.json").read_text())
         except (OSError, json.JSONDecodeError):
             econ = {}
-        # Different recorded prices -> a different experiment, not a duplicate.
-        # An unrecorded price (pre-economics run) stays a suspect: unknown is
-        # not different.
-        if not overrides_match(econ.get("reward_overrides"), overrides):
+        # Different prices -> a different experiment, not a duplicate. Both
+        # channels count: a --reward flag AND an edited default in
+        # cohort/env/rewards.py. Only the flag was read here, so a campaign that
+        # armed a price the way CLAUDE.md requires ("no --reward overrides in a
+        # baseline run") had every job refused as already-answered, and launched
+        # under FORCE=1 over a populated record to get past it. An unrecorded
+        # price (pre-economics run) stays a suspect: unknown is not different.
+        if not prices_match(econ.get("git_commit"), econ.get("reward_overrides"),
+                            current_prices, overrides):
             continue
         tree = cohort_tree(econ.get("git_commit"))
         matches.append(Match(run=d.name, path=d, tree=tree,
