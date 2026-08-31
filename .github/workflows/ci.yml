@@ -11,6 +11,20 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Provenance in this repo IS git history. `baseline.cohort_tree` resolves
+          # a run's recorded commit to the hash of cohort/, and `baseline.reward_defaults`
+          # reads RewardConfig's literal defaults out of cohort/env/rewards.py at that
+          # commit — neither is recorded at train time, both are derived from git.
+          # A depth-1 checkout has no commit but HEAD, so every lookup returned None,
+          # and by the documented convention (baseline.py: "unresolvable is not a
+          # finding") unknown reads as agreement. That collapsed the whole record into
+          # one tree and one price, and failed four provenance guards on every push:
+          # the sealed tree pin, the seed_spread completeness gate, the #63 preflight
+          # pair, and the exception tree waiver. The tests were right; the checkout was
+          # not deep enough to answer them. Full history costs ~100 MB here — HEAD's
+          # checkpoints already dominate a shallow clone (1.0 GB of 1.1 GB).
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

@@ -47,6 +47,16 @@ def alive(pid: int, run: str | None = None) -> bool:
     So when a run name is given, confirm the process is actually carrying
     ``--run-name <run>``. If ``ps`` cannot be consulted, trust the job file
     rather than declaring a live run dead.
+
+    ``-ww`` is load-bearing, not tidiness. Linux ``ps`` (procps) truncates its
+    output to the terminal width, and with stdout a pipe that width is 80
+    columns — so a real training command line, which is long before it reaches
+    its flags, got cut *before* ``--run-name`` and every live run read as dead.
+    That inverts the guard this function exists to be: ``train_wait.sh`` would
+    return immediately and the campaign queue would launch the next job on top
+    of the running one. It never showed on this machine because macOS ``ps``
+    does not truncate a piped stream, so the bug was invisible locally and CI
+    was the only place it fired.
     """
     try:
         os.kill(pid, 0)
@@ -56,7 +66,7 @@ def alive(pid: int, run: str | None = None) -> bool:
         return True
     try:
         out = subprocess.run(
-            ["ps", "-o", "command=", "-p", str(pid)],
+            ["ps", "-ww", "-o", "command=", "-p", str(pid)],
             capture_output=True, text=True, timeout=5,
         ).stdout
     except (OSError, subprocess.SubprocessError):

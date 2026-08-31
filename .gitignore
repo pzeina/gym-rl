@@ -221,3 +221,12 @@ runs/*/ckpt_best_rolling.pt
 # from (tag, scenario, seed), ~0.5 MB each. Regenerate on demand:
 #   scripts/legacy_trace.py <run> [<run>...] --seed 1
 runs/*/traces/
+
+# The provenance probe (scripts/spatial_probe_provenance.py) materializes whole
+# historical trees under .claude/worktrees/ to replay a metric inside the tree a
+# run trained against. They are checkouts of committed history, not new work, and
+# must never be commit-visible. The Claude Code runtime also writes this rule into
+# .git/info/exclude — but that file is per-clone and uncommitted, so the guard in
+# tests/test_spatial_probe_provenance.py held on this machine and failed in every
+# fresh clone, CI included. The rule belongs with the repo.
+.claude/worktrees/

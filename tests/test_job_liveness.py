@@ -17,6 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from scripts import train_status
 from scripts.train_status import alive, state_of
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,17 +44,80 @@ def test_a_finished_run_holding_a_recycled_pid_does_not_read_as_running(tmp_path
     assert state_of(run, job, rows, 100) == "DONE"
 
 
+# A real trainer's command line is long before it reaches its flags — the
+# interpreter path alone is ~50 characters on a CI runner. Linux `ps` (procps)
+# truncates to the terminal width, and a pipe reads as 80 columns, so the
+# `--run-name <run>` that `alive` looks for fell off the end and every live run
+# read as dead. The padding below puts these probes past that boundary, which is
+# where the real command lines already were.
+_PAST_EIGHTY_COLUMNS = "x" * 120
+
+
+def _sleeper(run_name: str) -> subprocess.Popen:
+    return subprocess.Popen(
+        [sys.executable, "-c", f"import time; time.sleep(30)  # {_PAST_EIGHTY_COLUMNS}",
+         "--run-name", run_name],
+    )
+
+
 def test_the_run_name_must_match_exactly_not_by_prefix():
     """`squad_v1` must not match a process training `squad_v10`."""
-    proc = subprocess.Popen(
-        [sys.executable, "-c", "import time; time.sleep(30)", "--run-name", "squad_v10"],
-    )
+    proc = _sleeper("squad_v10")
     try:
         assert alive(proc.pid, "squad_v10") is True
         assert alive(proc.pid, "squad_v1") is False
     finally:
         proc.kill()
         proc.wait()
+
+
+def test_a_long_command_line_is_read_whole_and_not_truncated_to_the_width():
+    """The truncation bug in its own right, in the unsafe direction.
+
+    Reporting a live trainer as dead is worse than the recycled pid this module
+    was written for: `train.sh` would launch a second run over the first, and
+    `train_wait.sh` — which the campaign queue blocks on between jobs — would
+    return at once and let the queue stack the whole campaign on one machine.
+
+    This only fires where `ps` truncates (Linux). macOS does not truncate a
+    piped stream, which is exactly why the bug lived here undetected and showed
+    up only in CI, so the companion test below pins the fix on every platform.
+    """
+    proc = _sleeper("squad_v10")
+    try:
+        assert alive(proc.pid, "squad_v10") is True
+    finally:
+        proc.kill()
+        proc.wait()
+
+
+def test_liveness_asks_ps_for_the_unabridged_command_line():
+    """Pins the fix where the behaviour above cannot be observed.
+
+    Asserting on the argv rather than the result is deliberate: on macOS no
+    input makes `ps` truncate, so a behavioural test cannot tell the fix from
+    its absence, and dropping `-ww` would go green on this machine and red on
+    every Linux host. The flag is load-bearing, so it is checked directly.
+    """
+    seen = {}
+    real = subprocess.run
+
+    def spy(argv, *a, **kw):
+        if argv and argv[0] == "ps":
+            seen["argv"] = argv
+        return real(argv, *a, **kw)
+
+    train_status.subprocess.run = spy
+    try:
+        alive(os.getpid(), "squad_v10")
+    finally:
+        train_status.subprocess.run = real
+
+    assert seen.get("argv"), "alive() no longer consults ps"
+    assert "-ww" in seen["argv"], (
+        f"ps must be asked for the unabridged command line, got {seen['argv']} — "
+        "without -ww, Linux truncates at 80 columns and a live run reads as dead"
+    )
 
 
 def test_the_shell_scripts_ask_train_status_rather_than_kill_dash_zero():
