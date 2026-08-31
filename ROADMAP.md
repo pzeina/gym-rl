@@ -173,6 +173,68 @@ scripts/prereg_dispersion.py --manifest --setting bunching_penalty=-0.05
 `/boards` is still PUBLISH PENDING from before this cycle and is independent of
 it — safe to run at any time.
 
+### 2026-08-31 — `platoon_hard`'s root is not mute, not dead and not masked: it is VERBOSE and never closes
+
+Open problem #3 was *"`platoon_hard` root death 0.30–0.40 is not diagnosed"*, sitting
+beside the separately-logged mute root (`closed_on_root_report_rate` 0.000). The
+attractive hypothesis was that they are one problem — that you cannot bribe a
+dead root, which would explain why the previous cycle's `root_done_bonus` 1.0 AND
+3.0 both failed to move it. **The record refutes it, and `platoon` is again a
+near-perfect control: identical org, map, spawn, mission and step limit, 8
+enemies against 14 and nothing else.**
+
+Root mortality IS elevated, and that part stands:
+
+| N=100, final policy | `platoon_v14_seed13` | `platoon_hard_v7_seed13` |
+|---|---|---|
+| succession events | 27 | **51** |
+| unrecovered | 14 | 24 |
+| mean recovery | 9.9 steps | **24.2 steps** |
+
+But splitting the won episodes by whether the root ever died settles the causal
+question outright:
+
+| won episodes | n | closed on root report | root claimed at all |
+|---|---|---|---|
+| `platoon`, root survived | 81 | 0.96 | 0.99 |
+| `platoon`, root died | 19 | 0.84 | 0.84 |
+| `platoon_hard`, root survived | **68** | **0.00** | **0.01** |
+| `platoon_hard`, root died | 25 | 0.00 | 0.04 |
+
+**In 68 won episodes where `platoon_hard`'s root was alive from start to ENDEX, it
+claimed once.** Mortality explains nothing: a fully alive root, present at the
+close, does not report. The two open problems are NOT the same problem, and #3
+stays open on its own terms.
+
+**Nor is it masked.** `done_admissible_root` is **1.00 in all 68** of those
+episodes — the claim was available at every one. So three explanations are now
+eliminated, two of them today and one by the previous cycle:
+
+- **not dead** — 68 alive-root wins, 1 claim;
+- **not masked** — admissible in 100% of them;
+- **not underpriced** — `root_done_bonus` refuted at 1.0 and at 3.0.
+
+**And "mute" was the wrong word.** Across those same 68 episodes the
+`platoon_hard` root emitted **93 SITREPs**; `platoon`'s root emitted **5** across
+81. It is not silent and it is not cut off — it is on the net constantly, roughly
+1.4 SITREPs per episode against 0.06, and it files one DONE. **The root is
+verbose and non-committal**: it has the channel, it uses the channel, and it
+never closes with it. That is a materially different defect from a suppressed
+report, and it is what the next attempt should be aimed at.
+
+It also cuts against open problem #5's lead in this scenario. That lead was that
+root claims follow *traffic* rather than evidence of completion; here traffic is
+the highest in the fleet and claims are zero.
+
+**The next measurement, named and not yet run.** The live hypothesis is
+contention: under sustained contact the report channel is saturated by the
+contact-driven SITREP, and the DONE claim never wins an emission slot. It is
+mechanistic and it is checkable — after the objective is secured, what does the
+root actually emit, step by step? That needs a rollout probe rather than the
+committed record (`per_episode` has the totals, not the ordering), so it is
+specced here rather than built: the campaign owns the CPU, and everything above
+cost none of it.
+
 ### 2026-08-31 — `patrol_brique`'s human-goes-forward 0.000 is a VANISHED DENOMINATOR, not a patrol doing its job
 
 Open problem #2, settled by reading the record rather than by training anything.
