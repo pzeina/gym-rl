@@ -235,6 +235,67 @@ committed record (`per_episode` has the totals, not the ordering), so it is
 specced here rather than built: the campaign owns the CPU, and everything above
 cost none of it.
 
+### 2026-08-31 — the contention hypothesis is refuted too: `platoon_hard` has MORE opportunity to report and takes none of it
+
+Continuing the entry below with the repo's existing instrument rather than the
+new probe it specced — `done_probe.py` already counts **golden steps** (an
+agent-step where MISSION COMPLETE is admissible by the mask *and* would
+adjudicate truthful), which is exactly the opportunity measure the question
+needs. Both members, `observe` regime (the unperturbed one), N=20, seed 500:
+
+| observe, N=20 | `platoon_v14_seed13` | `platoon_hard_v7_seed13` |
+|---|---|---|
+| DONE admissible [root] | 1820 | **2717** |
+| golden steps [root] | 125 | **190** |
+| golden steps [sub] | 3440 | **5414** |
+| golden after T0 | 509 | **905** |
+| episodes with ≥1 golden | 20/20 | **20/20** |
+| claims transmitted | 251 | **3** |
+| …by the root | 20 | **0** |
+| accept rate | 0.641 | **0.000** |
+| episodes with ≥1 confirmed | 20/20 | **0/20** |
+
+**`platoon_hard` has MORE opportunity than the scenario that reports fine — 190
+golden root-steps against 125, in 20 of 20 episodes — and takes none of it.**
+That kills "the opportunity is rarer here" outright, and it is the whole element,
+not just the root: more golden sub-steps too (5414 against 3440), 3 claims
+against 251.
+
+The channel is not broken either. The `oracle` regime — force DONE on every
+golden step — confirms at **0.988** with 240 confirmations. The act is
+admissible, truthful and would be accepted. It is simply never chosen.
+
+**And my own named next hypothesis dies here.** I proposed *contention*: that
+under sustained contact the report channel is saturated by the contact-driven
+SITREP so the DONE claim never wins a slot. The numbers refute it — the root
+emits ~1.4 SITREPs per episode over 600 steps. **The channel is idle, not
+saturated.** A root with ~9.5 golden steps per episode and one emission every 430
+steps is not being crowded out of anything.
+
+**Six explanations are now eliminated**: not dead, not masked, not unreachable,
+not untruthful, not underpriced (`root_done_bonus` at 1.0 and 3.0), not contended.
+
+**What survives, as a hypothesis and labelled as one.** The one quantitative
+asymmetry left is the *uninformed* claimant's accept rate — the signal a policy
+meets early in training, before it can time the act: **0.124 in `platoon_hard`
+against 0.232 in `platoon`**. Roughly twice as punishing. And the training curves
+fit: `platoon`'s false-DONE rate HALVES across the run (0.599 → 0.309) — it
+learns to time the claim — while `platoon_hard`'s barely moves (0.510 → 0.455)
+and its final policy still claims falsely at 0.750. So in `platoon_hard` the act
+never became informative, and a negatively-priced false claim then suppressed its
+frequency to ~1% without ever teaching its timing. **Suppression of an unlearned
+act, not refusal of a learned one.**
+
+**The single-variable arm that would settle it**, and it needs no `cohort/`
+change: run `platoon_hard` with `--reward done_false=0`. If the root then claims
+abundantly, suppression-by-price is confirmed and the repair is a schedule on
+that price rather than a bigger bonus (which is what 1.0 and 3.0 already refuted
+— you cannot bribe an act the policy never learned to aim). If it stays silent
+with the penalty removed entirely, the problem is credit assignment and the price
+was never the lever. As a `--reward` override it is an experiment arm, not a
+baseline run, so it is launchable the moment the campaign's queue drains — **not
+before**, since the campaign owns the CPU and `cohort/` stays frozen.
+
 ### 2026-08-31 — `patrol_brique`'s human-goes-forward 0.000 is a VANISHED DENOMINATOR, not a patrol doing its job
 
 Open problem #2, settled by reading the record rather than by training anything.
