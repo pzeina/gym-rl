@@ -126,3 +126,25 @@ PushNotification with the outcome worth acting on.
 - 01:10 — `mean_second_nearest_teammate_dist` reads 7.699 on the first v1.26
   run (v15 has None — it predates the metric). The pair-vs-pile evidence base
   the owner asked to accrue is accruing.
+
+- 01:38 — **N=100 anchor on `fireteam_v16` done; the caveat is removed and the
+  finding holds.** Both sides now N=100:
+
+  | fireteam | v15 (obs 351) | v16 (obs 346) |
+  |---|---|---|
+  | success | 0.970 | 0.950 |
+  | `closed_on_root_report_rate` | 0.722 | **0.000** |
+  | `retasks_per_episode` | 2.100 | **3.270** |
+  | `obedience_latency_mean` | 1.682 | 1.965 |
+  | `false_complete_rate` | 0.721 | 0.875 |
+
+  Re-tasking +56%, obedience latency +17%, and the root's DONE channel closed
+  outright — while success moves 0.02. The prediction in the handoff was
+  exactly right: the cost lands on the order loop, not the win rate.
+
+  **Anchoring policy for the rest of the night** (CPU discipline): a
+  training-exit N=20 read is enough to SEE a 0.722 -> 0.000 collapse, so
+  subsequent scenarios are read at N=20 and anchored at N=100 only where the
+  N=20 read is ambiguous. Nine blanket anchors would cost ~36 min of CPU taken
+  from a queue that already will not drain by morning.
+- 01:38 — job 2 `fireteam_defend_v27` at 57%, eta ~23m. Queue healthy.
