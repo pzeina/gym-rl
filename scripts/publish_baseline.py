@@ -43,12 +43,46 @@ TARGETS = (
     ("ckpt_best.pt", "behavior.json", False),
 )
 
+#: The final policy's N=100 reading, pinned under its own name.
+#:
+#: ``prereg_dispersion.py`` accepts this file and NOTHING else — deliberately,
+#: because the bar's incumbents are frozen at N=100 and "comparing across N is
+#: how a bar quietly becomes easier". But nothing wrote it: the night-watch
+#: convention that created it for the v1.23 incumbents was an ad-hoc nohup job
+#: (docs/night-orders-2026-08-26.md), while this script — the path CLAUDE.md
+#: actually names for publication — writes only ``behavior_final.json``. So the
+#: v1.24 campaign scored all 21 runs at N=100 and its own registered bar still
+#: read INCOMPLETE, naming members whose N=100 evaluation was sitting on disk.
+#:
+#: Pinning it here closes that gap at the source. The two files are copies by
+#: construction, which is exactly the relation they already have on every v1.23
+#: incumbent — ``behavior_final.json`` is what the next evaluation may rewrite,
+#: and this is the reading the bar was scored against.
+PINNED_FINAL_N100 = "behavior_final_n100.json"
+PINNED_EPISODES = 100
+
 
 def _episodes(path: Path) -> int:
     try:
         return int(json.loads(path.read_text()).get("episodes", 0))
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return 0
+
+
+def _pin_n100(d: Path, out: Path, artifact: str) -> None:
+    """Mirror an N=100 final-policy reading to the name the prereg bar reads.
+
+    Guarded the same way as the artifacts themselves: a pin already at N>=100 is
+    left alone, so a later smaller re-measurement can never shrink the reading a
+    published bar was scored against.
+    """
+    if artifact != "behavior_final.json" or _episodes(out) != PINNED_EPISODES:
+        return
+    pin = d / PINNED_FINAL_N100
+    if _episodes(pin) >= PINNED_EPISODES:
+        return
+    pin.write_text(out.read_text())
+    print(f"  ↳ pinned {pin.name} (the reading prereg_dispersion.py accepts)")
 
 
 def publish(run: str, episodes: int, *, force: bool = False) -> int:
@@ -79,6 +113,9 @@ def publish(run: str, episodes: int, *, force: bool = False) -> int:
             # the squad_v7 incident, reproduced by the tool built to avoid it.
             print(f"  · {run}/{artifact}: already N={have} — leaving it alone "
                   f"(--force to re-measure at N={episodes})")
+            # the artifact is fine; the pin may still be missing, which is the
+            # state every run scored before this pin existed is in
+            _pin_n100(d, out, artifact)
             continue
         extra = {}
         if with_media:
@@ -92,6 +129,7 @@ def publish(run: str, episodes: int, *, force: bool = False) -> int:
             problems += 1
             continue
         print(f"  ✓ {run}/{artifact}: {stats.get('success_ci95')} at N={episodes}")
+        _pin_n100(d, out, artifact)
     return problems
 
 
