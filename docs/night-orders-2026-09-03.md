@@ -100,3 +100,29 @@ PushNotification with the outcome worth acting on.
 
 - 00:20 — campaign launched (not by this watch), 21 jobs, pid 75021.
 - 00:30 — watch opened. Job 1 `fireteam_v16` at 18%. Nothing else running.
+
+- 01:08 — **job 1 `fireteam_v16` landed** (succ 0.95 at N=20). Declared in
+  `seed_spread[fireteam]`, artifacts tracked, suite green, pushed `09b3814`.
+  Queue pid 75021 alive and starting job 2; the momentary "live (0)" was the
+  gap between jobs, not a death.
+- 01:10 — **first order-loop read, and it is the predicted signature.**
+  Against `fireteam_v15` (N=100, obs 351):
+
+  | | v15 | v16 |
+  |---|---|---|
+  | success | 0.970 | 0.950 |
+  | `closed_on_root_report_rate` | 0.722 | **0.000** |
+  | `retasks_per_episode` | 2.100 | **3.150** |
+  | `false_complete_rate` | 0.721 | 1.000 |
+  | `obedience_latency_mean` | 1.682 | 1.745 |
+
+  Success barely moves; the order loop does. Re-tasking +50% is exactly the
+  mechanism the removal predicts — a leader that cannot see a subordinate's
+  current mission re-tasks one already doing the job. **One run, and the read
+  crosses N (20 vs 100), so it is a direction and not a verdict.** N=100 on
+  `fireteam_v16` launched to remove that caveat for the headline scenario.
+  Per the decision rules this is written up and NOT acted on: the observation
+  contract is owner-decided, not a regression to fix.
+- 01:10 — `mean_second_nearest_teammate_dist` reads 7.699 on the first v1.26
+  run (v15 has None — it predates the metric). The pair-vs-pile evidence base
+  the owner asked to accrue is accruing.
