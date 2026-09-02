@@ -34,8 +34,10 @@ parse as OBSERVE at the objective.
 
 ## Derivation doctrine
 
-A leader may only order subordinate missions derivable from its **own**
-mission (preference-ordered; enforced by action masking):
+Every agent knows the complete table below from the start. For each mission
+assigned by the higher echelon, it gives the admissible subordinate missions
+(preference-ordered; enforced by action masking). Doctrine knowledge never
+depends on a mission name having been heard during the episode.
 
 | Own mission | May order subordinates to… |
 |---|---|
@@ -51,6 +53,11 @@ mission (preference-ordered; enforced by action masking):
 | RALLY | RALLY, HOLD |
 | HOLD | HOLD, OBSERVE |
 | ADVANCE | ADVANCE, SUPPORT, OBSERVE |
+
+The executable source of truth is
+`SUB_MISSIONS_BY_SUPERIOR_MISSION` in `cohort/core/missions.py`; the static
+episode briefing publishes its JSON representation as
+`admissible_sub_missions`.
 
 Two doctrinal notes:
 

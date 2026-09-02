@@ -202,13 +202,20 @@ def is_completable(mission: MissionType | None) -> bool:
         return False
     return mission in COMPLETABLE
 
-#: Derivation doctrine: own mission → subordinate missions allowed, in
-#: preference order. Rebuilt for the MICAT set from the manual's mission
-#: definitions (docs/missions.md). Note DENY: a section holding INTERDIRE
-#: tasks its groups with DEFEND/COVER/SUPPORT/OBSERVE — DENY itself is a
-#: section-level mission no group can hold (tableau récapitulatif, manual
-#: p. 8), so it is derivable to nobody.
-DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
+#: Exhaustive doctrine table: mission received from the higher echelon →
+#: subordinate missions the holder may assign, in preference order.
+#:
+#: This is public, static doctrine.  It is not learned from traffic and does
+#: not depend on which mission names an agent has previously heard: every
+#: agent knows every row from the beginning of an episode.  Rebuilt for the
+#: complete mission catalogue from the manual's definitions
+#: (``docs/missions.md``).
+#:
+#: Note DENY: a section holding INTERDIRE tasks its groups with
+#: DEFEND/COVER/SUPPORT/OBSERVE — DENY itself is a section-level mission no
+#: group can hold (tableau récapitulatif, manual p. 8), so it is assignable by
+#: HQ but never passed down by an in-simulation leader.
+SUB_MISSIONS_BY_SUPERIOR_MISSION: dict[MissionType, tuple[MissionType, ...]] = {
     MissionType.RECON: (
         MissionType.RECON, MissionType.SUPPORT, MissionType.OBSERVE, MissionType.SCREEN,
         MissionType.ADVANCE,
@@ -238,6 +245,11 @@ DOCTRINE: dict[MissionType, tuple[MissionType, ...]] = {
         MissionType.ADVANCE, MissionType.SUPPORT, MissionType.OBSERVE,
     ),
 }
+
+# Backwards-compatible public name.  Existing analysis code and committed
+# run tooling use ``DOCTRINE``; both names intentionally reference the same
+# table so there is one source of truth.
+DOCTRINE = SUB_MISSIONS_BY_SUPERIOR_MISSION
 
 #: Per-echelon admissibility: minimum *effective* authority required to HOLD
 #: a mission (manual p. 8, tableau récapitulatif: INTERDIRE is a section /
@@ -299,15 +311,23 @@ RECON_OBSERVE_STEPS = 5
 TEAM_OBSERVE_STEPS = 2 * RECON_OBSERVE_STEPS
 
 
-def allowed_derivations(own_mission: MissionType | None) -> tuple[MissionType, ...]:
-    """Missions a leader may order subordinates given its own mission.
+def admissible_sub_missions(
+    superior_mission: MissionType | None,
+) -> tuple[MissionType, ...]:
+    """Return the doctrine row for a mission assigned by the higher echelon.
 
-    A leader with no mission has nothing to derive from and may not order
-    (the senior agent always receives the OPORD at episode start).
+    All mission rows are known a priori.  ``None`` does not mean "an unheard
+    mission"; it means that no superior mission is currently assigned, so
+    there is no commander's intent from which to create subordinate tasks.
     """
-    if own_mission is None:
+    if superior_mission is None:
         return ()
-    return DOCTRINE[own_mission]
+    return SUB_MISSIONS_BY_SUPERIOR_MISSION[superior_mission]
+
+
+def allowed_derivations(own_mission: MissionType | None) -> tuple[MissionType, ...]:
+    """Compatibility spelling for :func:`admissible_sub_missions`."""
+    return admissible_sub_missions(own_mission)
 
 
 def derivation_quality(own_mission: MissionType | None, proposed: MissionType) -> float:
@@ -340,6 +360,11 @@ class Mission:
     subordinate's RECON / SCREEN keeps personal ``observe_steps``: its own
     DONE reflects its own task.
     """
+
+    @property
+    def admissible_sub_missions(self) -> tuple[MissionType, ...]:
+        """Static doctrine row available to the holder of this mission."""
+        return admissible_sub_missions(self.type)
 
     type: MissionType
     objective_id: int | None       # index into world objectives, or None

@@ -20,7 +20,7 @@ def test_all_scenarios_reset_and_step(scenario):
     obs, infos = env.reset(seed=0)
     assert set(obs) == set(env.possible_agents)
     # width is a property of the scenario's observation profile, not a
-    # global: the bisect arms present 166 where the fleet presents 220
+    # global: the bisect arms present the narrow profile, the fleet the wide
     width = obs_dim(env.spec_cfg.observation_profile)
     assert env.observation_space(env.agents[0])["observation"].shape == (width,)
     for agent in env.agents:
@@ -112,6 +112,12 @@ def test_briefing_is_static_json_ready_and_scenario_derived(scenario):
     spec = get_scenario(scenario)
     assert before["map_size"] == list(spec.map_size)
     assert before["root_mission"] == spec.root_mission.name
+    from cohort.core.missions import MissionType
+
+    assert set(before["admissible_sub_missions"]) == {mission.name for mission in MissionType}
+    assert before["admissible_sub_missions"]["SEIZE"] == [
+        "SEIZE", "CLEAR", "SUPPORT", "OBSERVE", "ADVANCE",
+    ]
     assert set(before["objectives"]) == {name for name, _ in spec.objectives}
     assert set(before["waypoints"]) == {name for name, _ in spec.waypoints}
     assert set(before["phase_lines"]) == {name for name, *_ in spec.phase_lines}

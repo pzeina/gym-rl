@@ -543,12 +543,13 @@ Treat this as a tactical constraint and observation, not physics:
 In `voice_only`, the existing leader/subordinate observation blocks must stop
 being live trackers. For each relationship, expose a current-perception flag;
 live `dx/dy` only when locally visible; otherwise expose the last perceived
-`dx/dy` plus the last explicitly reported mission/formation state and age.
-Unknown fields are zero with a false presence flag. Seeing a nearby teammate
-refreshes position; a valid voice report may refresh semantic state, but no
-remote movement refreshes either. This gives the policy the information
-needed to keep formation while leaving prediction of what a
-separated subordinate is doing to the later imagination project.
+`dx/dy` and its age. Unknown fields are zero with a false presence flag.
+Seeing a nearby teammate refreshes position; no remote movement refreshes it.
+Mission names and their admissible decompositions are common doctrine rather
+than listener-local semantic state, so there is no `mission_heard` field.
+This gives the policy the information needed to keep formation while leaving
+prediction of what a separated subordinate is doing to the later imagination
+project.
 
 ---
 

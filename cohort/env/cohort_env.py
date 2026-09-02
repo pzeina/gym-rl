@@ -248,8 +248,8 @@ class CohortEnv(ParallelEnv):
         #: source step, strength) — store-and-forward onward, fields frozen
         self._held_acoustic: dict[str, list[tuple]] = {}
         #: voice_only friendly telemetry (§3.7): observer callsign -> related
-        #: soldier id -> [last known pos, last known mission type, pos step,
-        #: mission step]. Refreshed by local perception and heard reports only.
+        #: soldier id -> [last known position, position step]. Mission names
+        #: are doctrine, not information unlocked by overhearing traffic.
         self._friendly_state: dict[str, dict[int, list]] = {}
         #: visual-link state per agent: (intact or None, contiguous break age)
         self._link_state: dict[str, tuple[bool | None, int]] = {}
@@ -566,8 +566,8 @@ class CohortEnv(ParallelEnv):
 
         if self._voice_only:
             # the force departs together after the briefing: everyone knows
-            # where everyone in its element stands, and the root's OPORD
-            # (it was briefed, not overheard). Nothing else is known.
+            # where everyone in its element stands. The doctrine table is
+            # common knowledge and is not reconstructed from overheard names.
             self._init_friendly_state(root)
             self._refresh_friendly_perception()
         self._update_visual_links()
@@ -1830,8 +1830,6 @@ class CohortEnv(ParallelEnv):
                 self._root_close_earns_bonus = earns_bonus
             ledger.add(soldier.callsign, "report", cfg.done_true)
             soldier.mission = None  # standing by for new orders
-            if self._voice_only:
-                self._note_mission_heard(responder_id, soldier, None)
             return "confirmed"
         self._say(
             MessageKind.DONE_REJECT,
@@ -2467,8 +2465,6 @@ class CohortEnv(ParallelEnv):
             extra=extra,
         )
         recipient.last_order_step = self._step_count
-        if self._voice_only:
-            self._note_mission_heard(speaker, recipient, mission_type)
         if self.spec_cfg.auto_ack:
             self._say(
                 MessageKind.ACK,
@@ -2848,9 +2844,9 @@ class CohortEnv(ParallelEnv):
 
     def _init_friendly_state(self, root: Soldier) -> None:
         """Reset-time friendly knowledge (voice_only): the force departs
-        together after the briefing — positions of one's leader and direct
-        subordinates are known, the root's OPORD is known to all (briefed,
-        not overheard), and no other mission is known."""
+        together after the briefing, so positions of one's leader and direct
+        subordinates are known.  The complete mission doctrine is static and
+        therefore does not live in this listener-local state."""
         step = self._step_count
         for s in self.roster.soldiers:
             related = []
@@ -2859,7 +2855,7 @@ class CohortEnv(ParallelEnv):
                 related.append(leader)
             related.extend(s.living_subordinates(self.roster))
             self._friendly_state[s.callsign] = {
-                o.id: [o.pos, (o.mission.type if (o is root and o.mission) else None), step, step]
+                o.id: [o.pos, step]
                 for o in related
             }
 
@@ -2868,9 +2864,11 @@ class CohortEnv(ParallelEnv):
         return ([leader] if leader is not None else []) + s.living_subordinates(self.roster)
 
     def _refresh_friendly_perception(self) -> None:
-        """Seeing a nearby teammate refreshes its last-known position (never
-        its mission — that needs a heard report). No remote movement
-        refreshes anything."""
+        """Seeing a nearby teammate refreshes its last-known position.
+
+        Mission vocabulary and decomposition are already common doctrine;
+        no remote movement refreshes positional state.
+        """
         step = self._step_count
         for s in self.roster.living:
             known = self._friendly_state.setdefault(s.callsign, {})
@@ -2878,28 +2876,10 @@ class CohortEnv(ParallelEnv):
                 if cohesion.friendly_visible(self.world, s, o):
                     rec = known.get(o.id)
                     if rec is None:
-                        known[o.id] = [o.pos, None, step, step]
+                        known[o.id] = [o.pos, step]
                     else:
                         rec[0] = o.pos
-                        rec[2] = step
-
-    def _note_mission_heard(self, speaker_id: int, subject: Soldier, mission_type) -> None:
-        """A heard report refreshes the SEMANTIC half of friendly state: every
-        living station that heard ``speaker_id`` (the speaker included) now
-        knows ``subject`` holds ``mission_type`` (None: stood down)."""
-        step = self._step_count
-        for listener in self.roster.living:
-            if listener.id != speaker_id and not self._audible_to(listener, speaker_id):
-                continue
-            known = self._friendly_state.setdefault(listener.callsign, {})
-            rec = known.get(subject.id)
-            if rec is None:
-                if subject.id not in {o.id for o in self._related(listener)}:
-                    continue
-                known[subject.id] = [subject.pos, mission_type, step, step]
-            else:
-                rec[1] = mission_type
-                rec[3] = step
+                        rec[1] = step
 
     def _succession_knowledge(self, successor: Soldier, replaced: Soldier) -> None:
         """Succession is structural; what observers KNOW of it is local: a
@@ -2916,8 +2896,8 @@ class CohortEnv(ParallelEnv):
 
     def _friendly_view(self, soldier: Soldier) -> dict | None:
         """The friendly-state dict the observation builder consumes under
-        voice_only: id -> (seen now, last pos, last mission, age). None on a
-        radio net (live telemetry)."""
+        voice_only: id -> (seen now, last position, age). None on a radio net
+        (live positional telemetry)."""
         if not self._voice_only:
             return None
         step = self._step_count
@@ -2928,7 +2908,7 @@ class CohortEnv(ParallelEnv):
             if rec is None:
                 continue
             seen = cohesion.friendly_visible(self.world, soldier, o)
-            out[o.id] = (seen, rec[0], rec[1], step - rec[2])
+            out[o.id] = (seen, rec[0], step - rec[1])
         return out
 
     def _detached_ids(self) -> frozenset[int]:
@@ -3808,8 +3788,6 @@ class CohortEnv(ParallelEnv):
                 lang.format_support_end(self._addressee(s), s.callsign, supported_cs),
             )
             s.mission = None  # standing by for new orders
-            if self._voice_only:
-                self._note_mission_heard(s.id, s, None)
 
     def _compliance_ctx(
         self, soldier: Soldier, dist_prev: float | None, view: AgentView

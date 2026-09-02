@@ -4,9 +4,11 @@ from cohort.core.missions import (
     COMPLETABLE,
     DOCTRINE,
     NEEDS_OBJECTIVE,
+    SUB_MISSIONS_BY_SUPERIOR_MISSION,
     UNIT_TARGETED,
     ComplianceContext,
     MissionType,
+    admissible_sub_missions,
     allowed_derivations,
     compliance,
     derivation_quality,
@@ -42,8 +44,10 @@ def test_mission_set_is_the_micat_catalog():
 
 
 def test_every_mission_has_doctrine():
+    assert set(SUB_MISSIONS_BY_SUPERIOR_MISSION) == set(MissionType)
+    assert DOCTRINE is SUB_MISSIONS_BY_SUPERIOR_MISSION
     for mission in MissionType:
-        allowed = DOCTRINE[mission]
+        allowed = admissible_sub_missions(mission)
         assert allowed, f"{mission} has no derivations"
         if mission is MissionType.DENY:
             # DENY is section-level: no group can hold it (manual p. 8), so a
@@ -68,6 +72,7 @@ def test_per_echelon_admissibility():
 
 
 def test_no_derivation_without_a_mission():
+    assert admissible_sub_missions(None) == ()
     assert allowed_derivations(None) == ()
     assert derivation_quality(None, MissionType.SEIZE) == 0.0
 
@@ -76,6 +81,13 @@ def test_derivation_quality_scores():
     assert derivation_quality(MissionType.SEIZE, MissionType.SEIZE) == 1.0
     assert derivation_quality(MissionType.SEIZE, MissionType.CLEAR) == 0.5
     assert derivation_quality(MissionType.SEIZE, MissionType.RALLY) == -0.5
+
+
+def test_assigned_mission_exposes_its_static_sub_mission_list():
+    from cohort.core.missions import Mission
+
+    assigned = Mission(MissionType.SEIZE, 0, (1, 1), -1, 0)
+    assert assigned.admissible_sub_missions == SUB_MISSIONS_BY_SUPERIOR_MISSION[MissionType.SEIZE]
 
 
 def test_compliance_progress_sign():

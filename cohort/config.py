@@ -275,8 +275,8 @@ class ScenarioSpec:
     #                               it (revealed once triggered). Oracle ground truth
     #                               from step 0; never in blue observations.
 
-    #: which observation layout the scenario presents — "full" (v1.10, 220
-    #: wide) or "core" (pre-v1.10, 166). A bisect knob, not a feature: the
+    #: which observation layout the scenario presents — "full" (the shipped
+    #: vector, 346 wide) or "core" (292). A bisect knob, not a feature: the
     #: v1.10 space break is the last unfalsified explanation for the four
     #: collapsed v1.10 runs, and an arm that differs from its control ONLY in
     #: the width of the input is how that stops being a guess. See
@@ -658,8 +658,9 @@ SCENARIOS["squad_short_vision"] = replace(
 # learning rate (squad_screen_v7 at 1e-4 failed a third way, dying rather than
 # stalling). The v1.10 space break is what remains, and it remains by
 # ELIMINATION, not by evidence. This arm is the evidence: run it against
-# `squad_screen` on identical code and the only difference is 220 vs 166
-# inputs.
+# `squad_screen` on identical code and the only difference is the width of the
+# input (346 vs 292 since the heard-mission scalars were removed; 220 vs 166
+# when the arm was built and when its archived runs were trained).
 #
 # Read a null result as exonerating the space, not as explaining the collapse:
 # it would mean all four named suspects are dead and the cause is something
@@ -669,7 +670,10 @@ SCENARIOS["squad_screen_core"] = replace(
     name="squad_screen_core",
     description=(
         "Observation-width bisect: the squad_screen scenario presented through "
-        "the pre-v1.10 166-wide observation, everything else identical."
+        "the narrow observation — the four blocks v1.10 added are dropped, "
+        "everything else identical. No longer a bit-exact rebuild of the "
+        "pre-v1.10 166-wide vector: the heard-mission scalars are gone from "
+        "both profiles."
     ),
     observation_profile="core",
     experiment_arm="core observation",
@@ -870,6 +874,10 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
     ground truth and belongs in ``env.oracle()``; the radio-legitimate view
     of it is the soldier's own SITREP posture (``language.format_sitrep``).
     """
+    # Doctrine is header material too: it is common knowledge before H-hour,
+    # not semantic state acquired by overhearing mission names.
+    from cohort.core.missions import SUB_MISSIONS_BY_SUPERIOR_MISSION
+
     spec = get_scenario(scenario) if isinstance(scenario, str) else scenario
     return {
         "scenario": spec.name,
@@ -884,6 +892,10 @@ def briefing(scenario: str | ScenarioSpec) -> dict:
         "org": spec.org,
         "root_mission": spec.root_mission.name,
         "root_objective": spec.root_objective,
+        "admissible_sub_missions": {
+            superior.name: [sub.name for sub in sub_missions]
+            for superior, sub_missions in SUB_MISSIONS_BY_SUPERIOR_MISSION.items()
+        },
         "max_steps": spec.max_steps,
         # the OPORD's forward-looking clause (issue #12): the step HQ names on
         # the net as when to expect the assault ("EXPECT ASSAULT AT STEP 65"),

@@ -187,8 +187,9 @@ def test_in_range_order_lands_with_a_local_wilco_and_is_overheard_without_author
                       if m.kind is MessageKind.ORDER)
     assert set(order_meta["heard_by"]) == {"TL1", "TL2"}
     assert any(m.kind is MessageKind.ACK for m in env.last_messages)
-    # the overhearing sibling now KNOWS the recipient's mission (semantic refresh)
-    assert env._friendly_state["SL1"][tl1.id][1] is MissionType.OBSERVE
+    # Doctrine is common knowledge; listener-local telemetry stores position
+    # only and never grows a mission_heard field after an order.
+    assert len(env._friendly_state["SL1"][tl1.id]) == 2
     assert env._friendly_state["TL2"].get(tl1.id) is None, "TL2 is not related to TL1"
 
 

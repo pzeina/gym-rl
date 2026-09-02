@@ -67,8 +67,13 @@ _MISSION_BLOCK = len(MISSION_ORDER) + 1 + 4 + 2 + len(FORMATION_ORDER)
 #: self block: x, y, health, ammo (4) + rank one-hot (7) + in-cover + is-human
 _SELF_BLOCK = 4 + len(RANK_ORDER) + 1 + 1
 
-#: leader block: present, dx, dy, mission index, leader-is-human
-_LEADER_BLOCK = 5
+#: leader block: present, dx, dy, leader-is-human.  Mission vocabulary is
+#: common doctrine; there is deliberately no ``mission_heard`` field.
+_LEADER_BLOCK = 4
+
+#: subordinate block: present, dx, dy, recent-contact-report.  As for the
+#: leader, an overheard mission is not part of the observation contract.
+_SUB_BLOCK = 4
 
 #: sync block (A5-4): pending-bound flag + synchronized-window remaining
 _SYNC_BLOCK = 2
@@ -114,18 +119,18 @@ _COHESION_BLOCK = 6 + 2 * N_SUB_SLOTS
 #: receipt positive / negative (2) = 23
 _LIAISON_BLOCK = 1 + 1 + len(PACKET_KINDS) + 1 + len(PACKET_KINDS) + 1 + 1 + 2 + 1 + 2 + 1 + 2
 
-#: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 5 leader
-#: + 5*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
+#: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 4 leader
+#: + 4*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
 #: point) + 6 comms + patch (98, radius 3)
-#: = 13 + 22 + 2 + 2 + 3 + 5 + 20 + 16 + 12 + 12 + 9 + 6 + 98 = 220
-#: + 94 acoustic + 14 cohesion + 23 liaison (degraded-communications cycle) = 351
+#: = 13 + 22 + 2 + 2 + 3 + 4 + 16 + 16 + 12 + 12 + 9 + 6 + 98 = 215
+#: + 94 acoustic + 14 cohesion + 23 liaison (degraded-communications cycle) = 346
 #: Observation profiles.
 #:
 #: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
 #: v1.10 added — tempo (2), nearest cover (3), the SITREP-due slot (1), and the
-#: patch widened from 5x5 to 7x7 (+48) — reproducing the 166-wide vector the
-#: fleet trained on through v1.9. 220 - 54 = 166.
+#: patch widened from 5x5 to 7x7 (+48) — reproducing the corresponding core
+#: layout.  After removal of the five heard-mission scalars: 215 - 54 = 161.
 #:
 #: It exists to bisect the v1.10 space break. Three explanations for the four
 #: collapsed v1.10 runs have been tested and killed (``done_false``,
@@ -134,12 +139,19 @@ _LIAISON_BLOCK = 1 + 1 + len(PACKET_KINDS) + 1 + len(PACKET_KINDS) + 1 + 1 + 2 +
 #: measurement: same code, same rewards, same scenario, one variable — the
 #: width of the input.
 #:
-#: One honest difference from the real v1.9 vector: that one overloaded the
-#: "known enemy present" comms flag to carry SITREP due-ness, to avoid changing
-#: OBS_DIM. ``core`` simply omits the slot instead of reproducing the overload,
-#: so the two differ ONLY when the SITREP doctrine is active
-#: (``ScenarioSpec.sitrep_cadence``). It is off in ``squad_screen``, the
-#: scenario this was built to bisect, so there the rebuild is exact.
+#: Two honest differences from the real v1.9 vector, and neither is a bug —
+#: they bound what the bisect can still say.
+#:
+#: 1. v1.9 overloaded the "known enemy present" comms flag to carry SITREP
+#:    due-ness, to avoid changing OBS_DIM. ``core`` simply omits the slot
+#:    instead of reproducing the overload, so the two differ ONLY when the
+#:    SITREP doctrine is active (``ScenarioSpec.sitrep_cadence``) — off in
+#:    ``squad_screen``, the scenario this was built to bisect.
+#: 2. Since the heard-mission scalars were removed, ``core`` is 292, not the
+#:    166 v1.9 actually presented. The rebuild is therefore NO LONGER EXACT in
+#:    any scenario, and a read against an archived core-profile run is not
+#:    same-layout. What survives is the comparison the arm is for: ``core``
+#:    against ``full`` ON THE SAME TREE, one variable, the width of the input.
 OBS_PROFILES: tuple[str, ...] = ("full", "core")
 
 #: the pre-v1.10 patch radius (5x5) — see PATCH_RADIUS for why it grew
@@ -161,7 +173,7 @@ def obs_dim(profile: str = "full") -> int:
         _SELF_BLOCK + _MISSION_BLOCK + _SYNC_BLOCK
         + (_TEMPO_BLOCK + _COVER_BLOCK if wide else 0)
         + _LEADER_BLOCK
-        + 5 * N_SUB_SLOTS
+        + _SUB_BLOCK * N_SUB_SLOTS
         + 4 * N_ENEMY_SLOTS
         + 3 * N_OBJECTIVE_SLOTS
         + 3 * N_WAYPOINT_SLOTS
@@ -188,7 +200,7 @@ OFF_TEMPO = OFF_SYNC + _SYNC_BLOCK
 OFF_COVER = OFF_TEMPO + _TEMPO_BLOCK
 OFF_LEADER = OFF_COVER + _COVER_BLOCK
 OFF_SUBS = OFF_LEADER + _LEADER_BLOCK
-OFF_ENEMIES = OFF_SUBS + 5 * N_SUB_SLOTS
+OFF_ENEMIES = OFF_SUBS + _SUB_BLOCK * N_SUB_SLOTS
 OFF_OBJECTIVES = OFF_ENEMIES + 4 * N_ENEMY_SLOTS
 OFF_WAYPOINTS = OFF_OBJECTIVES + 3 * N_OBJECTIVE_SLOTS
 OFF_PHASE_LINES = OFF_WAYPOINTS + 3 * N_WAYPOINT_SLOTS
@@ -204,7 +216,7 @@ SELF_HUMAN = SELF_COVER + 1                      # is-human flag
 TEMPO_PROGRESS = OFF_TEMPO                       # step / max_steps
 TEMPO_TIME_TO_CONTACT = OFF_TEMPO + 1            # countdown to nominal H
 COVER_PRESENT = OFF_COVER                        # nearest-cover present/dx/dy
-LEADER_HUMAN = OFF_LEADER + 4                    # leader-is-human flag
+LEADER_HUMAN = OFF_LEADER + 3                    # leader-is-human flag
 COMMS_KNOWN_PRESENT = OFF_COMMS + 2              # a known enemy is on the picture
 COMMS_SITREP_DUE = OFF_COMMS + 5                 # SITREP due-ness (v1.10 slot)
 ACOUSTIC_SOUND_ON = OFF_ACOUSTIC                 # sound_model active
@@ -274,20 +286,14 @@ class AgentView:
     station: bool | None = None
     formation_error: float = 0.0
     #: local friendly perception (voice_only telemetry gating): per related
-    #: soldier id -> (currently visible, last known pos, last known mission
-    #: type or None, age of the last-known state). None → live telemetry.
+    #: soldier id -> (currently visible, last known position, age of the
+    #: last-known state). None → live positional telemetry.
     friendly_state: dict | None = None
     #: liaison / message state (§5): None when the scenario cannot prepare
     #: packets, else a dict with outbox_kind, carry_kind, ttl (0..1),
     #: returning, anchor (pos or None), recipient_pos (perceived, or None),
     #: can_deliver, receipt (True/False/None)
     liaison: dict | None = None
-
-
-def _mission_idx(mission_type: MissionType | None) -> float:
-    if mission_type is None:
-        return 0.0
-    return (MISSION_ORDER.index(mission_type) + 1) / len(MISSION_ORDER)
 
 
 def build_observation(
@@ -299,8 +305,8 @@ def build_observation(
 ) -> np.ndarray:
     """Assemble the flat observation vector for one agent.
 
-    ``profile`` selects the layout: ``full`` (v1.10, 220) or ``core``
-    (pre-v1.10, 166). See OBS_PROFILES.
+    ``profile`` selects the layout: ``full`` (215 base fields) or ``core``
+    (161 base fields). See OBS_PROFILES.
     """
     wide = profile == "full"
     w, h = float(world.width), float(world.height)
@@ -388,12 +394,13 @@ def build_observation(
             out[i + 2] = (cover[1] - y) / h
         i += 3
 
-    # --- leader (5) ---
+    # --- leader (4) ---
     # voice_only (§3.7): NOT a live tracker. ``view.friendly_state`` carries
     # what this agent can actually know — a live delta only while the leader
     # is locally visible, otherwise the last perceived delta and the last
-    # reported mission, aging where they were captured. Radio modes keep the
-    # shipped live telemetry (friendly_state is None).
+    # position aging where it was captured. Mission names are not listener-
+    # local knowledge: the whole doctrine is known a priori. Radio modes keep
+    # live positional telemetry (friendly_state is None).
     fs = view.friendly_state
     if leader is not None:
         out[i] = 1.0
@@ -401,18 +408,16 @@ def build_observation(
         if fs is None:
             out[i + 1] = (leader.pos[0] - x) / w
             out[i + 2] = (leader.pos[1] - y) / h
-            out[i + 3] = _mission_idx(leader.mission.type if leader.mission else None)
         elif known is not None:
-            _seen, last_pos, last_mission, _age = known
+            _seen, last_pos, _age = known
             out[i + 1] = (last_pos[0] - x) / w
             out[i + 2] = (last_pos[1] - y) / h
-            out[i + 3] = _mission_idx(last_mission)
         else:
             out[i] = 0.0  # relationship exists but nothing is known: false presence
-        out[i + 4] = 1.0 if leader.human else 0.0
-    i += 5
+        out[i + 3] = 1.0 if leader.human else 0.0
+    i += _LEADER_BLOCK
 
-    # --- direct subordinates (5 each) ---
+    # --- direct subordinates (4 each) ---
     subs = soldier.living_subordinates(roster)[:N_SUB_SLOTS]
     for k in range(N_SUB_SLOTS):
         if k < len(subs):
@@ -422,18 +427,16 @@ def build_observation(
                 out[i] = 1.0
                 out[i + 1] = (s.pos[0] - x) / w
                 out[i + 2] = (s.pos[1] - y) / h
-                out[i + 3] = _mission_idx(s.mission.type if s.mission else None)
-                out[i + 4] = 1.0 if view.step - s.last_contact_report_step <= 10 else 0.0
+                out[i + 3] = 1.0 if view.step - s.last_contact_report_step <= 10 else 0.0
             elif known is not None:
-                seen, last_pos, last_mission, age = known
+                seen, last_pos, age = known
                 out[i] = 1.0
                 out[i + 1] = (last_pos[0] - x) / w
                 out[i + 2] = (last_pos[1] - y) / h
-                out[i + 3] = _mission_idx(last_mission)
                 # "reported recently" is something the observer heard, so it
                 # is only asserted from a fresh (<= 10 step) perception/report
-                out[i + 4] = 1.0 if (seen and view.step - s.last_contact_report_step <= 10) else 0.0
-        i += 5
+                out[i + 3] = 1.0 if (seen and view.step - s.last_contact_report_step <= 10) else 0.0
+        i += _SUB_BLOCK
 
     # --- visible enemies (4 each) ---
     for k in range(N_ENEMY_SLOTS):
@@ -532,7 +535,7 @@ def build_observation(
         if fs is None:
             out[i + 4] = 1.0  # live telemetry: always "perceived", age 0
         elif fs.get(leader.id) is not None:
-            seen, _p, _m, age = fs[leader.id]
+            seen, _p, age = fs[leader.id]
             out[i + 4] = 1.0 if seen else 0.0
             out[i + 5] = min(1.0, age / 20.0)
     i += 6
@@ -542,7 +545,7 @@ def build_observation(
             if fs is None:
                 out[i] = 1.0
             elif fs.get(s.id) is not None:
-                seen, _p, _m, age = fs[s.id]
+                seen, _p, age = fs[s.id]
                 out[i] = 1.0 if seen else 0.0
                 out[i + 1] = min(1.0, age / 20.0)
         i += 2

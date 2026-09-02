@@ -167,8 +167,10 @@ specified in [`degraded-communications.md`](degraded-communications.md)
 * `EXECUTE`/`SYNC_GO` are pre-arranged sound signals (`SIGNAL_RANGE`, walls
   block) with silent `GESTURE_*` alternatives (LOS, `GESTURE_RANGE`);
 * friendly telemetry is gated behind local perception (last-known position
-  and heard mission, aging) and the element visual-link graph
-  (`core/cohesion.py::element_links`) is measured every tick and priced.
+  and age), while the element visual-link graph
+  (`core/cohesion.py::element_links`) is measured every tick and priced; the
+  complete mission doctrine is common knowledge and no `mission_heard` field
+  is maintained.
 
 Independently, `sound_model="tactical"` (`core/acoustics.py`) makes
 movement, voice, signals, weapon fire and traps produce `SoundEvent`s for

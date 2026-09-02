@@ -96,7 +96,8 @@ priced, via the `human_death_rate` and exposure metrics (see `docs/metrics.md`).
 
 ## Missions and doctrine (MICAT / PROTERRE)
 
-Orders carry one of the eleven MICAT tasks of the French PROTERRE manual
+Orders carry one of the twelve supported tasks (the eleven MICAT tasks plus
+the `ADVANCE` maneuver task) from the French PROTERRE manual
 ([`docs/manuel-proterre.pdf`](docs/manuel-proterre.pdf) — English names, PROTERRE
 semantics; full doctrine with manual page references in
 [`docs/missions.md`](docs/missions.md)):
@@ -105,29 +106,36 @@ semantics; full doctrine with manual page references in
 engaging, weapons tight), `OBSERVE` (SURVEILLER — static watch, detect & alert),
 `SUPPORT` (APPUYER — **unit-targeted** fire support: the order names a friendly element),
 `COVER` (COUVRIR — flank guard on an objective), `DEFEND` (TENIR), `DENY` (INTERDIRE —
-section-level area denial, authority ≥ 2 only), `SEIZE`, `CLEAR`, `RALLY`, `HOLD`.
+section-level area denial, authority ≥ 2 only), `SEIZE`, `CLEAR`, `RALLY`, `HOLD`,
+and `ADVANCE` (move to or cross a control measure).
 
-A leader may only derive subordinate tasks that doctrine allows from its *own* current
-mission (preference-ordered):
+Every agent knows the complete doctrine table a priori. For each mission assigned by
+the higher echelon, the table gives the subordinate tasks that its holder may issue
+(preference-ordered):
 
 | Own mission | May order subordinates to… |
 |---|---|
-| RECON | RECON, SUPPORT, OBSERVE, SCREEN |
+| RECON | RECON, SUPPORT, OBSERVE, SCREEN, ADVANCE |
 | SCREEN | SCREEN, OBSERVE, HOLD |
 | OBSERVE | OBSERVE, COVER, HOLD |
 | SUPPORT | SUPPORT, OBSERVE, HOLD |
 | COVER | COVER, OBSERVE, HOLD |
-| DEFEND | DEFEND, SUPPORT, OBSERVE, HOLD |
-| DENY | DEFEND, COVER, SUPPORT, OBSERVE |
-| SEIZE | SEIZE, CLEAR, SUPPORT, OBSERVE |
+| DEFEND | DEFEND, SUPPORT, OBSERVE, HOLD, ADVANCE |
+| DENY | DEFEND, COVER, SUPPORT, OBSERVE, ADVANCE |
+| SEIZE | SEIZE, CLEAR, SUPPORT, OBSERVE, ADVANCE |
 | CLEAR | CLEAR, SUPPORT |
 | RALLY | RALLY, HOLD |
 | HOLD | HOLD, OBSERVE |
+| ADVANCE | ADVANCE, SUPPORT, OBSERVE |
 
 (DENY derives DEFEND, not itself: INTERDIRE is a section mission executed through
 group-level TENIR/COUVRIR — no echelon can pass DENY down.) The doctrine table lives in
-[`cohort/core/missions.py`](cohort/core/missions.py) — edit it and the action masks,
-rewards, and behavior all follow.
+[`cohort/core/missions.py`](cohort/core/missions.py) as
+`SUB_MISSIONS_BY_SUPERIOR_MISSION` — edit it and the action masks, rewards, and behavior
+all follow. The JSON-ready `briefing()` publishes the same exhaustive table as
+`admissible_sub_missions`. Mission vocabulary is never unlocked by radio traffic: there
+is no `mission_heard` observation field. Receiving an order still changes only its
+intended recipient's current mission.
 
 SUPPORT is mechanically real — *pas un pas sans appui*: a supporter in position
 (≤ 10 cells of the supported soldier, LOS to it) degrades any attacker firing at the
@@ -353,6 +361,11 @@ actor-critic MLP for all agents — rank, mission, and org context live in the o
 so the network learns *rank-conditional* behavior. Masks are applied at the distribution
 level, so admissibility holds during exploration, not just at convergence. Agent death
 mid-episode, succession, and truncation bootstrapping are handled in the GAE buffer.
+
+> **Current development space:** `Discrete(237)/Box(346)`. Removing the leader and
+> subordinate `mission_heard` scalars reduced the previous 351-wide observation by five.
+> This is an intentional breaking change: checkpoints trained with `Box(351)` require
+> retraining.
 
 The current published results are from the **A5 environment** (v1.4's MICAT
 set + SUPPORT + humans + rank-weighted casualties + ×1.5 maps, plus the A5

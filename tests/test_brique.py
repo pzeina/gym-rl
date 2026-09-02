@@ -72,14 +72,14 @@ def _post_band(env, pos):
 
 
 def test_spaces_frozen_under_brique():
-    """Spaces at the v1.10 layout: Discrete(228) / Box(220) (breaking cycle)."""
+    """Spaces after removing listener-local heard-mission fields."""
     assert N_ACTIONS == 237  # degraded-comms cycle: 228 + 3 appended
-    assert OBS_DIM == 351  # degraded-comms cycle: 220 + 94 acoustic + 14 cohesion
+    assert OBS_DIM == 346  # 215 base + 94 acoustic + 14 cohesion + 23 liaison
     env = make_env(_spec(n_traps=3))
     obs, _ = env.reset(seed=0)
     assert env.action_space(env.possible_agents[0]).n == 237
     for a in env.agents:
-        assert obs[a]["observation"].shape == (351,)
+        assert obs[a]["observation"].shape == (346,)
         assert obs[a]["action_mask"].shape == (237,)
 
 

@@ -36,7 +36,6 @@ from cohort.core.missions import (
     NEEDS_OBJECTIVE,
     Formation,
     MissionType,
-    allowed_derivations,
     is_completable,
     is_pending,
     min_hold_authority,
@@ -491,7 +490,7 @@ def compute_mask(
         return mask
     if soldier.effective_authority > 0 and (soldier.mission is not None or ablation == "nomask"):
         allowed = (
-            allowed_derivations(soldier.mission.type) if ablation != "nomask" else None
+            soldier.mission.admissible_sub_missions if ablation != "nomask" else None
         )
         subs = soldier.living_subordinates(roster)
         objective_names = {o.name for o in world.objectives}
