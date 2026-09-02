@@ -1,0 +1,78 @@
+# v1.26 FLEET RETRAIN — the observation contract changed, so the fleet is dead.
+#
+# WHY. Not a hypothesis, not a price: a BREAK. 4e82807 removed the five
+# heard-mission scalars (the leader's mission index and one per subordinate
+# slot) and OBS_DIM went 351 -> 346. All nine v1.25 members carry
+# torso.0.weight (256, 351) and now fail to load:
+#
+#   RuntimeError: mat1 and mat2 shapes cannot be multiplied (16x346 and 351x256)
+#
+# v1.25 cannot be re-evaluated on this tree at all. There is nothing to publish
+# and nothing to compare until this campaign lands.
+#
+# WHAT ACTUALLY CHANGED, AND WHAT DID NOT. The doctrine table did NOT change:
+# SUB_MISSIONS_BY_SUPERIOR_MISSION has the same 12 keys and the same rows as the
+# old DOCTRINE, so the action mask is bit-identical. The rename, the
+# Mission.admissible_sub_missions property and the briefing() field are
+# publication, not semantics; the README that documented eleven missions was
+# simply wrong and is now corrected.
+#
+# The one behavioural change is the observation, and it is a REMOVAL of
+# information in every mode:
+#   - voice_only: _note_mission_heard is gone. Overhearing an order no longer
+#     teaches a listener which mission a teammate holds. This was a designed
+#     channel and it was deleted on purpose (doctrine is common knowledge; what
+#     an agent may ORDER never depended on what it had HEARD).
+#   - radio modes: those slots were live telemetry. A leader could read the
+#     current mission of each of its subordinates. It no longer can.
+# Own mission (the MISSION_ORDER one-hot) is untouched.
+#
+# WHAT TO READ WHEN IT LANDS. The removal takes away exactly what a leader used
+# to know about who is already tasked, so the hazard is order churn and the DONE
+# loop, not success:
+#   retasks_per_episode      up?   (re-ordering a subordinate already on task)
+#   obedience_latency_mean   up?
+#   closed_on_root_report_rate      the channel v1.25 already reports at 0.01 on
+#                                   platoon_hard and 0.58 on platoon
+# Success moving is the LEAST interesting outcome here; the reporting axis is
+# where a five-scalar removal should show up if it shows up anywhere.
+#
+# SHAPE. Identical to v1.24: 21 jobs, one frozen cohort/ tree, seed 12 for the
+# five scenarios that do not spread, and a DECLARED four-seed search for the
+# four that do (squad, platoon, platoon_hard, patrol_brique). Every seed tried
+# is listed here and every one goes in seed_search, collapses included — that
+# is the rule that keeps this fleet unlaundered.
+#
+# PRICES ARE THE SHIPPED PRICES. No --reward overrides anywhere in this file.
+# done_false stays at -0.5: the platoon_hard done_false=0 arm (3badc83) opened
+# the root's DONE channel to 0.824 but bought it with 94 claims an episode at a
+# 0.899 false-complete rate and human deaths 0.257 -> 0.404. That is spam, not
+# closure, and it is the mirror of squad_v11 at -2.0. Owner decision, this
+# session: retrain at the shipped prices.
+#
+# THE TREE IS FROZEN AT 4e82807 FOR THE DURATION. train.py imports cohort/ at
+# the moment each job starts, so a commit to cohort/ mid-campaign trains the
+# last members against a different environment and the fleet stops being one
+# system. Tooling, tests, docs and boards stay free to move.
+
+fireteam_v16               --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_defend_v27        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_v34                  --scenario squad           --total-steps 3000000 --seed 12
+squad_recon_v15            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v21           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v21          --scenario defend_brique   --total-steps 3000000 --seed 12
+platoon_v19_seed12         --scenario platoon         --total-steps 3000000 --seed 12
+platoon_v20_seed13         --scenario platoon         --total-steps 3000000 --seed 13
+platoon_v21_seed14         --scenario platoon         --total-steps 3000000 --seed 14
+platoon_v22_seed15         --scenario platoon         --total-steps 3000000 --seed 15
+platoon_hard_v12_seed12    --scenario platoon_hard    --total-steps 3000000 --seed 12
+platoon_hard_v13_seed13    --scenario platoon_hard    --total-steps 3000000 --seed 13
+platoon_hard_v14_seed14    --scenario platoon_hard    --total-steps 3000000 --seed 14
+platoon_hard_v15_seed15    --scenario platoon_hard    --total-steps 3000000 --seed 15
+patrol_brique_v50_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v51_seed18   --scenario patrol_brique   --total-steps 3000000 --seed 18
+patrol_brique_v52_seed19   --scenario patrol_brique   --total-steps 3000000 --seed 19
+patrol_brique_v53_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
+squad_v35_seed13           --scenario squad           --total-steps 3000000 --seed 13
+squad_v36_seed14           --scenario squad           --total-steps 3000000 --seed 14
+squad_v37_seed15           --scenario squad           --total-steps 3000000 --seed 15
