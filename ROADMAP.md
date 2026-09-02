@@ -1,6 +1,123 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-02, **v1.25 SHIPPED — nine members on ONE tree, zero exceptions, and it makes NO dispersion claim. The v1.24 bar stays a MISS; its guard is amended for the NEXT cycle only.**)
+## ⟳ Session handoff — resume here (2026-09-03, **the observation contract broke and the whole fleet with it. v1.26 is a FORCED retrain, 21 jobs, running. v1.25 cannot be evaluated on this tree at all.**)
+
+### What broke, and it is not a hypothesis
+
+`4e82807` removed the five heard-mission scalars from the observation — the
+leader's mission index and one per subordinate slot. **OBS_DIM 351 → 346**
+(core 297 → 292). All nine v1.25 members carry `torso.0.weight (256, 351)`:
+
+```
+RuntimeError: mat1 and mat2 shapes cannot be multiplied (16x346 and 351x256)
+```
+
+Nothing in `BASELINE.json` loads. `publish_baseline.py`, `evaluate` and the
+scenario gallery are all dead against the shipped fleet until v1.26 lands.
+This is not a regression to diagnose; it is the cost of a decided change.
+
+### The doctrine table did NOT change — read this before attributing anything to it
+
+The cycle is named after `SUB_MISSIONS_BY_SUPERIOR_MISSION`, and that part is
+**publication, not semantics**. Diffed against `HEAD`: 12 keys before, 12 keys
+after, **no row edited**, `ADVANCE` already present in every row the README was
+missing. The action mask is bit-identical. What was wrong was the README
+(eleven missions documented, `ADVANCE` absent from four rows); it now matches
+the code, and `briefing()` publishes the whole table as
+`admissible_sub_missions`.
+
+So any behavioural delta v1.26 shows belongs to the observation, not to
+doctrine. Do not let a future read blame the table.
+
+### What the observation removal actually costs, in both modes
+
+- **voice_only**: `_note_mission_heard` is gone. Overhearing an order no longer
+  teaches a listener which mission a teammate holds. A designed information
+  channel, deleted on purpose — what an agent may ORDER never depended on what
+  it had HEARD.
+- **radio modes**: those slots were **live telemetry**. A leader could read the
+  current mission of each of its subordinates. It no longer can.
+- Own mission (the `MISSION_ORDER` one-hot) is untouched.
+
+**What to read when the campaign lands.** The removal takes away exactly what a
+leader knew about who is already tasked, so the hazard is the order loop, not
+success: `retasks_per_episode`, `obedience_latency_mean`, and
+`closed_on_root_report_rate` (already 0.01 on `platoon_hard`, 0.58 on
+`platoon`). Success moving is the least interesting outcome available here.
+
+### The campaign in flight
+
+`scripts/campaigns/v1_26_fleet.jobs`, **21 jobs, launched 2026-09-03 00:20
+(pid 75021, `logs/queue_20260903_002004_74885.log`)**, first job `fireteam_v16`.
+Same shape as v1.24: seed 12 for the five scenarios that do not spread, a
+declared four-seed search for `squad`, `platoon`, `platoon_hard` and
+`patrol_brique`. **No `--reward` overrides anywhere.** `cohort/` is **FROZEN at
+tree `19a8da08`** until the queue drains — tooling, tests, docs, boards and
+`runs/` stay free, and `git rev-parse HEAD:cohort` confirms the four commits of
+this session all carry that tree.
+
+### The queue refused all 21 jobs first, and the guard was right to be asked
+
+`campaign_preflight.py` matched every job to a recorded run on (scenario, seed,
+steps, hyper-parameters, prices) and called them already-answered. The correct
+reading is that its evidence was incomplete: each of those runs has a 351-wide
+first layer this tree cannot load, so re-derivation was not unlikely, it was
+impossible. The v1.24 cycle answered exactly this shape of refusal with
+`FORCE=1` over a populated record — **the one override this project treats as
+dangerous** — because the checker could not see a price armed as a default.
+
+Repeating that would have made `FORCE=1` the standing cost of any change the
+checker cannot see. Instead the checker learned to see this one (`c5519e0`):
+`train.py` already records `obs_dim` beside the weights, so a candidate whose
+recorded width differs from what the current tree presents is not a duplicate.
+It **fails closed** — an unreadable width leaves the run a suspect, unknown is
+not different — and `current_obs_dim` joins `current_tree` and `current_prices`
+as a named parameter so the #63 regression test still asks its question in the
+pair's own world. Preflight then passed clean: *21 job(s), no config already in
+the record*. **No `FORCE=1` was used.**
+
+### `platoon_hard`'s mute root: answered, and the answer is not a fix
+
+The single-variable arm ran before the break (`3badc83`), so its checkpoints are
+now unloadable and its evaluations are committed. `done_false` −0.5 → 0.0, same
+code, same seed 13:
+
+| | control | done_false=0 |
+|---|---|---|
+| `final_closed_on_root_report_rate` | 0.000 | **0.824** |
+| `final_root_claims` | 0 | **94** |
+| `final_false_complete_rate` | 1.000 | 0.899 |
+| `final_success` | 0.850 | 0.850 |
+| `human_death_rate` | 0.257 | 0.404 |
+
+The DONE channel opens **by spam**: 94 claims an episode at a 0.899
+false-complete rate is a root asserting completion until one assertion happens
+to be true. Success does not move; human deaths rise 57%. It is the mirror of
+`squad_v11`, where −2.0 shut the channel outright. **Owner decision this
+session: v1.26 retrains at the shipped prices**, `done_false` stays −0.5.
+
+### One documentation correction, made before the freeze
+
+`squad_screen_core` described itself as a bit-exact rebuild of the pre-v1.10
+166-wide vector. It no longer is — the same five scalars are gone from *both*
+profiles, so core is 292, not 166. The arm stays a valid `core` vs `full`
+comparison **on one tree**; it is no longer comparable with the archived
+v1.9-era core runs. Corrected in `cohort/config.py` and
+`cohort/env/observations.py` rather than left standing.
+
+### State
+
+**1269 passed, 1 skipped**, ruff clean. `BASELINE.json` still names v1.25 and
+**that fleet is unloadable** — do not publish anything against it. Boards will
+refresh themselves as jobs land; publishing them needs `/boards` in a session.
+
+### Next command
+
+`/train-status` when the queue drains, then `scripts/run_report.py` per
+scenario. Carried forward unresolved: the buddy-pair pricing question, and
+`patrol_brique`'s vanished denominator.
+
+## ⟳ Previous handoff (2026-09-02, **v1.25 SHIPPED — nine members on ONE tree, zero exceptions, and it makes NO dispersion claim. The v1.24 bar stays a MISS; its guard is amended for the NEXT cycle only.**)
 
 ### What shipped
 
@@ -77,7 +194,7 @@ and the seal holds — that divergence is by design. Boards published and curren
 
 Decide the pairing question, or launch the `platoon_hard` `done_false=0` arm.
 
-## ⟳ Previous handoff (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
+## ⟳ Earlier handoff (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
 
 ### The campaign in flight
 
