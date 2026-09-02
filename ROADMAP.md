@@ -1,80 +1,81 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-02, **the v1.24 campaign is COMPLETE and its registered bar is a MISS — DENOMINATOR on `fireteam_defend`. The bar's stated mechanism is refuted by the alive-steps: nobody died, the fireteam learned buddy PAIRS. Nothing published; two decisions are yours.**)
+## ⟳ Session handoff — resume here (2026-09-02, **v1.25 SHIPPED — nine members on ONE tree, zero exceptions, and it makes NO dispersion claim. The v1.24 bar stays a MISS; its guard is amended for the NEXT cycle only.**)
 
-### The campaign drained — 21 of 21 jobs, one frozen environment
+### What shipped
 
-All 21 landed. Every run trained on `cohort/` tree `0c25b034`, identical to
-HEAD's — the freeze held end to end. A fleet drawn from this campaign would be
-provenance-clean and would **dissolve the v1.23 `squad` tree exception** instead
-of carrying it forward.
+`runs/BASELINE.json` is **v1.25**: nine members from the v1.24 campaign, all on
+`cohort/` tree `0c25b034`, sealed, README table regenerated, 85 superseded runs
+moved to `runs/archive/`. **Zero disclosed exceptions** — the v1.23 `squad`
+provenance exception is dissolved, which is the reason this fleet ships.
 
-### The bar is a MISS, and nothing was published on it
+It ships on **provenance, not performance, and says so in the manifest note.**
+`prereg_dispersion.py` still returns **DENOMINATOR** and is untouched.
 
-```
-price-dispersion @ bunching_penalty=-0.05
-  VERDICT: DENOMINATOR
-  fireteam_defend  stacked 0.960->0.096 ok   nearest 0.23->0.23 MISS   100/100->99/100
-  defend_brique    stacked 0.976->0.112 ok   nearest 0.21->2.00 ok    100/100->100/100
-```
+| scenario | member | succ | root-report |
+|---|---|---|---|
+| fireteam | `fireteam_v15` | 0.97 | 0.72 |
+| fireteam_defend | `fireteam_defend_v26` | 0.99 | 0.97 |
+| squad | `squad_v33_seed15` | 0.95 | 0.84 |
+| squad_recon | `squad_recon_v14` | 0.96 | 0.92 |
+| squad_screen | `squad_screen_v20` | 1.00 | 0.95 |
+| patrol_brique | `patrol_brique_v48_seed19` | 0.97 | 0.86 |
+| defend_brique | `defend_brique_v20` | 1.00 | 0.98 |
+| platoon | `platoon_v18_seed15` | 0.88 | 0.58 |
+| platoon_hard | `platoon_hard_v9_seed13` | 0.90 | 0.01 |
 
-`defend_brique` clears both clauses. `fireteam_defend` clears the marker and
-fails the guard, so the cycle is convicted. **The verdict stands as registered** —
-the bar was frozen before job 1 so it could not be argued with afterwards, and
-nothing here edits it.
+Selection was **reporting-first** (owner decision) where the channel separated.
+**`platoon` is a genuine regression at every seed** against its 1.00/0.94
+incumbent — recorded as a finding, not smoothed. The success-maximal alternative
+(`platoon_v17_seed14`, 0.99) has a root that never reports at all.
 
-**The guard's stated reason is nonetheless false.** DENOMINATOR asserts the
-marker fell because teammates died. The alive-steps refute it: TL 12370 -> 12470,
-RFN 37020 -> 36820 (unchanged to within 1%), `no_close_teammate_rate`
-0.001 -> 0.000. Nobody died and everyone still has a neighbour. What happened is
-a shape the bar cannot see — **3+ piles became buddy PAIRS**. Two pairs score
-`stacked_rate` 0 while each agent keeps a teammate at 0.235, and the guard's
-proxy (`mean_nearest_teammate_dist` must rise) is blind to pairing by
-construction.
+### The bar's mechanism was refuted, and the fix is registered for NEXT cycle only
 
-### Two decisions, both yours
+DENOMINATOR claimed teammates died. They did not — alive-steps moved <1%. The
+fireteam went from piles to **buddy PAIRS**, which `stacked_rate` cannot
+distinguish from dispersal and `mean_nearest_teammate_dist` cannot see at all
+(a pair pins nearest low by construction). `cohort/metrics.py` now measures
+**`mean_second_nearest_teammate_dist`**, which separates the three regimes:
 
-1. **Does pairing satisfy this cycle?** The price produced a real, casualty-free
-   behaviour change that the registered bar scores as failure. Amending the guard
-   (e.g. a pair-aware dispersion statistic) is a bar change and must not be made
-   after the numbers land for THIS cycle — but it can be registered for the next.
-   The alternative reading is that pairing is the wrong target and the price
-   needs rethinking. Options and the measurement that separates them are in the
-   2026-09-02 progress-log entry.
-2. **Does the v1.24 fleet supersede v1.23 anyway?** Candidates are at rough
-   parity: 2 beat, 3 match, 4 miss by 0.01-0.03 at N=100. Publishing a miss over
-   an incumbent is explicitly not standing authority, so `runs/BASELINE.json` is
-   untouched and no seal was re-stamped.
+| `fireteam_defend` | stacked | nearest | 2nd-nearest |
+|---|---|---|---|
+| v25 (pile) | 0.940 | 0.29 | 0.63 |
+| v26 | 0.214 | 0.26 | **1.70** |
 
-### The 2026-08-31 collapse question is ANSWERED
+`docs/prereg-price-dispersion.md` carries the amendment: the next guard becomes
+"nearest OR second-nearest must rise, and `spatially_sound_rate` must not fall",
+and DENOMINATOR must be supported by the casualty count rather than inferred
+from a flat distance. **The v1.24 verdict and thresholds are untouched.**
 
-Seed-contingent, and sharper: **both collapses are seed 12**, and seed 12 is fine
-in `platoon_hard` (0.88) and `patrol_brique` (0.98). A (scenario x seed)
-interaction, not systematic price damage. Both are also LATE collapses —
-best-checkpoint 0.95 and 1.00 — so the competent policy exists inside both runs.
-**Every scenario has a healthy candidate; no fleet need ship a collapse.**
+### Still open, and still yours
 
-### One tooling gap, found by running the sequence and fixed at the source
+**Are buddy pairs the doctrine worth pricing?** The amendment only lets the next
+bar *tell* pairing from casualties; it takes no position on whether pairing
+passes. That is the design call, and `platoon`'s regression is the evidence
+against simply continuing at this price.
 
-`prereg_dispersion.py` reads `behavior_final_n100.json` and nothing else (a
-deliberate pin, so a bar cannot be re-scored across N). **Nothing wrote it** —
-the v1.23 incumbents have it from an ad-hoc night-watch job, while
-`publish_baseline.py`, the path CLAUDE.md names for publication, writes only
-`behavior_final.json`. So all 21 runs were scored at N=100 and the cycle's own
-bar still read INCOMPLETE about evaluations sitting on disk beside it.
-`publish_baseline.py` now writes the pin, guarded like the artifacts so a
-smaller re-measurement can never shrink a published reading.
+Also unchanged from before: `patrol_brique`'s vanished denominator, and
+`platoon_hard`'s root that never closes (single-variable arm `--reward
+done_false=0` is launchable now that the queue is free).
+
+### One gate hole, found and closed
+
+A collapsed run divides by zero wins, so `closed_on_root_report_rate` is
+undefined and the evaluator writes null rather than a fabricated 0.0. The
+`seed_search` check read EVERY null as "no measured rate" and refused the fleet.
+It now separates a hole in the record (still blocks) from an N=100 evaluation
+that simply won nothing (disclosed, printed as "no wins — rate undefined", left
+out of the denominator so a search is never reported as quieter than it was).
 
 ### State: green
 
-Suite **1264 passed**, ruff clean, `cohort/` untouched and still at `0c25b034`.
-`baseline.py` reads **BASELINE OK** with its one disclosed `squad` exception
-(unchanged — the manifest was not touched). **Boards are PUBLISH PENDING** →
-`/boards`, independent of the decisions above.
+**1268 passed**, ruff clean, `baseline.py` **OK with zero exceptions**. HEAD's
+`cohort/` is now `cb88cf1c` (the new metric); members stay pinned at `0c25b034`
+and the seal holds — that divergence is by design. Boards published and current.
 
 ### Next command
 
-Decide (1) and (2) above. `/boards` is safe at any time.
+Decide the pairing question, or launch the `platoon_hard` `done_false=0` arm.
 
 ## ⟳ Previous handoff (2026-08-26, **the v1.24 price-dispersion campaign is RUNNING — 18 jobs, ~10h. Its mechanism is the SECOND one tried: AREA FIRE was approved and then refuted before job 1.**)
 
