@@ -613,6 +613,68 @@ def test_a_fleet_of_fresh_policies_prints_no_reproduction_section(fleet, capsys,
     assert "policy reproductions" not in out
 
 
+# --- a collapsed seed search candidate: 0/0 is not a hole in the record ---
+#
+# `closed_on_root_report_rate` is wins-closed-on-a-root-report over WINS, so a
+# run that won nothing divides by zero and the evaluator writes null rather than
+# a fabricated 0.0 — a made-up zero would read as a measured refusal to report,
+# which is the vanished-denominator error this repo has already retracted a claim
+# over. But the seed_search check read every null as "no measured rate" and
+# refused the fleet. The v1.24 campaign is the first search to contain a
+# collapsed candidate (squad_v30, platoon_v15_seed12, both 0/100), so the
+# distinction had never been needed: a run with NO evaluation is a hole and must
+# still block; a run evaluated at N=100 that simply won nothing is a fact and is
+# disclosed instead.
+
+
+def _search_with_member(fleet, scenario, runs, member):
+    _search(fleet, scenario, runs)
+    manifest = json.loads((fleet / "BASELINE.json").read_text())
+    manifest["runs"][scenario] = member
+    (fleet / "BASELINE.json").write_text(json.dumps(manifest))
+
+
+def _collapsed(fleet, run: str, seed: int):
+    """A candidate that won nothing, in the evaluator's own shape: the reporting
+    key is PRESENT and null — never absent, and never a fabricated 0.0."""
+    _member(fleet, run, seed=seed, successes=0, announced=0, close_rate=None)
+    d = fleet / run / "behavior_final.json"
+    blob = json.loads(d.read_text())
+    blob["metrics"]["success_rate"] = 0.0
+    blob["metrics"]["closed_on_root_report_rate"] = None
+    d.write_text(json.dumps(blob))
+
+
+def test_a_candidate_that_won_nothing_is_disclosed_not_refused(fleet, capsys):
+    """0 wins => the rate is undefined by arithmetic, and the search still seals."""
+    _member(fleet, "patrol_brique_seed12", seed=12, close_rate=0.8)
+    _collapsed(fleet, "patrol_brique_seed18", seed=18)
+    _search_with_member(fleet, "patrol_brique",
+                        ["patrol_brique_seed12", "patrol_brique_seed18"],
+                        "patrol_brique_seed12")
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "no wins — rate undefined" in out
+    # it leaves the denominator rather than quietly counting as a mute seed
+    assert "1 of 1 seeds report" in out and "1 won nothing" in out
+
+
+def test_a_candidate_with_no_evaluation_at_all_still_refuses(fleet, capsys):
+    """The other direction: a genuine hole in the record must keep blocking."""
+    _member(fleet, "patrol_brique_seed12", seed=12, close_rate=0.8)
+    _member(fleet, "patrol_brique_seed18", seed=18, close_rate=None)  # key absent
+    _search_with_member(fleet, "patrol_brique",
+                        ["patrol_brique_seed12", "patrol_brique_seed18"],
+                        "patrol_brique_seed12")
+
+    code, out = _audit(capsys)
+
+    assert code == 1, out
+    assert "no measured closed_on_root_report_rate" in out
+
+
 def test_a_seed_search_candidate_reproducing_a_policy_is_disclosed_too(
         fleet, capsys, monkeypatch):
     """Where the v1.21 identity actually lived: four of the twelve reproductions

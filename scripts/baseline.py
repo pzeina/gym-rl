@@ -582,6 +582,37 @@ def _reporting_gate(run: str) -> bool | None:
     return None if rate is None else rate >= ROOT_REPORT_CLOSE_FLOOR
 
 
+def _reporting_undefined(run: str) -> bool:
+    """Was the reporting rate not merely absent, but UNDEFINED for this run?
+
+    ``closed_on_root_report_rate`` is wins-closed-on-a-root-report over WINS. A
+    run that won nothing divides by zero, and the evaluator correctly writes
+    ``null`` rather than inventing a 0.0 — a fabricated zero would read as a
+    measured refusal to report, which is exactly the vanished-denominator error
+    this repo has already retracted a claim over.
+
+    So ``None`` from ``_reporting_gate`` means two different things, and only one
+    of them is a hole in the record:
+
+    * no evaluation, or an evaluation that never carried the metric — the record
+      is incomplete and a seed search cannot be scored over it;
+    * an N=100 evaluation with zero wins — the rate is undefined by arithmetic,
+      which is a FACT about the run and is disclosed, not repaired.
+
+    The v1.24 campaign is the first search to contain a collapsed candidate
+    (``squad_v30`` and ``platoon_v15_seed12``, both 0/100), which is why the
+    distinction had never been needed before.
+    """
+    data = _json_or_empty(run_dir(run) / "behavior_final.json")
+    metrics = data.get("metrics") or {}
+    if "closed_on_root_report_rate" not in metrics:
+        return False
+    successes = metrics.get("successes")
+    if successes is None and isinstance(metrics.get("success_rate"), (int, float)):
+        successes = round(metrics["success_rate"] * (data.get("episodes") or 0))
+    return successes == 0
+
+
 def _json_or_empty(path: Path) -> dict:
     try:
         return json.loads(path.read_text())
@@ -650,6 +681,7 @@ def seed_search_facts(manifest: dict, scenario: str, member: str | None) -> dict
             "tree": cohort_tree(econ.get("git_commit")),
             "overrides": list(econ.get("reward_overrides") or []),
             "reports": _reporting_gate(run),
+            "reports_undefined": _reporting_undefined(run),
         })
     reporting = sum(1 for r in rows if r["reports"] is True)
     return {
@@ -689,7 +721,7 @@ def _seed_search_problems(facts: dict, member: str | None) -> list[str]:
                 f"seed_search[{facts['scenario']}]: {r['run']} carries "
                 f"{', '.join(r['overrides'])} — not the configuration the fleet ships"
             )
-        elif r["reports"] is None:
+        elif r["reports"] is None and not r.get("reports_undefined"):
             problems.append(
                 f"seed_search[{facts['scenario']}]: {r['run']} has no measured "
                 "closed_on_root_report_rate, so it counts in neither direction"
@@ -1334,10 +1366,19 @@ def audit(check_loadable: bool = True) -> int:
             print(f"  {scenario:<18} 1 seed, not searched      {verdict}")
         else:
             seeds = ", ".join(str(r["seed"]) for r in s["runs"])
-            print(f"  {scenario:<18} {s['reporting']} of {s['total']} seeds report   (seeds {seeds})")
+            # scored over the seeds the rate is DEFINED for: a collapsed
+            # candidate divides by zero wins, and folding it into the
+            # denominator would report a search as quieter than it was
+            scorable = sum(1 for r in s["runs"] if not r.get("reports_undefined"))
+            tail = "" if scorable == s["total"] else f", {s['total'] - scorable} won nothing"
+            print(f"  {scenario:<18} {s['reporting']} of {scorable} seeds report   "
+                  f"(seeds {seeds}{tail})")
             for r in s["runs"]:
                 mark = "  <- member" if r["run"] == members.get(scenario) else ""
-                verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
+                if r.get("reports_undefined"):
+                    verdict = "no wins — rate undefined"
+                else:
+                    verdict = "—" if r["reports"] is None else "reports" if r["reports"] else "mute"
                 print(f"      seed {r['seed']!s:<4} {r['run']:<32} {verdict}{mark}")
         sp = spreads.get(scenario)
         if sp:
