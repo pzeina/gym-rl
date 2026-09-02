@@ -24,7 +24,24 @@ validation pass. Standalone:
     .venv/bin/python scripts/campaign_preflight.py <jobs-file>
 
 Exit 0: no job's config is already in the record. Exit 1: at least one is
-(details on stdout). Jobs with ``--init-from`` are exempt — a warm start makes
+(details on stdout).
+
+A run whose OBSERVATION IS A DIFFERENT WIDTH is not a duplicate, and this is
+read from the recorded checkpoint rather than assumed from the tree. The check
+above asks whether two configs match; it cannot see that the environment they
+describe now presents a different vector. When the v1.26 fleet retrain was
+queued after OBS_DIM went 351 -> 346, all 21 jobs were refused as
+already-answered — every one against a run whose first layer is
+``(256, 351)`` and which the new tree cannot even load. Re-derivation is
+impossible across such a transition: the policy's input layer is a different
+shape, so no amount of determinism reproduces it. Resolved through
+``ckpt_best.pt``'s recorded ``obs_dim`` and failing CLOSED — an unreadable or
+unresolvable width leaves the run a suspect, because unknown is not different.
+This is the same lesson as the price channel below: read the thing itself, do
+not infer it from a proxy, and do not make ``FORCE=1`` the cost of a change the
+checker simply cannot see.
+
+Jobs with ``--init-from`` are exempt — a warm start makes
 the outcome depend on more than the config — and jobs at a different price from a
 recorded run's are not duplicates of it (a different price is a different
 experiment). Price is read through BOTH channels it can arrive by: a ``--reward``
@@ -171,6 +188,45 @@ def predicted_config(train_args: list[str]) -> tuple[dict | None, list[str], str
     return json.loads(json.dumps(config)), list(args.reward), None
 
 
+def recorded_obs_dim(run_dir: Path) -> int | None:
+    """Observation width the run's policy was built for, or None if unreadable.
+
+    ``train.py`` writes it beside the weights, so this costs one checkpoint read
+    and never a forward pass. ``ckpt_best.pt`` first, ``ckpt_latest.pt`` as the
+    fallback — a crashed run has the latter and not the former.
+    """
+    import torch
+
+    for name in ("ckpt_best.pt", "ckpt_latest.pt"):
+        path = run_dir / name
+        if not path.exists():
+            continue
+        try:
+            ckpt = torch.load(path, map_location="cpu", weights_only=False)
+        except Exception:
+            continue
+        width = ckpt.get("obs_dim") if isinstance(ckpt, dict) else None
+        if isinstance(width, int):
+            return width
+    return None
+
+
+def scenario_obs_dim(scenario: str | None) -> int | None:
+    """Observation width the CURRENT tree presents for ``scenario``.
+
+    None when the scenario cannot be resolved — the caller then declines to use
+    width as evidence at all, rather than guessing a default profile.
+    """
+    if not scenario:
+        return None
+    try:
+        from cohort.config import get_scenario
+        from cohort.env.observations import obs_dim
+        return obs_dim(get_scenario(scenario).observation_profile)
+    except Exception:
+        return None
+
+
 @dataclass
 class Match:
     """An existing run whose recorded config a queued job reproduces."""
@@ -183,17 +239,21 @@ class Match:
 
 def find_duplicates(config: dict, overrides: list[str], run_name: str,
                     runs_dir: Path, current_tree: str | None,
-                    current_prices: dict[str, float] | None = None) -> list[Match]:
+                    current_prices: dict[str, float] | None = None,
+                    current_obs_dim: int | None = None) -> list[Match]:
     """Every run in the record (live or archived) this job would re-derive.
 
-    ``current_prices`` is passed in for the same reason ``current_tree`` is: both
-    describe the world the job WOULD launch into, and a caller reasoning about
-    the record — a test pinning a historical identity, say — needs to name that
-    world rather than inherit whichever one the working tree is in mid-cycle.
-    Defaults to the live dataclass, which is what a real launch trains against.
+    ``current_prices`` and ``current_obs_dim`` are passed in for the same reason
+    ``current_tree`` is: all three describe the world the job WOULD launch into,
+    and a caller reasoning about the record — a test pinning a historical
+    identity, say — needs to name that world rather than inherit whichever one
+    the working tree is in mid-cycle. They default to the live dataclass and the
+    live observation layout, which is what a real launch trains against.
     """
     if current_prices is None:
         current_prices = current_reward_defaults()
+    current_width = (current_obs_dim if current_obs_dim is not None
+                     else scenario_obs_dim(config.get("scenario")))
     matches = []
     for d in run_dirs(runs_dir):
         if d.name == run_name:  # a FORCE re-run of itself is the queue's call
@@ -220,6 +280,14 @@ def find_duplicates(config: dict, overrides: list[str], run_name: str,
         # price (pre-economics run) stays a suspect: unknown is not different.
         if not prices_match(econ.get("git_commit"), econ.get("reward_overrides"),
                             current_prices, overrides):
+            continue
+        # A different observation width is a different network, not another
+        # draw: the first layer's shape differs, so the job CANNOT re-derive
+        # this run whatever the trees say. Fails closed — an unreadable width
+        # leaves the run a suspect.
+        existing_width = recorded_obs_dim(d)
+        if existing_width is not None and current_width is not None \
+                and existing_width != current_width:
             continue
         tree = cohort_tree(econ.get("git_commit"))
         matches.append(Match(run=d.name, path=d, tree=tree,

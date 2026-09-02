@@ -70,18 +70,56 @@ def test_the_63_pair_is_caught_before_the_queue():
     v1.24 armed `bunching_penalty` as a default: the pair then correctly stopped
     being duplicates of a job launched TODAY, which is the fix working, not the
     #63 identity going unnoticed.
+
+    The OBSERVATION WIDTH is pinned for the third time and for the same reason:
+    the pair trained on a vector the current tree no longer presents (the v1.26
+    cycle took OBS_DIM 351 -> 346), and a job launched TODAY genuinely could not
+    re-derive a policy whose first layer is a different shape. That is the width
+    check working, so this test asks the question in the pair's own world.
     """
     run = find_run("squad_v29_seed14", ROOT / "runs")
     sealed_commit = json.loads((run / "economics.json").read_text())["git_commit"]
     config, overrides, _ = campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)
     matches = campaign_preflight.find_duplicates(
         config, overrides, "squad_v30_seed14", ROOT / "runs", cohort_tree(sealed_commit),
-        current_prices=baseline.reward_defaults(sealed_commit))
+        current_prices=baseline.reward_defaults(sealed_commit),
+        current_obs_dim=campaign_preflight.recorded_obs_dim(run))
     by_run = {m.run: m for m in matches}
     assert "squad_v10c" in by_run, "the archived original must be found through the archive"
     assert "squad_v29_seed14" in by_run
     assert by_run["squad_v29_seed14"].same_tree is True
     assert by_run["squad_v10c"].same_tree is False  # pre-seal tree c0f85409
+
+
+def test_a_different_observation_width_is_not_a_duplicate(tmp_path):
+    """The v1.26 refusal: 21 jobs blocked by runs no tree could re-derive.
+
+    Same config, same prices, but the recorded run's policy takes a 351-wide
+    input and the tree now presents 346. The checkpoints are not reproducible —
+    they are not even loadable — so this is a different experiment, not another
+    draw, and FORCE=1 must not be the price of saying so.
+    """
+    import torch
+
+    runs = tmp_path / "runs"
+    _record(runs, "old", campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)[0])
+    torch.save({"obs_dim": 351}, runs / "old" / "ckpt_best.pt")
+    config, overrides, _ = campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)
+    assert campaign_preflight.find_duplicates(
+        config, overrides, "new", runs, cohort_tree("HEAD"), current_obs_dim=346) == []
+    # same width -> still a duplicate, so the rule cannot swallow the check
+    assert [m.run for m in campaign_preflight.find_duplicates(
+        config, overrides, "new", runs, cohort_tree("HEAD"), current_obs_dim=351)] == ["old"]
+
+
+def test_an_unreadable_observation_width_leaves_the_run_a_suspect(tmp_path):
+    """Fails CLOSED: unknown is not different — the same rule the price channel
+    follows. A run with no checkpoint on disk stays a duplicate."""
+    runs = tmp_path / "runs"
+    _record(runs, "old", campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)[0])
+    config, overrides, _ = campaign_preflight.predicted_config(SQUAD_SEED14_ARGS)
+    assert [m.run for m in campaign_preflight.find_duplicates(
+        config, overrides, "new", runs, cohort_tree("HEAD"), current_obs_dim=346)] == ["old"]
 
 
 def test_a_job_reproducing_a_recorded_config_refuses_the_queue(tmp_path):
