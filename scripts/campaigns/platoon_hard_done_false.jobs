@@ -1,0 +1,38 @@
+# platoon_hard's root never closes: the done_false=0 arm and its same-tree control.
+#
+# Six explanations were eliminated across 2026-08-31 (ROADMAP): the root is not
+# dead (68 alive-root wins), not masked (done_admissible_root 1.00), not
+# unreachable or untruthful (190 golden root-steps, oracle accept 0.988), not
+# underpriced (rdb 1.0 and 3.0) and not contended (~1.4 SITREPs per 600-step
+# episode). What survives is that the uninformed accept rate is 0.124 against
+# platoon's 0.232, and platoon's false-DONE rate halves across training while
+# platoon_hard's does not move — SUPPRESSION OF AN UNLEARNED ACT rather than
+# refusal of a learned one. If that is right, removing the false-DONE price
+# should let the act be discovered at all.
+#
+# The control is retrained rather than reusing platoon_hard_v9_seed13 (owner
+# decision, 2026-09-02). v9 trained at cohort/ tree 0c25b034; HEAD is cb88cf1c
+# since mean_second_nearest_teammate_dist landed. That delta is provably inert
+# for training — train.py imports only COMM_MODEL_MARKER_WAIVERS,
+# ROOT_REPORT_CLOSE_FLOOR and SUCCESS_RATE_FLOOR from cohort.metrics, none of
+# them touched — but the v1.23 squad exception is precisely what a correct
+# inertness argument still costs when it has to ship as a disclosure. Two runs
+# on one tree costs ~2.5h of nobody's tokens and owes no explanation.
+#
+# LAUNCHED UNDER FORCE=1, and the reason is recorded because this repo treats
+# an unexplained FORCE over a populated record as its most dangerous override.
+# campaign_preflight correctly refuses the control: its config is identical to
+# platoon_hard_v9_seed13 and the tree transition is probably inert, so the
+# policy may already be on disk. That refusal is not a blind spot and is not
+# being argued with — the duplicate is the POINT. The control either re-derives
+# v9 bit-for-bit, which proves the tree delta inert and retires the question for
+# good, or it does not, which means the delta moved this scenario's
+# trajectories and every cross-tree comparison in the record needs re-reading.
+# Both outcomes are worth 2.5h of nobody's tokens; neither is knowable without
+# running it.
+#
+# --reward makes the arm an EXPERIMENT, never a baseline candidate: what ships
+# is what was trained, and a scenario needing an override is a finding about
+# the defaults.
+platoon_hard_control_v1_seed13     --scenario platoon_hard --total-steps 3000000 --seed 13
+platoon_hard_donefalse0_v1_seed13  --scenario platoon_hard --total-steps 3000000 --seed 13 --reward done_false=0
