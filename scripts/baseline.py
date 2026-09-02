@@ -613,6 +613,23 @@ def _reporting_undefined(run: str) -> bool:
     return successes == 0
 
 
+def _is_training(run_dir_path: Path) -> bool:
+    """Is a trainer alive and writing this directory right now?
+
+    Deliberately the same reading `train_status` uses rather than a second
+    definition — one liveness rule, so the audit and the board cannot disagree
+    about whether a run is finished. Anything unreadable answers False: a run
+    that cannot be shown to be live is treated as landed, so the completeness
+    scan keeps asking its question rather than being silenced by a parse error.
+    """
+    try:
+        from scripts.train_status import summarize
+
+        return summarize(run_dir_path).get("state") == "RUNNING"
+    except Exception:
+        return False
+
+
 def _json_or_empty(path: Path) -> dict:
     try:
         return json.loads(path.read_text())
@@ -823,6 +840,23 @@ def seed_spread_facts(manifest: dict, scenario: str, member: str | None,
             # campaign read as an undeclared draw of the member it was testing.
             if not prices_match(econ.get("git_commit"), econ.get("reward_overrides"),
                                 member_prices, []):
+                continue
+            # A run that is STILL TRAINING is not yet a draw of anything. Its
+            # directory exists from the first checkpoint, so it tripped this
+            # scan, but it cannot be answered: declaring it demands
+            # "declared => tracked", and its identity-bearing artifacts are the
+            # weights it is still rewriting. That is a catch-22 with no correct
+            # move — the v1.26 campaign hit it 21 times, once per job, and the
+            # only escapes were committing mid-training checkpoints that the
+            # run itself would supersede, or leaving the suite red for the
+            # length of a 14-hour queue.
+            #
+            # The scan wants same-config draws the record HOLDS. A live trainer
+            # owns its directory and holds nothing yet; it becomes a draw at
+            # exit, where the landing bookkeeping already declares it. Reading
+            # the state costs one .job.json, which is how train_status answers
+            # the same question.
+            if _is_training(d):
                 continue
             undeclared.append(d.name)
 

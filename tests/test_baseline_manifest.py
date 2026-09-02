@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+from pathlib import Path
 
 import pytest
 
@@ -625,6 +626,40 @@ def test_a_fleet_of_fresh_policies_prints_no_reproduction_section(fleet, capsys,
 # distinction had never been needed: a run with NO evaluation is a hole and must
 # still block; a run evaluated at N=100 that simply won nothing is a fact and is
 # disclosed instead.
+
+
+# --- a live trainer is not yet a draw of anything ---
+#
+# The completeness scan sees a run directory from its first checkpoint, so a
+# job that is still training reads as an undeclared same-config draw. It cannot
+# be answered while it runs: declaring it demands "declared => tracked", and its
+# identity-bearing artifacts are the weights it is still rewriting. The v1.26
+# campaign hit that catch-22 once per job across a 14-hour queue, and both
+# escapes were wrong — commit mid-training checkpoints the run would supersede,
+# or leave the suite red for the length of the campaign. A run becomes a draw at
+# exit, where the landing bookkeeping already declares it.
+
+
+def test_a_run_that_is_still_training_is_not_an_undeclared_draw(fleet, capsys, monkeypatch):
+    _member(fleet, "squad_v99", seed=99)  # same config as the member, undeclared
+    monkeypatch.setattr(baseline, "_is_training",
+                        lambda d: Path(d).name == "squad_v99")
+
+    code, out = _audit(capsys)
+
+    assert code == 0, out
+    assert "squad_v99" not in out
+
+
+def test_the_same_run_becomes_a_draw_once_it_lands(fleet, capsys, monkeypatch):
+    """The other direction — the scan must not be permanently silenced."""
+    _member(fleet, "squad_v99", seed=99)
+    monkeypatch.setattr(baseline, "_is_training", lambda d: False)
+
+    code, out = _audit(capsys)
+
+    assert code == 1, out
+    assert "squad_v99" in out
 
 
 def _search_with_member(fleet, scenario, runs, member):
