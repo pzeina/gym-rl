@@ -1504,11 +1504,32 @@ def _cohesion(trace: dict) -> dict[str, Any]:
     the continuous diagnostic that tells collapse (small) from scatter
     (large) when a rate moves.
 
+    ``second_nearest_teammate_dist_sum`` / ``_steps`` carry the distance to
+    the SECOND-nearest living teammate, and exist because the pair above is
+    blind to one shape. Read together the two distances separate the three
+    regimes that ``stacked_rate`` alone conflates:
+
+    * a pile — nearest small, second-nearest small;
+    * buddy PAIRS — nearest small, second-nearest LARGE;
+    * scatter — both large.
+
+    The v1.24 price-dispersion cycle is why this is here. Its bar required
+    ``stacked_rate`` to fall AND ``mean_nearest_teammate_dist`` to rise, and
+    ``fireteam_defend_v26`` fell 0.960 -> 0.096 with the nearest distance flat
+    at 0.235, so the bar convicted it as a vanished denominator — "the marker
+    fell because teammates died". The alive-steps refuted that outright (TL
+    12370 -> 12470, RFN 37020 -> 36820: nobody died). The fireteam had gone
+    from piles to pairs, which drops the 3-in-a-patch count to nothing while
+    holding a buddy at arm's length, and no combination of the two existing
+    numbers can tell that from a casualty. Only the second-nearest can.
+
     A sole survivor counts as isolated on both isolation poles — that is the
     finding, not an artifact. Steps where the soldier is dead, and whole
     traces recorded before these keys existed, contribute nothing to any
     count or to the denominator, so old committed ``behavior.json`` files
-    simply read None.
+    simply read None. The second-nearest additionally needs TWO living
+    teammates, so it is skipped where only one is left — the denominator
+    shrinks rather than absorbing a fabricated distance.
     """
     stack_radius = float(trace.get("stack_radius", STACK_RADIUS))
     agent_steps = 0
@@ -1518,6 +1539,8 @@ def _cohesion(trace: dict) -> dict[str, Any]:
     sound = 0
     nn_sum = 0.0
     nn_steps = 0
+    nn2_sum = 0.0
+    nn2_steps = 0
     for step in trace["steps"]:
         living = [(rec["cs"], rec["pos"]) for rec in step["soldiers"] if rec["alive"]]
         for rec in step["soldiers"]:
@@ -1535,6 +1558,9 @@ def _cohesion(trace: dict) -> dict[str, Any]:
             if mate_dists:
                 nn_sum += min(mate_dists)
                 nn_steps += 1
+            if len(mate_dists) >= 2:
+                nn2_sum += sorted(mate_dists)[1]
+                nn2_steps += 1
     return {
         "cohesion_agent_steps": agent_steps,
         "no_close_teammate_steps": no_close,
@@ -1543,6 +1569,8 @@ def _cohesion(trace: dict) -> dict[str, Any]:
         "spatially_sound_steps": sound,
         "nearest_teammate_dist_sum": nn_sum,
         "nearest_teammate_dist_steps": nn_steps,
+        "second_nearest_teammate_dist_sum": nn2_sum,
+        "second_nearest_teammate_dist_steps": nn2_steps,
     }
 
 
@@ -2131,6 +2159,10 @@ def aggregate_behavior(episodes: list[dict]) -> dict[str, Any]:
         "mean_nearest_teammate_dist": _ratio(
             total("nearest_teammate_dist_sum"), total("nearest_teammate_dist_steps")
         ),
+        "mean_second_nearest_teammate_dist": _ratio(
+            total("second_nearest_teammate_dist_sum"),
+            total("second_nearest_teammate_dist_steps"),
+        ),
         "cohesion_agent_steps": total("cohesion_agent_steps"),
         # clock expiry + traffic composition (refs #18). The rate is the
         # gated number; the composition is diagnosis, deliberately not gated
@@ -2546,6 +2578,8 @@ _TABLE_ROWS: tuple[tuple[str, str, str], ...] = (
     ("stacked_rate", "cohesion: stacked (3+ in 3x3)", "{:.3f}"),
     ("spatially_sound_rate", "cohesion: spatially sound", "{:.3f}"),
     ("mean_nearest_teammate_dist", "cohesion: nearest teammate (cells)", "{:.1f}"),
+    ("mean_second_nearest_teammate_dist",
+     "cohesion: 2nd-nearest teammate (cells)", "{:.1f}"),
     ("timeout_rate", "ran the clock out", "{:.2f}"),
     ("messages_per_episode", "messages / ep", "{:.0f}"),
     ("command_traffic_share", "of which command", "{:.3f}"),

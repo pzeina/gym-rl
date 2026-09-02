@@ -308,3 +308,57 @@ what AREA FIRE could not show.
 - **The term is global, not per-scenario**, for the same reason AREA FIRE would
   have been: a price that exists in `fireteam` but not in `squad` is not one
   environment, and the fleet ships as one system.
+
+---
+
+## AMENDMENT, registered 2026-09-02 — applies to the NEXT cycle, not this one
+
+This cycle is **scored and closed**: `prereg_dispersion.py` returned
+**DENOMINATOR** at `bunching_penalty=-0.05`, and that verdict stands. Nothing
+below changes it, and `tests/test_prereg_dispersion.py` pins the thresholds
+above so it cannot be edited retroactively. The v1.25 fleet ships on provenance
+and explicitly makes no dispersion claim.
+
+**What the cycle learned about its own bar.** The guard — `stacked_rate` must
+fall AND `mean_nearest_teammate_dist` must rise — convicted `fireteam_defend_v26`
+on the second clause and named the reason: *the marker fell because teammates
+died*. The alive-steps refute that. TL 12370 → 12470 and RFN 37020 → 36820
+across the pair of runs, `no_close_teammate_rate` 0.001 → 0.000: nobody died and
+every soldier still had a neighbour.
+
+What actually happened is a third shape the bar cannot represent. The element
+went from **piles to buddy PAIRS**. `stacked_rate` counts agent-steps with ≥2
+living teammates inside 1.5, so two pairs score 0; and a pair pins
+`mean_nearest_teammate_dist` low *by construction*, however far the pairs are
+from one another. Measured on the real policies:
+
+| `fireteam_defend` | stacked | nearest | 2nd-nearest |
+|---|---|---|---|
+| v25 (pile) | 0.940 | 0.29 | 0.63 |
+| v26 | 0.214 | 0.26 | **1.70** |
+
+The nearest distance is flat — which is why the guard fired — while the second
+body moved from 0.63 to 1.70, past the 1.5 stack radius. That is the dispersal,
+and neither of the bar's two numbers can see it.
+
+**The amendment.** `cohort/metrics.py` now measures
+`mean_second_nearest_teammate_dist`. Read with the nearest distance it separates
+the three regimes the old pair conflated:
+
+| shape | nearest | 2nd-nearest |
+|---|---|---|
+| pile | small | small |
+| buddy pairs | small | **large** |
+| scatter | large | large |
+
+**The next cycle's guard replaces "nearest must rise" with "nearest OR
+second-nearest must rise, and `spatially_sound_rate` must not fall."** The
+DENOMINATOR reading is retained unchanged for the case it was written for — a
+marker that falls while the alive-step count falls with it — but it must now be
+supported by the casualty count rather than inferred from a flat distance, which
+is the inference this cycle showed to be unsound.
+
+**Not decided here.** Whether buddy pairs are the doctrine this project wants to
+price at all is a design question and remains the owner's. The amendment only
+ensures the next bar can *tell* pairing from casualties; it takes no position on
+whether pairing is a pass.

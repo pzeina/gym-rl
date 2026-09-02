@@ -620,6 +620,52 @@ def test_stacked_and_spatially_sound_by_construction():
     assert aggregate_behavior([column])["mean_nearest_teammate_dist"] == 2.0
 
 
+def test_second_nearest_separates_buddy_pairs_from_a_pile():
+    """The v1.24 blind spot, pinned.
+
+    That cycle's bar required `stacked_rate` to fall AND
+    `mean_nearest_teammate_dist` to rise. `fireteam_defend_v26` fell
+    0.960 -> 0.096 with nearest flat, so the bar convicted it as a vanished
+    denominator — teammates must have died. They had not (alive-steps moved
+    <1%): the fireteam had gone from piles to PAIRS, and a pair holds nearest
+    low by construction no matter how far the pairs are from each other.
+
+    Nearest alone cannot tell those two apart. Second-nearest can, and that is
+    the whole reason it exists.
+    """
+    def ep(positions):
+        soldiers = [
+            sold(f"RFN{i}", pos=p, teammate_close=True, teammate_sees=True)
+            for i, p in enumerate(positions)
+        ]
+        return aggregate_behavior([episode_behavior(trace([step(0, soldiers)]))])
+
+    pile = ep([(5, 5), (5, 6), (6, 5), (6, 6)])
+    pairs = ep([(5, 5), (5, 6), (25, 25), (25, 26)])
+
+    # what the v1.24 bar could see: identical on both of its numbers except
+    # the one it read as a casualty
+    assert pile["stacked_rate"] == 1.0 and pairs["stacked_rate"] == 0.0
+    assert pile["mean_nearest_teammate_dist"] == pairs["mean_nearest_teammate_dist"], (
+        "the premise of the blind spot: pairing does not move the nearest distance"
+    )
+
+    # what it could not: the second body left the patch
+    assert pairs["mean_second_nearest_teammate_dist"] > \
+        pile["mean_second_nearest_teammate_dist"] * 5
+
+
+def test_second_nearest_needs_two_living_teammates():
+    """One buddy left => the ratio has no second term, and the denominator
+    shrinks rather than absorbing a fabricated distance (the repo's standing
+    rule about vanished denominators, applied to its own new metric)."""
+    soldiers = [sold(f"RFN{i}", pos=p, teammate_close=True, teammate_sees=True)
+                for i, p in enumerate([(5, 5), (5, 6)])]
+    agg = aggregate_behavior([episode_behavior(trace([step(0, soldiers)]))])
+    assert agg["mean_nearest_teammate_dist"] == 1.0
+    assert agg["mean_second_nearest_teammate_dist"] is None
+
+
 def test_spatially_sound_unions_overlapping_faults():
     # an agent both stacked and unseen costs the composite once, and the
     # per-fault rates still each read the full violation
