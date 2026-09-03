@@ -242,3 +242,45 @@ lost all of its. Registered now so the reading cannot be fitted afterwards.
   **Both sides of the contrast are now checked against the record**, which is
   what makes the registered prediction worth testing rather than a story fitted
   to two runs.
+
+- 03:25 — **job 3 `squad_v34` landed and is INCONCLUSIVE, not a confirmation.**
+  Declared in `seed_spread[squad]`. Read naively it looks like a confirmation:
+  `closed_on_root_report_rate` 0.842 -> 0.000. It is not, for two reasons that
+  the record supplies and the run does not.
+
+  First, the comparator is `squad_v33_seed15` and `squad_v34` is **seed 12** —
+  seed and observation move together, so the read is confounded. Second, and
+  decisive: **`squad`'s reporting channel is bimodal and 0.000 is one of its
+  normal modes, well before the removal.** `squad_v16` (seed 12, obs 351) reads
+  0.000. So does `squad_v31_seed13`, and `squad_v10c` at seed 14. Re-tasking is
+  equally uninformative: seed-12 history spans 1.29-11.11 and v34's 6.05 is
+  mid-range.
+
+  `squad` therefore cannot be read until its seed-matched partners land —
+  `squad_v35_seed13`/`v36_seed14`/`v37_seed15` are jobs 19-21, after morning.
+
+### Which scenarios can be read at all, decided from the record
+
+Prompted by the above, every scenario's pre-removal reporting history:
+
+| scenario | runs | min | max | zeros | verdict |
+|---|---|---|---|---|---|
+| `fireteam` | 6 | 0.722 | 1.000 | 0 | **stable — readable** |
+| `fireteam_defend` | 6 | 0.970 | 1.000 | 0 | **stable — readable** |
+| `squad_recon` | 6 | 0.900 | 1.000 | 0 | **stable — readable** |
+| `squad_screen` | 6 | 0.710 | 0.980 | 0 | **stable — readable** |
+| `defend_brique` | 5 | 0.980 | 1.000 | 0 | **stable — readable** |
+| `squad` | 21 | 0.000 | 0.959 | 6 | bimodal — needs seed match |
+| `platoon` | 10 | 0.000 | 0.940 | 3 | bimodal — needs seed match |
+| `patrol_brique` | 24 | 0.000 | 0.949 | 14 | bimodal — needs seed match |
+| `platoon_hard` | 5 | 0.000 | 0.011 | 5 | floor — cannot fall further |
+
+**This narrows tonight's clean test set to five scenarios, three of which are
+jobs 4, 5 and 6** (`squad_recon`, `squad_screen`, `defend_brique`) and land
+before morning. The registered prediction is unchanged; what changes is which
+NUMBER can test it where. `platoon` and `platoon_hard` — the two highest
+re-tasking scenarios, and the prediction's strongest cases — must be read on
+`retasks_per_episode` and `obedience_latency_mean`, which are continuous, and
+NOT on a reporting rate that is bimodal in one and already on the floor in the
+other. Recorded before jobs 4-6 land, so this is a scope statement and not a
+goalpost moved after the fact.
