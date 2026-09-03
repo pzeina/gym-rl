@@ -218,3 +218,27 @@ lost all of its. Registered now so the reading cannot be fitted afterwards.
   This is the strongest cheap challenge available to the headline and it
   survives it. Still one scenario; the registered prediction is what the rest
   of the night tests.
+
+- 02:57 — **the `fireteam_defend` non-result is real too, checked the same way.**
+  Challenging only the finding that fits the story would be motivated
+  reasoning, so its lineage got the identical treatment:
+
+  | run | N | rootrep | retasks/ep | latency |
+  |---|---|---|---|---|
+  | `fireteam_defend_v20` | 100 | 1.000 | 0.050 | 6.219 |
+  | `fireteam_defend_v21` | 20 | 1.000 | 0.300 | 3.341 |
+  | `fireteam_defend_v22` | 100 | 1.000 | 0.120 | 3.245 |
+  | `fireteam_defend_v23` | 100 | 1.000 | 0.120 | 3.245 |
+  | `fireteam_defend_v24_seed13` | 100 | 0.990 | 0.120 | 4.127 |
+  | `fireteam_defend_v26` | 100 | 0.970 | 0.160 | 2.027 |
+  | **`fireteam_defend_v27`** | 20 | **1.000** | **0.000** | **1.538** |
+
+  Reporting has never left 0.970-1.000 and v27 sits at the top of it.
+  Re-tasking spans 0.05-0.52 and v27 is at/below the floor. Latency's history
+  is 2.03-6.22 and v27 beats all of it. So this scenario is not merely
+  "unbroken" — it is unchanged or better on every order-loop number, while
+  `fireteam` left its historical range entirely on two of them.
+
+  **Both sides of the contrast are now checked against the record**, which is
+  what makes the registered prediction worth testing rather than a story fitted
+  to two runs.
