@@ -148,3 +148,47 @@ PushNotification with the outcome worth acting on.
   N=20 read is ambiguous. Nine blanket anchors would cost ~36 min of CPU taken
   from a queue that already will not drain by morning.
 - 01:38 — job 2 `fireteam_defend_v27` at 57%, eta ~23m. Queue healthy.
+
+- 02:05 — **job 2 `fireteam_defend_v27` landed, and it REFUTES the simple
+  reading.** Declared in `seed_spread[fireteam_defend]`. Its order loop did not
+  degrade — it improved:
+
+  | fireteam_defend | v26 (N=100) | v27 (N=20) |
+  |---|---|---|
+  | success | 0.990 | 0.950 |
+  | `closed_on_root_report_rate` | 0.970 | **1.000** |
+  | `retasks_per_episode` | 0.160 | **0.000** |
+  | `obedience_latency_mean` | 2.027 | 1.538 |
+  | `human_death_rate` | 0.070 | 0.200 |
+
+  So "the observation removal breaks the order loop" is already too coarse
+  after two scenarios.
+
+### A prediction, registered at 02:05 BEFORE the scenarios that test it land
+
+The two results differ in how much their scenario USES the order loop.
+`fireteam` re-tasks 2.10 times an episode and broke; `fireteam_defend` re-tasks
+0.16 times and did not. A leader that rarely re-tasks cannot be hurt by losing
+the telemetry about who is already tasked.
+
+**Hypothesis: the cost of the removal scales with the scenario's baseline
+re-tasking rate.** The v1.25 fleet's rates, which are committed and were not
+chosen for this purpose:
+
+| scenario | retasks/ep | status |
+|---|---|---|
+| `platoon` | 43.03 | predicted WORST |
+| `platoon_hard` | 28.05 | predicted severe |
+| `squad_recon` | 6.46 | predicted moderate |
+| `squad` | 5.33 | predicted moderate |
+| `squad_screen` | 4.18 | predicted moderate |
+| `fireteam` | 2.10 | **observed: broke** (report 0.722 -> 0.000) |
+| `defend_brique` | 1.46 | predicted mild |
+| `patrol_brique` | 0.28 | predicted none |
+| `fireteam_defend` | 0.16 | **observed: no degradation** |
+
+**Predicted, in order of landing:** `squad` / `squad_recon` / `squad_screen`
+degrade clearly; `defend_brique` mildly or not at all; the four `platoon` seeds
+worst of all. **Falsified if** `defend_brique` (1.46) degrades as hard as
+`fireteam` did, or if any `platoon` seed holds its report rate while `fireteam`
+lost all of its. Registered now so the reading cannot be fitted afterwards.
