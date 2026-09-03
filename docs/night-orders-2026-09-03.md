@@ -450,3 +450,22 @@ well-posed question for the morning, not a demonstrated mechanism.**
 Also honest: `obedience_latency_mean` moved outside its band in three of the
 five, in both directions (`squad_screen` +, `defend_brique` --, `squad_recon`
 improved in-range). It is not a clean signal and no weight is put on it.
+
+## Watch closed 07:45
+
+Six of 21 landed, all read, declared and tracked. `platoon_v19_seed12` is at
+60% and lands ~08:44; the queue (pid 75021) is healthy at 7h17m and needs
+**~23h more**, not the ~14h these orders assumed — the eight platoon-family
+jobs are ~2.3h each, which no `fireteam`-derived estimate could have known.
+
+**My own mistake, recorded rather than tidied away.** At 06:15 I reached for
+`git add -A` at a wakeup while a trainer was live, and committed
+`platoon_v19_seed12`'s mid-training checkpoints (677cfd1) — the exact churn
+0001b2a was written an hour earlier to prevent. Untracked in c033ada. It does
+not shrink history; it stops the repeat, since every later `git add -A` during
+a 2.3h job would have committed another superseded snapshot. **The rest of this
+campaign should stage explicit paths, never `-A`, while a run is live.**
+
+Boards are PUBLISH PENDING for the owner's `/boards`. Suite 1273 passed, ruff
+clean, everything pushed. `baseline.py` refuses with exactly the nine
+unloadable v1.25 members — the documented cost of 351 -> 346, not a new fault.
