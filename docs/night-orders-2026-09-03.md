@@ -315,3 +315,35 @@ goalpost moved after the fact.
   Applied to what has landed: `fireteam_v16` re-tasks 3.27 against a 0.61-2.10
   history — outside, and the only landed run that is. `fireteam_defend_v27` at
   0.000 sits just under a 0.05 floor, consistent with its no-degradation read.
+
+- 04:26 — **job 4 `squad_recon_v15` landed and it counts AGAINST the registered
+  prediction.** Declared in `seed_spread[squad_recon]`. This is a stable
+  channel, so the read is clean:
+
+  | squad_recon (baseline 6.46 retasks/ep) | v14 (N=100) | v15 (N=20) | vs history |
+  |---|---|---|---|
+  | success | 0.960 | 1.000 | — |
+  | `closed_on_root_report_rate` | 0.917 | 0.800 | just under 0.900-1.000 |
+  | `retasks_per_episode` | 6.460 | 6.700 | in range 2.58-7.43 |
+  | `obedience_latency_mean` | 3.050 | 2.247 | in range, improved |
+  | `human_death_rate` | 0.040 | **0.350** | — |
+
+  The prediction was that cost scales with baseline re-tasking. `squad_recon`
+  re-tasks **6.46 times an episode — three times `fireteam`'s 2.10** — and it
+  did not collapse. Its reporting dipped to 0.800 (16/20 wins at N=20, which
+  against 0.917 at N=100 is not clearly a difference at all), re-tasking held
+  inside its historical band, and latency improved.
+
+  So the ordering is now: 0.16 baseline -> no effect; 2.10 -> **total
+  collapse**; 6.46 -> at most a mild dip. **That is not monotone, and it is the
+  shape the registered falsifier was watching for.** The hypothesis is in
+  trouble after its first genuine test, and the honest reading is that
+  `fireteam`'s collapse may be about `fireteam`, not about re-tasking volume.
+
+  Two stable tests remain tonight: `squad_screen` (4.18) and `defend_brique`
+  (1.46). If neither collapses, `fireteam` is a lone outlier and the scaling
+  hypothesis is dead rather than merely strained.
+
+  **Separately, and not about the order loop at all:** `human_death_rate`
+  0.040 -> 0.350 is a large welfare regression in a scenario whose whole point
+  is reconnaissance. Flagged for morning; it is measured, not acted on.
