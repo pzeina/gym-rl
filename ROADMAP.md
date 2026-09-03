@@ -1,121 +1,118 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-03, **the observation contract broke and the whole fleet with it. v1.26 is a FORCED retrain, 21 jobs, running. v1.25 cannot be evaluated on this tree at all.**)
+## ⟳ Session handoff — resume here (2026-09-03 morning, **NIGHT WATCH: 6 of 21 v1.26 jobs landed. The order-loop cost is REAL but it is NOT what the handoff predicted — only `fireteam` broke, and the surviving explanation is mission type, not re-tasking volume. The campaign needs ~23h more.**)
 
-### What broke, and it is not a hypothesis
+### The campaign is 6/21 and will run most of today
 
-`4e82807` removed the five heard-mission scalars from the observation — the
-leader's mission index and one per subordinate slot. **OBS_DIM 351 → 346**
-(core 297 → 292). All nine v1.25 members carry `torso.0.weight (256, 351)`:
+`scripts/campaigns/v1_26_fleet.jobs`, queue **pid 75021**, healthy. Landed:
+`fireteam_v16`, `fireteam_defend_v27`, `squad_v34`, `squad_recon_v15`,
+`squad_screen_v21`, `defend_brique_v21` (45-72 min each). Now on
+`platoon_v19_seed12`.
 
-```
-RuntimeError: mat1 and mat2 shapes cannot be multiplied (16x346 and 351x256)
-```
+**Revised ETA: ~23h remaining, not the ~14h the night orders assumed.** The
+eight `platoon`/`platoon_hard` jobs are ~2.3h each, not 40 min — that estimate
+was made from `fireteam` timings before any big-org job had run. Expect the
+queue to drain around **05:00 on 2026-09-04**. `cohort/` stays FROZEN at
+`19a8da08` until it does.
 
-Nothing in `BASELINE.json` loads. `publish_baseline.py`, `evaluate` and the
-scenario gallery are all dead against the shipped fleet until v1.26 lands.
-This is not a regression to diagnose; it is the cost of a decided change.
+### The predicted cost is real, and it landed on exactly one scenario
 
-### The doctrine table did NOT change — read this before attributing anything to it
+The handoff predicted the removal would bill the order loop rather than
+success. In `fireteam` it did, hard — and this is the one run anchored at
+N=100 on both sides:
 
-The cycle is named after `SUB_MISSIONS_BY_SUPERIOR_MISSION`, and that part is
-**publication, not semantics**. Diffed against `HEAD`: 12 keys before, 12 keys
-after, **no row edited**, `ADVANCE` already present in every row the README was
-missing. The action mask is bit-identical. What was wrong was the README
-(eleven missions documented, `ADVANCE` absent from four rows); it now matches
-the code, and `briefing()` publishes the whole table as
-`admissible_sub_missions`.
-
-So any behavioural delta v1.26 shows belongs to the observation, not to
-doctrine. Do not let a future read blame the table.
-
-### What the observation removal actually costs, in both modes
-
-- **voice_only**: `_note_mission_heard` is gone. Overhearing an order no longer
-  teaches a listener which mission a teammate holds. A designed information
-  channel, deleted on purpose — what an agent may ORDER never depended on what
-  it had HEARD.
-- **radio modes**: those slots were **live telemetry**. A leader could read the
-  current mission of each of its subordinates. It no longer can.
-- Own mission (the `MISSION_ORDER` one-hot) is untouched.
-
-**What to read when the campaign lands.** The removal takes away exactly what a
-leader knew about who is already tasked, so the hazard is the order loop, not
-success: `retasks_per_episode`, `obedience_latency_mean`, and
-`closed_on_root_report_rate` (already 0.01 on `platoon_hard`, 0.58 on
-`platoon`). Success moving is the least interesting outcome available here.
-
-### The campaign in flight
-
-`scripts/campaigns/v1_26_fleet.jobs`, **21 jobs, launched 2026-09-03 00:20
-(pid 75021, `logs/queue_20260903_002004_74885.log`)**, first job `fireteam_v16`.
-Same shape as v1.24: seed 12 for the five scenarios that do not spread, a
-declared four-seed search for `squad`, `platoon`, `platoon_hard` and
-`patrol_brique`. **No `--reward` overrides anywhere.** `cohort/` is **FROZEN at
-tree `19a8da08`** until the queue drains — tooling, tests, docs, boards and
-`runs/` stay free, and `git rev-parse HEAD:cohort` confirms the four commits of
-this session all carry that tree.
-
-### The queue refused all 21 jobs first, and the guard was right to be asked
-
-`campaign_preflight.py` matched every job to a recorded run on (scenario, seed,
-steps, hyper-parameters, prices) and called them already-answered. The correct
-reading is that its evidence was incomplete: each of those runs has a 351-wide
-first layer this tree cannot load, so re-derivation was not unlikely, it was
-impossible. The v1.24 cycle answered exactly this shape of refusal with
-`FORCE=1` over a populated record — **the one override this project treats as
-dangerous** — because the checker could not see a price armed as a default.
-
-Repeating that would have made `FORCE=1` the standing cost of any change the
-checker cannot see. Instead the checker learned to see this one (`c5519e0`):
-`train.py` already records `obs_dim` beside the weights, so a candidate whose
-recorded width differs from what the current tree presents is not a duplicate.
-It **fails closed** — an unreadable width leaves the run a suspect, unknown is
-not different — and `current_obs_dim` joins `current_tree` and `current_prices`
-as a named parameter so the #63 regression test still asks its question in the
-pair's own world. Preflight then passed clean: *21 job(s), no config already in
-the record*. **No `FORCE=1` was used.**
-
-### `platoon_hard`'s mute root: answered, and the answer is not a fix
-
-The single-variable arm ran before the break (`3badc83`), so its checkpoints are
-now unloadable and its evaluations are committed. `done_false` −0.5 → 0.0, same
-code, same seed 13:
-
-| | control | done_false=0 |
+| `fireteam` | v15 (obs 351) | v16 (obs 346) |
 |---|---|---|
-| `final_closed_on_root_report_rate` | 0.000 | **0.824** |
-| `final_root_claims` | 0 | **94** |
-| `final_false_complete_rate` | 1.000 | 0.899 |
-| `final_success` | 0.850 | 0.850 |
-| `human_death_rate` | 0.257 | 0.404 |
+| success | 0.970 | 0.950 |
+| `closed_on_root_report_rate` | 0.722 | **0.000** |
+| `retasks_per_episode` | 2.100 | **3.270** |
+| `obedience_latency_mean` | 1.682 | 1.965 |
 
-The DONE channel opens **by spam**: 94 claims an episode at a 0.899
-false-complete rate is a root asserting completion until one assertion happens
-to be true. Success does not move; human deaths rise 57%. It is the mirror of
-`squad_v11`, where −2.0 shut the channel outright. **Owner decision this
-session: v1.26 retrains at the shipped prices**, `done_false` stays −0.5.
+**It is not a seed draw.** `fireteam`'s six prior runs across two seeds and
+several trees span 0.722-1.000 on reporting and have never approached zero;
+re-tasking spans 0.61-2.10 against v16's 3.27. v16 is outside the entire
+recorded range on both, in the predicted direction.
 
-### One documentation correction, made before the freeze
+### But it is the ONLY scenario that broke, and that killed my hypothesis
 
-`squad_screen_core` described itself as a bit-exact rebuild of the pre-v1.10
-166-wide vector. It no longer is — the same five scalars are gone from *both*
-profiles, so core is 292, not 166. The arm stays a valid `core` vs `full`
-comparison **on one tree**; it is no longer comparable with the archived
-v1.9-era core runs. Corrected in `cohort/config.py` and
-`cohort/env/observations.py` rather than left standing.
+I registered a hypothesis at 02:05 — cost scales with a scenario's baseline
+re-tasking rate — **before** the scenarios that test it landed. It is dead:
+
+| scenario | org | root mission | baseline retasks/ep | verdict |
+|---|---|---|---|---|
+| **`fireteam`** | fireteam | **SEIZE** | 2.10 | **TOTAL COLLAPSE** |
+| `fireteam_defend` | fireteam | DEFEND | 0.16 | no degradation |
+| `defend_brique` | fireteam | DEFEND | 1.46 | no degradation |
+| `squad_screen` | squad | SCREEN | 4.18 | none (reporting improved to 1.000) |
+| `squad_recon` | squad | RECON | 6.46 | mild dip 0.917->0.800, within noise |
+
+Not monotone in re-tasking rate — `squad_recon` re-tasks three times as much as
+`fireteam` and held. **What survives is mission type**, and it was tested
+rather than assumed: `defend_brique` shares `org=fireteam` with `fireteam` and
+differs only in root mission. It was registered at 05:50 as the discriminator
+before it landed, and it did not collapse — **so org is refuted.**
+
+### An independent structural fact, from the committed record
+
+| channel | scenarios |
+|---|---|
+| stable (no zero ever recorded) | `fireteam` (SEIZE), `fireteam_defend`, `defend_brique`, `squad_recon`, `squad_screen` |
+| bimodal / floored | `squad`, `patrol_brique`, `platoon` (all SEIZE), `platoon_hard` (SEIZE, never > 0.011) |
+
+**Every scenario with an unstable or floored reporting channel is a SEIZE
+scenario, and every non-SEIZE scenario has a stable one — four for four both
+ways.** This is a property of the shipped fleet, visible before v1.26, and
+worth attention on its own. It also means `fireteam` was the *last stable SEIZE
+channel*, and the removal took it.
+
+**The honest ceiling: n=1 on the SEIZE side.** The other four SEIZE scenarios
+cannot corroborate because their channels are already broken — consistent with
+the story, but not independent evidence for it. This is a well-posed question,
+not a demonstrated mechanism.
+
+### What can and cannot be read from the rest of the campaign
+
+Decided from the record, before the data: `squad`, `platoon`, `patrol_brique`
+and `platoon_hard` **cannot be read on `closed_on_root_report_rate`** (bimodal
+or floored), and **cannot be read on `retasks_per_episode` either** — their
+historical spreads are 0.04-12.39, 3.46-43.03, 0.05-27.80 and 0.30-42.39, so
+almost any value falls inside. `squad_v34` looked like a confirmation
+(0.842 -> 0.000) and is not one: it is seed 12 against a seed-15 comparator, and
+`squad_v16` at obs 351 already read 0.000. **`squad` becomes readable only when
+its seed-matched partners land as jobs 19-21.**
+
+### Flagged, not acted on
+
+- `squad_recon` `human_death_rate` **0.040 -> 0.350** — a large welfare
+  regression in a reconnaissance scenario, unrelated to the order loop.
+- `obedience_latency_mean` moved outside its band in three of five, in both
+  directions. Not a clean signal; no weight put on it.
+
+### One tooling fix, and it was load-bearing for the night
+
+A run that is still training tripped the `seed_spread` completeness scan but
+could not be declared — "declared => tracked" wants artifacts that a live
+trainer is still rewriting. Over a 21-job queue the only escapes were
+committing mid-training checkpoints the run supersedes, or a red suite for the
+length of the campaign. A live trainer holds nothing yet and becomes a draw at
+exit; liveness reads through `train_status` so the audit and the board cannot
+disagree, and it fails closed. Both directions tested (`0001b2a`).
 
 ### State
 
-**1269 passed, 1 skipped**, ruff clean. `BASELINE.json` still names v1.25 and
-**that fleet is unloadable** — do not publish anything against it. Boards will
-refresh themselves as jobs land; publishing them needs `/boards` in a session.
+**1273 passed**, ruff clean, everything pushed to `multi-agent-dev`.
+`baseline.py` refuses with exactly nine problems — every v1.25 member unloadable
+under the current spaces — which is the documented cost of the 351 -> 346 change
+and not a new fault. All six landed runs declared in `seed_spread` and tracked.
+**Boards will read PUBLISH PENDING** → `/boards`.
 
 ### Next command
 
-`/train-status` when the queue drains, then `scripts/run_report.py` per
-scenario. Carried forward unresolved: the buddy-pair pricing question, and
-`patrol_brique`'s vanished denominator.
+`/train-status`. Nothing needs a decision until more of the queue drains.
+Carried forward unresolved: the buddy-pair pricing question, `patrol_brique`'s
+vanished denominator, and now **whether SEIZE root missions are why the
+reporting channel is fragile fleet-wide** — the sharpest question the night
+produced, and a design question, so it is yours.
 
 ## ⟳ Previous handoff (2026-09-02, **v1.25 SHIPPED — nine members on ONE tree, zero exceptions, and it makes NO dispersion claim. The v1.24 bar stays a MISS; its guard is amended for the NEXT cycle only.**)
 
