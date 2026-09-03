@@ -375,3 +375,43 @@ goalpost moved after the fact.
   sharper question: **what is different about `fireteam`?** — not "how does the
   cost scale". Structural comparison held until all five are in, so it is done
   against evidence rather than fitted to four.
+
+### A structural discriminator, registered 05:50 BEFORE `defend_brique` lands
+
+Facts, from `cohort/config.py` and the pre-removal record — no v1.26 data:
+
+| scenario | org | root mission | reporting channel |
+|---|---|---|---|
+| `fireteam` | fireteam | **SEIZE** | stable — **and it collapsed** |
+| `fireteam_defend` | fireteam | DEFEND | stable — fine |
+| `defend_brique` | fireteam | DEFEND | stable — **lands next** |
+| `squad_recon` | squad | RECON | stable — fine |
+| `squad_screen` | squad | SCREEN | stable — fine |
+| `squad` | squad | SEIZE | bimodal |
+| `patrol_brique` | squad | SEIZE | bimodal |
+| `platoon` | platoon | SEIZE | bimodal |
+| `platoon_hard` | platoon | SEIZE | floor (never > 0.011) |
+
+Two things fall out, and the first is independent of this cycle entirely:
+
+1. **Every scenario with an unstable or floored reporting channel is a SEIZE
+   scenario, and every non-SEIZE scenario has a stable one.** Four for four,
+   both ways. That is a property of the shipped fleet visible in the committed
+   record, not a v1.26 result — worth the owner's attention on its own.
+2. `fireteam` is the ONLY SEIZE scenario whose channel was stable, and it is
+   the one that lost it. So the candidate is not re-tasking volume but
+   **mission type: SEIZE root missions have fragile root-reporting, and the
+   removal pushed the last stable one over.**
+
+**The test is single-variable and imminent.** `defend_brique` shares
+`org=fireteam` with `fireteam` and differs in root mission (DEFEND vs SEIZE).
+
+- If `defend_brique` does **not** collapse → org is not the driver, and mission
+  type survives as the candidate.
+- If `defend_brique` **does** collapse → mission type is refuted, and
+  `org=fireteam` becomes the candidate instead.
+
+Either way it discriminates, which is why it is written down now rather than
+after. **This is a candidate structure, not a conclusion** — one collapsed run
+is one collapsed run, and the honest ceiling on tonight's evidence is a
+well-posed question for the morning.
