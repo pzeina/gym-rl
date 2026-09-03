@@ -415,3 +415,38 @@ Either way it discriminates, which is why it is written down now rather than
 after. **This is a candidate structure, not a conclusion** — one collapsed run
 is one collapsed run, and the honest ceiling on tonight's evidence is a
 well-posed question for the morning.
+
+- 06:15 — **job 6 `defend_brique_v21` landed; the registered test resolves and
+  ORG IS REFUTED.** Declared. Reporting 0.980 -> **1.000** (top of its band),
+  re-tasking 1.46 -> 1.40 (in range), success held at 1.000, human deaths
+  0.100 -> 0.000. Latency 3.131 -> 0.600, outside its band but far BELOW it —
+  improved, not degraded. No collapse on any axis.
+
+  `defend_brique` shares `org=fireteam` with `fireteam` and differs only in
+  root mission. It did not collapse, so **org is not the driver and mission
+  type survives** — exactly the branch registered at 05:50.
+
+### The night's result, over the complete stable five
+
+| scenario | org | root mission | verdict |
+|---|---|---|---|
+| **`fireteam`** | fireteam | **SEIZE** | **TOTAL COLLAPSE** (report 0.722 -> 0.000, retasks 2.10 -> 3.27, both outside range) |
+| `fireteam_defend` | fireteam | DEFEND | no degradation |
+| `defend_brique` | fireteam | DEFEND | no degradation |
+| `squad_recon` | squad | RECON | mild dip, within noise |
+| `squad_screen` | squad | SCREEN | no degradation (reporting improved) |
+
+**One of five collapsed, and it is the only SEIZE among them.** Two of the four
+that held share its org exactly, which is what kills the org explanation. The
+re-tasking-volume hypothesis registered at 02:05 is dead; mission type is what
+is left standing.
+
+**Honest ceiling on this.** n=1 on the SEIZE side of the readable set, and the
+four other SEIZE scenarios cannot corroborate because their channels are
+already bimodal or floored — though that fact is itself consistent with the
+story, since it says SEIZE reporting is fragile fleet-wide. **This is a
+well-posed question for the morning, not a demonstrated mechanism.**
+
+Also honest: `obedience_latency_mean` moved outside its band in three of the
+five, in both directions (`squad_screen` +, `defend_brique` --, `squad_recon`
+improved in-range). It is not a clean signal and no weight is put on it.
