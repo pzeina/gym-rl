@@ -347,3 +347,31 @@ goalpost moved after the fact.
   **Separately, and not about the order loop at all:** `human_death_rate`
   0.040 -> 0.350 is a large welfare regression in a scenario whose whole point
   is reconnaissance. Flagged for morning; it is measured, not acted on.
+
+- 05:36 — **job 5 `squad_screen_v21`: no collapse either.** Declared. Reporting
+  0.950 -> **1.000**, above its historical maximum; re-tasking 4.18 -> 3.60,
+  inside range and DOWN; success 1.000 held; false-completes 0.326 -> 0.133 and
+  human deaths 0.110 -> 0.050 both improved. The one number that moved against
+  it is `obedience_latency_mean` 0.739 -> 2.103, just past the top of a
+  0.74-2.07 band.
+
+  **The stable-channel tally now reads:**
+
+  | scenario | baseline retasks/ep | verdict |
+  |---|---|---|
+  | `fireteam_defend` | 0.16 | no degradation |
+  | `fireteam` | 2.10 | **TOTAL COLLAPSE** |
+  | `squad_screen` | 4.18 | no degradation (reporting improved) |
+  | `squad_recon` | 6.46 | mild dip, within noise |
+
+  **The scaling hypothesis is dead, not merely strained.** Four of the five
+  stable scenarios are in and the effect is not monotone in re-tasking rate —
+  it is not even monotone-ish. `fireteam` is a lone outlier: it is the only
+  landed run outside its own historical range on any order-loop number, and the
+  only one whose reporting channel closed.
+
+  `defend_brique` (1.46) is the last stable test and lands next. Whatever it
+  shows, the registered prediction has failed and the morning inherits a
+  sharper question: **what is different about `fireteam`?** — not "how does the
+  cost scale". Structural comparison held until all five are in, so it is done
+  against evidence rather than fitted to four.
