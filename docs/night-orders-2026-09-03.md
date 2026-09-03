@@ -284,3 +284,34 @@ re-tasking scenarios, and the prediction's strongest cases — must be read on
 NOT on a reporting rate that is bimodal in one and already on the floor in the
 other. Recorded before jobs 4-6 land, so this is a scope statement and not a
 goalpost moved after the fact.
+
+- 03:40 — **reference ranges precomputed, and they correct what I wrote at
+  03:25.** Every scenario's pre-removal (obs 351) spread, so each remaining
+  landing is an in-range/out-of-range verdict rather than a fresh judgement:
+
+  | scenario | n | retasks/ep | obedience latency |
+  |---|---|---|---|
+  | `fireteam` | 6 | 0.61 - 2.10 | 1.68 - 2.34 |
+  | `fireteam_defend` | 8 | 0.05 - 0.52 | 2.03 - 6.22 |
+  | `squad_recon` | 7 | 2.58 - 7.43 | 1.84 - 3.05 |
+  | `squad_screen` | 6 | 0.60 - 4.44 | 0.74 - 2.07 |
+  | `defend_brique` | 5 | 0.02 - 1.46 | 0.84 - 3.75 |
+  | `squad` | 25 | **0.04 - 12.39** | 1.51 - 4.02 |
+  | `patrol_brique` | 24 | **0.05 - 27.80** | 2.07 - 4.93 |
+  | `platoon` | 11 | **3.46 - 43.03** | 2.70 - 4.84 |
+  | `platoon_hard` | 9 | **0.30 - 42.39** | 2.87 - 4.98 |
+
+  **Correction to the 03:25 entry.** I said `platoon` and `platoon_hard` should
+  be read on re-tasking and latency instead of the reporting rate. Re-tasking
+  is no good either: their historical spreads are 3.46-43.03 and 0.30-42.39, so
+  almost any value lands inside and the axis cannot discriminate. The same is
+  true of `squad` (0.04-12.39) and `patrol_brique` (0.05-27.80).
+
+  **`obedience_latency_mean` is the axis that survives everywhere** — every
+  scenario's history sits in a roughly 2x band (`platoon` 2.70-4.84,
+  `platoon_hard` 2.87-4.98). So for the four bimodal scenarios, latency is the
+  ONLY discriminating number available tonight.
+
+  Applied to what has landed: `fireteam_v16` re-tasks 3.27 against a 0.61-2.10
+  history — outside, and the only landed run that is. `fireteam_defend_v27` at
+  0.000 sits just under a 0.05 floor, consistent with its no-degradation read.
