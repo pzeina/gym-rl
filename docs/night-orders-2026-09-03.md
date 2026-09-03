@@ -192,3 +192,29 @@ degrade clearly; `defend_brique` mildly or not at all; the four `platoon` seeds
 worst of all. **Falsified if** `defend_brique` (1.46) degrades as hard as
 `fireteam` did, or if any `platoon` seed holds its report rate while `fireteam`
 lost all of its. Registered now so the reading cannot be fitted afterwards.
+
+- 02:30 — **the `fireteam` collapse is not a seed draw, and the record settles
+  it at zero cost.** `fireteam` is single-seed in this campaign, so the obvious
+  challenge to the headline was that 0.722 -> 0.000 is a bad draw rather than
+  the observation removal. Its whole recorded lineage says otherwise:
+
+  | run | seed | N | `closed_on_root_report_rate` | retasks/ep |
+  |---|---|---|---|---|
+  | `fireteam_v9` | 12 | 100 | 0.897 | 0.85 |
+  | `fireteam_v10` | 12 | 20 | 1.000 | 1.50 |
+  | `fireteam_v11` | 12 | 100 | 0.915 | 1.70 |
+  | `fireteam_v12` | 12 | 100 | 0.915 | 1.70 |
+  | `fireteam_v13_seed13` | 13 | 100 | 0.928 | 0.61 |
+  | `fireteam_v15` | 12 | 100 | 0.722 | 2.10 |
+  | **`fireteam_v16`** | 12 | 100 | **0.000** | **3.27** |
+
+  Six prior runs, two seeds, several trees: the rate spans **0.722 to 1.000 and
+  has never once approached zero**. Re-tasking spans 0.61-2.10 and v16 is 3.27,
+  above every one of them. There is no bimodality here to hide behind — unlike
+  `platoon`/`platoon_hard`/`patrol_brique`, whose reporting genuinely is
+  bimodal. The v1.26 run is outside the entire historical range on both
+  numbers, in the direction the mechanism predicts.
+
+  This is the strongest cheap challenge available to the headline and it
+  survives it. Still one scenario; the registered prediction is what the rest
+  of the night tests.
