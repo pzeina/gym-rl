@@ -727,6 +727,29 @@ SCENARIOS["squad_voice_liaison"] = replace(
     liaison_enabled=True,
     experiment_arm="voice liaison",
 )
+SCENARIOS["patrol_brique_voice"] = replace(
+    SCENARIOS["patrol_brique"],
+    name="patrol_brique_voice",
+    description=(
+        "The BRIQUE ambush patrol under degraded communications: voice-only "
+        "with tactical acoustics and liaison packets. Registered as the "
+        "epistemic-monitor fixture (epistream HOST_REQUESTS item 8): an "
+        "ambush band and mines put weapon and trap sounds at 4-16 cells, so "
+        "acoustic cues actually span the distance bands and age in memory "
+        "between harassments, and a patrol walking into contact puts real "
+        "CONTACT / ACOUSTIC CONTACT traffic on the net — the dimensions the "
+        "squad_voice_liaison fixture episode never moved (51/51 cues at band "
+        "0, age 0, zero contact reports). Geometry matches `squad`, so the "
+        "squad_voice_liaison checkpoints transfer: episodes are recordable "
+        "without a retrain."
+    ),
+    comm_model="voice_only",
+    sound_model="tactical",
+    voice_range=2.0,
+    liaison_enabled=True,
+    reward_overrides=_VOICE_ECONOMICS,
+    experiment_arm="brique patrol · voice liaison",
+)
 # The two same-space radio controls of the matched experiment (§9). The
 # frozen shipped reference, `squad_global_control`, IS the registered `squad`
 # scenario (global radio, sound off, liaison masked) — it is not duplicated

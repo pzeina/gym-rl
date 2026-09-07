@@ -169,6 +169,12 @@ NOT_BASELINE = {
         "degraded-communications final arm (voice only, acoustics, liaison) — an "
         "experiment arm of squad until the owner decides the degraded mode ships"
     ),
+    "patrol_brique_voice": (
+        "epistemic-monitor fixture (epistream HOST_REQUESTS item 8): the brique "
+        "patrol under the voice mode, registered so recorded episodes move the "
+        "cue range/staleness dimensions; a recording target for squad-family "
+        "voice checkpoints, not a shipping configuration"
+    ),
     "squad_global_acoustic_control": (
         "degraded-communications control (global radio, acoustics on) — measures "
         "sound exposure against the shipped squad; not a shipping configuration"

@@ -75,6 +75,9 @@ def test_no_other_shipping_scenario_gained_a_price():
         # voice-only root has no HQ channel, so the bonus for closing it is
         # structurally unearnable — priced at 0 by the scenario, never a flag
         "squad_voice_direct", "squad_voice_no_acoustic_ablation", "squad_voice_liaison",
+        # ... and the epistemic-monitor fixture inherits the same voice-family
+        # economics for the same structural reason (HOST_REQUESTS item 8)
+        "patrol_brique_voice",
         # owner-decided 2026-08-24: the same D4 idle-income attractor that
         # priced platoon_hard also captures this scenario at seed 14 (0.00
         # success, every episode to the clock). -0.03 removes it and is
