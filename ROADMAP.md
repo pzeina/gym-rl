@@ -1,6 +1,53 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-07, **v1.26 SHIPPED — the fleet is loadable again, sealed with zero exceptions. One real regression (`fireteam` reporting 0.722 -> 0.000) and one retraction: the night watch's fleet-wide order-loop alarm was an artefact of comparing across N.**)
+## ⟳ Session handoff — resume here (2026-09-07 evening, **the epistream request bundle is LANDED: public perception seam, report-kind parsers, fixture scenario — zero behavior change, no retrain anywhere. Response doc drafted; three requests routed to the owner.**)
+
+### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
+
+epistream forwarded eight requests (`epistream-rl/HOST_REQUESTS.md`); the
+grantable ones are in, the design ones are queued, and the reply is
+`docs/host-requests-response.md` (forwardable as-is):
+
+- **`e71140d` parsers** — every report kind now has its formatter's inverse
+  (`parse_contact`, DONE family via `parse_mission_phrase`, casualty, trap,
+  support_end). Messages stay text-only; structure ships as parsers.
+- **`9224212` perception seam** — `env.perception(cs)`: acoustic cues +
+  NEW `VisualContact` record (sight's analog of the cue: sector/band/count
+  band/step, host-side telemetry ONLY — a test pins that disabling it leaves
+  observations and rewards bit-identical) + friendlies coarsened to the
+  observer frame + explicit self record. `env.packet_events()` ends the
+  harvest-every-step fragility. OBS_DIM untouched.
+- **`b6298b0` `patrol_brique_voice`** — fixture scenario that finally moves
+  cue range/staleness (the committed fixture episode was 51/51 cues at band
+  0, age 0). Squad geometry: `squad_voice_liaison` checkpoints transfer,
+  recordable zero-shot. NOT a baseline member (excused with reason).
+- **`072d9b1` housekeeping** — `fireteam_v17_seed13` (finished this
+  afternoon, rolling 96%) declared in `seed_spread` + artifacts tracked;
+  the completeness gate demanded it.
+
+### Owner decisions on the desk (present in the response doc, §4/§5/§7)
+
+1. **Read-back / SAY AGAIN / negative ack** — new vocabulary, breaking
+   cycle, fleet retrain. Recommended: agent-issued form, next breaking
+   cycle in `docs/next-cycles.md`. This is epistream's highest-value ask.
+2. **Radio garble state** (partial reception beyond voice) — needs an obs
+   slot; natural companion of (1), same cycle.
+3. **Per-sensor degradation** — recommended as an *evaluation-time*
+   intervention (default off, forbidden in baseline runs): the negative
+   control epistream needs, at zero cost to any published number.
+
+### Loose ends
+
+- **`fireteam_v17_seed13` may be a publish candidate** vs `fireteam_v16`
+  (member: 0.95 succ, root-report 0.000 — the v1.26 headline regression).
+  v17's best-ckpt behavior.json reads 0.85 ± 0.16 at N=20; needs the
+  /publish N=100 evaluation before any claim. Declared, not judged.
+- **Boards say PUBLISH PENDING** (fleet, program, gallery) since v17
+  landed; `/boards` closes it in one step.
+- **epistream's fork is stale** — `~/Documents/gym-rl-fork` predates
+  `6b75cce`; the response doc asks them to re-sync before consuming item 3.
+
+## ⟳ Previous handoff (2026-09-07, **v1.26 SHIPPED — the fleet is loadable again, sealed with zero exceptions. One real regression (`fireteam` reporting 0.722 -> 0.000) and one retraction: the night watch's fleet-wide order-loop alarm was an artefact of comparing across N.**)
 
 ### What shipped
 
