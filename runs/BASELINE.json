@@ -1,42 +1,42 @@
 {
-  "version": "v1.25",
+  "version": "v1.26",
   "commit": null,
-  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults. v1.25 (2026-09-02): the whole fleet retrained in the v1.24 price-dispersion campaign, 21 jobs on ONE frozen cohort/ tree (0c25b034). That single tree is the reason this fleet ships: it dissolves the v1.23 squad provenance exception, which existed only because squad_ctrl_v2_seed12 predated that campaign's freeze. THE CYCLE'S REGISTERED BAR IS A MISS and this fleet does not claim it: prereg_dispersion.py returns DENOMINATOR on fireteam_defend, whose stacked_rate fell 0.960->0.096 while mean_nearest_teammate_dist stayed flat. The bar's stated mechanism is refuted by the alive-steps (nobody died); what the fireteam learned is buddy PAIRS, a shape stacked_rate cannot distinguish from dispersal. See the 2026-09-02 ROADMAP entry. Members for squad, platoon, platoon_hard and patrol_brique come from DECLARED seed searches over seeds 12-15/18-19, never laundered: every seed tried is listed in seed_search, including the two that collapsed (squad_v30 and platoon_v15_seed12, both seed 12, both 0.00 at N=100 off a healthy best-checkpoint). Selection was REPORTING-FIRST where the channel separated (owner decision, 2026-09-02), following the v1.23 precedent: closed_on_root_report_rate is bimodal across seeds, and platoon is a genuine regression on BOTH axes at every seed (1.000/0.940 -> 0.880/0.580) rather than a seed draw. closed_on_root_report_rate and stacked_rate remain BEHAVIOUR MARKERS, not gates. seed_spread declares every other same-config draw the record holds.",
+  "note": "One run per doctrine scenario, same cohort/ tree, shipped defaults. v1.26 (2026-09-07): a FORCED retrain. Commit 4e82807 removed the five heard-mission scalars from the observation (OBS_DIM 351 -> 346), so every v1.25 member carries a 351-wide first layer that cannot be loaded on this tree \u2014 the shipped fleet was unevaluable, not merely superseded. 21 jobs on one frozen cohort/ tree, no --reward overrides. THE ONE REGRESSION, STATED PLAINLY: fireteam's closed_on_root_report_rate falls 0.722 -> 0.000 at N=100. fireteam is single-seed, so there is no alternative draw; the removal deleted exactly what a leader knew about who is already tasked, and this is where that cost landed. It is a BEHAVIOUR MARKER, not a gate, so it does not block the seal \u2014 but it is the headline of this fleet and is not buried. Every other scenario is at parity or better, and three IMPROVED on the same marker (squad 0.842 -> 0.908, platoon 0.580 -> 0.737, platoon_hard 0.011 -> 0.022), so the removal is not uniformly costly and the night-watch reading that it was has been retracted. Members for squad, platoon, platoon_hard and patrol_brique come from DECLARED four-seed searches, never laundered; selection is reporting-first where the channel separated, following the 2026-09-02 precedent. closed_on_root_report_rate and stacked_rate remain BEHAVIOUR MARKERS. seed_spread declares every other same-config draw the record holds, including the superseded v1.25 members.",
   "runs": {
-    "fireteam": "fireteam_v15",
-    "fireteam_defend": "fireteam_defend_v26",
-    "squad": "squad_v33_seed15",
-    "squad_recon": "squad_recon_v14",
-    "squad_screen": "squad_screen_v20",
-    "patrol_brique": "patrol_brique_v48_seed19",
-    "defend_brique": "defend_brique_v20",
-    "platoon": "platoon_v18_seed15",
-    "platoon_hard": "platoon_hard_v9_seed13"
+    "fireteam": "fireteam_v16",
+    "fireteam_defend": "fireteam_defend_v27",
+    "squad": "squad_v36_seed14",
+    "squad_recon": "squad_recon_v15",
+    "squad_screen": "squad_screen_v21",
+    "patrol_brique": "patrol_brique_v51_seed18",
+    "defend_brique": "defend_brique_v21",
+    "platoon": "platoon_v21_seed14",
+    "platoon_hard": "platoon_hard_v13_seed13"
   },
   "seed_search": {
     "squad": [
-      "squad_v30",
-      "squad_v31_seed13",
-      "squad_v32_seed14",
-      "squad_v33_seed15"
+      "squad_v34",
+      "squad_v35_seed13",
+      "squad_v36_seed14",
+      "squad_v37_seed15"
     ],
     "platoon": [
-      "platoon_v15_seed12",
-      "platoon_v16_seed13",
-      "platoon_v17_seed14",
-      "platoon_v18_seed15"
+      "platoon_v19_seed12",
+      "platoon_v20_seed13",
+      "platoon_v21_seed14",
+      "platoon_v22_seed15"
     ],
     "platoon_hard": [
-      "platoon_hard_v8_seed12",
-      "platoon_hard_v9_seed13",
-      "platoon_hard_v10_seed14",
-      "platoon_hard_v11_seed15"
+      "platoon_hard_v12_seed12",
+      "platoon_hard_v13_seed13",
+      "platoon_hard_v14_seed14",
+      "platoon_hard_v15_seed15"
     ],
     "patrol_brique": [
-      "patrol_brique_v46_seed12",
-      "patrol_brique_v47_seed18",
-      "patrol_brique_v48_seed19",
-      "patrol_brique_v49_seed14"
+      "patrol_brique_v50_seed12",
+      "patrol_brique_v51_seed18",
+      "patrol_brique_v52_seed19",
+      "patrol_brique_v53_seed14"
     ]
   },
   "seed_spread": {
@@ -46,7 +46,7 @@
       "fireteam_v11",
       "fireteam_v13_seed13",
       "fireteam_v12",
-      "fireteam_v16"
+      "fireteam_v15"
     ],
     "fireteam_defend": [
       "fireteam_defend_v11",
@@ -56,7 +56,7 @@
       "fireteam_defend_v22",
       "fireteam_defend_v24_seed13",
       "fireteam_defend_v23",
-      "fireteam_defend_v27"
+      "fireteam_defend_v26"
     ],
     "squad": [
       "squad_v8",
@@ -80,10 +80,10 @@
       "squad_ctrl_v2_seed13",
       "squad_v27",
       "squad_v28_seed13",
-      "squad_v34",
-      "squad_v35_seed13",
-      "squad_v36_seed14",
-      "squad_v37_seed15"
+      "squad_v33_seed15",
+      "squad_v30",
+      "squad_v31_seed13",
+      "squad_v32_seed14"
     ],
     "squad_recon": [
       "squad_recon_v8",
@@ -92,7 +92,7 @@
       "squad_recon_v7",
       "squad_recon_v12_seed13",
       "squad_recon_v11",
-      "squad_recon_v15"
+      "squad_recon_v14"
     ],
     "squad_screen": [
       "squad_screen_v11",
@@ -101,7 +101,7 @@
       "squad_screen_v15_seed13",
       "squad_screen_v18_seed12",
       "squad_screen_v14",
-      "squad_screen_v21"
+      "squad_screen_v20"
     ],
     "patrol_brique": [
       "patrol_brique_v6",
@@ -124,17 +124,17 @@
       "patrol_brique_v38_seed12",
       "patrol_brique_v39_seed18",
       "patrol_brique_v40_seed19",
-      "patrol_brique_v50_seed12",
-      "patrol_brique_v51_seed18",
-      "patrol_brique_v52_seed19",
-      "patrol_brique_v53_seed14"
+      "patrol_brique_v48_seed19",
+      "patrol_brique_v46_seed12",
+      "patrol_brique_v47_seed18",
+      "patrol_brique_v49_seed14"
     ],
     "defend_brique": [
       "defend_brique_v15",
       "defend_brique_v16",
       "defend_brique_v18_seed13",
       "defend_brique_v17",
-      "defend_brique_v21"
+      "defend_brique_v20"
     ],
     "platoon": [
       "platoon_v6",
@@ -144,10 +144,10 @@
       "platoon_v11_seed14",
       "platoon_v12_seed12",
       "platoon_v8",
-      "platoon_v19_seed12",
-      "platoon_v20_seed13",
-      "platoon_v21_seed14",
-      "platoon_v22_seed15"
+      "platoon_v18_seed15",
+      "platoon_v15_seed12",
+      "platoon_v16_seed13",
+      "platoon_v17_seed14"
     ],
     "platoon_hard": [
       "platoon_hard_v1_seed12",
@@ -155,10 +155,10 @@
       "platoon_hard_v3_seed14",
       "platoon_hard_v4_seed15",
       "platoon_hard_control_v1_seed13",
-      "platoon_hard_v12_seed12",
-      "platoon_hard_v13_seed13",
-      "platoon_hard_v14_seed14",
-      "platoon_hard_v15_seed15"
+      "platoon_hard_v9_seed13",
+      "platoon_hard_v8_seed12",
+      "platoon_hard_v10_seed14",
+      "platoon_hard_v11_seed15"
     ]
   },
   "referenced_history": {
@@ -171,48 +171,51 @@
     "squad_v12": "Price arm, root_done_bonus_first_claim_only=true at the shipped done_false=-0.5. The lever squad_v11 argues for: at squad_v10's own claim precision of 0.433 it leaves the FIRST truthful claim at EV +1.014 and drops the second and later to -0.284, so spam stops paying without the honest report going -EV. Single-variable against squad_v10.",
     "platoon_hard_v5_seed12": "The v1.22 platoon_hard member, and NOT a same-config draw of the v1.23 one: it was trained with the D4 rescue ARMED (rescue_max=3, rescue_patience=700, rescue_kl_scale=0.5) while every v1.23 job ran with the rescue off. That difference was NOT intended \u2014 scripts/campaigns/v1_23_fleet.jobs simply carried no rescue flags, so the campaign silently dropped a setting the shipped member had. Disclosed rather than reconciled, because the outcome argues for the new configuration: platoon_hard_v7_seed13 converges to PUBLISHABLE (gap 7) with no salvage at all, and 'the rescue is a converter, not a cure' is this project's own finding (ROADMAP 2026-08-21). It also plausibly explains why v6_seed12 missed the bar at gap 13 \u2014 no rescue to catch its mid-run dip. Any comparison between v5 and a v1.23 platoon_hard run is therefore NOT single-variable."
   },
-  "cohort_tree": "0c25b034b8221ce5d93865f20e3e28612efcb320",
+  "cohort_tree": "19a8da0881f42aca640e0e2848d73b9312880da3",
   "commits": [
-    "58f0929847dafc0ab399965d457f72f671a24b4a",
-    "c683808cf846a0c5538ed22e48a75ca219592964",
-    "ea451add41004d770a2adf32f6f349736665c18d"
+    "0001b2aecb65d143231493e1e9fb98761cde3257",
+    "2ac8a91e084a894c032f10f9db8de9a525202665",
+    "5c4acd322d5b71db2750be061a1bcf3b81f9f38c",
+    "65145ca5e156198b78c11a5f748fa453ecf770f0",
+    "a6ecb6d338b550b391349934e170c4f181bafef2",
+    "c5519e0a5dbfd63180057b7b6293d7e8ae5c1418"
   ],
   "artifacts": {
-    "fireteam_v15": {
-      "behavior_final.json": "e26f5f68f273a73fa4df2cc67ebbbef8d75b4015c7321d17de51b47b870925f9",
-      "behavior.json": "eb535507122491eb6e0a4814d6185624db14b0541b30bdea4d7b2c0e3b006707"
+    "fireteam_v16": {
+      "behavior_final.json": "f016e6a525411eaa80ff8a61607afca615cab61ec64795633f3afcf0d49ee731",
+      "behavior.json": "e7498e5b3e2aac03c51e58aab72bb00cccb9077a8f6843b6b20d3903027d6228"
     },
-    "fireteam_defend_v26": {
-      "behavior_final.json": "8d4074eb17660b6f96295bbb8149dc1d1df79c1a968833eaf8e6a26cda368864",
-      "behavior.json": "73a164a816208503f66f7c39659874cb8a8bb55b628aa1599314cdd184283db7"
+    "fireteam_defend_v27": {
+      "behavior_final.json": "5317f212a6fb9fe63b7fcbe62cf23677c580e36f2c231f5ae33ddff3ebdb0540",
+      "behavior.json": "1ecec77bf60d1848f5d245b61ed3cdcfe1ba3a279610477573d41f158d657816"
     },
-    "squad_v33_seed15": {
-      "behavior_final.json": "15e854750f83f7711362cf33c36b822c6e563e014fef3cfdc2bdaae64aa71c0e",
-      "behavior.json": "646b7a47c4ebad08015d1c98832a485fcaea4bb4051b017a5608065abb4e8cd6"
+    "squad_v36_seed14": {
+      "behavior_final.json": "cb793aa194ffbebaf1cb3070372b06ba394da61ae38502d0f4ce8a4439c9fec6",
+      "behavior.json": "4517aaa643a60e70a9c959d9e7f1da40cb3cab9659a71bbc0c62cb1dbbe2fce2"
     },
-    "squad_recon_v14": {
-      "behavior_final.json": "398e9012d1371dfcfc724fd711635221ebd3a7c234b2cb26aa5addcb8a689874",
-      "behavior.json": "b882ac90584398607e5b2a33ed2591bd952e981c8c3d62d4afa6f80eeb3c4a96"
+    "squad_recon_v15": {
+      "behavior_final.json": "df8b8d622bf4565e60a2566a66684f0f6404ef3468d06bdfda6db4d054e81c4c",
+      "behavior.json": "8f98fae34b60486c2ed00c1206a005ae85171b63910cefbd2e2df864e6472288"
     },
-    "squad_screen_v20": {
-      "behavior_final.json": "e00aa4daca2b55d5135898a5cbfd41fbfe3e95aa7cf99ea92d82d4c02cae012d",
-      "behavior.json": "d89631e0e8c51037f52581905478262f8f07f5ae0b63159b09ea8b2e84ac564e"
+    "squad_screen_v21": {
+      "behavior_final.json": "56e26cda08b2da0de5966d76930c1a992267a7f60d97f6fe2b417e18ae55be18",
+      "behavior.json": "1145e14a58f61b0e63758f6f5626ec8a71f1f3d44b87f85d5d5a5c7570536780"
     },
-    "patrol_brique_v48_seed19": {
-      "behavior_final.json": "8d531491d9365fb7f4065d6e6bdbcea51ad184db75845645f5897a70be4bc49e",
-      "behavior.json": "c2184da77042704fda8b21b136c59cca24869a83b99124b044bab8a543b19373"
+    "patrol_brique_v51_seed18": {
+      "behavior_final.json": "5385a02292efe4f9b9e6bb085e6f738fdc595592b11bae42f5eee6881a9e731d",
+      "behavior.json": "91db3be862a2a781e089f0de38e0654f01a80b27eaf0bd65429e59d0edc8bae0"
     },
-    "defend_brique_v20": {
-      "behavior_final.json": "79e9fc38d392d2ea72602032f8ef2420f7b0de4c4af3bf64a815233d40768351",
-      "behavior.json": "97e8327e288799b7598123661a0bb0012814c1e767fb061e3b797dc69fe8df90"
+    "defend_brique_v21": {
+      "behavior_final.json": "bb0ad291e8bb0051509e10271b4d0863315bd21da9fcc8efb58dfdbd63e401b3",
+      "behavior.json": "45aac2787e02a52b55e54b3a0d6cdfaabcddd286aa027b872dd2fd3ed539f4db"
     },
-    "platoon_v18_seed15": {
-      "behavior_final.json": "f4d1c6b22171f1e7775078179133798b0b1383c7a0f35ab92f25091f29224b77",
-      "behavior.json": "95fc4dcb5ab6a53780a4531df145970db7ab1c3de81e70c7aba93e7ecb6aa154"
+    "platoon_v21_seed14": {
+      "behavior_final.json": "2b4c09297cbf7c189a2a6fad3b583598e69bbc116ad454417a2c2dcc717bcb8a",
+      "behavior.json": "98be044b8125996c3d5275604de21b84d1883b4aa75791626b9d95f49e4e881e"
     },
-    "platoon_hard_v9_seed13": {
-      "behavior_final.json": "6f7e06269ff926c02cf4a662e16432ad191549ce7d3ee7227b7a0ec7bdc29b0b",
-      "behavior.json": "c3d14f761e3220ba4726234fb0d811590549ae4bf64c65845615241c07835ebf"
+    "platoon_hard_v13_seed13": {
+      "behavior_final.json": "d09db4e40924909fd44eec3c6e2970b5e9eb93780f676df910368462b8ac3223",
+      "behavior.json": "97fa6e7bb2727fc402b224e9604af4d90ec821fc209de2b987c8d1b9ab728af4"
     }
   },
   "exceptions": {}
