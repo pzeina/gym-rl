@@ -231,3 +231,105 @@ def test_parse_sitrep_ignores_other_traffic():
 
     assert parse_sitrep(format_contact("TL1", "RFN1", 2, (5, 5))) is None
     assert parse_sitrep(format_order("SL1", "TL1", MissionType.DEFEND, "ALPHA")) is None
+
+
+# ---------------------------------------------------------------------- #
+# report-kind parsers (epistream HOST_REQUESTS item 3): every report a
+# formatter can put on the net parses back through its shipped inverse
+# ---------------------------------------------------------------------- #
+
+
+def test_contact_round_trips_through_its_parser():
+    from cohort.core.language import format_contact, parse_contact
+
+    text = format_contact("SL1", "TL1", 3, (14, 7))
+    assert parse_contact(text) == {"grid": (14, 7), "count": 3}
+
+
+def _done_target(mission):
+    """The target shape each mission's phrase takes (mirrors mission_phrase)."""
+    if mission is MissionType.SUPPORT:
+        return "TL1"
+    if mission in NEEDS_CONTROL:
+        return "GOLD"
+    if mission in NEEDS_OBJECTIVE:
+        return "BRAVO"
+    return None
+
+
+@pytest.mark.parametrize("mission", list(MissionType))
+def test_done_round_trips_for_every_mission(mission):
+    from cohort.core.language import format_done, parse_done
+
+    target = _done_target(mission)
+    parsed = parse_done(format_done("SL1", "TL1", mission, target))
+    assert parsed == {"mission": mission, "target": target}
+
+
+def test_done_round_trips_phase_line_control():
+    from cohort.core.language import format_done, parse_done
+
+    text = format_done("SL1", "TL1", MissionType.ADVANCE, "AMBER")
+    assert parse_done(text) == {"mission": MissionType.ADVANCE, "target": "AMBER"}
+
+
+@pytest.mark.parametrize("mission", list(MissionType))
+def test_done_confirm_round_trips_for_every_mission(mission):
+    from cohort.core.language import format_done_confirm, parse_done_confirm
+
+    target = _done_target(mission)
+    parsed = parse_done_confirm(format_done_confirm("TL1", "SL1", mission, target))
+    assert parsed == {"mission": mission, "target": target}
+
+
+def test_done_reject_parses_and_stays_distinct_from_liaison_negative():
+    from cohort.core.language import format_done_reject, format_negative, parse_done_reject
+
+    assert parse_done_reject(format_done_reject("TL1", "SL1")) == {"rejected": True}
+    # the liaison 'NEGATIVE, CANNOT COMPLY' receipt is a different speech act
+    assert parse_done_reject(format_negative("SL1", "TL2")) is None
+
+
+def test_casualty_and_trap_round_trip():
+    from cohort.core.language import format_casualty, format_trap, parse_casualty, parse_trap
+
+    assert parse_casualty(format_casualty("RFN2")) == {"callsign": "RFN2"}
+    assert parse_trap(format_trap("RFN2", (3, 12))) == {"callsign": "RFN2", "grid": (3, 12)}
+
+
+def test_support_end_round_trips():
+    from cohort.core.language import format_support_end, parse_support_end
+
+    text = format_support_end("SL1", "TL2", "TL1")
+    assert parse_support_end(text) == {"supported": "TL1"}
+
+
+def test_report_parsers_ignore_other_traffic():
+    """No parser fires on another kind's line — the net stays unambiguous."""
+    from cohort.core.language import (
+        format_casualty,
+        format_order,
+        format_receipt,
+        format_sitrep,
+        format_support_end,
+        parse_casualty,
+        parse_contact,
+        parse_done,
+        parse_done_confirm,
+        parse_done_reject,
+        parse_support_end,
+        parse_trap,
+    )
+
+    other = [
+        format_sitrep("SL1", "TL1", 80, 5, (1, 2), in_cover=True),
+        format_order("SL1", "TL1", MissionType.SEIZE, "ALPHA"),
+        format_receipt("SL1", "RFN1", "TL2", False),
+    ]
+    parsers = [parse_contact, parse_done, parse_done_confirm, parse_done_reject, parse_trap]
+    for text in other:
+        for parser in parsers:
+            assert parser(text) is None, (parser.__name__, text)
+    # a SUPPORT ENDED line names a down station but is not a CASUALTY broadcast
+    assert parse_casualty(format_support_end("SL1", "TL2", "TL1")) is None
+    assert parse_support_end(format_casualty("TL1")) is None

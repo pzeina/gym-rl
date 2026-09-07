@@ -558,6 +558,127 @@ def format_trap(callsign: str, pos: tuple[int, int]) -> str:
     return f"ALL STATIONS: {callsign} HIT A DEVICE AT {grid_ref(pos)}. OUT."
 
 
+# --------------------------------------------------------------------- #
+# inverse parsers for the report kinds (epistream HOST_REQUESTS item 3)
+# --------------------------------------------------------------------- #
+# Every parser below is its formatter's inverse over exactly the fields the
+# formatter takes, returning None when the line is some other kind — the
+# same contract as parse_sitrep / parse_acoustic_contact, shipped so a
+# monitor reading the net never hand-rolls a regex the host already owns.
+# They read what the SPEAKER SAID, never ground truth: a CONTACT grid is a
+# reported position, not an enemy's cell.
+
+#: callsigns as the net writes them ("TL1", "RFN2"; digitless forms allowed)
+_CS = r"[A-Z]+\d*"
+
+_CONTACT_RE = re.compile(
+    r"CONTACT,\s*GRID\s*(\d{2})(\d{2}),\s*(\d+)\s*x\s*ENEMY",
+    re.IGNORECASE,
+)
+
+
+def parse_contact(text: str) -> dict | None:
+    """Inverse of :func:`format_contact`: ``{"grid", "count"}`` or None.
+
+    The grid is the freshest held sighting the speaker chose to report and
+    the count the number of entries it holds — the speaker's picture, which
+    may be stale or relayed, never a live enemy position.
+    """
+    m = _CONTACT_RE.search(text)
+    if m is None:
+        return None
+    return {"grid": (int(m.group(1)), int(m.group(2))), "count": int(m.group(3))}
+
+
+def parse_mission_phrase(phrase: str) -> dict | None:
+    """Inverse of :func:`mission_phrase`: ``{"mission", "target"}`` or None.
+
+    ``target`` carries whatever the phrase names — objective, supported
+    callsign, or control measure — exactly as :func:`mission_phrase` takes it.
+    """
+    p = phrase.strip().upper().rstrip(".")
+    if p == "RALLY ON ME":
+        return {"mission": MissionType.RALLY, "target": None}
+    if p == "HOLD POSITION":
+        return {"mission": MissionType.HOLD, "target": None}
+    m = re.fullmatch(rf"SUPPORT\s+({_CS})", p)
+    if m:
+        return {"mission": MissionType.SUPPORT, "target": m.group(1)}
+    m = re.fullmatch(r"COVER FLANK OBJ\s+([A-Z]+)", p)
+    if m:
+        return {"mission": MissionType.COVER, "target": m.group(1)}
+    m = re.fullmatch(r"ADVANCE TO (?:WP|PL)\s+([A-Z]+)", p)
+    if m:
+        return {"mission": MissionType.ADVANCE, "target": m.group(1)}
+    m = re.fullmatch(r"([A-Z]+)\s+OBJ\s+([A-Z]+)", p)
+    if m and m.group(1) in MissionType.__members__:
+        return {"mission": MissionType[m.group(1)], "target": m.group(2)}
+    return None
+
+
+_DONE_RE = re.compile(r":\s*(?P<phrase>.+?)\s*\u2014\s*COMPLETE\.\s*OVER\.", re.IGNORECASE)
+_DONE_CONFIRM_RE = re.compile(r"ROGER,\s*(?P<phrase>.+?)\s+CONFIRMED\.", re.IGNORECASE)
+_DONE_REJECT_RE = re.compile(r"NEGATIVE,\s*CONTINUE MISSION\.", re.IGNORECASE)
+
+
+def parse_done(text: str) -> dict | None:
+    """Inverse of :func:`format_done`: ``{"mission", "target"}`` or None."""
+    m = _DONE_RE.search(text)
+    if m is None:
+        return None
+    return parse_mission_phrase(m.group("phrase"))
+
+
+def parse_done_confirm(text: str) -> dict | None:
+    """Inverse of :func:`format_done_confirm`: ``{"mission", "target"}`` or None."""
+    m = _DONE_CONFIRM_RE.search(text)
+    if m is None:
+        return None
+    return parse_mission_phrase(m.group("phrase"))
+
+
+def parse_done_reject(text: str) -> dict | None:
+    """Inverse of :func:`format_done_reject`: ``{"rejected": True}`` or None.
+
+    The line carries no fields — the mission simply stands — so the dict
+    records only that a rejection was spoken (kept truthy on purpose;
+    distinct from the liaison 'NEGATIVE, CANNOT COMPLY' receipt).
+    """
+    return {"rejected": True} if _DONE_REJECT_RE.search(text) else None
+
+
+_CASUALTY_RE = re.compile(
+    rf"ALL STATIONS:\s*({_CS})\s+IS DOWN\.\s*OUT\.", re.IGNORECASE
+)
+_TRAP_RE = re.compile(
+    rf"ALL STATIONS:\s*({_CS})\s+HIT A DEVICE AT\s*GRID\s*(\d{{2}})(\d{{2}})\.",
+    re.IGNORECASE,
+)
+_SUPPORT_END_RE = re.compile(
+    rf"SUPPORT ENDED,\s*({_CS})\s+IS DOWN\.", re.IGNORECASE
+)
+
+
+def parse_casualty(text: str) -> dict | None:
+    """Inverse of :func:`format_casualty`: ``{"callsign"}`` or None."""
+    m = _CASUALTY_RE.search(text)
+    return {"callsign": m.group(1).upper()} if m else None
+
+
+def parse_trap(text: str) -> dict | None:
+    """Inverse of :func:`format_trap`: ``{"callsign", "grid"}`` or None."""
+    m = _TRAP_RE.search(text)
+    if m is None:
+        return None
+    return {"callsign": m.group(1).upper(), "grid": (int(m.group(2)), int(m.group(3)))}
+
+
+def parse_support_end(text: str) -> dict | None:
+    """Inverse of :func:`format_support_end`: ``{"supported"}`` or None."""
+    m = _SUPPORT_END_RE.search(text)
+    return {"supported": m.group(1).upper()} if m else None
+
+
 def format_taking_command(new_cs: str, dead_cs: str) -> str:
     """Broadcast when succession occurs."""
     return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."
