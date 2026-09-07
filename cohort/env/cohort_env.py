@@ -27,6 +27,7 @@ from cohort.core import acoustics as snd
 from cohort.core import cohesion
 from cohort.core import language as lang
 from cohort.core import liaison as lia
+from cohort.core import perception as per
 from cohort.core.missions import (
     HOLDS_GROUND,
     IN_POSITION_RADIUS,
@@ -231,6 +232,10 @@ class CohortEnv(ParallelEnv):
         self.last_sound_events: list[snd.SoundEvent] = []  # last completed step's
         self._pending_enemy_sounds: list[snd.SoundEvent] = []  # not yet heard by OpFor
         self._agent_cues: dict[str, list[snd.AcousticCue]] = {}  # bounded coarse memory
+        #: sight's analog of the cue memory (core/perception.py): host-side
+        #: telemetry for the public perception() seam — never observed, never
+        #: rewarded, never masked on
+        self._visual_contacts: dict[str, list[per.VisualContact]] = {}
         self._own_sound: dict[str, tuple[str, float, int]] = {}  # cs → (kind, radius, step)
         #: audit metadata parallel to ``last_messages`` (medium + actual
         #: semantic hearers). Trace/oracle material — Message itself stays
@@ -271,6 +276,9 @@ class CohortEnv(ParallelEnv):
         self._successions: dict[int, int] = {}
         #: this step's packet lifecycle events (trace/metrics bookkeeping)
         self._packet_log: list[dict] = []
+        #: episode-durable copy of the packet events for the public
+        #: packet_events() seam; _packet_log itself stays per-step (trace)
+        self._packet_events: list[dict] = []
 
     @property
     def _liaison_on(self) -> bool:
@@ -491,6 +499,7 @@ class CohortEnv(ParallelEnv):
         self.last_sound_events = []
         self._pending_enemy_sounds = []
         self._agent_cues = {cs: [] for cs in self._callsigns} if self._sound_on else {}
+        self._visual_contacts = {cs: [] for cs in self._callsigns}
         self._own_sound = {}
         self.last_message_meta = []
         self._picture_changed_step = {}
@@ -507,6 +516,7 @@ class CohortEnv(ParallelEnv):
         self._liaison = {}
         self._successions = {}
         self._packet_log = []
+        self._packet_events = []
 
         # OPORD from HQ to the senior agent.
         root = self.roster.root()
@@ -952,6 +962,7 @@ class CohortEnv(ParallelEnv):
         # becomes at most one coarse cue per living listener, entering the
         # observations assembled below — i.e. the NEXT Blue decision. ---
         self._deliver_sounds_to_blue()
+        self._update_visual_contacts()
         self.last_sound_events = list(self._step_sounds)
 
         # --- liaison duties (§4): loss, expiry, vacant positions, progress ---
@@ -2760,6 +2771,27 @@ class CohortEnv(ParallelEnv):
                     cues.append(cue)
             self._agent_cues[s.callsign] = snd.prune_cues(cues, step)
 
+    def _update_visual_contacts(self) -> None:
+        """Sight's analog of :meth:`_deliver_sounds_to_blue` — but telemetry.
+
+        Coarsens each living observer's visible-enemy slots (already computed
+        for its observation) into the bounded per-(sector, band) contact
+        memory of :mod:`cohort.core.perception`, for the public
+        :meth:`perception` seam. Host-side record ONLY: nothing reads it back
+        into an observation, a reward, a mask or the OpFor, and it consumes
+        no randomness — removing this call changes no agent's behavior.
+        """
+        step = self._step_count
+        for s in self.roster.soldiers:
+            mem = self._visual_contacts.setdefault(s.callsign, [])
+            if not s.alive:
+                mem.clear()
+                continue
+            fresh = per.observe_contacts(
+                s.pos, [e.pos for e in self._visible_enemies(s)], step
+            )
+            self._visual_contacts[s.callsign] = per.merge_contacts(mem, fresh, step)
+
     def _audible_to(self, listener: Soldier, sender_id: int) -> bool:
         """Can ``listener`` hear a transmission from ``sender_id``?
 
@@ -2926,11 +2958,13 @@ class CohortEnv(ParallelEnv):
         return self._liaison_on and soldier.id not in self._outbox and soldier.id not in self._liaison
 
     def _log_packet(self, event: str, packet: lia.MessagePacket, **extra: object) -> None:
-        self._packet_log.append(
-            {"event": event, "packet": packet.id, "kind": packet.kind, "origin": packet.origin_cs,
-             "recipient": packet.recipient_cs, "created": packet.created_step,
-             "step": self._step_count, **extra}
-        )
+        entry = {
+            "event": event, "packet": packet.id, "kind": packet.kind, "origin": packet.origin_cs,
+            "recipient": packet.recipient_cs, "created": packet.created_step,
+            "step": self._step_count, **extra,
+        }
+        self._packet_log.append(entry)
+        self._packet_events.append(entry)
 
     def _prepare_packet(
         self, soldier: Soldier, kind: str, recipient: Soldier, text: str, *,
@@ -4241,6 +4275,81 @@ class CohortEnv(ParallelEnv):
         from cohort.core.oracle import observe
 
         return observe(self)
+
+    def perception(self, callsign: str) -> dict:
+        """What this agent perceives, as one public per-observer product.
+
+        The seam an external epistemic monitor reads (epistream
+        HOST_REQUESTS): everything the host records about what ``callsign``
+        senses, coarse and listener-attributed, with NO ground truth — no
+        oracle, no true cells, no source identities. Covers the two private
+        attributes monitors used to reach for (``_agent_cues``,
+        ``_visual_contacts``) so nothing outside the class needs them.
+
+        Keys:
+
+        * ``cues`` — acoustic memory (§3.6.3), copies of the live records.
+        * ``visual_contacts`` — sight's analog (core/perception.py).
+        * ``friendly`` — per related teammate, coarsened to the observer's
+          own frame: ``seen_now``, eight-way ``bearing``, ``range_band``,
+          ``age`` in steps. Under voice_only this reads the perception-decay
+          state (§3.7); on a radio net positional telemetry is live, so age
+          is 0 and the coarsening is of live positions.
+        * ``self`` — own condition. SELF-KNOWLEDGE IS ASSUMED, not sensed:
+          an agent directly observes its own state (the own-state block of
+          its observation vector), so this record states that assumption
+          explicitly rather than leaving self-perception silently absent.
+
+        Mutating the returned structure never touches env state.
+        """
+        soldier = self.roster.by_callsign.get(callsign)
+        if soldier is None:
+            msg = f"No station {callsign!r} on the roster"
+            raise KeyError(msg)
+        friendly: dict[str, dict] = {}
+        if soldier.alive:
+            decayed = self._friendly_view(soldier)
+            if decayed is not None:  # voice_only: last-seen state, aging
+                for oid, (seen, pos, age) in decayed.items():
+                    other = self.roster.by_id[oid]
+                    friendly[other.callsign] = {
+                        "seen_now": bool(seen),
+                        "bearing": snd.bearing_sector(soldier.pos, tuple(pos)),
+                        "range_band": snd.distance_band(dist(soldier.pos, tuple(pos))),
+                        "age": int(age),
+                    }
+            else:  # radio net: live positional telemetry, coarsened
+                for other in self._related(soldier):
+                    friendly[other.callsign] = {
+                        "seen_now": cohesion.friendly_visible(self.world, soldier, other),
+                        "bearing": snd.bearing_sector(soldier.pos, other.pos),
+                        "range_band": snd.distance_band(dist(soldier.pos, other.pos)),
+                        "age": 0,
+                    }
+        return {
+            "step": self._step_count,
+            "callsign": callsign,
+            "alive": soldier.alive,
+            "cues": list(self._agent_cues.get(callsign, [])),
+            "visual_contacts": list(self._visual_contacts.get(callsign, [])),
+            "friendly": friendly,
+            "self": {
+                "alive": soldier.alive,
+                "pos": tuple(soldier.pos),
+                "health": int(soldier.health),
+                "ammo": int(soldier.ammo),
+            },
+        }
+
+    def packet_events(self, since_step: int = 0) -> list[dict]:
+        """Episode-durable copy of the liaison packet event log.
+
+        ``_packet_log`` is cleared at the top of every step for the trace
+        writer, so a monitor that misses one drain loses the step — this
+        accessor accumulates the same entries for the whole episode (cleared
+        on reset) and hands back copies, filtered to ``step >= since_step``.
+        """
+        return [dict(ev) for ev in self._packet_events if ev["step"] >= since_step]
 
     # ------------------------------------------------------------------ #
     # rendering
