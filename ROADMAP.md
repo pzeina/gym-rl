@@ -44,6 +44,15 @@ grantable ones are in, the design ones are queued, and the reply is
   stated as the trade. See the progress-log entry of this date.
 - **Boards say PUBLISH PENDING** (fleet, program, gallery) since v17
   landed; `/boards` closes it in one step.
+- **fireteam seed spread IN FLIGHT** (launched 2026-09-07 17:44 by the
+  autocycle): `fireteam_v18_seed14` and `fireteam_v19_seed15`, exact member
+  config (3.5M steps, defaults) on the sealed tree `19a8da08`, detached in
+  parallel. Why: the published member `fireteam_v17_seed13` repairs reporting
+  (0.000 -> 0.948) but triples root death (5% -> 15%), and fireteam held only
+  seeds 12/13 at this config — the spread asks whether the repair is
+  seed-robust and whether a draw exists without the root-death cost. Evidence
+  only; no member changes without the usual N=100 comparison. On landing:
+  declare both in seed_spread, digest, verdict.
 - **epistream's fork is stale** — `~/Documents/gym-rl-fork` predates
   `6b75cce`; the response doc asks them to re-sync before consuming item 3.
 
