@@ -428,7 +428,7 @@ correct was a hand-kept number that drifted from its artifact; this one cannot.
 <!-- BASELINE-TABLE:START -->
 | scenario | run | success (final, N) | peak (best ckpt) | give-back | root death | timeout | announced | root-reported | gates |
 |---|---|---|---|---|---|---|---|---|---|
-| `fireteam` | `fireteam_v16` | 0.95 ± 0.04 (N=100) | 0.93 ± 0.05 (N=100) | 5.4 pt | 5% | 0% | 95/95 | 0% | pass |
+| `fireteam` | `fireteam_v17_seed13` | 0.97 ± 0.03 (N=100) | 0.93 ± 0.05 (N=100) | 3.5 pt | 15% | 0% | 97/97 | 95% | pass |
 | `fireteam_defend` | `fireteam_defend_v27` | 0.98 ± 0.03 (N=100) | 0.98 ± 0.03 (N=100) | 0.9 pt | 9% | 2% | 98/98 | 99% (sitrep, 0.030/sitrep) | pass |
 | `squad` | `squad_v36_seed14` | 0.98 ± 0.03 (N=100) | 0.97 ± 0.03 (N=100) | 3.0 pt | 18% | 1% | 98/98 | 91% | pass |
 | `squad_recon` | `squad_recon_v15` | 0.99 ± 0.02 (N=100) | 0.99 ± 0.02 (N=100) | 1.7 pt | 18% | 0% | 99/99 | 89% | pass |

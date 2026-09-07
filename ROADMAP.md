@@ -38,10 +38,10 @@ grantable ones are in, the design ones are queued, and the reply is
 
 ### Loose ends
 
-- **`fireteam_v17_seed13` may be a publish candidate** vs `fireteam_v16`
-  (member: 0.95 succ, root-report 0.000 — the v1.26 headline regression).
-  v17's best-ckpt behavior.json reads 0.85 ± 0.16 at N=20; needs the
-  /publish N=100 evaluation before any claim. Declared, not judged.
+- **`fireteam_v17_seed13` IS the fireteam member now** (published
+  2026-09-07 evening, N=100 both checkpoints): final 0.97 ± 0.03, the
+  root-report regression repaired (0.000 → 0.948), root death 5% → 15%
+  stated as the trade. See the progress-log entry of this date.
 - **Boards say PUBLISH PENDING** (fleet, program, gallery) since v17
   landed; `/boards` closes it in one step.
 - **epistream's fork is stale** — `~/Documents/gym-rl-fork` predates
@@ -10742,3 +10742,21 @@ deliberately deferred (`docs/vision.md` §2c).
   concurrent acoustics working tree (OBS_DIM 220→328) — that is the
   breaking cycle's retrain to resolve, and the seal/audit here ran with
   the loadable check off, saying so.
+
+- **2026-09-07** — **`fireteam_v17_seed13` published as the fireteam member**
+  (was `fireteam_v16`), evaluated N=100 both checkpoints. Final policy
+  0.97 ± 0.03 vs the incumbent's 0.95 ± 0.04 — overlapping CIs, so this is
+  a MATCH on success, not a claimed improvement. What it actually buys:
+  the v1.26 headline regression is repaired — `closed_on_root_report_rate`
+  0.000 → 0.948 on the final policy, back above the 0.5 reporting floor —
+  and `false_complete_rate` falls 0.875 → 0.283. The honest caveat, stated
+  not buried: **root death triples, 5% → 15%** — this policy's human TL
+  moves with the assault (best-ckpt human-in-action 8% → 84%) and pays for
+  it; no gate covers root death, so it ships as a cost in the table's own
+  column. Best-ckpt panel for the record: 0.93 ± 0.05 both runs, v17
+  report precision 0.45 → 0.90, cohesion restored (nearest-teammate 7.3 →
+  2.3 cells, disconnected share 0.80 → 0.045), and a DONE-claim spam wart
+  at the best ckpt (6.94 claims/claiming-episode, 72% false) that the
+  final policy mostly outgrows. `fireteam_v16` stays declared in
+  seed_spread (evidence, archivable). Manifest re-sealed at cohort/
+  `19a8da08`; gate exit 0; README row regenerated.
