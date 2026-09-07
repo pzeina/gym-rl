@@ -1,118 +1,89 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-03 morning, **NIGHT WATCH: 6 of 21 v1.26 jobs landed. The order-loop cost is REAL but it is NOT what the handoff predicted — only `fireteam` broke, and the surviving explanation is mission type, not re-tasking volume. The campaign needs ~23h more.**)
+## ⟳ Session handoff — resume here (2026-09-07, **v1.26 SHIPPED — the fleet is loadable again, sealed with zero exceptions. One real regression (`fireteam` reporting 0.722 -> 0.000) and one retraction: the night watch's fleet-wide order-loop alarm was an artefact of comparing across N.**)
 
-### The campaign is 6/21 and will run most of today
+### What shipped
 
-`scripts/campaigns/v1_26_fleet.jobs`, queue **pid 75021**, healthy. Landed:
-`fireteam_v16`, `fireteam_defend_v27`, `squad_v34`, `squad_recon_v15`,
-`squad_screen_v21`, `defend_brique_v21` (45-72 min each). Now on
-`platoon_v19_seed12`.
+`runs/BASELINE.json` is **v1.26**: nine members on `cohort/` tree `19a8da08`,
+sealed, **zero exceptions**, README regenerated, 23 superseded runs archived.
 
-**Revised ETA: ~23h remaining, not the ~14h the night orders assumed.** The
-eight `platoon`/`platoon_hard` jobs are ~2.3h each, not 40 min — that estimate
-was made from `fireteam` timings before any big-org job had run. Expect the
-queue to drain around **05:00 on 2026-09-04**. `cohort/` stays FROZEN at
-`19a8da08` until it does.
+This swap was **forced, not chosen**. `4e82807` took OBS_DIM 351 -> 346, so
+every v1.25 member carried a 351-wide first layer that cannot load on this
+tree. `baseline.py` had been refusing on all nine and nothing could be
+published against the shipped fleet.
 
-### The predicted cost is real, and it landed on exactly one scenario
+| scenario | member | succ | root-report |
+|---|---|---|---|
+| fireteam | `fireteam_v16` | 0.95 | **0.000** |
+| fireteam_defend | `fireteam_defend_v27` | 0.98 | 0.99 |
+| squad | `squad_v36_seed14` | 0.98 | 0.91 |
+| squad_recon | `squad_recon_v15` | 0.99 | 0.89 |
+| squad_screen | `squad_screen_v21` | 0.99 | 0.99 |
+| patrol_brique | `patrol_brique_v51_seed18` | 0.99 | 0.80 |
+| defend_brique | `defend_brique_v21` | 1.00 | 0.99 |
+| platoon | `platoon_v21_seed14` | 0.99 | 0.74 |
+| platoon_hard | `platoon_hard_v13_seed13` | 0.92 | 0.02 |
 
-The handoff predicted the removal would bill the order loop rather than
-success. In `fireteam` it did, hard — and this is the one run anchored at
-N=100 on both sides:
+### The one regression, and it is not hidden
 
-| `fireteam` | v15 (obs 351) | v16 (obs 346) |
-|---|---|---|
-| success | 0.970 | 0.950 |
-| `closed_on_root_report_rate` | 0.722 | **0.000** |
-| `retasks_per_episode` | 2.100 | **3.270** |
-| `obedience_latency_mean` | 1.682 | 1.965 |
+**`fireteam`'s `closed_on_root_report_rate` falls 0.722 -> 0.000 at N=100.**
+`fireteam` is single-seed, so there is no other draw to take. The removal
+deleted exactly what a leader knew about who is already tasked, and this is
+where that cost landed. It is a behaviour MARKER, not a gate, so it does not
+block the seal — but it is this fleet's headline, it is in the manifest note,
+and the README prints it.
 
-**It is not a seed draw.** `fireteam`'s six prior runs across two seeds and
-several trees span 0.722-1.000 on reporting and have never approached zero;
-re-tasking spans 0.61-2.10 against v16's 3.27. v16 is outside the entire
-recorded range on both, in the predicted direction.
+### RETRACTION: the night watch over-read this
 
-### But it is the ONLY scenario that broke, and that killed my hypothesis
+The 2026-09-03 watch concluded the removal broke the order loop fleet-wide,
+with SEIZE mission type as the surviving mechanism. **That is retracted.** Two
+faults, both mine:
 
-I registered a hypothesis at 02:05 — cost scales with a scenario's baseline
-re-tasking rate — **before** the scenarios that test it landed. It is dead:
+1. Every comparison was **N=20 training-exit smoke tests against N=100
+   incumbents** — the across-N comparison this repo refuses everywhere else.
+2. In the bimodal scenarios the comparator was picked by **highest N at that
+   seed** rather than by generation. One was
+   `patrol_brique_v28_rdb1_seed18`, which carries a `--reward` override.
 
-| scenario | org | root mission | baseline retasks/ep | verdict |
-|---|---|---|---|---|
-| **`fireteam`** | fireteam | **SEIZE** | 2.10 | **TOTAL COLLAPSE** |
-| `fireteam_defend` | fireteam | DEFEND | 0.16 | no degradation |
-| `defend_brique` | fireteam | DEFEND | 1.46 | no degradation |
-| `squad_screen` | squad | SCREEN | 4.18 | none (reporting improved to 1.000) |
-| `squad_recon` | squad | RECON | 6.46 | mild dip 0.917->0.800, within noise |
+At matched N=100 against the runs v1.26 actually replaces, the reporting
+channel moves in BOTH directions and **more seeds gained it than lost it** —
+`squad` 0.842 -> 0.908, `platoon` 0.580 -> 0.737, `platoon_hard` 0.011 -> 0.022.
+The SEIZE story was built on a readable set of five in which only one SEIZE
+scenario was legible; seed-matching the other four contradicts it.
 
-Not monotone in re-tasking rate — `squad_recon` re-tasks three times as much as
-`fireteam` and held. **What survives is mission type**, and it was tested
-rather than assumed: `defend_brique` shares `org=fireteam` with `fireteam` and
-differs only in root mission. It was registered at 05:50 as the discriminator
-before it landed, and it did not collapse — **so org is refuted.**
+### What survives the correction
 
-### An independent structural fact, from the committed record
+**`platoon_hard`'s re-tasking rises in 4 of 4 seeds** — +17.2, +20.6, +12.1,
++9.6 per episode (+35% to +73%). The only unanimous effect in the campaign,
+and the one consistent with the deepest hierarchy losing subordinate-mission
+telemetry. Success there is flat (0.88 -> 0.91), so it is a coordination cost
+paid without a win-rate cost.
 
-| channel | scenarios |
-|---|---|
-| stable (no zero ever recorded) | `fireteam` (SEIZE), `fireteam_defend`, `defend_brique`, `squad_recon`, `squad_screen` |
-| bimodal / floored | `squad`, `patrol_brique`, `platoon` (all SEIZE), `platoon_hard` (SEIZE, never > 0.011) |
-
-**Every scenario with an unstable or floored reporting channel is a SEIZE
-scenario, and every non-SEIZE scenario has a stable one — four for four both
-ways.** This is a property of the shipped fleet, visible before v1.26, and
-worth attention on its own. It also means `fireteam` was the *last stable SEIZE
-channel*, and the removal took it.
-
-**The honest ceiling: n=1 on the SEIZE side.** The other four SEIZE scenarios
-cannot corroborate because their channels are already broken — consistent with
-the story, but not independent evidence for it. This is a well-posed question,
-not a demonstrated mechanism.
-
-### What can and cannot be read from the rest of the campaign
-
-Decided from the record, before the data: `squad`, `platoon`, `patrol_brique`
-and `platoon_hard` **cannot be read on `closed_on_root_report_rate`** (bimodal
-or floored), and **cannot be read on `retasks_per_episode` either** — their
-historical spreads are 0.04-12.39, 3.46-43.03, 0.05-27.80 and 0.30-42.39, so
-almost any value falls inside. `squad_v34` looked like a confirmation
-(0.842 -> 0.000) and is not one: it is seed 12 against a seed-15 comparator, and
-`squad_v16` at obs 351 already read 0.000. **`squad` becomes readable only when
-its seed-matched partners land as jobs 19-21.**
-
-### Flagged, not acted on
-
-- `squad_recon` `human_death_rate` **0.040 -> 0.350** — a large welfare
-  regression in a reconnaissance scenario, unrelated to the order loop.
-- `obedience_latency_mean` moved outside its band in three of five, in both
-  directions. Not a clean signal; no weight put on it.
-
-### One tooling fix, and it was load-bearing for the night
-
-A run that is still training tripped the `seed_spread` completeness scan but
-could not be declared — "declared => tracked" wants artifacts that a live
-trainer is still rewriting. Over a 21-job queue the only escapes were
-committing mid-training checkpoints the run supersedes, or a red suite for the
-length of the campaign. A live trainer holds nothing yet and becomes a draw at
-exit; liveness reads through `train_status` so the audit and the board cannot
-disagree, and it fails closed. Both directions tested (`0001b2a`).
+That is a clean, narrow finding where the night had a broad wrong one.
 
 ### State
 
-**1273 passed**, ruff clean, everything pushed to `multi-agent-dev`.
-`baseline.py` refuses with exactly nine problems — every v1.25 member unloadable
-under the current spaces — which is the documented cost of the 351 -> 346 change
-and not a new fault. All six landed runs declared in `seed_spread` and tracked.
-**Boards will read PUBLISH PENDING** → `/boards`.
+**1273 passed**, ruff clean, `baseline.py` **OK with zero exceptions**, all
+pushed to `multi-agent-dev`. `main` is at `c683808` (the CI fix); the v1.25 and
+v1.26 work is all on the dev branch and merging is yours.
+**Boards PUBLISH PENDING** → `/boards`.
+
+### Carried forward, all yours
+
+- **The buddy-pair pricing question** (v1.24) — still unanswered; the
+  `mean_second_nearest_teammate_dist` statistic is registered for the next
+  cycle's bar but no cycle has run on it.
+- **`patrol_brique`'s vanished denominator** — the human parked 28 cells out.
+- **`fireteam`'s mute root** — the new one. A second `fireteam` seed would say
+  whether 0.000 is the tree or the draw; the scenario has only ever been run at
+  seeds 12 and 13, and 13 has never been tried on this tree.
+- **`platoon_hard`'s re-tasking cost** — whether a leader that cannot see
+  subordinate missions is worth the observation saving is a design call.
 
 ### Next command
 
-`/train-status`. Nothing needs a decision until more of the queue drains.
-Carried forward unresolved: the buddy-pair pricing question, `patrol_brique`'s
-vanished denominator, and now **whether SEIZE root missions are why the
-reporting channel is fragile fleet-wide** — the sharpest question the night
-produced, and a design question, so it is yours.
+`/boards`, then decide the `fireteam` seed question above — a single
+`--seed 13` run settles it for ~40 min of wall-clock and zero tokens.
 
 ## ⟳ Previous handoff (2026-09-02, **v1.25 SHIPPED — nine members on ONE tree, zero exceptions, and it makes NO dispersion claim. The v1.24 bar stays a MISS; its guard is amended for the NEXT cycle only.**)
 
