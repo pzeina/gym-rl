@@ -44,15 +44,16 @@ grantable ones are in, the design ones are queued, and the reply is
   stated as the trade. See the progress-log entry of this date.
 - **Boards say PUBLISH PENDING** (fleet, program, gallery) since v17
   landed; `/boards` closes it in one step.
-- **fireteam seed spread IN FLIGHT** (launched 2026-09-07 17:44 by the
-  autocycle): `fireteam_v18_seed14` and `fireteam_v19_seed15`, exact member
-  config (3.5M steps, defaults) on the sealed tree `19a8da08`, detached in
-  parallel. Why: the published member `fireteam_v17_seed13` repairs reporting
-  (0.000 -> 0.948) but triples root death (5% -> 15%), and fireteam held only
-  seeds 12/13 at this config — the spread asks whether the repair is
-  seed-robust and whether a draw exists without the root-death cost. Evidence
-  only; no member changes without the usual N=100 comparison. On landing:
-  declare both in seed_spread, digest, verdict.
+- **fireteam seed spread LANDED and judged (2026-09-09)** —
+  `fireteam_v18_seed14` MUTE/root-safe, `fireteam_v19_seed15` REPORTS/root
+  death 0.25: fireteam is bimodal (3-of-5 known draws report) and the
+  root-death cost travels with the reporting mode (human-forward 0.85+ in
+  reporting draws vs 0.00 mute), not with seed 13. v17 stays the member; both
+  draws declared in seed_spread (cross-tree `30fc2975` — the epistream
+  commits moved `cohort/` text, pinned behavior-identical). Full verdict and
+  an open mechanism lead (root may need own-LOS evidence to close — check
+  whether root claims follow own contact or subordinate DONE traffic in the
+  eval transcripts) in the 2026-09-09 progress-log entry.
 - **epistream's fork is stale** — `~/Documents/gym-rl-fork` predates
   `6b75cce`; the response doc asks them to re-sync before consuming item 3.
 
@@ -10769,3 +10770,40 @@ deliberately deferred (`docs/vision.md` §2c).
   final policy mostly outgrows. `fireteam_v16` stays declared in
   seed_spread (evidence, archivable). Manifest re-sealed at cohort/
   `19a8da08`; gate exit 0; README row regenerated.
+
+- **2026-09-09** — **fireteam seed spread (seeds 14, 15) lands: the reporting
+  repair is a DRAW MODE, and every reporting draw pays the root-death price.**
+  `fireteam_v18_seed14` and `fireteam_v19_seed15`, exact member config,
+  declared in seed_spread, N=20 both checkpoints (smoke-test N — no publish
+  decision rides on them). The four recent same-config draws now split
+  cleanly: seed 12 (`fireteam_v16`) MUTE, root safe; seed 13 (`v17`, member)
+  REPORTS 0.948, root death 0.150; seed 14 MUTE (0.000 both ckpts, 0–1 root
+  claims total), root death 0.000, human-forward 0.000; seed 15 REPORTS
+  (0.895 best / 1.000 final, precision 0.97, false-DONE 0.185), root death
+  0.250 final, human-forward 0.850. **Fireteam is bimodal like squad and
+  platoon** — 3-of-5 known draws report — so v17's repair is not a fluke of
+  seed 13, and the "single-seed scenario" line in the v1.26 note is now
+  outdated. **The trade travels with the mode, not the seed**: both reporting
+  draws put the human TL in the assault (human-forward 0.85–0.89 vs 0.00 in
+  the mute seed-14 draw) and bury it in 15–25% of episodes; both mute draws
+  keep it alive by keeping it silent and rearward. At these N the two
+  reporting draws' root-death CIs overlap each other and the mute draws'
+  upper bounds brush v17's rate, so the sharp claim is the marker separation
+  (0.85+ vs 0.00 human-forward), not a root-death effect size. **Member
+  decision: none** — seed 15 matches v17 on success (0.95 ± 0.10 N=20 vs
+  0.97 ± 0.03 N=100, overlapping) and buys nothing on the trade; v17 stays.
+  Honest caveats: (1) both new draws are **cross-tree** (`30fc2975` vs the
+  sealed `19a8da08` — the epistream bundle's parser/seam/fixture commits
+  touched `cohort/` text; the bundle's pinning test says observations and
+  rewards are bit-identical, but the record annotates the tree split and
+  these draws are evidence, ineligible as v1.26 members regardless);
+  run_report's economics check accordingly stamps them CONFOUNDED — by tree
+  hygiene, not by any measured behavioral divergence. (2) seed 15's
+  best-ckpt report recall reads 0.00 at N=20 — unexplained, not chased, best
+  ckpt is at 30% of training. **Open mechanism, named, untested**: reporting
+  and root-forward may be coupled because the root only acquires closing
+  evidence by walking into LOS of the objective — if true, the fix is
+  evidence flow (subordinate reports sufficing to close), not a reward on
+  root safety. The measurement: do reporting-draw root claims follow own
+  visual contact or subordinate DONE traffic (eval transcripts carry both).
+  Gate exit 0 after declaration; baseline unchanged.
