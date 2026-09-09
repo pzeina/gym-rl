@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-07 evening, **the epistream request bundle is LANDED: public perception seam, report-kind parsers, fixture scenario — zero behavior change, no retrain anywhere. Response doc drafted; three requests routed to the owner.**)
+## ⟳ Session handoff — resume here (2026-09-09, **the fireteam seed spread landed and was judged (reporting is a draw mode, 3-of-5 draws), and the root-death mechanism is MEASURED: reporting roots close only from own sight of the objective and die there. A four-way owner decision queue now sits on the desk: read-back vocabulary, garble state, per-sensor degradation, and the new closing-evidence fork. Boards published current.** Prior state: the epistream request bundle is LANDED — perception seam, report-kind parsers, fixture scenario, zero behavior change; response doc `docs/host-requests-response.md` forwardable as-is.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
