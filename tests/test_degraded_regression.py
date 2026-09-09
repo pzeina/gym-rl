@@ -35,12 +35,24 @@ from cohort.env.cohort_env import make_env
 #: price 100x the shipped one, and it is the assertion that makes re-golding
 #: safe. Re-golding because a digest changed, without showing WHICH half
 #: changed, is how a dynamics regression gets waved through as a reward edit.
+#: Re-golded 2026-09-09 for the read-back cycle (docs/readback-cycle.md), an
+#: EXPLICITLY AUTHORIZED break of both spaces: READBACK is legal on a radio
+#: net whenever an agent holds a mission, so — unlike every earlier append,
+#: masked off outside its mode — the masked-random driver's LEGAL SET grows
+#: on these very episodes and the sampled trajectories diverge wholesale by
+#: construction. What still cannot move silently: the pre-cycle action
+#: indices (the name-digest pin below), and dynamics under a pure price
+#: change (`test_a_reward_price_cannot_move_the_world`, which re-derives its
+#: own digests per run and stays meaningful across re-golds). Note
+#: squad_global_seed123 and squad_range_seed123 coincide at this length: the
+#: drawn 80-step walk keeps the squad inside comm_range, so no message is
+#: heard differently and no garble ping splits the masks.
 GOLDEN = {
-    "squad_global_seed123": "98a00d07b3b31147b442f7589a56ec159c3e553b459c878b1e160c73910034a7",
-    "squad_global_seed7": "aec5e28507417a9850f6e78735b302ba8c1997c9fa9c37ff2c54b4618299b4de",
-    "squad_range_seed123": "1bd398508482ef4ba50cc6f66e694bfce65941ef201483ad0c355f8543650c6b",
-    "fireteam_defend_seed5": "9bb7c3e634bd8d87e27a230aa7f6cd9320690fa7d44fadced870b11a6f857059",
-    "patrol_brique_seed11": "c7bf8d7cbcd40f56fe4006f178c844445c3a30f557a1e55f982ab42c0dfabbaa",
+    "squad_global_seed123": "0a769022c118e721d4d91deae4aaa92a1b195a009b4485d7cc0314e008400ef6",
+    "squad_global_seed7": "b1ba7040c55c1bf26208df4d345ae8ea4c0bea4295d8cb8c01b4df9c639bab55",
+    "squad_range_seed123": "0a769022c118e721d4d91deae4aaa92a1b195a009b4485d7cc0314e008400ef6",
+    "fireteam_defend_seed5": "884a8d64fc6767234bb38d24ac94c437562b3a753b0f7cdd2762b0459387a44c",
+    "patrol_brique_seed11": "e585751936c3c4140ec80d51669632824f7406c75933df9d653a9490f8dc518f",
 }
 
 #: the 228 pre-cycle action names, pinned by digest: appended actions may only

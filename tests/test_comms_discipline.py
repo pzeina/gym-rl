@@ -68,7 +68,7 @@ def test_spaces_are_frozen_at_v14():
     acoustic + cohesion observation blocks. Phase C appends the liaison
     actions and message block on top; the first 228 indices never move
     (tests/test_degraded_regression.py pins them)."""
-    assert N_ACTIONS == 237
+    assert N_ACTIONS == 239  # + SAY_AGAIN + READBACK (read-back cycle)
     assert OBS_DIM == 357  # + 11 read-back cycle (docs/readback-cycle.md)
 
 

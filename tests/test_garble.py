@@ -160,11 +160,16 @@ def test_perception_exposes_garble_without_identity():
     assert env.perception("RFN2")["garble"][0]["ttl_remaining"] == GARBLE_TTL - 1
 
 
-def test_garble_never_feeds_rewards_or_masks_in_this_phase():
-    """Phase-2 pin (docs/readback-cycle.md): the garble state is pure
-    listener-private record — with the records wiped, every mask and every
-    reward is bit-identical. The SAY_AGAIN action of the later phase is the
-    one place allowed to read it, and only the mask side."""
+def test_garble_feeds_only_the_say_again_mask_bit_and_never_a_reward():
+    """The pin, narrowed exactly once (docs/readback-cycle.md): the phase-2
+    version said garble moves NO mask and NO reward; phase 4 gave it its one
+    sanctioned reader — the SAY_AGAIN legality bit. With the records wiped,
+    every other mask entry and every reward stays bit-identical."""
+    import numpy as np
+
+    from cohort.env.actions import CATALOG
+
+    say_again_idx = next(s.index for s in CATALOG if s.kind == "say_again")
     env1, env2 = _range_env(comm_range=5.0, seed=3), _range_env(comm_range=5.0, seed=3)
     for e in (env1, env2):
         _place(e)
@@ -176,7 +181,10 @@ def test_garble_never_feeds_rewards_or_masks_in_this_phase():
     for cs in env1.agents:
         m1 = env1._mask_for(env1.roster.by_callsign[cs])
         m2 = env2._mask_for(env2.roster.by_callsign[cs])
-        assert (m1 == m2).all(), f"garble state moved the mask of {cs}"
+        diff = set(np.flatnonzero(m1 != m2))
+        assert diff <= {say_again_idx}, f"garble state moved {cs}'s mask beyond SAY_AGAIN"
+    assert env1._mask_for(env1.roster.by_callsign["RFN2"])[say_again_idx] == 1
+    assert env2._mask_for(env2.roster.by_callsign["RFN2"])[say_again_idx] == 0
     _, r1, _, _, _ = _step_all(env1, {})
     _, r2, _, _, _ = _step_all(env2, {})
     assert r1 == r2, "garble state moved a reward"

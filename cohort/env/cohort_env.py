@@ -67,7 +67,7 @@ from cohort.env.actions import (
     compute_mask,
     is_root_opord_claim,
 )
-from cohort.env.observations import AgentView, build_observation, obs_dim
+from cohort.env.observations import N_SUB_SLOTS, AgentView, build_observation, obs_dim
 from cohort.env.rewards import RewardConfig, RewardLedger
 
 #: Steps after which an unrefreshed contact report goes stale.
@@ -85,6 +85,9 @@ SYNC_WINDOW = 8
 #: succession are protocol, not competition for air.
 _TX_PRIORITY: dict[str, int] = {
     "contact": 0, "acoustic_contact": 0, "done": 1, "order": 2, "execute": 2, "sitrep": 3,
+    # read-back cycle: verification traffic is routine, priced and arbitrated
+    # like SITREP — a learned transmission is never free air (issue #18)
+    "say_again": 3, "readback": 3,
 }
 
 #: §4.5 acceptance: which packet deliveries count as ACCEPTED (and so pay the
@@ -107,6 +110,15 @@ ACOUSTIC_REPORT_TTL = 20
 #: geometry, no RNG. The TTL mirrors the acoustic cue memory discipline.
 GARBLE_RADIUS_FACTOR = 1.5
 GARBLE_TTL = snd.SOUND_MEMORY_TTL
+
+#: §B: how long a sender's say-again-pending flag holds once it hears the
+#: request — the same clock as the garble window it answers.
+SAY_AGAIN_TTL = GARBLE_TTL
+
+#: §C/§D: the leader-side "heard recently" windows — read-back CORRECT and
+#: DONE-confirmed, both mirroring the 10-step recent-contact-report flag.
+READBACK_HEARD_WINDOW = 10
+DONE_HEARD_WINDOW = 10
 
 #: The four static tasks priced by ``RewardConfig.exposed_under_threat`` —
 #: the set the squad_screen death measurement named, not "everything static":
@@ -250,6 +262,22 @@ class CohortEnv(ParallelEnv):
         #: observed and never exposed through perception(); to the agent the
         #: ping is non-semantic. TTL/bound mirror the _agent_cues discipline.
         self._garble: dict[str, list[tuple[int, int]]] = {}
+        #: sender-side say-again-pending (§B): callsign -> the step it HEARD a
+        #: SAY AGAIN from a station its transmission had garbled; the obs flag
+        #: holds SAY_AGAIN_TTL steps
+        self._say_again_pending: dict[str, int] = {}
+        #: leader-side heard-on-the-net windows (§C/§D): (leader id, sub id)
+        #: -> the step the leader answered READBACK_CORRECT / DONE_CONFIRM to
+        #: a transmission it actually RECEIVED. Never survives succession: the
+        #: key names the leader that heard it.
+        self._readback_correct_heard: dict[tuple[int, int], int] = {}
+        self._done_heard: dict[tuple[int, int], int] = {}
+        #: read-back adjudication record (§C): (issuer id, recipient id) ->
+        #: (mission type, objective id, supported id, control name) of the
+        #: order that superior LAST ISSUED to that station, as spoken on the
+        #: net — recorded whether or not it landed, because an unlanded order
+        #: is exactly the mismatch the read-back exists to catch.
+        self._issued_orders: dict[tuple[int, int], tuple] = {}
         #: sight's analog of the cue memory (core/perception.py): host-side
         #: telemetry for the public perception() seam — never observed, never
         #: rewarded, never masked on
@@ -522,6 +550,10 @@ class CohortEnv(ParallelEnv):
             if self.spec_cfg.comm_model == "range"
             else {}
         )
+        self._say_again_pending = {}
+        self._readback_correct_heard = {}
+        self._done_heard = {}
+        self._issued_orders = {}
         self._visual_contacts = {cs: [] for cs in self._callsigns}
         self._own_sound = {}
         self.last_message_meta = []
@@ -556,6 +588,11 @@ class CohortEnv(ParallelEnv):
             team_observation=cfg.root_mission in (MissionType.RECON, MissionType.SCREEN),
         )
         root.last_order_step = 0
+        # read-back adjudication record (§C): the OPORD is the order HQ last
+        # issued to the root — what the root's READBACK is checked against
+        self._issued_orders[(HQ_ID, root.id)] = (
+            cfg.root_mission, objective.id if objective else None, None, None,
+        )
         self._say(
             MessageKind.OPORD,
             HQ_ID,
@@ -590,6 +627,9 @@ class CohortEnv(ParallelEnv):
                     step_assigned=0,
                 )
                 s.last_order_step = 0
+                self._issued_orders[(HQ_ID, s.id)] = (
+                    cfg.root_mission, objective.id if objective else None, None, None,
+                )
                 self._say(
                     MessageKind.OPORD,
                     HQ_ID,
@@ -1519,6 +1559,10 @@ class CohortEnv(ParallelEnv):
             )
         elif spec.kind == "done":
             self._report_done(soldier, ledger)
+        elif spec.kind == "say_again":
+            self._say_again(soldier, ledger)
+        elif spec.kind == "readback":
+            self._readback(soldier, ledger)
         elif spec.kind == "execute":
             self._execute_signal(soldier, ledger)
         elif spec.kind == "sync_propose":
@@ -1790,6 +1834,112 @@ class CohortEnv(ParallelEnv):
         self._charge_transmission(soldier, ledger, "report")
         self._adjudicate_done(soldier, soldier, ledger)
 
+    def _say_again(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """SAY AGAIN (docs/readback-cycle.md §B): ask the unknown station to
+        repeat.
+
+        The request is addressed to nobody nameable — a garble ping carries
+        no sender identity — and the env never echoes a re-transmission:
+        every station whose garbled-to-this-requester transmission is still
+        within the garble window AND that hears this request gets its
+        say-again-pending flag set (TTL'd). Whether to re-send or close
+        distance is that sender's policy's choice: ping → SAY AGAIN → sender
+        sees it → sender acts is the learnable loop. A request opened by the
+        voice-cue spelling sets no flag: an unintelligible voice carries no
+        sender either, and the env fabricates none.
+        """
+        step = self._step_count
+        self._charge_transmission(soldier, ledger, "report")
+        self._say(
+            MessageKind.SAY_AGAIN,
+            soldier.id,
+            None,
+            lang.format_say_again(soldier.callsign),
+        )
+        for sender_id, garbled_step in self._garble.get(soldier.callsign, ()):
+            if step - garbled_step > GARBLE_TTL:
+                continue  # stale record: outside the garble window
+            sender = self.roster.by_id.get(sender_id)
+            if sender is not None and sender.alive and self._audible_to(sender, soldier.id):
+                self._say_again_pending[sender.callsign] = step
+
+    def _mission_target_name(self, mission: Mission) -> str | None:
+        """The spoken target of a HELD mission (the read-back's content —
+        mirror of :meth:`_order_target_name`, which speaks an order's)."""
+        if mission.type is MissionType.SUPPORT:
+            supported = self.roster.by_id.get(mission.extra.get("supported_id"))
+            return supported.callsign if supported is not None else None
+        if mission.extra.get("control") is not None:
+            return mission.extra["control"]
+        if mission.objective_id is not None:
+            return self.world.objectives[mission.objective_id].name
+        return None
+
+    def _readback(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """READBACK (docs/readback-cycle.md §C): read the held order back.
+
+        The content is the mission the agent ACTUALLY holds; the superior
+        answers automatically, the mirror of DONE_CONFIRM/REJECT — CORRECT
+        when it matches the order that superior last issued to this station
+        (``_issued_orders``), else WRONG restating the actual order, voice
+        procedure's mandated correction repeat. The answer adjudicates an
+        agent-initiated check, so it does not violate the agent-issued
+        principle; the restatement is words on the net, never a re-issued
+        mission — the env does not echo orders.
+
+        A superior with NO order on its book for this station (succession put
+        it in command mid-episode) answers CORRECT: NEGATIVE must restate an
+        order, and there is none to restate, so the read-back stands
+        uncontradicted.
+        """
+        mission = soldier.mission
+        if mission is None:
+            return  # mask guards (defensive)
+        leader = self.roster.leader_of(soldier)
+        responder_id = leader.id if leader is not None else HQ_ID
+        responder_cs = self._addressee(soldier)
+        self._charge_transmission(soldier, ledger, "report")
+        self._say(
+            MessageKind.READBACK,
+            soldier.id,
+            soldier.leader_id,
+            lang.format_readback(
+                responder_cs, soldier.callsign, mission.type,
+                self._mission_target_name(mission),
+            ),
+        )
+        record = self._issued_orders.get((responder_id, soldier.id))
+        held = (
+            mission.type,
+            mission.objective_id,
+            mission.extra.get("supported_id"),
+            mission.extra.get("control"),
+        )
+        if record is None or record == held:
+            self._say(
+                MessageKind.READBACK_CORRECT,
+                responder_id,
+                soldier.id,
+                lang.format_readback_correct(soldier.callsign, responder_cs),
+            )
+            # leader-side obs flag (§C), leader-received traffic only: the
+            # verdict the leader itself spoke is knowledge it certainly has —
+            # for a read-back it actually heard. HQ is not an agent: the
+            # root's CORRECT sets no flag anywhere.
+            if leader is not None and self._audible_to(leader, soldier.id):
+                self._readback_correct_heard[(leader.id, soldier.id)] = self._step_count
+        else:
+            mission_type, obj_id, supported_id, control_name = record
+            self._say(
+                MessageKind.READBACK_WRONG,
+                responder_id,
+                soldier.id,
+                lang.format_readback_wrong(
+                    soldier.callsign, responder_cs, mission_type,
+                    self._order_target_name(mission_type, obj_id, supported_id, control_name),
+                ),
+            )
+
     def _adjudicate_done(self, soldier: Soldier, speaker: Soldier, ledger: RewardLedger) -> str:
         """Hear and adjudicate ``soldier``'s MISSION COMPLETE claim, spoken by
         ``speaker`` (the claimant or its courier). Returns confirmed | rejected."""
@@ -1855,6 +2005,14 @@ class CohortEnv(ParallelEnv):
                 soldier.id,
                 lang.format_done_confirm(soldier.callsign, responder_cs, mission.type, obj_name),
             )
+            # closing evidence (docs/readback-cycle.md §D): a confirm this
+            # leader itself spoke is knowledge it certainly has — but only
+            # for a DONE it RECEIVED (under "range" the umpire adjudicates an
+            # out-of-earshot claim too, and that leader learned nothing).
+            # Rejected DONEs carry nothing; HQ is not an agent, so the root's
+            # confirmed OPORD claim sets no flag anywhere.
+            if leader is not None and self._audible_to(leader, speaker.id):
+                self._done_heard[(leader.id, soldier.id)] = self._step_count
             if is_root_mission_claim:
                 # truthful root-mission COMPLETE: closes the grace window
                 self._root_close_step = self._step_count
@@ -2471,6 +2629,13 @@ class CohortEnv(ParallelEnv):
                 self.roster.by_id[speaker].callsign if speaker != issuer_id and speaker in self.roster.by_id
                 else None
             ),
+        )
+        # read-back adjudication record (§C): the order was SPOKEN on the net,
+        # so it goes on the issuer's book whether or not it landed — an
+        # unlanded order under comm_model="range" is exactly the held-vs-issued
+        # mismatch a subordinate's READBACK exists to surface.
+        self._issued_orders[(issuer_id, recipient.id)] = (
+            mission_type, objective_id, supported_id, control_name,
         )
         if not lands:
             return False
@@ -3505,6 +3670,26 @@ class CohortEnv(ParallelEnv):
             if garble_steps
             else 0.0
         )
+        # sender-side say-again-pending flag (§B), TTL'd
+        heard_request = self._say_again_pending.get(soldier.callsign)
+        say_again_pending = heard_request is not None and step - heard_request <= SAY_AGAIN_TTL
+        # leader-side heard-on-the-net windows (§C/§D), per subordinate slot —
+        # the same living-subordinate order the obs builder addresses
+        subs = soldier.living_subordinates(self.roster)[:N_SUB_SLOTS]
+        readback_correct_heard = tuple(
+            1.0
+            if (t := self._readback_correct_heard.get((soldier.id, s.id))) is not None
+            and step - t <= READBACK_HEARD_WINDOW
+            else 0.0
+            for s in subs
+        )
+        done_heard = tuple(
+            1.0
+            if (t := self._done_heard.get((soldier.id, s.id))) is not None
+            and step - t <= DONE_HEARD_WINDOW
+            else 0.0
+            for s in subs
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
@@ -3527,6 +3712,9 @@ class CohortEnv(ParallelEnv):
             liaison=self._liaison_view(soldier),
             garble_pending=bool(garble_steps),
             garble_freshness=garble_freshness,
+            say_again_pending=say_again_pending,
+            readback_correct_heard=readback_correct_heard,
+            done_heard=done_heard,
         )
 
     def _draw_h_hour(self) -> None:
@@ -3633,6 +3821,23 @@ class CohortEnv(ParallelEnv):
             can_deliver=self._liaison_on and self._can_deliver(soldier),
             can_cancel=self._liaison_on and (soldier.id in self._outbox or soldier.id in self._liaison),
             dispatch_slots=self._dispatch_slots(soldier) if self._liaison_on else frozenset(),
+            # read-back cycle §B — the two spellings of "someone transmitted
+            # and I could not make it out": a fresh garble ping (range), or a
+            # fresh voice cue the listener could attribute to nobody (a voice
+            # heard as friendly was understood or seen; one seen as hostile
+            # is an enemy, not a station to answer)
+            may_say_again=(
+                any(
+                    self._step_count - t <= GARBLE_TTL
+                    for _sender, t in self._garble.get(soldier.callsign, ())
+                )
+                or any(
+                    c.kind == "voice"
+                    and c.side == "unknown"
+                    and c.ttl_remaining(self._step_count) >= 0
+                    for c in self._agent_cues.get(soldier.callsign, ())
+                )
+            ),
         )
 
     def _observe(self, soldier: Soldier, view: AgentView) -> dict[str, np.ndarray]:

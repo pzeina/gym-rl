@@ -55,7 +55,7 @@ def test_spaces_frozen_across_arms():
     for name in ("squad", "squad_nomask", "squad_flat"):
         env = make_env(name)
         obs, _ = env.reset(seed=5)
-        assert env.action_space("SL1").n == N_ACTIONS == 237  # degraded-comms cycle appended 3
+        assert env.action_space("SL1").n == N_ACTIONS == 239  # + say-again/read-back appended 2
         assert env.observation_space("SL1")["observation"].shape == (OBS_DIM,) == (357,)
         for a in env.agents:
             assert obs[a]["observation"].shape == (OBS_DIM,)

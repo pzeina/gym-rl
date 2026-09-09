@@ -73,14 +73,14 @@ def _post_band(env, pos):
 
 def test_spaces_frozen_under_brique():
     """Spaces after removing listener-local heard-mission fields."""
-    assert N_ACTIONS == 237  # degraded-comms cycle: 228 + 3 appended
+    assert N_ACTIONS == 239  # 228 + 9 degraded-comms + 2 read-back appended
     assert OBS_DIM == 357  # 215 base + 94 acoustic + 14 cohesion + 23 liaison + 11 read-back
     env = make_env(_spec(n_traps=3))
     obs, _ = env.reset(seed=0)
-    assert env.action_space(env.possible_agents[0]).n == 237
+    assert env.action_space(env.possible_agents[0]).n == 239
     for a in env.agents:
         assert obs[a]["observation"].shape == (357,)
-        assert obs[a]["action_mask"].shape == (237,)
+        assert obs[a]["action_mask"].shape == (239,)
 
 
 def test_brique_scenario_presets():

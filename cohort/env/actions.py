@@ -174,6 +174,15 @@ def _build_catalog() -> list[ActionSpec]:
     add("cancel", "CANCEL_MESSAGE")
     for slot in range(MAX_SUB_SLOTS):
         add("dispatch", f"DISPATCH_LIAISON_S{slot}", order_slot=slot)
+    # --- read-back cycle (docs/readback-cycle.md §B/§C) ---
+    # APPENDED after every pre-existing entry, so the 237 indices above never
+    # move (pinned like the degraded-comms appends). SAY_AGAIN asks the
+    # unknown station whose transmission this agent could not make out
+    # (garble ping / unintelligible voice cue) to repeat; READBACK reads the
+    # mission actually held back to the direct superior (HQ answers for the
+    # root), auto-answered CORRECT / WRONG the way DONE is adjudicated.
+    add("say_again", "SAY_AGAIN")
+    add("readback", "READBACK")
     return specs
 
 
@@ -349,6 +358,7 @@ def compute_mask(
     can_deliver: bool = False,
     can_cancel: bool = False,
     dispatch_slots: frozenset[int] | set[int] = frozenset(),
+    may_say_again: bool = False,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -397,6 +407,17 @@ def compute_mask(
       DELIVER_MESSAGE (and CANCEL_MESSAGE) are legal until the cycle ends.
     * ``can_deliver`` / ``can_cancel`` / ``dispatch_slots`` — the liaison
       actions' own preconditions, decided by the environment.
+
+    Read-back cycle (docs/readback-cycle.md):
+
+    * ``may_say_again`` — a fresh garble ping is pending OR a fresh
+      unintelligible ``voice`` cue is held (the two spellings of "someone
+      transmitted and I could not make it out"); decided by the environment.
+    * READBACK is legal iff the agent holds a live mission with a superior
+      to read it back to: ``superior_reachable`` is that gate (always True
+      on a radio net — HQ answers for the root; under voice_only it is the
+      low-voice predicate, so a root or an out-of-earshot subordinate
+      cannot read back into the void).
     """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
@@ -481,6 +502,12 @@ def compute_mask(
                 mask[spec.index] = 1
         elif spec.kind == "gesture_execute":
             if gestures_enabled and gesture_execute_audience:
+                mask[spec.index] = 1
+        elif spec.kind == "say_again":
+            if may_say_again:
+                mask[spec.index] = 1
+        elif spec.kind == "readback":
+            if soldier.mission is not None and superior_reachable:
                 mask[spec.index] = 1
 
     # Order vocabulary: command ranks only, doctrine-constrained ("full").

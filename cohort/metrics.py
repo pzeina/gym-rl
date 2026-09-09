@@ -1631,7 +1631,10 @@ def _traffic(trace: dict) -> dict[str, Any]:
 #: learned speech acts — the numerator classes of the voice metrics (§9)
 LEARNED_KINDS: frozenset[str] = frozenset(
     {"contact", "acoustic_contact", "sitrep", "done", "order", "execute", "sync_propose", "sync_go",
-     "dispatch", "receipt"}
+     "dispatch", "receipt",
+     # read-back cycle: agent-issued verification traffic (the CORRECT/WRONG
+     # answers are auto-adjudication, like DONE_CONFIRM, and stay out)
+     "say_again", "readback"}
 )
 
 

@@ -103,10 +103,11 @@ def test_garble_slots_zero_under_jammed_and_voice_only():
         assert not obs[cs]["observation"][OFF_GARBLE:OFF_SAY_AGAIN].any()
 
 
-def test_nine_unwired_slots_stay_zero_even_with_garble_present():
-    """Phase pin: in the observations phase only the garble pair is wired —
-    say-again-pending and the two per-subordinate blocks are all zero even
-    while pings are held."""
+def test_nine_event_slots_stay_zero_without_their_traffic():
+    """Say-again-pending and the two per-subordinate blocks fill only from
+    traffic actually heard (a SAY AGAIN request, a READBACK_CORRECT answer,
+    a received-and-confirmed DONE) — a held garble ping alone moves none of
+    them."""
     env = _range_env(comm_range=5.0)
     _place(env)
     obs, *_ = _step_all(env, {"RFN1": SITREP_IDX})
