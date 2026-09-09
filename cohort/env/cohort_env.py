@@ -3497,6 +3497,14 @@ class CohortEnv(ParallelEnv):
         )
         link_intact, link_age = self._link_state.get(soldier.callsign, (None, 0))
         station, form_err = self._station.get(soldier.callsign, (None, 0.0))
+        # read-back cycle: the freshest held garble ping (comm_model="range"
+        # only — the dict is empty elsewhere, so both fields stay zero)
+        garble_steps = [t for _sender, t in self._garble.get(soldier.callsign, ())]
+        garble_freshness = (
+            max(0.0, GARBLE_TTL - (step - max(garble_steps))) / GARBLE_TTL
+            if garble_steps
+            else 0.0
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
@@ -3517,6 +3525,8 @@ class CohortEnv(ParallelEnv):
             formation_error=form_err,
             friendly_state=self._friendly_view(soldier),
             liaison=self._liaison_view(soldier),
+            garble_pending=bool(garble_steps),
+            garble_freshness=garble_freshness,
         )
 
     def _draw_h_hour(self) -> None:

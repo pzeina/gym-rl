@@ -119,12 +119,38 @@ _COHESION_BLOCK = 6 + 2 * N_SUB_SLOTS
 #: receipt positive / negative (2) = 23
 _LIAISON_BLOCK = 1 + 1 + len(PACKET_KINDS) + 1 + len(PACKET_KINDS) + 1 + 1 + 2 + 1 + 2 + 1 + 2
 
+#: --- read-back cycle (docs/readback-cycle.md) ---
+#: Four blocks APPENDED after the liaison block for EVERY profile, per the
+#: degraded-comms precedent (interior blocks never grow), zero-filled where
+#: structurally unavailable (garble under any comm model but "range"; the
+#: leader-side slots of an agent with no subordinates). Every slot encodes
+#: something the observer HEARD ON THE NET — a received ping, a received
+#: request, a verdict the observer itself spoke — never ground truth about
+#: another agent (the principle of the 4e82807 removal).
+#:
+#: garble block: [ping pending (0/1), freshness (ttl remaining / GARBLE_TTL)]
+_GARBLE_BLOCK = 2
+#: say-again-pending (sender side, 1 flag, TTL'd env-side): a station this
+#: agent garbled asked SAY AGAIN and this agent heard the request
+_SAY_AGAIN_BLOCK = 1
+#: leader-side read-back verification, per direct-subordinate slot:
+#: [read-back CORRECT heard recently] (window mirrors the 10-step
+#: recent-contact-report flag)
+_READBACK_HEARD_BLOCK = N_SUB_SLOTS
+#: leader-side closing evidence (option (a) of the root-evidence fork), per
+#: direct-subordinate slot: [DONE confirmed heard recently] — set only by a
+#: DONE this leader RECEIVED and answered DONE_CONFIRM; rejected DONEs
+#: carry nothing
+_DONE_HEARD_BLOCK = N_SUB_SLOTS
+
 #: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 4 leader
 #: + 4*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
 #: point) + 6 comms + patch (98, radius 3)
 #: = 13 + 22 + 2 + 2 + 3 + 4 + 16 + 16 + 12 + 12 + 9 + 6 + 98 = 215
 #: + 94 acoustic + 14 cohesion + 23 liaison (degraded-communications cycle) = 346
+#: + 2 garble + 1 say-again + 4 read-back-heard + 4 DONE-heard (read-back
+#:   cycle, docs/readback-cycle.md) = 357
 #: Observation profiles.
 #:
 #: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
@@ -183,6 +209,10 @@ def obs_dim(profile: str = "full") -> int:
         + _ACOUSTIC_BLOCK
         + _COHESION_BLOCK
         + _LIAISON_BLOCK
+        + _GARBLE_BLOCK
+        + _SAY_AGAIN_BLOCK
+        + _READBACK_HEARD_BLOCK
+        + _DONE_HEARD_BLOCK
     )
 
 
@@ -209,6 +239,10 @@ OFF_PATCH = OFF_COMMS + _COMMS_BLOCK
 OFF_ACOUSTIC = OFF_PATCH + (2 * PATCH_RADIUS + 1) ** 2 * 2
 OFF_COHESION = OFF_ACOUSTIC + _ACOUSTIC_BLOCK
 OFF_LIAISON = OFF_COHESION + _COHESION_BLOCK
+OFF_GARBLE = OFF_LIAISON + _LIAISON_BLOCK
+OFF_SAY_AGAIN = OFF_GARBLE + _GARBLE_BLOCK
+OFF_READBACK_HEARD = OFF_SAY_AGAIN + _SAY_AGAIN_BLOCK
+OFF_DONE_HEARD = OFF_READBACK_HEARD + _READBACK_HEARD_BLOCK
 
 #: within-block field offsets referenced outside this module
 SELF_COVER = OFF_SELF + 4 + len(RANK_ORDER)      # standing in cover
@@ -294,6 +328,18 @@ class AgentView:
     #: returning, anchor (pos or None), recipient_pos (perceived, or None),
     #: can_deliver, receipt (True/False/None)
     liaison: dict | None = None
+    # --- read-back cycle (docs/readback-cycle.md) ---
+    #: a garble ping is held (comm_model="range" only) and the freshest
+    #: ping's remaining TTL fraction; zero under every other comm model
+    garble_pending: bool = False
+    garble_freshness: float = 0.0
+    #: sender-side flag: a station this agent garbled said SAY AGAIN and
+    #: this agent heard the request (TTL'd env-side)
+    say_again_pending: bool = False
+    #: leader-side, per direct-subordinate slot (heard-on-the-net windows
+    #: maintained env-side): read-back CORRECT / DONE confirmed recently
+    readback_correct_heard: tuple = (0.0,) * N_SUB_SLOTS
+    done_heard: tuple = (0.0,) * N_SUB_SLOTS
 
 
 def build_observation(
@@ -582,6 +628,23 @@ def build_observation(
         elif receipt is False:
             out[j + 9] = 1.0
     i += _LIAISON_BLOCK
+
+    # --- read-back cycle (docs/readback-cycle.md), appended blocks ---
+    # every value below is something this observer HEARD ON THE NET; nothing
+    # is another agent's ground truth (the 4e82807 principle)
+    out[i] = 1.0 if view.garble_pending else 0.0
+    out[i + 1] = float(view.garble_freshness)
+    i += _GARBLE_BLOCK
+    out[i] = 1.0 if view.say_again_pending else 0.0
+    i += _SAY_AGAIN_BLOCK
+    for k in range(N_SUB_SLOTS):
+        if k < len(view.readback_correct_heard):
+            out[i] = float(view.readback_correct_heard[k])
+        i += 1
+    for k in range(N_SUB_SLOTS):
+        if k < len(view.done_heard):
+            out[i] = float(view.done_heard[k])
+        i += 1
 
     expected = obs_dim(profile)
     assert i == expected, f"obs layout mismatch: wrote {i}, expected {expected}"

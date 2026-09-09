@@ -245,7 +245,7 @@ def test_obs_dim_math():
     # 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 4 leader
     # + 16 subs + 16 enemies + 12 obj + 12 wp + 9 pl + 6 comms
     # + 98 patch (radius 3) = 215
-    assert OBS_DIM == 346  # + 94 acoustic + 14 cohesion + 23 liaison
+    assert OBS_DIM == 357  # + 94 acoustic + 14 cohesion + 23 liaison + 11 read-back
     assert N_OBJECTIVE_SLOTS == 4
     assert N_WAYPOINT_SLOTS == 4
     assert N_PHASE_LINE_SLOTS == 3

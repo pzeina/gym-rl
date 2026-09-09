@@ -32,8 +32,10 @@ def test_core_is_the_pre_v110_width():
     """215 - 54 = 161: tempo (2) + cover (3) + sitrep-due (1) + patch (48) —
     plus the degraded-communications blocks (94 acoustic + 14 cohesion),
     appended to BOTH profiles so the bisect keeps its single variable."""
-    assert obs_dim("full") == OBS_DIM == 215 + 94 + 14 + 23
-    assert obs_dim("core") == 161 + 94 + 14 + 23
+    # + 11 read-back cycle (2 garble + 1 say-again + 4 read-back-heard +
+    # 4 DONE-heard), appended to BOTH profiles like every appended block
+    assert obs_dim("full") == OBS_DIM == 215 + 94 + 14 + 23 + 11
+    assert obs_dim("core") == 161 + 94 + 14 + 23 + 11
     widened_patch = (2 * PATCH_RADIUS + 1) ** 2 * 2 - (2 * CORE_PATCH_RADIUS + 1) ** 2 * 2
     assert widened_patch == 48
     assert obs_dim("full") - obs_dim("core") == 2 + 3 + 1 + widened_patch
