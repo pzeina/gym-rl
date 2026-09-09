@@ -92,6 +92,16 @@ def _one_of_every_act() -> dict[str, tuple[str, str]]:
         "format_trap": (lang.format_trap("RFN2", (9, 4)), "cas"),
         "format_taking_command": (lang.format_taking_command("RFN1", "TL1"), "cas"),
         "format_assuming_position": (lang.format_assuming_position("RFN2", "RFN1"), "cas"),
+        # read-back cycle (docs/readback-cycle.md): verification of orders —
+        # the acknowledgement family, colored with orders like WILCO is. The
+        # read-back itself carries an open-ended mission phrase, which is
+        # exactly the shape the classifier's default exists for.
+        "format_say_again": (lang.format_say_again("RFN2"), "order"),
+        "format_readback": (
+            lang.format_readback("TL1", "RFN2", MissionType.OBSERVE, "ALPHA"), "order"),
+        "format_readback_correct": (lang.format_readback_correct("RFN2", "TL1"), "order"),
+        "format_readback_wrong": (
+            lang.format_readback_wrong("RFN2", "TL1", MissionType.OBSERVE, "ALPHA"), "order"),
     }
 
 

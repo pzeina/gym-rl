@@ -679,6 +679,124 @@ def parse_support_end(text: str) -> dict | None:
     return {"supported": m.group(1).upper()} if m else None
 
 
+# --------------------------------------------------------------------- #
+# read-back cycle (docs/readback-cycle.md): SAY AGAIN + read-back with
+# negative ack. Formatter/parser inverses, like every other act on the net.
+# --------------------------------------------------------------------- #
+
+
+def format_say_again(requester_cs: str) -> str:
+    """A station that received a transmission it could not make out (a garble
+    ping, or an unintelligible voice) asks the unknown sender to repeat:
+    'STATION CALLING, THIS IS RFN2: SAY AGAIN. OVER.'
+
+    Addressed to STATION CALLING because a garbled signal carries no sender
+    identity — there is nobody to name. The env never echoes a
+    re-transmission; whether to re-send is the garbled sender's own choice.
+    """
+    return f"STATION CALLING, THIS IS {requester_cs}: SAY AGAIN. OVER."
+
+
+_SAY_AGAIN_RE = re.compile(
+    rf"^STATION CALLING, THIS IS ({_CS}): SAY AGAIN\. OVER\.$", re.IGNORECASE
+)
+
+
+def parse_say_again(text: str) -> dict | None:
+    """Inverse of :func:`format_say_again`: ``{"requester"}`` or None."""
+    m = _SAY_AGAIN_RE.match(text.strip())
+    return {"requester": m.group(1).upper()} if m else None
+
+
+def format_readback(leader_cs: str, sender_cs: str, mission: MissionType, target: str | None) -> str:
+    """An agent reads the mission it ACTUALLY holds back to its superior:
+    'TL1, THIS IS RFN2: I READ BACK — SEIZE OBJ ALPHA. OVER.'
+
+    The content is the held order, spoken with :func:`mission_phrase` — what
+    the station believes it was told, offered for verification.
+    """
+    return (
+        f"{leader_cs}, THIS IS {sender_cs}: I READ BACK — "
+        f"{mission_phrase(mission, target)}. OVER."
+    )
+
+
+_READBACK_RE = re.compile(
+    rf"^(?P<leader>{_CS}), THIS IS (?P<sender>{_CS}): "
+    r"I READ BACK — (?P<phrase>.+?)\. OVER\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_readback(text: str) -> dict | None:
+    """Inverse of :func:`format_readback`:
+    ``{"leader", "sender", "mission", "target"}`` or None."""
+    m = _READBACK_RE.match(text.strip())
+    if m is None:
+        return None
+    phrase = parse_mission_phrase(m.group("phrase"))
+    if phrase is None:
+        return None
+    return {"leader": m.group("leader").upper(), "sender": m.group("sender").upper(), **phrase}
+
+
+def format_readback_correct(claimant_cs: str, leader_cs: str) -> str:
+    """Superior confirms a correct read-back: 'RFN2, THIS IS TL1: CORRECT. OUT.'"""
+    return f"{claimant_cs}, THIS IS {leader_cs}: CORRECT. OUT."
+
+
+_READBACK_CORRECT_RE = re.compile(
+    rf"^(?P<claimant>{_CS}), THIS IS (?P<leader>{_CS}): CORRECT\. OUT\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_readback_correct(text: str) -> dict | None:
+    """Inverse of :func:`format_readback_correct`: ``{"claimant", "leader"}``
+    or None."""
+    m = _READBACK_CORRECT_RE.match(text.strip())
+    if m is None:
+        return None
+    return {"claimant": m.group("claimant").upper(), "leader": m.group("leader").upper()}
+
+
+def format_readback_wrong(
+    claimant_cs: str, leader_cs: str, mission: MissionType, target: str | None
+) -> str:
+    """Superior corrects a wrong read-back by RESTATING the actual order —
+    voice procedure's mandated correction repeat:
+    'RFN2, THIS IS TL1: NEGATIVE, I SAY AGAIN — SEIZE OBJ BRAVO. OUT.'"""
+    return (
+        f"{claimant_cs}, THIS IS {leader_cs}: NEGATIVE, I SAY AGAIN — "
+        f"{mission_phrase(mission, target)}. OUT."
+    )
+
+
+_READBACK_WRONG_RE = re.compile(
+    rf"^(?P<claimant>{_CS}), THIS IS (?P<leader>{_CS}): "
+    r"NEGATIVE, I SAY AGAIN — (?P<phrase>.+?)\. OUT\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_readback_wrong(text: str) -> dict | None:
+    """Inverse of :func:`format_readback_wrong`:
+    ``{"claimant", "leader", "mission", "target"}`` or None. Distinct by
+    construction from the DONE rejection ('NEGATIVE, CONTINUE MISSION') and
+    the liaison receipt ('NEGATIVE, CANNOT COMPLY')."""
+    m = _READBACK_WRONG_RE.match(text.strip())
+    if m is None:
+        return None
+    phrase = parse_mission_phrase(m.group("phrase"))
+    if phrase is None:
+        return None
+    return {
+        "claimant": m.group("claimant").upper(),
+        "leader": m.group("leader").upper(),
+        **phrase,
+    }
+
+
 def format_taking_command(new_cs: str, dead_cs: str) -> str:
     """Broadcast when succession occurs."""
     return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."

@@ -51,6 +51,15 @@ class MessageKind(Enum):
     RECEIPT = "receipt"                # liaison (§4.5): the courier returns an order's
     #                                    WILCO / negative receipt (or an undeliverable
     #                                    notice) to the origin
+    # --- read-back cycle (docs/readback-cycle.md), appended ------------- #
+    SAY_AGAIN = "say_again"            # a station received a transmission it could not
+    #                                    make out (garble ping / unintelligible voice)
+    #                                    and asks the unknown sender to repeat
+    READBACK = "readback"              # agent reads the order it ACTUALLY holds back
+    #                                    to its superior for verification
+    READBACK_CORRECT = "readback_correct"  # superior confirms the read-back (auto)
+    READBACK_WRONG = "readback_wrong"      # superior corrects it, restating the actual
+    #                                        order — the mandated correction repeat (auto)
 
 
 @dataclass(frozen=True)

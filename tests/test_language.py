@@ -333,3 +333,115 @@ def test_report_parsers_ignore_other_traffic():
     # a SUPPORT ENDED line names a down station but is not a CASUALTY broadcast
     assert parse_casualty(format_support_end("SL1", "TL2", "TL1")) is None
     assert parse_support_end(format_casualty("TL1")) is None
+
+
+# --------------------------------------------------------------------- #
+# read-back cycle (docs/readback-cycle.md): the four new kinds round-trip
+# --------------------------------------------------------------------- #
+
+
+def test_say_again_round_trips():
+    from cohort.core.language import format_say_again, parse_say_again
+
+    text = format_say_again("RFN2")
+    assert text == "STATION CALLING, THIS IS RFN2: SAY AGAIN. OVER."
+    assert parse_say_again(text) == {"requester": "RFN2"}
+
+
+@pytest.mark.parametrize("mission", list(MissionType))
+def test_readback_round_trips_for_every_mission(mission):
+    from cohort.core.language import format_readback, parse_readback
+
+    target = _done_target(mission)
+    text = format_readback("TL1", "RFN2", mission, target)
+    assert parse_readback(text) == {
+        "leader": "TL1",
+        "sender": "RFN2",
+        "mission": mission,
+        "target": target,
+    }
+
+
+def test_readback_speaks_to_hq_for_the_root():
+    """HQ answers for the root's OPORD, so the leader slot must take 'HQ'."""
+    from cohort.core.language import format_readback, parse_readback
+
+    text = format_readback("HQ", "TL1", MissionType.SEIZE, "ALPHA")
+    assert text == "HQ, THIS IS TL1: I READ BACK — SEIZE OBJ ALPHA. OVER."
+    assert parse_readback(text) == {
+        "leader": "HQ",
+        "sender": "TL1",
+        "mission": MissionType.SEIZE,
+        "target": "ALPHA",
+    }
+
+
+def test_readback_correct_round_trips():
+    from cohort.core.language import format_readback_correct, parse_readback_correct
+
+    text = format_readback_correct("RFN2", "TL1")
+    assert text == "RFN2, THIS IS TL1: CORRECT. OUT."
+    assert parse_readback_correct(text) == {"claimant": "RFN2", "leader": "TL1"}
+
+
+@pytest.mark.parametrize("mission", list(MissionType))
+def test_readback_wrong_round_trips_and_restates_the_order(mission):
+    from cohort.core.language import format_readback_wrong, mission_phrase, parse_readback_wrong
+
+    target = _done_target(mission)
+    text = format_readback_wrong("RFN2", "TL1", mission, target)
+    # the correction repeat carries the actual order phrase verbatim
+    assert mission_phrase(mission, target) in text
+    assert parse_readback_wrong(text) == {
+        "claimant": "RFN2",
+        "leader": "TL1",
+        "mission": mission,
+        "target": target,
+    }
+
+
+def test_readback_parsers_ignore_other_traffic():
+    """The new parsers fire on nothing else, and no old parser fires on the
+    new lines — the net stays unambiguous in both directions."""
+    from cohort.core.language import (
+        format_done_reject,
+        format_negative,
+        format_readback,
+        format_readback_correct,
+        format_readback_wrong,
+        format_say_again,
+        parse_done,
+        parse_done_confirm,
+        parse_done_reject,
+        parse_readback,
+        parse_readback_correct,
+        parse_readback_wrong,
+        parse_say_again,
+    )
+
+    new_lines = [
+        format_say_again("RFN2"),
+        format_readback("TL1", "RFN2", MissionType.SEIZE, "ALPHA"),
+        format_readback_correct("RFN2", "TL1"),
+        format_readback_wrong("RFN2", "TL1", MissionType.SEIZE, "BRAVO"),
+    ]
+    old_lines = [
+        format_done_reject("TL1", "SL1"),       # 'NEGATIVE, CONTINUE MISSION'
+        format_negative("SL1", "TL2"),          # 'NEGATIVE, CANNOT COMPLY'
+        format_order("SL1", "TL1", MissionType.SEIZE, "ALPHA"),
+    ]
+    new_parsers = [parse_say_again, parse_readback, parse_readback_correct, parse_readback_wrong]
+    for text in old_lines:
+        for parser in new_parsers:
+            assert parser(text) is None, (parser.__name__, text)
+    old_parsers = [parse_done, parse_done_confirm, parse_done_reject]
+    for text in new_lines:
+        for parser in old_parsers:
+            assert parser(text) is None, (parser.__name__, text)
+    # each new line is claimed by exactly its own parser
+    for i, text in enumerate(new_lines):
+        for j, parser in enumerate(new_parsers):
+            if i == j:
+                assert parser(text) is not None, (parser.__name__, text)
+            else:
+                assert parser(text) is None, (parser.__name__, text)
