@@ -1,0 +1,61 @@
+# v1.27 FLEET RETRAIN — the read-back cycle (docs/readback-cycle.md), a BREAK.
+#
+# WHY. Owner-approved 2026-09-09 ("go with option (a), pair it with the
+# read-back cycle"). Four commits on multi-agent-dev (aee56e5 vocabulary,
+# 4f5916d garble, 8d37f1f observations, e516504 actions+wiring) changed both
+# spaces: OBS_DIM 346 -> 357 (+2 garble, +1 say-again-pending, +4 read-back
+# CORRECT heard, +4 DONE confirmed heard — all appended, all heard-on-the-net,
+# never telemetry) and N_ACTIONS 237 -> 239 (SAY_AGAIN, READBACK appended).
+# Every v1.26 member carries a 346-wide first layer that cannot load on this
+# tree: the fleet is orphaned, stated in the spec before the build.
+#
+# WHAT THE CYCLE SHIPS AND DOES NOT SHIP. Information only. No reward term
+# added or changed, no adjudication change — the 2026-09-09 root-evidence
+# probe showed an information deficit (reporting roots close ONLY from own
+# sight, die at 2.6-3.1 cells; fresh subordinate DONE in hand for 15-29% of
+# confirmed claims), so the cycle gives the root the knowledge channel
+# (per-sub DONE-heard flags) and gives everyone the verification vocabulary.
+# The new transmissions pay the standard airtime cost like all speech (A4).
+#
+# THE READ IS PRE-REGISTERED: docs/readback-cycle.md §"The read, pre-registered
+# before job 1" governs the verdict. Headline: on fireteam draws clearing the
+# 0.5 reporting floor, fresh-subordinate-DONE-at-claim must RISE above
+# 0.29/0.15 (v17/v19) and root death must fall to <= 0.05 at N>=100 while
+# reporting holds. Fleet guard: the other eight scenarios within CI of their
+# v1.26 members, Holm-corrected as one family.
+#
+# SHAPE. 24 jobs, one frozen cohort/ tree, shipped prices (NO --reward
+# overrides). Steps mirror each v1.26 member's config.json total_steps.
+# 4-seed DECLARED searches (seeds 12-15) for the five known-bimodal reporting
+# scenarios — fireteam (bimodal as of 2026-09-09), squad, patrol_brique,
+# platoon, platoon_hard — single seed 12 for the rest. Every seed tried is
+# listed here and every one goes in seed_search, collapses included.
+#
+# THE TREE IS FROZEN FROM JOB 1 TO THE LAST LANDING. train.py imports cohort/
+# at the moment each job starts; no cohort/ commit while the queue runs.
+# Tooling, tests, docs and boards stay free to move.
+
+fireteam_v20_seed12        --scenario fireteam        --total-steps 3500000 --seed 12
+fireteam_v21_seed13        --scenario fireteam        --total-steps 3500000 --seed 13
+fireteam_v22_seed14        --scenario fireteam        --total-steps 3500000 --seed 14
+fireteam_v23_seed15        --scenario fireteam        --total-steps 3500000 --seed 15
+fireteam_defend_v28        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_recon_v16            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v22           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v22          --scenario defend_brique   --total-steps 3000000 --seed 12
+squad_v38_seed12           --scenario squad           --total-steps 3000000 --seed 12
+squad_v39_seed13           --scenario squad           --total-steps 3000000 --seed 13
+squad_v40_seed14           --scenario squad           --total-steps 3000000 --seed 14
+squad_v41_seed15           --scenario squad           --total-steps 3000000 --seed 15
+patrol_brique_v54_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v55_seed13   --scenario patrol_brique   --total-steps 3000000 --seed 13
+patrol_brique_v56_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
+patrol_brique_v57_seed15   --scenario patrol_brique   --total-steps 3000000 --seed 15
+platoon_v23_seed12         --scenario platoon         --total-steps 3000000 --seed 12
+platoon_v24_seed13         --scenario platoon         --total-steps 3000000 --seed 13
+platoon_v25_seed14         --scenario platoon         --total-steps 3000000 --seed 14
+platoon_v26_seed15         --scenario platoon         --total-steps 3000000 --seed 15
+platoon_hard_v16_seed12    --scenario platoon_hard    --total-steps 3000000 --seed 12
+platoon_hard_v17_seed13    --scenario platoon_hard    --total-steps 3000000 --seed 13
+platoon_hard_v18_seed14    --scenario platoon_hard    --total-steps 3000000 --seed 14
+platoon_hard_v19_seed15    --scenario platoon_hard    --total-steps 3000000 --seed 15

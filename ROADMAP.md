@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-09, **the fireteam seed spread landed and was judged (reporting is a draw mode, 3-of-5 draws), and the root-death mechanism is MEASURED: reporting roots close only from own sight of the objective and die there. A four-way owner decision queue now sits on the desk: read-back vocabulary, garble state, per-sensor degradation, and the new closing-evidence fork. Boards published current.** Prior state: the epistream request bundle is LANDED — perception seam, report-kind parsers, fixture scenario, zero behavior change; response doc `docs/host-requests-response.md` forwardable as-is.)
+## ⟳ Session handoff — resume here (2026-09-09 evening, **the READ-BACK CYCLE IS BUILT (5 commits, OBS_DIM 346 → 357, N_ACTIONS 237 → 239, every pre-cycle checkpoint orphaned) and the 24-job v1.27 fleet campaign is RUNNING on the frozen tree — `cohort/` is FROZEN until the last job lands. Next session: `/train-status`, then when the fireteam seeds land run `scripts/root_evidence_probe.py` per the pre-registered read in `docs/readback-cycle.md` §"The read" — that document, not the session, governs the verdict.** Prior state: the root-death mechanism was measured (own-sight closes, 15-29% fresh sub DONE), the owner chose option (a) + the read-back cycle, spec'd in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
@@ -37,6 +37,23 @@ grantable ones are in, the design ones are queued, and the reply is
    control epistream needs, at zero cost to any published number.
 
 ### Loose ends
+
+- **The v1.27 campaign is RUNNING** (launched 2026-09-09 17:39,
+  `scripts/campaigns/v1_27_readback_fleet.jobs`, 24 jobs ≈ many hours of
+  wall-clock): NO cohort/ commit until the last job lands; tooling, tests,
+  docs and boards stay free. Landings self-refresh the boards; `/boards`
+  publishes when `train_status` says PUBLISH PENDING.
+- **The verdict is pre-registered**: `docs/readback-cycle.md` §"The read,
+  pre-registered before job 1" — fireteam's fresh-subordinate-DONE-at-claim
+  must rise above 0.29/0.15 and root death ≤ 0.05 at N≥100 while reporting
+  holds; the other eight scenarios within CI of v1.26 (Holm, one family).
+  Run `scripts/root_evidence_probe.py` at 50 eps on reporting draws.
+- **Every pre-cycle checkpoint is orphaned** (346-wide first layer): nothing
+  can be published against v1.26 members on this tree; BASELINE.json stays
+  v1.26 (evaluable only on the pre-break tree) until the owner seals a v1.27
+  set after the campaign and its read.
+- `readback_smoke_fireteam` is smoke evidence only — superseded on landing,
+  never a member.
 
 - **`fireteam_v17_seed13` IS the fireteam member now** (published
   2026-09-07 evening, N=100 both checkpoints): final 0.97 ± 0.03, the
@@ -10841,3 +10858,41 @@ deliberately deferred (`docs/vision.md` §2c).
   (c) accept the trade as doctrine (leaders lead from the front and
   sometimes die there) and keep shipping it stated in the table. No reward
   was touched; the probe is read-only and writes nothing to run directories.
+
+- **2026-09-09** — **The read-back cycle is BUILT and the v1.27 fleet
+  campaign is LAUNCHED** (owner-approved: option (a) of the root-evidence
+  fork paired with the read-back cycle; binding spec `docs/readback-cycle.md`,
+  which pre-registers the read that governs the verdict — see its §"The
+  read, pre-registered before job 1"). Five commits on `multi-agent-dev`,
+  full suite (1383) + ruff green per commit: `aee56e5` vocabulary (SAY_AGAIN
+  / READBACK / READBACK_CORRECT / READBACK_WRONG, formatter-parser inverses
+  round-trip pinned over all 12 missions), `4f5916d` garble state
+  (GARBLE_RADIUS_FACTOR=1.5 under comm_model="range" only, deterministic
+  geometry, listener-private, TTL mirroring the cue memory, exposed as
+  `perception(cs)["garble"]`; global never garbles, voice_only already has
+  the voice cue, jammed stays unobservable), `8d37f1f` observations
+  (**OBS_DIM 346 → 357**: +2 garble, +1 say-again-pending, +4 read-back
+  CORRECT heard, +4 DONE confirmed heard — every slot heard-on-the-net,
+  never telemetry, per the 4e82807 principle), `e516504` actions + wiring
+  (**N_ACTIONS 237 → 239**: SAY_AGAIN + READBACK appended, indices pinned;
+  READBACK auto-answered against the order the superior last issued,
+  WRONG restating the order in force; DONE-heard set only by a
+  leader-received, confirmed DONE — rejected DONEs carry nothing; both new
+  acts arbitrated and charged as ordinary speech, NO reward term added),
+  `9cbc1a6` smoke (`readback_smoke_fireteam`, 300k steps: gates pass, and
+  the eval transcript carries 17 read-back exchanges the policy chose
+  unprompted; scripted `squad_range_control` episode verified the full
+  garble → SAY AGAIN → sender-flag loop and the WRONG restatement of an
+  unlanded range order). **Every pre-cycle checkpoint is orphaned** — the
+  break was stated in the spec before the build. Campaign:
+  `scripts/campaigns/v1_27_readback_fleet.jobs`, 24 jobs on the frozen
+  tree, shipped prices, steps mirroring each v1.26 member — 4-seed
+  searches (12–15) for fireteam (v20–v23), squad (v38–v41), patrol_brique
+  (v54–v57), platoon (v23–v26), platoon_hard (v16–v19); single seed 12 for
+  fireteam_defend_v28, squad_recon_v16, squad_screen_v22,
+  defend_brique_v22. Launched detached 17:39, first job
+  `fireteam_v20_seed12` confirmed RUNNING. `cohort/` is FROZEN until the
+  last job lands. The verdict on fireteam (fresh-subordinate-DONE at claim
+  must rise above 0.29/0.15; root death ≤ 0.05 at N≥100 while reporting
+  holds; PARTIAL and NO EFFECT outcomes pre-defined) and the fleet CI guard
+  are the pre-registered read's — not this session's to improvise.
