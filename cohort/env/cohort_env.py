@@ -96,6 +96,18 @@ _ACCEPTED = ("applied", "novel", "refresh", "fresh", "confirmed")
 #: never refreshes it. Published through briefing() with the acoustic model.
 ACOUSTIC_REPORT_TTL = 20
 
+#: Garble state (docs/readback-cycle.md §A) — the radio analog of the voice
+#: cue. Under ``comm_model="range"`` ONLY: a transmission whose listener is
+#: beyond ``comm_range`` but within ``GARBLE_RADIUS_FACTOR * comm_range``
+#: produces a listener-private garble ping — non-semantic, no content, no
+#: sender identity, no bearing. ``global`` never garbles (everything lands);
+#: ``voice_only`` already carries exactly this state as the voice cue;
+#: ``jammed`` outages stay unobservable (owner decision 2026-08-24, not
+#: relitigated): a jammed transmission produces NO ping. Deterministic
+#: geometry, no RNG. The TTL mirrors the acoustic cue memory discipline.
+GARBLE_RADIUS_FACTOR = 1.5
+GARBLE_TTL = snd.SOUND_MEMORY_TTL
+
 #: The four static tasks priced by ``RewardConfig.exposed_under_threat`` —
 #: the set the squad_screen death measurement named, not "everything static":
 #: DEFEND/DENY posture is already governed by objective_lost and the
@@ -232,6 +244,12 @@ class CohortEnv(ParallelEnv):
         self.last_sound_events: list[snd.SoundEvent] = []  # last completed step's
         self._pending_enemy_sounds: list[snd.SoundEvent] = []  # not yet heard by OpFor
         self._agent_cues: dict[str, list[snd.AcousticCue]] = {}  # bounded coarse memory
+        #: listener-private garble pings (docs/readback-cycle.md §A), only
+        #: populated under comm_model="range": callsign -> [(sender_id, step)].
+        #: The sender id is HOST bookkeeping (SAY-AGAIN routing) — it is never
+        #: observed and never exposed through perception(); to the agent the
+        #: ping is non-semantic. TTL/bound mirror the _agent_cues discipline.
+        self._garble: dict[str, list[tuple[int, int]]] = {}
         #: sight's analog of the cue memory (core/perception.py): host-side
         #: telemetry for the public perception() seam — never observed, never
         #: rewarded, never masked on
@@ -499,6 +517,11 @@ class CohortEnv(ParallelEnv):
         self.last_sound_events = []
         self._pending_enemy_sounds = []
         self._agent_cues = {cs: [] for cs in self._callsigns} if self._sound_on else {}
+        self._garble = (
+            {cs: [] for cs in self._callsigns}
+            if self.spec_cfg.comm_model == "range"
+            else {}
+        )
         self._visual_contacts = {cs: [] for cs in self._callsigns}
         self._own_sound = {}
         self.last_message_meta = []
@@ -963,6 +986,7 @@ class CohortEnv(ParallelEnv):
         # observations assembled below — i.e. the NEXT Blue decision. ---
         self._deliver_sounds_to_blue()
         self._update_visual_contacts()
+        self._prune_garble()
         self.last_sound_events = list(self._step_sounds)
 
         # --- liaison duties (§4): loss, expiry, vacant positions, progress ---
@@ -2835,6 +2859,57 @@ class CohortEnv(ParallelEnv):
         return dist(sender.pos, listener.pos) <= self.spec_cfg.comm_range
 
     # ------------------------------------------------------------------ #
+    # garble state (docs/readback-cycle.md §A) — comm_model="range" only
+    # ------------------------------------------------------------------ #
+
+    def _register_garble(self, sender_id: int) -> None:
+        """One radio transmission's garble pings — deterministic geometry.
+
+        Every living listener beyond ``comm_range`` but within
+        ``GARBLE_RADIUS_FACTOR * comm_range`` of the sender receives a
+        listener-private ping: it heard THAT something was transmitted and
+        nothing else — no content, no sender identity, no bearing (a garbled
+        radio signal carries even less than a voice cue). Consumes no RNG.
+        The sender id on the stored record is host bookkeeping for SAY-AGAIN
+        routing; it never reaches an observation or :meth:`perception`.
+        Memory is bounded like the cue memory: freshest ``MAX_CUES``, TTL'd.
+        """
+        if not self._garble:
+            return  # not comm_model="range": no garble state exists
+        sender = self.roster.by_id.get(sender_id)
+        if sender is None:
+            return
+        lo = self.spec_cfg.comm_range
+        hi = GARBLE_RADIUS_FACTOR * lo
+        step = self._step_count
+        for listener in self.roster.living:
+            if listener.id == sender_id:
+                continue
+            d = dist(sender.pos, listener.pos)
+            if lo < d <= hi:
+                records = self._garble.setdefault(listener.callsign, [])
+                records.append((sender_id, step))
+                self._garble[listener.callsign] = [
+                    r for r in records if step - r[1] <= GARBLE_TTL
+                ][-snd.MAX_CUES:]
+
+    def _prune_garble(self) -> None:
+        """Expire garble pings by the cue TTL discipline; a casualty holds
+        none (mirror of the per-listener clearing in _deliver_sounds_to_blue).
+        """
+        if not self._garble:
+            return
+        step = self._step_count
+        for s in self.roster.soldiers:
+            records = self._garble.get(s.callsign)
+            if not records:
+                continue
+            if not s.alive:
+                records.clear()
+                continue
+            self._garble[s.callsign] = [r for r in records if step - r[1] <= GARBLE_TTL]
+
+    # ------------------------------------------------------------------ #
     # voice-only degraded communications (§3) — helpers
     # ------------------------------------------------------------------ #
 
@@ -4087,13 +4162,20 @@ class CohortEnv(ParallelEnv):
         self.last_messages.append(msg)
         if heard_by is None:
             heard_by = self._semantic_audience(sender, kind, recipient)
+        med = medium or self._message_medium(kind, sender, voice)
         self.last_message_meta.append(
             {
-                "medium": medium or self._message_medium(kind, sender, voice),
+                "medium": med,
                 "heard_by": list(heard_by),
                 **meta,
             }
         )
+        # garble pings (docs/readback-cycle.md §A): every RADIO transmission
+        # from an embodied sender under comm_model="range" pings the listeners
+        # in the garble annulus — for them the message did not land (they are
+        # not in heard_by), but they heard THAT something was transmitted
+        if med == "radio" and self.spec_cfg.comm_model == "range" and sender != HQ_ID:
+            self._register_garble(sender)
         # §3.6.1: an embodied speaker makes noise — every emitted utterance,
         # local automatic replies included, is a voice event at the speaker;
         # the pre-arranged EXECUTE / SYNC_GO forms are louder signal events.
@@ -4290,6 +4372,11 @@ class CohortEnv(ParallelEnv):
 
         * ``cues`` — acoustic memory (§3.6.3), copies of the live records.
         * ``visual_contacts`` — sight's analog (core/perception.py).
+        * ``garble`` — the radio analog of the voice cue (docs/readback-cycle.md
+          §A, comm_model="range" only): one record per held garble ping, with
+          the step it formed and its remaining TTL — and nothing else. No
+          sender, no bearing, no content: a garbled signal carries even less
+          than a voice cue. Empty under every other comm model.
         * ``friendly`` — per related teammate, coarsened to the observer's
           own frame: ``seen_now``, eight-way ``bearing``, ``range_band``,
           ``age`` in steps. Under voice_only this reads the perception-decay
@@ -4332,6 +4419,13 @@ class CohortEnv(ParallelEnv):
             "alive": soldier.alive,
             "cues": list(self._agent_cues.get(callsign, [])),
             "visual_contacts": list(self._visual_contacts.get(callsign, [])),
+            "garble": [
+                {
+                    "step": t,
+                    "ttl_remaining": max(0, GARBLE_TTL - (self._step_count - t)),
+                }
+                for _sender, t in self._garble.get(callsign, [])
+            ],
             "friendly": friendly,
             "self": {
                 "alive": soldier.alive,
