@@ -50,10 +50,17 @@ grantable ones are in, the design ones are queued, and the reply is
   root-death cost travels with the reporting mode (human-forward 0.85+ in
   reporting draws vs 0.00 mute), not with seed 13. v17 stays the member; both
   draws declared in seed_spread (cross-tree `30fc2975` — the epistream
-  commits moved `cohort/` text, pinned behavior-identical). Full verdict and
-  an open mechanism lead (root may need own-LOS evidence to close — check
-  whether root claims follow own contact or subordinate DONE traffic in the
-  eval transcripts) in the 2026-09-09 progress-log entry.
+  commits moved `cohort/` text, pinned behavior-identical). Full verdict in
+  the 2026-09-09 progress-log entry.
+- **The root-death mechanism is now MEASURED** (`scripts/root_evidence_probe.py`,
+  same date): reporting roots close ONLY from own sight of the objective
+  (own-sight 1.00, median 1.41 cells at claim, both reporting draws) and die
+  there (death distance 2.6-3.1 vs episode mean ~17); a fresh subordinate
+  DONE is in hand for just 15-29% of confirmed claims. **Owner design fork
+  on the desk**: (a) subordinate DONE as sufficient closing evidence —
+  companion to the queued read-back cycle, recommended; (b) price root
+  exposure; (c) accept as doctrine and keep stating the cost. Details in the
+  second 2026-09-09 progress-log entry.
 - **epistream's fork is stale** — `~/Documents/gym-rl-fork` predates
   `6b75cce`; the response doc asks them to re-sync before consuming item 3.
 
@@ -10807,3 +10814,30 @@ deliberately deferred (`docs/vision.md` §2c).
   root safety. The measurement: do reporting-draw root claims follow own
   visual contact or subordinate DONE traffic (eval transcripts carry both).
   Gate exit 0 after declaration; baseline unchanged.
+
+- **2026-09-09** — **The root-death mechanism is MEASURED and the own-eyes
+  story is CONFIRMED: reporting roots walk to the objective, close on their
+  own sight, and die there.** New read-only probe
+  `scripts/root_evidence_probe.py` (attribution rules pinned by
+  `tests/test_root_evidence_probe.py`, thresholds pre-registered in its
+  header), 50 episodes/arm, seeds 1000+: **every confirmed root claim in
+  both reporting draws is filed from own sight of the objective** (own-sight
+  1.00, median distance 1.41 cells — inside the 2.5-cell objective radius —
+  for both `fireteam_v17_seed13` 49 claims and `fireteam_v19_seed15` 47
+  claims), while a fresh subordinate DONE is in hand for only 0.29 / 0.15 of
+  them — the subordinate channel is NOT what the root closes on, even when
+  it is available. The exposure link closes the loop: reporting roots die at
+  2.6-3.1 cells from the objective against an episode-mean distance of ~17,
+  i.e. **the deaths happen exactly where the closing evidence is**, and the
+  mute contrast arm (`fireteam_v18_seed14`) holds mean distance 32, files
+  zero claims, and loses no roots. Rejected claims are the same behaviour
+  premature (filed at median 3.2-4.0 cells, also in sight) — sight is where
+  all claims are filed from; mission truth is what splits the verdict. **The
+  design fork this leaves, and it is the owner's** (reward/evidence
+  semantics): (a) make subordinate DONE traffic sufficient closing evidence
+  so a rearward root can claim on reports — natural companion of the queued
+  read-back/SAY AGAIN cycle, since a report the root can act on is a report
+  worth acknowledging; (b) price root exposure and accept slower closes;
+  (c) accept the trade as doctrine (leaders lead from the front and
+  sometimes die there) and keep shipping it stated in the table. No reward
+  was touched; the probe is read-only and writes nothing to run directories.
