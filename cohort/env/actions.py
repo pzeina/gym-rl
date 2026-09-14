@@ -183,6 +183,14 @@ def _build_catalog() -> list[ActionSpec]:
     # root), auto-answered CORRECT / WRONG the way DONE is adjudicated.
     add("say_again", "SAY_AGAIN")
     add("readback", "READBACK")
+    # --- interrogative cycle (docs/interrogative-cycle.md §A/§B) ---
+    # APPENDED after every pre-existing entry, so the 239 indices above never
+    # move. One broadcast (the EXECUTE_SIGNAL precedent, not four
+    # slot-addressed variants): the leader asks its element for status
+    # instead of staking a claim. Every living direct subordinate that hears
+    # it auto-answers with its OWN mission state — the non-penalized
+    # interrogative the 2026-09-14 diagnosis chain ends at.
+    add("request_status", "REQUEST_STATUS")
     return specs
 
 
@@ -359,6 +367,7 @@ def compute_mask(
     can_cancel: bool = False,
     dispatch_slots: frozenset[int] | set[int] = frozenset(),
     may_say_again: bool = False,
+    request_status_cooldown_ok: bool = True,
 ) -> np.ndarray:
     """Legality mask (int8, shape (N_ACTIONS,)) for one agent this step.
 
@@ -418,6 +427,15 @@ def compute_mask(
       on a radio net — HQ answers for the root; under voice_only it is the
       low-voice predicate, so a root or an out-of-earshot subordinate
       cannot read back into the void).
+
+    Interrogative cycle (docs/interrogative-cycle.md §B):
+
+    * REQUEST_STATUS is legal iff the agent has >= 1 living direct
+      subordinate (a rifleman has no element to ask — it generalizes down
+      the chain, TL/SL/PL/CO alike) AND ``request_status_cooldown_ok``: the
+      environment's cooldown clock (``ScenarioSpec.request_status_cooldown``
+      steps since this agent's last request). A second request inside the
+      window is MASKED, not priced — the ask itself is never penalized.
     """
     mask = np.zeros(N_ACTIONS, dtype=np.int8)
     mask[_STAY] = 1
@@ -505,6 +523,9 @@ def compute_mask(
                 mask[spec.index] = 1
         elif spec.kind == "say_again":
             if may_say_again:
+                mask[spec.index] = 1
+        elif spec.kind == "request_status":
+            if request_status_cooldown_ok and soldier.living_subordinates(roster):
                 mask[spec.index] = 1
         elif spec.kind == "readback":
             if soldier.mission is not None and superior_reachable:

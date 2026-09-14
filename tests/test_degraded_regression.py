@@ -47,12 +47,20 @@ from cohort.env.cohort_env import make_env
 #: squad_global_seed123 and squad_range_seed123 coincide at this length: the
 #: drawn 80-step walk keeps the squad inside comm_range, so no message is
 #: heard differently and no garble ping splits the masks.
+#: Re-golded 2026-09-14 for the interrogative cycle
+#: (docs/interrogative-cycle.md), the same authorized-break shape as the
+#: read-back re-gold above: REQUEST_STATUS is legal for any leader with a
+#: living direct subordinate on every comm model, so the masked-random
+#: driver's LEGAL SET grows on these very episodes and the sampled
+#: trajectories diverge wholesale by construction. The name-digest pin and
+#: `test_a_reward_price_cannot_move_the_world` remain the guards that make
+#: re-golding safe.
 GOLDEN = {
-    "squad_global_seed123": "0a769022c118e721d4d91deae4aaa92a1b195a009b4485d7cc0314e008400ef6",
-    "squad_global_seed7": "b1ba7040c55c1bf26208df4d345ae8ea4c0bea4295d8cb8c01b4df9c639bab55",
-    "squad_range_seed123": "0a769022c118e721d4d91deae4aaa92a1b195a009b4485d7cc0314e008400ef6",
-    "fireteam_defend_seed5": "884a8d64fc6767234bb38d24ac94c437562b3a753b0f7cdd2762b0459387a44c",
-    "patrol_brique_seed11": "e585751936c3c4140ec80d51669632824f7406c75933df9d653a9490f8dc518f",
+    "squad_global_seed123": "3bb81e2d13dfefd133ad9f0230609541fd39df9ff88240ac09ed88ca03a901c3",
+    "squad_global_seed7": "3fe00a9e05e244398264a64f72e8f69f94c8df0d948ef2bbad839a833ee6f05f",
+    "squad_range_seed123": "3bb81e2d13dfefd133ad9f0230609541fd39df9ff88240ac09ed88ca03a901c3",
+    "fireteam_defend_seed5": "72763e4eb4ea3fa6a058fa1e9e5a811b035642955ada0acbacfb669be7b5a1d8",
+    "patrol_brique_seed11": "d2459b738e94bd6451b87c7502179e9efdfeec96cb5596ee9e04a6011e308a02",
 }
 
 #: the 228 pre-cycle action names, pinned by digest: appended actions may only

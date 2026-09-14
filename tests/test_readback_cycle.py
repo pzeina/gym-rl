@@ -48,8 +48,9 @@ def _mask(env, cs):
 
 def test_new_actions_are_appended_at_pinned_indices():
     """+2 appended: SAY_AGAIN then READBACK, after every pre-existing entry.
-    237 was N_ACTIONS for the whole degraded-comms era — nothing moved."""
-    assert N_ACTIONS == 239
+    237 was N_ACTIONS for the whole degraded-comms era — nothing moved.
+    (240 as of the interrogative cycle: REQUEST_STATUS appended after these.)"""
+    assert N_ACTIONS == 240
     assert (SAY_AGAIN_IDX, CATALOG[237].name) == (237, "SAY_AGAIN")
     assert (READBACK_IDX, CATALOG[238].name) == (238, "READBACK")
 

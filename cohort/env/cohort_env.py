@@ -88,6 +88,11 @@ _TX_PRIORITY: dict[str, int] = {
     # read-back cycle: verification traffic is routine, priced and arbitrated
     # like SITREP — a learned transmission is never free air (issue #18)
     "say_again": 3, "readback": 3,
+    # interrogative cycle (docs/interrogative-cycle.md §B): the status ask
+    # rides at SITREP priority and pays the same airtime; its auto-answered
+    # replies are protocol (like WILCO and the DONE verdicts) and so satisfy
+    # the same class vacuously — they never contend for air
+    "request_status": 3,
 }
 
 #: §4.5 acceptance: which packet deliveries count as ACCEPTED (and so pay the
@@ -272,6 +277,11 @@ class CohortEnv(ParallelEnv):
         #: key names the leader that heard it.
         self._readback_correct_heard: dict[tuple[int, int], int] = {}
         self._done_heard: dict[tuple[int, int], int] = {}
+        #: interrogative cycle (docs/interrogative-cycle.md §B): soldier id ->
+        #: the step of that agent's last REQUEST_STATUS — the cooldown clock.
+        #: A second request inside ``request_status_cooldown`` is masked,
+        #: never priced.
+        self._last_request_status: dict[int, int] = {}
         #: read-back adjudication record (§C): (issuer id, recipient id) ->
         #: (mission type, objective id, supported id, control name) of the
         #: order that superior LAST ISSUED to that station, as spoken on the
@@ -553,6 +563,7 @@ class CohortEnv(ParallelEnv):
         self._say_again_pending = {}
         self._readback_correct_heard = {}
         self._done_heard = {}
+        self._last_request_status = {}
         self._issued_orders = {}
         self._visual_contacts = {cs: [] for cs in self._callsigns}
         self._own_sound = {}
@@ -1563,6 +1574,8 @@ class CohortEnv(ParallelEnv):
             self._say_again(soldier, ledger)
         elif spec.kind == "readback":
             self._readback(soldier, ledger)
+        elif spec.kind == "request_status":
+            self._request_status(soldier, ledger)
         elif spec.kind == "execute":
             self._execute_signal(soldier, ledger)
         elif spec.kind == "sync_propose":
@@ -1862,6 +1875,61 @@ class CohortEnv(ParallelEnv):
             sender = self.roster.by_id.get(sender_id)
             if sender is not None and sender.alive and self._audible_to(sender, soldier.id):
                 self._say_again_pending[sender.callsign] = step
+
+    def _request_status(self, soldier: Soldier, ledger: RewardLedger) -> None:
+        """REQUEST STATUS (docs/interrogative-cycle.md §A/§B): the leader asks
+        its element for status instead of staking a claim.
+
+        One broadcast; every living DIRECT subordinate that hears it
+        auto-answers in slot order, subject to audibility both ways — the
+        request must reach the subordinate for it to answer, and the reply
+        rides the same comm model back (asking into a jammed net and hearing
+        nothing is the outage made legible). The answer is the subordinate's
+        OWN mission state via the same ``is_complete(mission, ctx)`` predicate
+        a DONE adjudication uses on ITS OWN context — never the root's
+        success condition: the root must still integrate "element complete"
+        into "operation complete", which is the association this cycle exists
+        to make learnable. No verdict, no penalty, no adjudication — the
+        request pays ordinary airtime and the auto-replies are protocol
+        (WILCO / DONE_CONFIRM / READBACK's CORRECT precedent). A staged
+        (A5-2 pending) mission answers IN PROGRESS: the station holds orders,
+        whether or not they are executing yet.
+        """
+        step = self._step_count
+        self._last_request_status[soldier.id] = step
+        self._charge_transmission(soldier, ledger, "report")
+        self._say(
+            MessageKind.REQUEST_STATUS,
+            soldier.id,
+            None,
+            lang.format_request_status(soldier.callsign),
+        )
+        for sub in soldier.living_subordinates(self.roster):
+            if not self._audible_to(sub, soldier.id):
+                continue  # the request never reached this station: silence
+            mission = sub.mission
+            if mission is None:
+                self._say(
+                    MessageKind.STATUS_REPLY,
+                    sub.id,
+                    soldier.id,
+                    lang.format_status_reply(soldier.callsign, sub.callsign, None, None),
+                )
+                continue
+            ctx = self._compliance_ctx(sub, None, self._make_view(sub))
+            complete = is_complete(mission, ctx)
+            self._say(
+                MessageKind.STATUS_REPLY,
+                sub.id,
+                soldier.id,
+                lang.format_status_reply(
+                    soldier.callsign,
+                    sub.callsign,
+                    mission.type,
+                    self._mission_target_name(mission),
+                    complete=complete,
+                ),
+            )
 
     def _mission_target_name(self, mission: Mission) -> str | None:
         """The spoken target of a HELD mission (the read-back's content —
@@ -3842,6 +3910,12 @@ class CohortEnv(ParallelEnv):
                     and c.ttl_remaining(self._step_count) >= 0
                     for c in self._agent_cues.get(soldier.callsign, ())
                 )
+            ),
+            # interrogative cycle §B: a second REQUEST STATUS inside the
+            # cooldown window is masked, never priced
+            request_status_cooldown_ok=(
+                (t := self._last_request_status.get(soldier.id)) is None
+                or self._step_count - t >= self.spec_cfg.request_status_cooldown
             ),
         )
 

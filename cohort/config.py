@@ -140,6 +140,11 @@ class ScenarioSpec:
     #                               B2 measured. Mirrors order_cooldown, the mechanism
     #                               that made orders bind in B5: price the act, and
     #                               rate-limit the retry. 0 → off (pre-v1.10 behavior).
+    request_status_cooldown: int = 8  # steps a leader cannot repeat REQUEST STATUS
+    #                               (masked, not priced — the done_cooldown figure;
+    #                               docs/interrogative-cycle.md §B). The spam guard on
+    #                               the interrogative is this cooldown plus the
+    #                               ordinary transmission cost, never a stake. 0 → off.
     grace_window: int = 12        # steps the episode stays open after the root-mission
     #                               success condition is first met, giving the root time
     #                               to transmit MISSION COMPLETE; a truthful root DONE
