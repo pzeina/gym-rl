@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. Also open: diagnose WHY the channel went unused and why SEIZE reporting collapsed (suspects named in the log entry) BEFORE any reward is touched.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
+## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. The SEIZE collapse is now DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
@@ -10900,6 +10900,61 @@ deliberately deferred (`docs/vision.md` §2c).
   under a fireteam MISS (which NO-REPAIR draw ships, or seed 14's mute
   root-safety) and under the SEIZE reporting collapse is a claims
   judgement, not arithmetic, and it stays with the owner.
+
+- **2026-09-14 (later)** — **The SEIZE reporting collapse is DIAGNOSED: it
+  is the fireteam own-sight/root-death mechanism at fleet scale, amplified
+  by slower mode formation on the new tree — not a mask bug, not a price
+  change, not an exploration block.** The measurements, in the order they
+  killed the suspects:
+  (1) **The roots stopped CLAIMING; nothing stopped them.** Zero root DONE
+  claims in 10 of 12 SEIZE draws at eval while `done_admissible_root` is
+  HIGHER than the old members (patrol 7,739 admissible steps vs 6,396) —
+  the action is available and never pressed. Not admissibility, not
+  rejection: the claims do not exist.
+  (2) **Exploration parity refutes any mechanical block.** New probe
+  `scripts/explore_ledger_probe.py` (masked-random rollouts with the
+  reward ledger instrumented, same seeds, this tree vs a `fa6e88de`
+  worktree): patrol_brique explores 348 DONEs / 70 truthful confirms per 5
+  episodes on the new tree vs 370 / 94 on the old — the channel is
+  reachable and pays identically. READBACK (97 uses) displaces nothing at
+  random play.
+  (3) **The early `comp_report` spike is NOT the cause** — new-tree
+  patrol_v54 shows +0.041 early then collapse, but old-tree v52_seed19
+  shows the same transient (+0.055-0.066, six deciles) and old draws with
+  NO spike also failed to form: a known cross-tree DONE-farm phase,
+  refuted as a suspect before it became a story.
+  (4) **What actually moved is FORMATION.** First decile with
+  `root_report_close_rolling` > 0.1, old tree → new: squad d3/d5/d5/never
+  → d9/never/never/never; patrol d6-only → none; platoon d5/d8 → d5-only;
+  fireteam d2/d3 (2 of 4) → d2/d3/d3 (3 of 4, IMPROVED). The mode forms
+  late or never on big maps, and only there.
+  (5) **`platoon_v24_seed13` is the mechanism on camera.** The reporting
+  mode forms at decile 5 (close 0.13, peak 0.37) and human death jumps
+  0.01 → 0.25 → 0.35 across deciles 5-7 — then BOTH fall to zero: the
+  optimizer priced the mode out and retreated to mute-and-safe. That is
+  the fireteam trade (own-sight closing puts the root forward, forward
+  roots die) resolving the OTHER way on a bigger map, where the walk is
+  longer and deadlier.
+  **The synthesis**: the read-back cycle did not add a suppressor; it
+  added drag (two extra always-competing actions, readback+auto-answer
+  traffic at 1.4-2x early volume, +11 obs dims) that delays reporting-mode
+  formation past the point where the UNFIXED death tax lets it
+  consolidate — squad's one new reporter formed at d9 and survives weakly;
+  platoon's formed at d5 and was killed by the tax. Fireteam, with the
+  short map and cheap walk, formed MORE often, not less. The DONE-heard
+  channel that would have removed the tax (option (a)'s purpose) went
+  unused everywhere, so the fleet paid the cycle's cost without its
+  benefit. **What this sharpens for the owner**: the binding constraint is
+  claim economics, not information — the root cannot cheaply LEARN the
+  DONE-heard→truthful-claim association because experimenting costs
+  done_false -0.5 per miss (fireteam seed 15 shows rear-claiming IS
+  discoverable when the policy tolerates the spam price). Options, not
+  decided here: reduce the root's done_false during... no — any reward
+  move is the owner's; the honest statement is that (a)-as-information
+  failed its mechanism test and the next lever is the claim's price or
+  its verdict semantics (e.g. an interrogative, non-penalized "REQUEST
+  SITREP ON OBJ" the root can ask before claiming). Nothing changed in
+  this pass: diagnosis only, probe promoted, no reward touched.
 
 - **2026-09-09** — **The read-back cycle is BUILT and the v1.27 fleet
   campaign is LAUNCHED** (owner-approved: option (a) of the root-evidence
