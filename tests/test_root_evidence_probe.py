@@ -88,3 +88,55 @@ def test_the_roots_own_traffic_never_evidences_itself():
     stale = staleness_before(messages, 1, 9, {3: ROOT_ID, 9: ROOT_ID},
                              (MessageKind.SITREP,))
     assert stale is None
+
+
+def test_only_a_complete_status_reply_counts_as_status_evidence():
+    """The interrogative extension: fresh status evidence is a STATUS_REPLY
+    saying COMPLETE that landed on the root — IN PROGRESS / AWAITING ORDERS
+    replies never count (they set no observation flag either), and kind is
+    checked before text (a DONE line says the same words by design)."""
+    from cohort.core.language import format_status_reply
+    from cohort.core.missions import MissionType
+    from scripts.root_evidence_probe import is_complete_status_reply
+
+    def reply(step, text):
+        return Message(step=step, kind=MessageKind.STATUS_REPLY, sender_id=SUB_ID,
+                       recipient_id=ROOT_ID, text=text)
+
+    complete = reply(6, format_status_reply("TL1", "RFN1", MissionType.CLEAR,
+                                            "BRAVO", complete=True))
+    in_progress = reply(7, format_status_reply("TL1", "RFN1", MissionType.CLEAR,
+                                               "BRAVO"))
+    awaiting = reply(8, format_status_reply("TL1", "RFN1", None, None))
+    assert is_complete_status_reply(complete)
+    assert not is_complete_status_reply(in_progress)
+    assert not is_complete_status_reply(awaiting)
+    # a DONE claim speaks the same words but is NOT a status answer
+    done = Message(step=6, kind=MessageKind.DONE, sender_id=SUB_ID,
+                   recipient_id=ROOT_ID, text=complete.text)
+    assert not is_complete_status_reply(done)
+
+    messages = [in_progress, awaiting, complete,
+                msg(9, MessageKind.DONE, ROOT_ID, HQ_ID + 7)]
+    stale = staleness_before(messages, 3, 9, {i: ROOT_ID for i in range(6, 10)},
+                             (MessageKind.STATUS_REPLY,),
+                             predicate=is_complete_status_reply)
+    assert stale == 3, "only the COMPLETE answer at step 6 is in hand"
+
+
+def test_status_staleness_keeps_the_landing_rules():
+    """Same landing rules as every other evidence kind: the reply must have
+    LANDED on whoever held the root at its step, and the root's own traffic
+    never evidences itself."""
+    from cohort.core.language import format_status_reply
+    from cohort.core.missions import MissionType
+    from scripts.root_evidence_probe import is_complete_status_reply
+
+    text = format_status_reply("TL1", "RFN1", MissionType.CLEAR, "BRAVO",
+                               complete=True)
+    to_someone_else = Message(step=5, kind=MessageKind.STATUS_REPLY,
+                              sender_id=SUB_ID, recipient_id=SUB_ID + 1, text=text)
+    messages = [to_someone_else, msg(9, MessageKind.DONE, ROOT_ID, HQ_ID + 7)]
+    assert staleness_before(messages, 1, 9, {5: ROOT_ID, 9: ROOT_ID},
+                            (MessageKind.STATUS_REPLY,),
+                            predicate=is_complete_status_reply) is None

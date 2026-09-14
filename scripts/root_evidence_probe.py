@@ -43,6 +43,15 @@ held the root at that step (never by recipient — a root's DONE is addressed
 to its leader, not HQ), and "who is root" is a step function under
 succession. Both are pinned by ``tests/test_root_evidence_probe.py``.
 
+**Interrogative-cycle extension (docs/interrogative-cycle.md, "The read"
+check 2).** A fourth per-claim column beside fresh-sub-DONE: steps since a
+STATUS_REPLY saying COMPLETE last LANDED on the root before the claim —
+the answers the root's own REQUEST_STATUS brought in hand. Same freshness
+window, same landing rules (recipient held the root, own traffic never
+counts); IN PROGRESS / AWAITING ORDERS replies never count, matching the
+observation flag they mirror. Every pre-existing column and verdict line
+is unchanged — the extension appends, it does not reinterpret.
+
     scripts/root_evidence_probe.py runs/fireteam_v19_seed15/ckpt_latest.pt \
         --vs runs/fireteam_v18_seed14/ckpt_latest.pt --episodes 50
 """
@@ -59,6 +68,7 @@ import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from cohort.core.language import STATUS_COMPLETE, parse_status_reply
 from cohort.core.orders import MessageKind
 from cohort.core.world import dist
 from cohort.env.cohort_env import make_env
@@ -73,6 +83,20 @@ EVIDENCE_KINDS = (
 
 #: "Fresh" evidence at the moment of claiming: landed within this many steps.
 FRESH_WINDOW = 5
+
+
+def is_complete_status_reply(m) -> bool:
+    """Is this message a STATUS_REPLY answering COMPLETE?
+
+    Kind first (the transcript's truth — the COMPLETE reply shares the DONE
+    wording by design, so text alone cannot separate the two acts), then the
+    spoken status: only COMPLETE carries closing evidence, exactly like the
+    observation flag it mirrors.
+    """
+    if m.kind is not MessageKind.STATUS_REPLY:
+        return False
+    parsed = parse_status_reply(m.text)
+    return parsed is not None and parsed["status"] == STATUS_COMPLETE
 
 
 def pair_root_claims(messages, root_id_at_step):
@@ -99,7 +123,8 @@ def pair_root_claims(messages, root_id_at_step):
     return out
 
 
-def staleness_before(messages, claim_idx, claim_step, root_id_at_step, kinds):
+def staleness_before(messages, claim_idx, claim_step, root_id_at_step, kinds,
+                     predicate=None):
     """Steps since a message of ``kinds`` last LANDED on the root, before the claim.
 
     Transcript order is delivery order, so "before" is transcript position,
@@ -107,12 +132,17 @@ def staleness_before(messages, claim_idx, claim_step, root_id_at_step, kinds):
     counts as in hand. Only messages whose recipient held the root at their
     own step count (succession moves the target), and the root's own traffic
     never evidences itself. Returns None if nothing ever landed.
+
+    ``predicate`` (optional) further filters by message content — the
+    interrogative extension passes :func:`is_complete_status_reply` so only
+    COMPLETE answers count; None keeps the original behaviour exactly.
     """
     last: int | None = None
     for m in messages[:claim_idx]:
         if (m.kind in kinds
                 and m.recipient_id == root_id_at_step.get(m.step)
-                and m.sender_id != m.recipient_id):
+                and m.sender_id != m.recipient_id
+                and (predicate is None or predicate(m))):
             last = m.step
     return None if last is None else max(0, claim_step - last)
 
@@ -125,9 +155,11 @@ class Tally:
         self.root_died = 0
         self.root_step_dists: list[float] = []     # every alive root step, all eps
         self.death_dists: list[float] = []         # root dist at its last alive step
-        # per claim: (verdict, dist, in_sight, done_stale, evidence_stale)
+        # per claim: (verdict, dist, in_sight, done_stale, evidence_stale,
+        # status_stale) — indices 0-4 are the original columns, untouched;
+        # 5 is the interrogative extension (fresh status-COMPLETE in hand)
         self.claims: list[tuple[str, float | None, bool | None,
-                                int | None, int | None]] = []
+                                int | None, int | None, int | None]] = []
 
     def split(self, verdict: str):
         return [c for c in self.claims if c[0] == verdict]
@@ -197,7 +229,10 @@ def run_arm(checkpoint: str, episodes: int, first_seed: int, greedy: bool) -> Ta
                                           (MessageKind.DONE,))
             ev_stale = staleness_before(new, idx, claim.step, root_id_at_step,
                                         EVIDENCE_KINDS)
-            t.claims.append((verdict, d, sight, done_stale, ev_stale))
+            status_stale = staleness_before(new, idx, claim.step, root_id_at_step,
+                                            (MessageKind.STATUS_REPLY,),
+                                            predicate=is_complete_status_reply)
+            t.claims.append((verdict, d, sight, done_stale, ev_stale, status_stale))
     return t
 
 
@@ -217,11 +252,13 @@ def report(t: Tally) -> None:
         sights = [c[2] for c in cs if c[2] is not None]
         fresh_done = [c[3] is not None and c[3] <= FRESH_WINDOW for c in cs]
         fresh_ev = [c[4] is not None and c[4] <= FRESH_WINDOW for c in cs]
+        fresh_status = [c[5] is not None and c[5] <= FRESH_WINDOW for c in cs]
         print(f"  {verdict:9s}  {len(cs)} claims   "
               f"dist median {_fmt(median(dists) if dists else None)}   "
               f"own sight {_fmt(_frac(sights))}   "
               f"fresh sub DONE (≤{FRESH_WINDOW}) {_fmt(_frac(fresh_done))}   "
-              f"fresh evidence {_fmt(_frac(fresh_ev))}")
+              f"fresh evidence {_fmt(_frac(fresh_ev))}   "
+              f"fresh status-COMPLETE {_fmt(_frac(fresh_status))}")
 
 
 def verdicts(t: Tally) -> None:
@@ -244,6 +281,11 @@ def verdicts(t: Tally) -> None:
               else "subordinate traffic is not what it closes on"))
     print(f"  [{t.label}] {own}")
     print(f"  [{t.label}] {sub}")
+    # interrogative extension — check 2 of docs/interrogative-cycle.md's
+    # read consumes this figure (bar >= 0.50 there, not judged here)
+    fresh_status = _frac([c[5] is not None and c[5] <= FRESH_WINDOW for c in conf])
+    print(f"  [{t.label}] fresh status-COMPLETE answer in hand at "
+          f"{fresh_status:.2f} of confirmed claims")
 
 
 def main() -> None:
