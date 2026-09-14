@@ -88,7 +88,12 @@
   .playbar { display: flex; align-items: center; gap: 8px; }
   .playbar input[type=range] { flex: 1; accent-color: var(--accent); }
   #pb-t { min-width: 84px; text-align: right; font-family: var(--mono); color: var(--dim); }
-  #timeline { width: 100%; height: 64px; display: block; border-radius: 7px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
+  #timeline { width: 100%; height: 64px; display: block; border-radius: 7px 7px 0 0; background: var(--panel2); border: 1px solid var(--line); border-bottom: none; cursor: pointer; }
+  #tl-legend { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: center; padding: 3px 10px 4px; font-size: 10px; color: var(--faint); background: var(--panel2); border: 1px solid var(--line); border-top: none; border-radius: 0 0 7px 7px; }
+  #tl-legend span { display: inline-flex; align-items: center; gap: 4px; }
+  #tl-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; }
+  #tl-legend i.dot { border-radius: 50%; width: 6px; height: 6px; }
+  #tl-legend .sep { color: var(--dim); margin-left: 4px; }
   .toggles { display: grid; grid-template-columns: 1fr; gap: 0; }
   .toggles label.row { gap: 6px; font-size: 12px; }
   .tgroup { grid-column: 1 / -1; color: var(--faint); font-size: 10px; letter-spacing: .11em; text-transform: uppercase; margin-top: 5px; }
@@ -268,7 +273,22 @@
         <option value="40">40 st/s</option>
       </select>
     </div>
-    <canvas id="timeline" title="team reward per step + events — click to seek"></canvas>
+    <div>
+      <canvas id="timeline" title="team reward per step + net events — click to seek"></canvas>
+      <div id="tl-legend">
+        <span><i style="background:#57c07f"></i>team reward +</span>
+        <span><i style="background:#e5544d"></i>team reward −</span>
+        <span class="sep">events:</span>
+        <span><i class="dot" style="background:#e5a944"></i>order</span>
+        <span><i class="dot" style="background:#ff8c42"></i>contact</span>
+        <span><i class="dot" style="background:#57c07f"></i>done</span>
+        <span><i class="dot" style="background:#e5544d"></i>casualty</span>
+        <span><i class="dot" style="background:#c084fc"></i>command change</span>
+        <span><i class="dot" style="background:#ffd24d"></i>trap</span>
+        <span><i style="background:#7f1d1d55"></i>net jammed</span>
+        <span><i style="background:#fff;width:2px"></i>playhead</span>
+      </div>
+    </div>
     <div class="card" id="cocpanel">
       <h3>Chain of command <span id="coc-note"></span></h3>
       <div id="coc"><div class="empty">generate an episode</div></div>
