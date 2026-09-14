@@ -248,3 +248,121 @@ def test_voice_only_asks_by_voice_within_earshot():
     assert env.roster.by_callsign["RFN1"].id in senders
     assert env.roster.by_callsign["RFN2"].id in senders
     assert env.roster.by_callsign["RFN3"].id not in senders
+
+
+# ------------------------------------------------------------------ #
+# the observation block (§C): +4 appended, [status COMPLETE heard recently]
+# ------------------------------------------------------------------ #
+
+
+def test_obs_dim_grows_by_exactly_the_status_block():
+    """OBS_DIM 357 -> 361: the +4 block closes the vector after DONE-heard.
+    Every v1.27-tree checkpoint is orphaned by this — stated in the spec."""
+    from cohort.env.observations import (
+        _DONE_HEARD_BLOCK,
+        _STATUS_HEARD_BLOCK,
+        N_SUB_SLOTS,
+        OBS_DIM,
+        OFF_DONE_HEARD,
+        OFF_STATUS_HEARD,
+        obs_dim,
+    )
+
+    assert OBS_DIM == 361
+    assert _STATUS_HEARD_BLOCK == N_SUB_SLOTS == 4
+    assert OFF_STATUS_HEARD == OFF_DONE_HEARD + _DONE_HEARD_BLOCK
+    assert OFF_STATUS_HEARD + _STATUS_HEARD_BLOCK == OBS_DIM
+    # appended to BOTH profiles: the core/full delta stays the v1.10 bisect's
+    assert obs_dim("full") - obs_dim("core") == 54
+
+
+def _sub_complete_env():
+    """RFN1 ordered CLEAR OBJ BRAVO with the garrison dead: a COMPLETE
+    answer one request away (mirror of test_readback_cycle._sub_done_env)."""
+    env = _flat_env(get_scenario("fireteam"))
+    env.inject_order("RFN1, clear obj bravo", issuer="TL1")
+    for e in env.enemies:
+        e.alive = False
+    return env
+
+
+def test_a_landed_complete_reply_lights_the_askers_slot_for_a_window():
+    from cohort.env.cohort_env import DONE_HEARD_WINDOW
+    from cohort.env.observations import OBS_DIM, OFF_STATUS_HEARD
+
+    env = _sub_complete_env()
+    obs, *_ = _step_all(env, {"TL1": REQUEST_STATUS_IDX})
+    assert obs["TL1"]["observation"][OFF_STATUS_HEARD] == 1.0, "RFN1 is slot 0"
+    assert not obs["TL1"]["observation"][OFF_STATUS_HEARD + 1 : OBS_DIM].any()
+    # nobody else carries it — the flag is the ASKER's knowledge
+    for cs in ("RFN1", "RFN2", "RFN3"):
+        assert not obs[cs]["observation"][OFF_STATUS_HEARD:].any()
+    # age <= WINDOW holds, the DONE-heard clock this block mirrors
+    for _ in range(DONE_HEARD_WINDOW):
+        obs, *_ = _step_all(env, {})
+    assert obs["TL1"]["observation"][OFF_STATUS_HEARD] == 1.0
+    obs, *_ = _step_all(env, {})
+    assert obs["TL1"]["observation"][OFF_STATUS_HEARD] == 0.0
+
+
+def test_in_progress_and_awaiting_orders_set_nothing():
+    """The flag is closing evidence, not a presence ping."""
+    from cohort.env.observations import OFF_STATUS_HEARD
+
+    env = _flat_env(get_scenario("fireteam"))
+    env.inject_order("RFN1, seize obj alpha", issuer="TL1")  # IN PROGRESS
+    obs, *_ = _step_all(env, {"TL1": REQUEST_STATUS_IDX})
+    kinds = [m.kind for m in env.transcript.messages]
+    assert kinds.count(MessageKind.STATUS_REPLY) == 3, "all three answered"
+    assert env._status_complete_heard == {}
+    assert not obs["TL1"]["observation"][OFF_STATUS_HEARD:].any()
+
+
+def test_an_unlanded_complete_reply_sets_no_flag():
+    """Audibility both ways, the return half: a station the asker cannot
+    hear answers into the void — under "range" the transcript records the
+    reply, but nothing LANDED on the asker and the slot stays dark."""
+    from cohort.env.observations import OFF_STATUS_HEARD
+
+    env = _range_env(comm_range=5.0)
+    env.inject_order("RFN1, clear obj bravo", issuer="TL1")  # in earshot: lands
+    for e in env.enemies:
+        e.alive = False
+    env.roster.by_callsign["TL1"].pos = (7, 10)
+    env.roster.by_callsign["RFN1"].pos = (30, 10)  # far out of earshot
+    obs, *_ = _step_all(env, {"TL1": REQUEST_STATUS_IDX})
+    replies = [
+        m for m in env.transcript.messages if m.kind is MessageKind.STATUS_REPLY
+    ]
+    assert env.roster.by_callsign["RFN1"].id not in {m.sender_id for m in replies}, (
+        "out of earshot both ways: RFN1 never even heard the ask"
+    )
+    assert env._status_complete_heard == {}
+    assert obs["TL1"]["observation"][OFF_STATUS_HEARD] == 0.0
+
+
+def test_zero_filled_for_agents_with_no_element():
+    from cohort.env.observations import OFF_STATUS_HEARD
+
+    env = _sub_complete_env()
+    obs, *_ = _step_all(env, {"TL1": REQUEST_STATUS_IDX})
+    for cs in ("RFN1", "RFN2", "RFN3"):
+        assert not obs[cs]["observation"][OFF_STATUS_HEARD:].any(), (
+            f"{cs} has no element: the block stays zero"
+        )
+
+
+def test_the_done_heard_channel_stays_beside_the_new_one():
+    """The v1.27 DONE-heard flags STAY — this cycle's bet is that a root
+    taught to ask starts reading the passive channel too; removing them
+    would destroy the measurement. A confirmed DONE still lights DONE-heard
+    and never the status block."""
+    from cohort.env.observations import OFF_DONE_HEARD, OFF_STATUS_HEARD
+
+    env = _sub_complete_env()
+    done_idx = next(s.index for s in CATALOG if s.kind == "done")
+    obs, *_ = _step_all(env, {"RFN1": done_idx})
+    assert obs["TL1"]["observation"][OFF_DONE_HEARD] == 1.0
+    assert obs["TL1"]["observation"][OFF_STATUS_HEARD] == 0.0, (
+        "a DONE is a claim, not a status reply — the two channels never blur"
+    )

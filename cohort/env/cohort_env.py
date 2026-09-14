@@ -282,6 +282,12 @@ class CohortEnv(ParallelEnv):
         #: A second request inside ``request_status_cooldown`` is masked,
         #: never priced.
         self._last_request_status: dict[int, int] = {}
+        #: interrogative cycle (§C): (asker id, sub id) -> the step a
+        #: STATUS_REPLY saying COMPLETE from that subordinate LANDED on the
+        #: asker. IN PROGRESS / AWAITING ORDERS set nothing; the obs flag
+        #: holds DONE_HEARD_WINDOW steps. Never survives succession: the key
+        #: names the asker that heard it.
+        self._status_complete_heard: dict[tuple[int, int], int] = {}
         #: read-back adjudication record (§C): (issuer id, recipient id) ->
         #: (mission type, objective id, supported id, control name) of the
         #: order that superior LAST ISSUED to that station, as spoken on the
@@ -564,6 +570,7 @@ class CohortEnv(ParallelEnv):
         self._readback_correct_heard = {}
         self._done_heard = {}
         self._last_request_status = {}
+        self._status_complete_heard = {}
         self._issued_orders = {}
         self._visual_contacts = {cs: [] for cs in self._callsigns}
         self._own_sound = {}
@@ -1930,6 +1937,13 @@ class CohortEnv(ParallelEnv):
                     complete=complete,
                 ),
             )
+            # asker-side obs flag (§C): set ONLY by a COMPLETE reply that
+            # actually LANDS on the asker — the reply rides the comm model
+            # back, so an out-of-earshot answer teaches nothing. IN PROGRESS
+            # and AWAITING ORDERS set nothing: closing evidence, not a
+            # presence ping.
+            if complete and self._audible_to(soldier, sub.id):
+                self._status_complete_heard[(soldier.id, sub.id)] = step
 
     def _mission_target_name(self, mission: Mission) -> str | None:
         """The spoken target of a HELD mission (the read-back's content —
@@ -3763,6 +3777,15 @@ class CohortEnv(ParallelEnv):
             else 0.0
             for s in subs
         )
+        # interrogative cycle (§C): status COMPLETE heard recently, same
+        # window and slot addressing as the DONE-heard flags it mirrors
+        status_complete_heard = tuple(
+            1.0
+            if (t := self._status_complete_heard.get((soldier.id, s.id))) is not None
+            and step - t <= DONE_HEARD_WINDOW
+            else 0.0
+            for s in subs
+        )
         return AgentView(
             visible_enemies=self._visible_enemies(soldier),
             known_enemies=[(x, y) for (x, y, _t) in known.values()],
@@ -3788,6 +3811,7 @@ class CohortEnv(ParallelEnv):
             say_again_pending=say_again_pending,
             readback_correct_heard=readback_correct_heard,
             done_heard=done_heard,
+            status_complete_heard=status_complete_heard,
         )
 
     def _draw_h_hour(self) -> None:

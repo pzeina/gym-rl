@@ -143,6 +143,16 @@ _READBACK_HEARD_BLOCK = N_SUB_SLOTS
 #: carry nothing
 _DONE_HEARD_BLOCK = N_SUB_SLOTS
 
+#: --- interrogative cycle (docs/interrogative-cycle.md §C) ---
+#: asker-side closing evidence, per direct-subordinate slot: [status
+#: COMPLETE heard recently] — 1.0 for DONE_HEARD_WINDOW steps after a
+#: STATUS_REPLY saying COMPLETE from that slot LANDED on the asker.
+#: IN PROGRESS / AWAITING ORDERS answers set nothing: the flag is closing
+#: evidence, not a presence ping. Mirrors the DONE-heard shape exactly;
+#: the v1.27 DONE-heard flags STAY beside it (removing them would destroy
+#: the measurement this cycle bets on).
+_STATUS_HEARD_BLOCK = N_SUB_SLOTS
+
 #: 13 self + 22 mission/stance + 2 sync + 2 tempo + 3 cover + 4 leader
 #: + 4*N_SUB + 4*N_ENEMY + 3*N_OBJ + 3*N_WP + 3*N_PL (control measures:
 #: present, dx, dy — for a phase line dx/dy point at its nearest segment
@@ -151,6 +161,8 @@ _DONE_HEARD_BLOCK = N_SUB_SLOTS
 #: + 94 acoustic + 14 cohesion + 23 liaison (degraded-communications cycle) = 346
 #: + 2 garble + 1 say-again + 4 read-back-heard + 4 DONE-heard (read-back
 #:   cycle, docs/readback-cycle.md) = 357
+#: + 4 status-COMPLETE-heard (interrogative cycle,
+#:   docs/interrogative-cycle.md) = 361
 #: Observation profiles.
 #:
 #: ``full`` is the shipped v1.10 vector. ``core`` drops exactly the four blocks
@@ -213,6 +225,7 @@ def obs_dim(profile: str = "full") -> int:
         + _SAY_AGAIN_BLOCK
         + _READBACK_HEARD_BLOCK
         + _DONE_HEARD_BLOCK
+        + _STATUS_HEARD_BLOCK
     )
 
 
@@ -243,6 +256,7 @@ OFF_GARBLE = OFF_LIAISON + _LIAISON_BLOCK
 OFF_SAY_AGAIN = OFF_GARBLE + _GARBLE_BLOCK
 OFF_READBACK_HEARD = OFF_SAY_AGAIN + _SAY_AGAIN_BLOCK
 OFF_DONE_HEARD = OFF_READBACK_HEARD + _READBACK_HEARD_BLOCK
+OFF_STATUS_HEARD = OFF_DONE_HEARD + _DONE_HEARD_BLOCK
 
 #: within-block field offsets referenced outside this module
 SELF_COVER = OFF_SELF + 4 + len(RANK_ORDER)      # standing in cover
@@ -340,6 +354,11 @@ class AgentView:
     #: maintained env-side): read-back CORRECT / DONE confirmed recently
     readback_correct_heard: tuple = (0.0,) * N_SUB_SLOTS
     done_heard: tuple = (0.0,) * N_SUB_SLOTS
+    # --- interrogative cycle (docs/interrogative-cycle.md §C) ---
+    #: asker-side, per direct-subordinate slot (heard-on-the-net window
+    #: maintained env-side): a STATUS_REPLY saying COMPLETE from that slot
+    #: landed on this agent recently
+    status_complete_heard: tuple = (0.0,) * N_SUB_SLOTS
 
 
 def build_observation(
@@ -644,6 +663,13 @@ def build_observation(
     for k in range(N_SUB_SLOTS):
         if k < len(view.done_heard):
             out[i] = float(view.done_heard[k])
+        i += 1
+    # --- interrogative cycle (docs/interrogative-cycle.md §C), appended ---
+    # status COMPLETE heard recently, per direct-subordinate slot — heard on
+    # the net by THIS observer, never another agent's ground truth
+    for k in range(N_SUB_SLOTS):
+        if k < len(view.status_complete_heard):
+            out[i] = float(view.status_complete_heard[k])
         i += 1
 
     expected = obs_dim(profile)

@@ -74,12 +74,12 @@ def _post_band(env, pos):
 def test_spaces_frozen_under_brique():
     """Spaces after removing listener-local heard-mission fields."""
     assert N_ACTIONS == 240  # 228 + 9 degraded-comms + 2 read-back + 1 interrogative appended
-    assert OBS_DIM == 357  # 215 base + 94 acoustic + 14 cohesion + 23 liaison + 11 read-back
+    assert OBS_DIM == 361  # 215 base + 94 acoustic + 14 cohesion + 23 liaison + 11 read-back + 4 interrogative
     env = make_env(_spec(n_traps=3))
     obs, _ = env.reset(seed=0)
     assert env.action_space(env.possible_agents[0]).n == 240
     for a in env.agents:
-        assert obs[a]["observation"].shape == (357,)
+        assert obs[a]["observation"].shape == (361,)
         assert obs[a]["action_mask"].shape == (240,)
 
 

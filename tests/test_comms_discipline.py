@@ -69,7 +69,7 @@ def test_spaces_are_frozen_at_v14():
     actions and message block on top; the first 228 indices never move
     (tests/test_degraded_regression.py pins them)."""
     assert N_ACTIONS == 240  # + SAY_AGAIN + READBACK + REQUEST_STATUS (interrogative cycle)
-    assert OBS_DIM == 357  # + 11 read-back cycle (docs/readback-cycle.md)
+    assert OBS_DIM == 361  # + 11 read-back + 4 interrogative (docs/interrogative-cycle.md)
 
 
 # ---------------------------------------------------------------------- #

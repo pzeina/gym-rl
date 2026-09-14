@@ -21,12 +21,12 @@ from cohort.env.observations import (
     _READBACK_HEARD_BLOCK,
     _SAY_AGAIN_BLOCK,
     N_SUB_SLOTS,
-    OBS_DIM,
     OFF_DONE_HEARD,
     OFF_GARBLE,
     OFF_LIAISON,
     OFF_READBACK_HEARD,
     OFF_SAY_AGAIN,
+    OFF_STATUS_HEARD,
     obs_dim,
 )
 from tests.test_garble import SITREP_IDX, _flat_env, _place, _range_env, _step_all
@@ -38,7 +38,9 @@ def test_readback_blocks_close_the_layout():
     assert OFF_SAY_AGAIN == OFF_GARBLE + _GARBLE_BLOCK
     assert OFF_READBACK_HEARD == OFF_SAY_AGAIN + _SAY_AGAIN_BLOCK
     assert OFF_DONE_HEARD == OFF_READBACK_HEARD + _READBACK_HEARD_BLOCK
-    assert OFF_DONE_HEARD + _DONE_HEARD_BLOCK == OBS_DIM
+    assert OFF_DONE_HEARD + _DONE_HEARD_BLOCK == OFF_STATUS_HEARD
+    # (the interrogative cycle's status-COMPLETE block now closes the vector
+    # after these — pinned in tests/test_interrogative_cycle.py)
     assert (_GARBLE_BLOCK, _SAY_AGAIN_BLOCK) == (2, 1)
     assert _READBACK_HEARD_BLOCK == _DONE_HEARD_BLOCK == N_SUB_SLOTS == 4
 
@@ -55,7 +57,7 @@ def test_all_eleven_slots_zero_where_structurally_unavailable():
     env = _flat_env(get_scenario("fireteam"))
     obs, *_ = _step_all(env, {"RFN1": SITREP_IDX})
     for cs in env.agents:
-        tail = obs[cs]["observation"][OFF_GARBLE:]
+        tail = obs[cs]["observation"][OFF_GARBLE:OFF_GARBLE + 11]
         assert tail.shape == (11,)
         assert not tail.any(), f"{cs} observed read-back state that cannot exist"
 
