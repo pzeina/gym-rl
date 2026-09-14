@@ -10956,6 +10956,43 @@ deliberately deferred (`docs/vision.md` §2c).
   SITREP ON OBJ" the root can ask before claiming). Nothing changed in
   this pass: diagnosis only, probe promoted, no reward touched.
 
+- **2026-09-14 (night)** — **The cheap-root-claim arms are SCORED: the
+  economics half of the prediction is CONFIRMED, the rear-claiming half is
+  REFUTED, and the cost of the price cut is measured.** All six arms
+  landed (N=20 committed evals — smoke N; the formation read is over the
+  full training logs).
+  **Formation (the registered bar): CONFIRMED.** At `root_done_false=-0.1`,
+  platoon forms sustained reporting in BOTH seeds (final deciles 0.78 /
+  0.86, closed 0.700 / 0.800 at N=20 — where the campaign's four draws
+  managed one transient that died) and patrol_brique in one of two (0.83
+  final decile, closed 1.000 at N=20 — where the campaign had 0-of-4 and
+  the old tree 1-of-4). Claim economics IS the binding constraint on
+  reporting-mode formation; the drag-only story is dead.
+  **The mode that forms: NOT the predicted one.** The root-evidence probe
+  on both formed arms: own-sight 0.91 / 1.00 at confirmed claims, fresh
+  subordinate DONE in hand 0.00 / 0.00. **The DONE-heard channel stays
+  unused at every price tested** — the cheap rejection does not buy
+  evidence-based rearward closing, it buys AFFORDABLE OWN-SIGHT PROBING:
+  the root still walks, and probes freely on the way. Root death follows
+  the map, not the prediction: patrol 0.03-0.10 and fireteam-control
+  seed 13 at 0.05 (the bar!), but platoon 0.40-0.90 — at platoon scale
+  the walking mode is lethal and the refunded tax keeps it alive anyway.
+  **The measured cost: the death tax became a spam tax.** Root
+  false-complete runs 0.73-0.94 across the arms (fireteam seed 12: 186
+  claims in 20 episodes, false-complete 0.941) against the shipped
+  member's 0.283. Precision collapsed exactly the way the done_false=-2.0
+  lore predicts from the other direction.
+  **What this decides**: information-as-observation (option (a)) and
+  price-as-lever have now BOTH been tested and neither yields
+  evidence-based rearward closing — the root closes on its own eyes at
+  every price, or not at all. The remaining routes are (i) the
+  non-penalized interrogative (a REQUEST-STATUS the root can ask before
+  claiming — vocabulary, breaking cycle, owner's), (ii) accept the
+  walking mode and price probing somewhere between -0.1's spam and
+  -0.5's silence (a price search, owner's), or (iii) accept mute roots on
+  big maps as v1.27's stated headline. Arms are override-carrying:
+  ineligible as members, declared evidence. No default touched.
+
 - **2026-09-14 (evening)** — **The cheap-root-claim arms are REGISTERED and
   LAUNCHED before their results exist.** Instrument: `root_done_false`
   (root-scoped OPORD-claim rejection price, default bit-identical, pinned
