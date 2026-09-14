@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-09 evening, **the READ-BACK CYCLE IS BUILT (5 commits, OBS_DIM 346 → 357, N_ACTIONS 237 → 239, every pre-cycle checkpoint orphaned) and the 24-job v1.27 fleet campaign is RUNNING on the frozen tree — `cohort/` is FROZEN until the last job lands. Next session: `/train-status`, then when the fireteam seeds land run `scripts/root_evidence_probe.py` per the pre-registered read in `docs/readback-cycle.md` §"The read" — that document, not the session, governs the verdict.** Prior state: the root-death mechanism was measured (own-sight closes, 15-29% fresh sub DONE), the owner chose option (a) + the read-back cycle, spec'd in `docs/readback-cycle.md`.)
+## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. Also open: diagnose WHY the channel went unused and why SEIZE reporting collapsed (suspects named in the log entry) BEFORE any reward is touched.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
@@ -10858,6 +10858,48 @@ deliberately deferred (`docs/vision.md` §2c).
   (c) accept the trade as doctrine (leaders lead from the front and
   sometimes die there) and keep shipping it stated in the table. No reward
   was touched; the probe is read-only and writes nothing to run directories.
+
+- **2026-09-14** — **The v1.27 read-back campaign is scored against its
+  pre-registered read, and the honest verdict is a MISS with a clean guard
+  and one unpriced discovery.** All 24 jobs landed; candidates scored at
+  N=100 both checkpoints; `scripts/readback_read.py` (thresholds pinned by
+  `tests/test_readback_read.py`) does the arithmetic.
+  **(1) The fireteam repair: NO-REPAIR on every draw.** Three of four seeds
+  clear the reporting floor (0.835 / 0.844 / 0.871; seed 14 mute again) —
+  the reporting mode itself is healthy on the new tree — but root death is
+  0.190 / 0.150 / 0.080 against the registered 0.05 bar, and the
+  root-evidence probe's fresh-sub-DONE share at confirmed claims
+  (0.02 / 0.26 / 0.10, ckpt_latest, 50 eps, seeds 1000+) never beats the
+  0.29 pre-cycle measurement: **the DONE-heard channel was built and not
+  used.** Seeds 12/13 still walk to the objective and die there (own-sight
+  1.00 at claims). Seed 15 found a third mode the prereg did not
+  anticipate: it claims from the REAR (median 31.9 cells, own-sight 0.15)
+  by SPAMMING — 136 rejected vs 40 confirmed probe claims, N=100
+  false-complete 0.761, 3.39 claims/claiming-episode — so its 0.080 root
+  death is the trade moving without the mechanism, root safety bought with
+  claim discipline, and it is named as such rather than celebrated.
+  **(2) The fleet guard: CLEAN.** All eight other scenarios non-inferior on
+  success under Holm (worst p = 0.085, squad 93/100 vs 98/100;
+  platoon_hard actually 96/100 vs 92/100).
+  **(3) Stated, not gated — the SEIZE-family reporting collapse.** At N=100
+  the root-reporting marker fell fleet-wide on the SEIZE scenarios: squad
+  0.908 → 0.366, patrol_brique 0.798 → 0.000, platoon 0.737 → 0.000
+  (platoon_hard 0.022 → 0.000), while the DEFEND/recon/screen family held
+  (0.850–0.980). Across the declared draws, patrol_brique and platoon
+  report in **0 of 8** where the v1.26 searches found reporting draws in
+  both. The prereg deliberately does not score bimodal markers, so this
+  ships as an observation with a named suspect list (READBACK competing
+  with DONE at net arbitration; the +11 obs slots shifting the policy
+  prior), NOT as a conviction — the diagnosis is the next cycle's probe
+  work, not this read-out's story.
+  **Bookkeeping**: all 24 runs declared (fireteam as its first 4-seed
+  search; the rest as spread draws pending the v1.27 seal), artifacts
+  tracked, suite 1385 green. **On the owner's desk**: the v1.27 seal
+  itself. The v1.26 fleet cannot load on the read-back tree, so a seal
+  from these runs is forced in the v1.26 sense — but member selection
+  under a fireteam MISS (which NO-REPAIR draw ships, or seed 14's mute
+  root-safety) and under the SEIZE reporting collapse is a claims
+  judgement, not arithmetic, and it stays with the owner.
 
 - **2026-09-09** — **The read-back cycle is BUILT and the v1.27 fleet
   campaign is LAUNCHED** (owner-approved: option (a) of the root-evidence
