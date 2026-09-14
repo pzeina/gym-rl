@@ -106,6 +106,17 @@ class RewardConfig:
     #                                   progress is IN the observation. The spam
     #                                   half stays structural: ScenarioSpec
     #                                   .done_cooldown (8) is unchanged.
+    root_done_false: float | None = None  # the ROOT's OPORD-claim rejection
+    #                                   price; None = done_false applies
+    #                                   unchanged. Experiment knob from the
+    #                                   2026-09-14 SEIZE-collapse diagnosis:
+    #                                   learning WHEN a root claim lands costs
+    #                                   done_false per probe, and on big maps
+    #                                   that tax killed the reporting mode
+    #                                   before it consolidated. Override arms
+    #                                   only — changing the shipped default is
+    #                                   an owner decision, and the done_false
+    #                                   lore above cuts both ways.
 
     # Objective-lost pressure (v1.4 retrain diagnosis): on DEFEND/DENY root
     # missions, every living agent bleeds this per step while any living

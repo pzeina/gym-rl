@@ -2030,7 +2030,12 @@ class CohortEnv(ParallelEnv):
             soldier.id,
             lang.format_done_reject(soldier.callsign, responder_cs),
         )
-        ledger.add(soldier.callsign, "report", cfg.done_false)
+        rejection_price = (
+            cfg.root_done_false
+            if is_root_mission_claim and cfg.root_done_false is not None
+            else cfg.done_false
+        )
+        ledger.add(soldier.callsign, "report", rejection_price)
         # a rejected claim cannot be re-rolled every tick (v1.10): the
         # superior said continue the mission, so continue it
         soldier.last_done_reject_step = self._step_count
