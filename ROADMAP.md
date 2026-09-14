@@ -10956,6 +10956,23 @@ deliberately deferred (`docs/vision.md` §2c).
   SITREP ON OBJ" the root can ask before claiming). Nothing changed in
   this pass: diagnosis only, probe promoted, no reward touched.
 
+- **2026-09-14 (evening)** — **The cheap-root-claim arms are REGISTERED and
+  LAUNCHED before their results exist.** Instrument: `root_done_false`
+  (root-scoped OPORD-claim rejection price, default bit-identical, pinned
+  by `tests/test_root_done_false.py`). Six override arms at
+  `root_done_false=-0.1` (5x cheaper probing), 2 seeds each: platoon
+  (mode died on camera), patrol_brique (never formed), fireteam (control,
+  mode alive). **The registered prediction**: if claim economics is the
+  binding constraint (the SEIZE diagnosis), platoon/patrol arms form
+  reporting — `closed_on_root_report_rate` >= 0.5 in >= 1 of 2 seeds per
+  scenario, where the campaign managed 1-of-8 sustained — plausibly in
+  the rear-claiming form with root death BELOW the own-sight mode's
+  15-25%. **Refutation**: no formation at a fifth of the price means
+  economics is not binding, the formation-drag half dominates, and the
+  next lever is vocabulary/mechanics (the non-penalized interrogative),
+  not price. Overrides make every arm ineligible as a member by rule;
+  whatever they show informs the next cycle, not the v1.27 seal.
+
 - **2026-09-09** — **The read-back cycle is BUILT and the v1.27 fleet
   campaign is LAUNCHED** (owner-approved: option (a) of the root-evidence
   fork paired with the read-back cycle; binding spec `docs/readback-cycle.md`,
