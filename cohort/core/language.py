@@ -797,6 +797,102 @@ def parse_readback_wrong(text: str) -> dict | None:
     }
 
 
+# --------------------------------------------------------------------- #
+# interrogative cycle (docs/interrogative-cycle.md): REQUEST STATUS + the
+# auto-answered status reply. Formatter/parser inverses, like every other
+# act on the net.
+# --------------------------------------------------------------------- #
+
+
+def format_request_status(requester_cs: str) -> str:
+    """A leader asks its element for status instead of staking a claim:
+    'ALL STATIONS, THIS IS TL1: REPORT STATUS. OVER.'
+
+    Broadcast (the EXECUTE_SIGNAL precedent, not four slot-addressed
+    variants); every living direct subordinate that hears it auto-answers
+    in slot order.
+    """
+    return f"ALL STATIONS, THIS IS {requester_cs}: REPORT STATUS. OVER."
+
+
+_REQUEST_STATUS_RE = re.compile(
+    rf"^ALL STATIONS, THIS IS ({_CS}): REPORT STATUS\. OVER\.$", re.IGNORECASE
+)
+
+
+def parse_request_status(text: str) -> dict | None:
+    """Inverse of :func:`format_request_status`: ``{"requester"}`` or None."""
+    m = _REQUEST_STATUS_RE.match(text.strip())
+    return {"requester": m.group(1).upper()} if m else None
+
+
+#: the two spoken progress words of a mission-holding status reply
+STATUS_IN_PROGRESS, STATUS_COMPLETE = "IN PROGRESS", "COMPLETE"
+#: the reply of a station with no mission to report on
+STATUS_AWAITING_ORDERS = "AWAITING ORDERS"
+
+
+def format_status_reply(
+    leader_cs: str,
+    sender_cs: str,
+    mission: MissionType | None,
+    target: str | None,
+    *,
+    complete: bool = False,
+) -> str:
+    """A direct subordinate answers a REQUEST STATUS with its OWN state:
+    'TL1, THIS IS RFN2: SEIZE OBJ ALPHA — IN PROGRESS. OVER.' /
+    '... SEIZE OBJ ALPHA — COMPLETE. OVER.' /
+    'TL1, THIS IS RFN2: AWAITING ORDERS. OVER.'
+
+    ``mission=None`` speaks the AWAITING ORDERS form (``complete`` is then
+    ignored). The COMPLETE form is DELIBERATELY the same wording as
+    :func:`format_done` — the reply carries exactly the information a
+    truthful DONE would have carried (the spec's phrasing); on the
+    transcript ``MessageKind`` separates the two speech acts, and a reply
+    is never adjudicated.
+    """
+    if mission is None:
+        return f"{leader_cs}, THIS IS {sender_cs}: {STATUS_AWAITING_ORDERS}. OVER."
+    word = STATUS_COMPLETE if complete else STATUS_IN_PROGRESS
+    return (
+        f"{leader_cs}, THIS IS {sender_cs}: "
+        f"{mission_phrase(mission, target)} — {word}. OVER."
+    )
+
+
+_STATUS_REPLY_RE = re.compile(
+    rf"^(?P<leader>{_CS}), THIS IS (?P<sender>{_CS}): "
+    rf"(?:(?P<phrase>.+?) — (?P<word>{STATUS_IN_PROGRESS}|{STATUS_COMPLETE})"
+    rf"|(?P<awaiting>{STATUS_AWAITING_ORDERS}))\. OVER\.$",
+    re.IGNORECASE,
+)
+
+
+def parse_status_reply(text: str) -> dict | None:
+    """Inverse of :func:`format_status_reply`:
+    ``{"leader", "sender", "status", "mission", "target"}`` or None.
+
+    ``status`` is one of :data:`STATUS_IN_PROGRESS`, :data:`STATUS_COMPLETE`,
+    :data:`STATUS_AWAITING_ORDERS`; ``mission``/``target`` are None for the
+    AWAITING ORDERS form. Because the COMPLETE form shares :func:`format_done`'s
+    wording by design, this parser also reads a DONE line (and
+    :func:`parse_done` reads a COMPLETE reply) — the one deliberate textual
+    alias on the net, pinned by test; every consumer that must tell the two
+    acts apart reads ``MessageKind``, never the prose.
+    """
+    m = _STATUS_REPLY_RE.match(text.strip())
+    if m is None:
+        return None
+    out = {"leader": m.group("leader").upper(), "sender": m.group("sender").upper()}
+    if m.group("awaiting") is not None:
+        return {**out, "status": STATUS_AWAITING_ORDERS, "mission": None, "target": None}
+    phrase = parse_mission_phrase(m.group("phrase"))
+    if phrase is None:
+        return None
+    return {**out, "status": m.group("word").upper(), **phrase}
+
+
 def format_taking_command(new_cs: str, dead_cs: str) -> str:
     """Broadcast when succession occurs."""
     return f"ALL STATIONS, THIS IS {new_cs}: {dead_cs} IS DOWN. I AM ASSUMING COMMAND. OUT."

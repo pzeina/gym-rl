@@ -445,3 +445,135 @@ def test_readback_parsers_ignore_other_traffic():
                 assert parser(text) is not None, (parser.__name__, text)
             else:
                 assert parser(text) is None, (parser.__name__, text)
+
+
+# --------------------------------------------------------------------- #
+# interrogative cycle (docs/interrogative-cycle.md): REQUEST STATUS + the
+# auto-answered status reply round-trip
+# --------------------------------------------------------------------- #
+
+
+def test_request_status_round_trips():
+    from cohort.core.language import format_request_status, parse_request_status
+
+    text = format_request_status("TL1")
+    assert text == "ALL STATIONS, THIS IS TL1: REPORT STATUS. OVER."
+    assert parse_request_status(text) == {"requester": "TL1"}
+
+
+@pytest.mark.parametrize("mission", list(MissionType))
+@pytest.mark.parametrize("complete", [False, True])
+def test_status_reply_round_trips_for_every_mission(mission, complete):
+    from cohort.core.language import (
+        STATUS_COMPLETE,
+        STATUS_IN_PROGRESS,
+        format_status_reply,
+        parse_status_reply,
+    )
+
+    target = _done_target(mission)
+    text = format_status_reply("TL1", "RFN2", mission, target, complete=complete)
+    assert parse_status_reply(text) == {
+        "leader": "TL1",
+        "sender": "RFN2",
+        "status": STATUS_COMPLETE if complete else STATUS_IN_PROGRESS,
+        "mission": mission,
+        "target": target,
+    }
+
+
+def test_status_reply_awaiting_orders_round_trips():
+    from cohort.core.language import (
+        STATUS_AWAITING_ORDERS,
+        format_status_reply,
+        parse_status_reply,
+    )
+
+    text = format_status_reply("TL1", "RFN2", None, None)
+    assert text == "TL1, THIS IS RFN2: AWAITING ORDERS. OVER."
+    assert parse_status_reply(text) == {
+        "leader": "TL1",
+        "sender": "RFN2",
+        "status": STATUS_AWAITING_ORDERS,
+        "mission": None,
+        "target": None,
+    }
+
+
+def test_interrogative_parsers_ignore_other_traffic():
+    """The two new parsers fire on nothing else, and no old parser fires on
+    the new lines — with ONE deliberate exception, pinned in the next test."""
+    from cohort.core.language import (
+        format_done_confirm,
+        format_execute,
+        format_readback,
+        format_request_status,
+        format_say_again,
+        format_sitrep,
+        format_status_reply,
+        parse_done,
+        parse_done_confirm,
+        parse_done_reject,
+        parse_readback,
+        parse_readback_correct,
+        parse_readback_wrong,
+        parse_request_status,
+        parse_say_again,
+        parse_status_reply,
+    )
+
+    new_lines = [
+        format_request_status("TL1"),
+        format_status_reply("TL1", "RFN2", MissionType.SEIZE, "ALPHA"),  # IN PROGRESS
+        format_status_reply("TL1", "RFN2", None, None),                  # AWAITING ORDERS
+    ]
+    other = [
+        format_execute("TL1"),  # the other ALL-STATIONS broadcast form
+        format_order("SL1", "TL1", MissionType.SEIZE, "ALPHA"),
+        format_sitrep("TL1", "RFN2", 80, 5, (1, 2), in_cover=True),
+        format_done_confirm("RFN2", "TL1", MissionType.SEIZE, "ALPHA"),
+        format_readback("TL1", "RFN2", MissionType.SEIZE, "ALPHA"),
+        format_say_again("RFN2"),
+    ]
+    for text in other:
+        for parser in (parse_request_status, parse_status_reply):
+            assert parser(text) is None, (parser.__name__, text)
+    old_parsers = [
+        parse_done, parse_done_confirm, parse_done_reject,
+        parse_readback, parse_readback_correct, parse_readback_wrong,
+        parse_say_again,
+    ]
+    for text in new_lines:
+        for parser in old_parsers:
+            assert parser(text) is None, (parser.__name__, text)
+    # the request is not a status reply and vice versa
+    assert parse_status_reply(new_lines[0]) is None
+    assert parse_request_status(new_lines[1]) is None
+    assert parse_request_status(new_lines[2]) is None
+
+
+def test_status_reply_complete_is_the_done_wording_by_design():
+    """THE one textual alias on the net, pinned as deliberate: the COMPLETE
+    reply is spoken exactly as a DONE report (the spec's phrasing — it
+    carries what a truthful DONE would have), so parse_done reads it and
+    parse_status_reply reads a DONE line. MessageKind separates the acts;
+    a status reply is never adjudicated."""
+    from cohort.core.language import (
+        STATUS_COMPLETE,
+        format_done,
+        format_status_reply,
+        parse_done,
+        parse_status_reply,
+    )
+
+    reply = format_status_reply("TL1", "RFN2", MissionType.SEIZE, "ALPHA", complete=True)
+    done = format_done("TL1", "RFN2", MissionType.SEIZE, "ALPHA")
+    assert reply == done
+    assert parse_done(reply) == {"mission": MissionType.SEIZE, "target": "ALPHA"}
+    assert parse_status_reply(done) == {
+        "leader": "TL1",
+        "sender": "RFN2",
+        "status": STATUS_COMPLETE,
+        "mission": MissionType.SEIZE,
+        "target": "ALPHA",
+    }

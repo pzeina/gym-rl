@@ -102,6 +102,14 @@ def _one_of_every_act() -> dict[str, tuple[str, str]]:
         "format_readback_correct": (lang.format_readback_correct("RFN2", "TL1"), "order"),
         "format_readback_wrong": (
             lang.format_readback_wrong("RFN2", "TL1", MissionType.OBSERVE, "ALPHA"), "order"),
+        # interrogative cycle (docs/interrogative-cycle.md): the status ask
+        # and its answers are status traffic — the reports family. The
+        # COMPLETE reply shares format_done's wording by design and colors
+        # as the close like the DONE line it echoes; the sample pins the
+        # IN PROGRESS form.
+        "format_request_status": (lang.format_request_status("TL1"), "rep"),
+        "format_status_reply": (
+            lang.format_status_reply("TL1", "RFN2", MissionType.OBSERVE, "ALPHA"), "rep"),
     }
 
 

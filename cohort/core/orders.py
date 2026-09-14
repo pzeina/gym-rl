@@ -60,6 +60,14 @@ class MessageKind(Enum):
     READBACK_CORRECT = "readback_correct"  # superior confirms the read-back (auto)
     READBACK_WRONG = "readback_wrong"      # superior corrects it, restating the actual
     #                                        order — the mandated correction repeat (auto)
+    # --- interrogative cycle (docs/interrogative-cycle.md), appended ---- #
+    REQUEST_STATUS = "request_status"  # a leader asks its element for status
+    #                                    (broadcast, agent-issued): the non-penalized
+    #                                    interrogative — no claim is staked
+    STATUS_REPLY = "status_reply"      # a direct subordinate answers with its OWN
+    #                                    mission state (auto): IN PROGRESS / COMPLETE /
+    #                                    AWAITING ORDERS — what the station knows,
+    #                                    never the root's success condition
 
 
 @dataclass(frozen=True)

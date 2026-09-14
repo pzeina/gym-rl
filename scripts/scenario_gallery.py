@@ -96,7 +96,10 @@ ACTS: tuple[tuple[re.Pattern, str], ...] = (
     (re.compile(r"ENDEX"), "close"),
     (re.compile(r"COMPLETE\.|CONFIRMED|NEGATIVE, CONTINUE"), "close"),
     (re.compile(r"IS DOWN|ASSUMING COMMAND|'S POSITION|HIT A DEVICE"), "cas"),
-    (re.compile(r"CONTACT|SITREP|NO CHANGE|IN POSITION"), "rep"),
+    # interrogative cycle: the status ask and its answers are status traffic
+    # (the COMPLETE reply shares the DONE wording by design and is caught by
+    # the close pattern above, exactly like the DONE line it echoes)
+    (re.compile(r"CONTACT|SITREP|NO CHANGE|IN POSITION|REPORT STATUS|IN PROGRESS|AWAITING ORDERS"), "rep"),
     (re.compile(r"WILCO|ROGER"), "order"),
 )
 
