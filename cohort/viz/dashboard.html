@@ -3,33 +3,49 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cohort dashboard</title>
+<title>cohort ops</title>
 <style>
   :root {
-    --bg: #14161a; --panel: #1c1f25; --panel2: #22262d; --line: #2e333b;
-    --text: #d6d9de; --dim: #8a919c; --accent: #6fb3ff; --good: #4ade80;
-    --bad: #ff5252; --warn: #ffd75e;
+    --bg: #10131a; --panel: #151a23; --panel2: #1b212d; --line: #29323f;
+    --ink: #d8dce3; --dim: #8b94a3; --faint: #5c6572;
+    --accent: #e5a944;             /* the one accent: TOC lamp amber */
+    --good: #57c07f; --warn: #e5a944; --bad: #e5544d;
+    --friend: #7fd4f2; --friend-line: #17516e; --hostile: #ff8484; --hostile-line: #7a1414;
+    --human: #e5a944;
+    /* categorical chart slots — validated (CVD + contrast) against --panel2 */
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; margin: 0; }
-  body { background: var(--bg); color: var(--text); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-  header { display: flex; align-items: center; gap: 16px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 15px; font-weight: 600; letter-spacing: .04em; }
+  body { background: var(--bg); color: var(--ink); font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+  header { display: flex; align-items: center; gap: 14px; padding: 7px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 14px; font-weight: 650; letter-spacing: .05em; white-space: nowrap; }
   header h1 span { color: var(--accent); }
-  .tabs { display: flex; gap: 4px; }
-  .tab { padding: 5px 14px; border-radius: 6px; cursor: pointer; color: var(--dim); border: 1px solid transparent; }
-  .tab.active { color: var(--text); background: var(--panel2); border-color: var(--line); }
-  #status { margin-left: auto; color: var(--dim); font-size: 12px; }
+  .tabs { display: flex; gap: 3px; }
+  .tab { padding: 5px 13px; border-radius: 6px; cursor: pointer; color: var(--dim); border: 1px solid transparent; }
+  .tab.active { color: var(--ink); background: var(--panel2); border-color: var(--line); }
+  /* mission strip: the ops readout that lives in the header once an episode exists */
+  #stripe { display: flex; align-items: center; gap: 0; margin-left: auto; font-family: var(--mono); font-size: 11.5px; overflow: hidden; }
+  #stripe .sti { padding: 2px 10px; border-left: 1px solid var(--line); white-space: nowrap; color: var(--dim); }
+  #stripe .sti b { color: var(--ink); font-weight: 600; }
+  #stripe .sti.net-jam { color: var(--bad); font-weight: 700; animation: jamblink 1.2s step-end infinite; }
+  @keyframes jamblink { 50% { opacity: .35; } }
+  @media (prefers-reduced-motion: reduce) { #stripe .sti.net-jam { animation: none; } }
+  #status { margin-left: auto; color: var(--dim); font-size: 12px; white-space: nowrap; }
+  #stripe:not(.hidden) + #status { margin-left: 0; }
+
   main { flex: 1; display: flex; min-height: 0; }
-  .sidebar { width: 250px; min-width: 250px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+  .sidebar { width: 252px; min-width: 252px; background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
   .content { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 10px; gap: 8px; overflow-y: auto; }
-  .rightbar { width: 320px; min-width: 320px; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
-  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
-  .card h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--dim); margin-bottom: 7px; }
-  select, input[type=number], button { background: #262b33; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
+  .rightbar { width: 336px; min-width: 336px; background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+  .card { background: var(--panel2); border: 1px solid var(--line); border-radius: 7px; padding: 9px 11px; }
+  .card h3, #inspector h3.hd { font-size: 10.5px; font-weight: 600; letter-spacing: .13em; text-transform: uppercase; color: var(--dim); margin-bottom: 7px; }
+  select, input[type=number], input[type=text], button { background: #222937; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
   button { cursor: pointer; } button:hover { border-color: var(--accent); }
-  button.primary { background: #1d4ed8; border-color: #1d4ed8; font-weight: 600; }
+  button.primary { background: #4a3812; border-color: #6e5420; color: #f4d9a0; font-weight: 600; }
+  button.primary:hover { border-color: var(--accent); }
   button.small { width: auto; padding: 3px 9px; }
-  label.row { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; color: var(--text); }
+  label.row { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; color: var(--ink); }
   label.row input { width: auto; }
   .field { margin-bottom: 7px; } .field > span { display: block; color: var(--dim); font-size: 11px; margin-bottom: 3px; }
   .runitem { padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; margin-bottom: 6px; background: var(--panel2); }
@@ -38,7 +54,6 @@
   .runitem .nm { font-weight: 600; display: flex; align-items: center; gap: 6px; }
   .runitem .nm .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .runitem .meta { color: var(--dim); font-size: 11px; }
-  /* a run training RIGHT NOW — the one thing you want to spot at a glance */
   .runitem.live { border-color: #5a2020; }
   .live-tag { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; flex: none;
     font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
@@ -46,65 +61,112 @@
   .live-tag::before { content: ""; width: 5px; height: 5px; border-radius: 50%; background: var(--bad); animation: livepulse 1.6s ease-in-out infinite; }
   @keyframes livepulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
   @media (prefers-reduced-motion: reduce) { .live-tag::before { animation: none; } }
+
   .cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
   .stat { text-align: center; padding: 10px 6px; }
-  .stat .v { font-size: 20px; font-weight: 700; } .stat .k { color: var(--dim); font-size: 11px; }
+  .stat .v { font-size: 20px; font-weight: 700; font-family: var(--mono); } .stat .k { color: var(--dim); font-size: 11px; }
   .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-  .chart-card canvas { width: 100%; height: 160px; display: block; }
-  #mapwrap { flex: 1; min-height: 320px; position: relative; }
-  #map { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; background: #101216; border: 1px solid var(--line); cursor: crosshair; }
-  #maphint { position: absolute; left: 10px; bottom: 8px; color: var(--dim); font-size: 11px; pointer-events: none; }
-  #outbadge { position: absolute; right: 10px; top: 8px; font-weight: 700; padding: 3px 10px; border-radius: 6px; display: none; }
+  .chart-card { position: relative; }
+  .chart-card canvas { width: 100%; height: 160px; display: block; cursor: crosshair; }
+  #charttip { position: fixed; z-index: 30; pointer-events: none; display: none; background: #10141bee; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: 11px/1.5 var(--mono); white-space: nowrap; }
+  #charttip .r { display: flex; gap: 8px; justify-content: space-between; }
+  #charttip .sw { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; }
+
+  #mapwrap { flex: 1; min-height: 340px; position: relative; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 7px; background: #0b0e13; border: 1px solid var(--line); cursor: crosshair; touch-action: none; }
+  #maphint { position: absolute; left: 10px; bottom: 8px; color: var(--faint); font-size: 10.5px; pointer-events: none; }
+  #maptip { position: absolute; z-index: 20; pointer-events: none; display: none; background: #10141bee; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: 11px/1.5 var(--mono); white-space: pre; }
+  #outbadge { position: absolute; right: 10px; top: 8px; font-weight: 700; padding: 3px 10px; border-radius: 6px; display: none; font-family: var(--mono); letter-spacing: .06em; }
   .playbar { display: flex; align-items: center; gap: 8px; }
-  .playbar input[type=range] { flex: 1; }
-  #timeline { width: 100%; height: 64px; display: block; border-radius: 8px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
+  .playbar input[type=range] { flex: 1; accent-color: var(--accent); }
+  #pb-t { min-width: 84px; text-align: right; font-family: var(--mono); color: var(--dim); }
+  #timeline { width: 100%; height: 64px; display: block; border-radius: 7px; background: var(--panel2); border: 1px solid var(--line); cursor: pointer; }
   .toggles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 8px; }
-  #inspector { padding: 10px; border-bottom: 1px solid var(--line); overflow-y: auto; max-height: 46%; }
+  .tgroup { grid-column: 1 / -1; color: var(--faint); font-size: 10px; letter-spacing: .11em; text-transform: uppercase; margin-top: 5px; }
+
+  #inspector { padding: 10px; border-bottom: 1px solid var(--line); overflow-y: auto; max-height: 56%; }
   #radiolog { flex: 1; display: flex; flex-direction: column; min-height: 0; }
-  #radiolog .filters { display: flex; gap: 5px; padding: 8px 10px 4px; flex-wrap: wrap; }
+  #radiolog .filters { display: flex; gap: 5px; padding: 8px 10px 4px; flex-wrap: wrap; align-items: center; }
   .chip { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--line); cursor: pointer; color: var(--dim); }
-  .chip.on { color: var(--text); border-color: var(--accent); }
-  #msgs { flex: 1; overflow-y: auto; padding: 4px 10px 10px; font: 11px/1.5 ui-monospace, Menlo, monospace; }
+  .chip.on { color: var(--ink); border-color: var(--accent); }
+  #msgs { flex: 1; overflow-y: auto; padding: 4px 10px 10px; font: 11px/1.55 var(--mono); }
   .msg { padding: 1px 4px; border-radius: 4px; cursor: pointer; white-space: pre-wrap; }
   .msg:hover { background: var(--panel2); }
-  .msg .t { color: var(--dim); }
-  .bar { height: 7px; border-radius: 4px; background: #30353d; overflow: hidden; margin: 2px 0 6px; }
+  .msg .t { color: var(--faint); }
+  .msg .med { color: var(--faint); font-size: 9.5px; border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; margin: 0 3px 0 1px; }
+
+  .bar { height: 7px; border-radius: 4px; background: #2b3240; overflow: hidden; margin: 2px 0 6px; }
   .bar > div { height: 100%; }
+  .bar.thin { height: 5px; margin: 1px 0 4px; }
   table.kv { width: 100%; border-collapse: collapse; font-size: 12px; }
   table.kv td { padding: 2px 4px; border-bottom: 1px solid var(--line); }
-  table.kv td:last-child { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  table.kv td:last-child { text-align: right; font-family: var(--mono); }
   .pos { color: var(--good); } .neg { color: var(--bad); }
   .badge { display: inline-block; padding: 1px 8px; border-radius: 5px; font-size: 11px; font-weight: 700; }
   .hidden { display: none !important; }
   .empty { color: var(--dim); text-align: center; padding: 30px 10px; }
   .compat { color: var(--warn); background: #2a2411; border: 1px solid #4a3f1a; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-bottom: 7px; }
-  /* chain of command: one row per station, indented by depth in the org chart */
+  .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
+
+  /* chain of command */
   #coc { display: flex; flex-direction: column; gap: 2px; }
   .coc-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(120px, 1.6fr) 74px; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
   .coc-row:hover { background: var(--panel2); border-color: var(--line); }
   .coc-row.sel { border-color: var(--accent); background: var(--panel2); }
   .coc-row.dead { opacity: .45; }
   .coc-name { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .coc-cs { font-weight: 650; color: #a8e4ff; }
+  .coc-cs { font-weight: 650; color: var(--friend); font-family: var(--mono); }
   .coc-rank { color: var(--dim); font-size: 11px; }
-  .coc-order { font-size: 11.5px; font-family: ui-monospace, Menlo, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .coc-order { font-size: 11.5px; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .coc-order .standby { color: var(--dim); }
   .coc-order .since { color: var(--dim); }
   .coc-hp { display: flex; align-items: center; gap: 6px; }
   .coc-hp .bar { flex: 1; margin: 0; height: 6px; }
   .coc-hp .pct { font-size: 10.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 26px; text-align: right; }
-  .coc-tick { color: var(--line); font-family: ui-monospace, Menlo, monospace; }
-  .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
+  .coc-tick { color: var(--line); font-family: var(--mono); }
+
+  /* sensor board: every station's senses at a glance */
+  .sb-row { display: grid; grid-template-columns: 74px 1fr 1fr 108px; gap: 8px; align-items: center; padding: 3px 5px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
+  .sb-row:hover { background: var(--bg); border-color: var(--line); }
+  .sb-row.dead { opacity: .4; }
+  .sb-cs { font-family: var(--mono); font-weight: 650; color: var(--friend); font-size: 12px; white-space: nowrap; overflow: hidden; }
+  .sb-cs .rk { color: var(--faint); font-weight: 400; font-size: 10px; }
+  .sb-pips { display: flex; gap: 4px; justify-content: flex-end; font-family: var(--mono); font-size: 10px; }
+  .pip { border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--dim); min-width: 22px; text-align: center; }
+  .pip.on { color: var(--ink); border-color: #3a4556; }
+  .pip.hot { color: var(--warn); border-color: #5a4a1a; background: #2a2411; }
+  .pip.err { color: var(--bad); border-color: #5a2020; background: #2a1414; }
+  .pip.ok { color: var(--good); border-color: #1f4a30; }
+
+  /* sensor cards (selected station) */
+  .sc { border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; margin-bottom: 7px; background: var(--bg); }
+  .sc h4 { font-size: 10px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin-bottom: 5px; display: flex; justify-content: space-between; }
+  .sc h4 .st { letter-spacing: 0; text-transform: none; }
+  .cue-row { display: grid; grid-template-columns: 16px 58px 26px 34px 1fr 24px; gap: 6px; align-items: center; font: 11px var(--mono); padding: 1.5px 0; }
+  .cue-row .brg { text-align: center; color: var(--ink); }
+  .cue-row .bd { color: var(--dim); }
+  .cue-row .bar { margin: 0; height: 4px; }
+  .mate-row { display: grid; grid-template-columns: 52px 1fr 60px; gap: 6px; font: 11px var(--mono); padding: 1px 0; color: var(--dim); }
+  .mate-row .cs { color: var(--friend); }
+  .sees-chip { display: inline-block; font-family: var(--mono); font-size: 11px; border: 1px solid #5a2020; color: var(--hostile); border-radius: 4px; padding: 0 5px; margin: 1px 3px 1px 0; cursor: pointer; }
+  .sees-chip:hover { background: #2a1414; }
+  .flagline { display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0; }
+  .flag { font: 10px var(--mono); border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--dim); }
+  .flag.on { color: var(--ink); border-color: #3a4556; }
+  .flag.warn { color: var(--warn); border-color: #5a4a1a; background: #2a2411; }
+  .flag.bad { color: var(--bad); border-color: #5a2020; background: #2a1414; }
+  .flag.good { color: var(--good); border-color: #1f4a30; }
 </style>
 </head>
 <body>
 <header>
-  <h1>⬢ <span>cohort</span> dashboard</h1>
+  <h1>⬢ <span>cohort</span> ops</h1>
   <div class="tabs">
     <div class="tab active" id="tab-training">Training</div>
     <div class="tab" id="tab-episode">Episode</div>
     <div class="tab" id="tab-command">Command</div>
   </div>
+  <div id="stripe" class="hidden"></div>
   <div id="status"></div>
 </header>
 <main>
@@ -140,7 +202,7 @@
     <div class="card hidden" id="behavior-card"><h3>Behavior (eval suite)</h3>
       <div id="behavior-body" style="font-size:11px"></div>
     </div>
-    <div class="card"><h3>Legend</h3><div id="legend" style="font-size:11px"></div></div>
+    <div class="card"><h3>Legend</h3><div id="legend" style="font-size:11px;line-height:1.7"></div></div>
   </div>
 
   <!-- ============ COMMAND (live) ============ -->
@@ -177,7 +239,8 @@
     <div id="mapwrap">
       <canvas id="map"></canvas>
       <div id="outbadge"></div>
-      <div id="maphint">click an agent, enemy, objective or cell to inspect · ←/→ step · space play</div>
+      <div id="maptip"></div>
+      <div id="maphint">click to inspect · drag pan · wheel zoom · double-click reset · ←/→ step · space play</div>
     </div>
     <div class="playbar card">
       <button class="small" id="pb-start" title="to start">⏮</button>
@@ -185,7 +248,7 @@
       <button class="small" id="pb-play" title="play/pause">▶</button>
       <button class="small" id="pb-fwd" title="step forward">▶︎▶︎</button>
       <input type="range" id="pb-slider" min="0" max="0" value="0">
-      <span id="pb-t" style="min-width:76px;text-align:right;font-family:ui-monospace,Menlo,monospace">t=0/0</span>
+      <span id="pb-t">t=0/0</span>
       <select id="pb-speed" style="width:84px">
         <option value="2">2 st/s</option><option value="5">5 st/s</option>
         <option value="10" selected>10 st/s</option><option value="20">20 st/s</option>
@@ -206,6 +269,7 @@
     </div>
   </div>
 </main>
+<div id="charttip"></div>
 <script>
 "use strict";
 /* ============================= helpers ============================= */
@@ -217,6 +281,7 @@ const api = async (path) => {
   return j;
 };
 const fmt = (v, d = 2) => (v == null || Number.isNaN(v)) ? "–" : (+v).toFixed(d);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const smooth = (arr, k) => arr.map((_, i) => {
   const lo = Math.max(0, i - (k >> 1)), hi = Math.min(arr.length, i + (k >> 1) + 1);
   let s = 0; for (let j = lo; j < hi; j++) s += arr[j];
@@ -224,31 +289,42 @@ const smooth = (arr, k) => arr.map((_, i) => {
 });
 
 /* NATO APP-6 / MIL-STD-2525: affiliation colors (light fills) + echelon marks */
-const FRIEND_FILL = "#80e0ff", FRIEND_LINE = "#0f5c86", FRIEND_TEXT = "#a8e4ff";
-const HOSTILE_FILL = "#ff8080", HOSTILE_LINE = "#7a1111";
-const HUMAN_RING = "#e8b93c";
+const FRIEND_FILL = "#7fd4f2", FRIEND_LINE = "#17516e", FRIEND_TEXT = "#a8e4ff";
+const HOSTILE_FILL = "#ff8484", HOSTILE_LINE = "#7a1414";
+const HUMAN_RING = "#e5a944";
 const ECHELON = { RFN: "", TL: "∅", SL: "●", PSG: "●●●", PL: "●●●", XO: "|", CO: "|" };
 const GRADES = { RFN: "OR-3", TL: "OR-5", SL: "OR-6", PSG: "OR-7", PL: "OF-1", XO: "OF-2", CO: "OF-2" };
 const RANK_TITLES = { RFN: "Rifleman", TL: "Fire Team Leader", SL: "Squad Leader", PSG: "Platoon Sergeant", PL: "Platoon Leader", XO: "Executive Officer", CO: "Company Commander" };
-const KIND_COLORS = { opord: "#ffd75e", order: "#ffd75e", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#4ade80", done_confirm: "#4ade80", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#ff5252", taking_command: "#c084fc", trap: "#ffd24d" };
-const KIND_GROUPS = { orders: ["opord", "order", "ack"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command", "trap"] };
+const KIND_COLORS = { opord: "#e5a944", order: "#e5a944", ack: "#6b7280", contact: "#ff8c42", sitrep: "#6fb3ff", done: "#57c07f", done_confirm: "#57c07f", done_reject: "#ff8c42", support_end: "#c084fc", casualty: "#e5544d", taking_command: "#c084fc", trap: "#ffd24d", say_again: "#e5a944", readback: "#6fb3ff" };
+const KIND_GROUPS = { orders: ["opord", "order", "ack", "say_again", "readback"], reports: ["contact", "sitrep", "done", "done_confirm", "done_reject", "support_end"], events: ["casualty", "taking_command", "trap"] };
+const MEDIUM_LETTER = { briefing: "B", radio: "R", voice: "V", signal: "S", gesture: "G", external: "E" };
+/* acoustic cue rendering: bearing sector 0=E,1=SE…7=NE (y-down: clockwise from east) */
+const CUE_ARROWS = ["→", "↘", "↓", "↙", "←", "↖", "↑", "↗"];
+const CUE_KIND_COLOR = { movement: "#9aa7b8", voice: "#7fd4f2", signal: "#9085e9", weapon_fire: "#d95926", trap: "#e5a944" };
+const CUE_SIDE_COLOR = { friendly: "#7fd4f2", hostile: "#ff8484", unknown: "#9aa7b8" };
+const BAND_NAMES = ["NEAR", "MID", "FAR"];
+const BAND_RADIUS = [3, 7, 13];   /* cohort.core.acoustics BAND_ANCHOR_DISTANCE */
+/* sensor parameters when a legacy trace predates their recording */
+const DEFAULT_COMBAT = { vision: 10, forest_vision: 6, weapon: 8 };
+const DEFAULT_COMMS = { model: "global", range: 12, voice_range: 6, sound: "off", liaison: false };
+const combatOf = () => (EP && EP.combat) || DEFAULT_COMBAT;
+const commsOf = () => (EP && EP.comms) || DEFAULT_COMMS;
 
 /* ============================= charts ============================= */
-function drawChart(canvas, series, opts = {}) {
+/* series carry {name,x,y,color,raw,faint}; hover = crosshair + value tooltip */
+function drawChart(canvas, series, opts = {}, hoverPx = null) {
   const dpr = window.devicePixelRatio || 1;
   const W = canvas.clientWidth, H = canvas.clientHeight;
   canvas.width = W * dpr; canvas.height = H * dpr;
   const g = canvas.getContext("2d"); g.scale(dpr, dpr);
   g.clearRect(0, 0, W, H);
   const padL = 40, padR = 8, padT = 8, padB = 18;
-  // x range spans every series: a series that starts late (its first
-  // iterations completed no episode) must not compress the axis for the rest
   let xmin = Infinity, xmax = -Infinity;
   for (const s of series) {
     if (!s.x.length) continue;
     xmin = Math.min(xmin, s.x[0]); xmax = Math.max(xmax, s.x[s.x.length - 1]);
   }
-  if (!Number.isFinite(xmin)) { g.fillStyle = "#8a919c"; g.fillText("no data", W / 2 - 18, H / 2); return; }
+  if (!Number.isFinite(xmin)) { g.fillStyle = "#8b94a3"; g.fillText("no data", W / 2 - 18, H / 2); return null; }
   let ymin = Infinity, ymax = -Infinity;
   for (const s of series) for (const v of s.y) { if (v < ymin) ymin = v; if (v > ymax) ymax = v; }
   if (opts.zero) ymin = Math.min(ymin, 0);
@@ -256,7 +332,7 @@ function drawChart(canvas, series, opts = {}) {
   const pad = (ymax - ymin) * 0.08; ymin -= pad; ymax += pad;
   const X = (v) => padL + (v - xmin) / (xmax - xmin || 1) * (W - padL - padR);
   const Y = (v) => padT + (1 - (v - ymin) / (ymax - ymin)) * (H - padT - padB);
-  g.strokeStyle = "#2e333b"; g.fillStyle = "#8a919c"; g.font = "10px sans-serif"; g.lineWidth = 1;
+  g.strokeStyle = "#29323f"; g.fillStyle = "#8b94a3"; g.font = "10px sans-serif"; g.lineWidth = 1;
   for (let i = 0; i <= 3; i++) {
     const v = ymin + (ymax - ymin) * i / 3, y = Y(v);
     g.beginPath(); g.moveTo(padL, y); g.lineTo(W - padR, y); g.stroke();
@@ -277,14 +353,46 @@ function drawChart(canvas, series, opts = {}) {
     s.y.forEach((v, i) => i ? g.lineTo(X(s.x[i]), Y(v)) : g.moveTo(X(s.x[i]), Y(v)));
     g.stroke();
   });
-  if (series.length > 1 || opts.legend) {
+  if (series.length > 1) {
     let lx = padL + 6;
     series.forEach((s) => {
       g.fillStyle = s.color; g.fillRect(lx, padT + 2, 10, 3);
-      g.fillStyle = "#d6d9de"; g.fillText(s.name, lx + 13, padT + 7);
+      g.fillStyle = "#d8dce3"; g.fillText(s.name, lx + 13, padT + 7);
       lx += 22 + g.measureText(s.name).width;
     });
   }
+  let hover = null;
+  if (hoverPx != null && hoverPx >= padL && hoverPx <= W - padR) {
+    const xv = xmin + (hoverPx - padL) / (W - padL - padR) * (xmax - xmin);
+    hover = { x: null, rows: [] };
+    series.forEach((s) => {
+      if (!s.x.length) return;
+      let best = 0, bd = Infinity;
+      s.x.forEach((v, i) => { const d = Math.abs(v - xv); if (d < bd) { bd = d; best = i; } });
+      hover.x = s.x[best];
+      hover.rows.push({ name: s.name, color: s.color, v: s.raw[best] });
+      g.fillStyle = s.color;
+      g.beginPath(); g.arc(X(s.x[best]), Y(s.y[best]), 3, 0, 7); g.fill();
+    });
+    g.strokeStyle = "#8b94a355"; g.beginPath();
+    g.moveTo(X(hover.x), padT); g.lineTo(X(hover.x), H - padB); g.stroke();
+  }
+  return hover;
+}
+
+const chartTip = $("charttip");
+function attachChartHover(canvas, redraw) {
+  canvas.addEventListener("mousemove", (e) => {
+    const r = canvas.getBoundingClientRect();
+    const hover = redraw(e.clientX - r.left);
+    if (!hover) { chartTip.style.display = "none"; return; }
+    chartTip.innerHTML = `<div class="r"><span style="color:#8b94a3">step</span><b>${hover.x.toLocaleString()}</b></div>` +
+      hover.rows.map((row) => `<div class="r"><span><span class="sw" style="background:${row.color}"></span>${esc(row.name)}</span><b>${fmt(row.v, 3)}</b></div>`).join("");
+    chartTip.style.display = "block";
+    chartTip.style.left = Math.min(window.innerWidth - 180, e.clientX + 14) + "px";
+    chartTip.style.top = (e.clientY + 12) + "px";
+  });
+  canvas.addEventListener("mouseleave", () => { chartTip.style.display = "none"; redraw(null); });
 }
 
 /* ============================= training tab ============================= */
@@ -300,8 +408,6 @@ async function loadState() {
 function renderRunList() {
   const el = $("runlist");
   if (!STATE.runs.length) { el.innerHTML = '<div class="empty">no runs yet</div>'; return; }
-  // live runs first: current work sits at the top of the list, not wherever
-  // the alphabet happens to put it. Stable within each group (server order).
   const live = (r) => !!(r.job && r.job.live);
   const ordered = [...STATE.runs.filter(live), ...STATE.runs.filter((r) => !live(r))];
   el.innerHTML = ordered.map((r) => {
@@ -320,9 +426,6 @@ function renderRunList() {
   }).join("");
 }
 
-// Delegated listener registered ONCE: run items are rebuilt by the 5s
-// auto-refresh, and per-item handlers die with their nodes (a click that
-// straddles a rebuild is silently lost). The parent element persists.
 $("runlist").addEventListener("click", (e) => {
   const item = e.target.closest(".runitem");
   if (!item) return;
@@ -346,7 +449,6 @@ async function renderRunCharts() {
   const m = await api(`/api/metrics?run=${encodeURIComponent(selectedRun)}`);
   const c = m.columns, x = c.env_steps;
   if (!x || !x.length) {
-    // a just-launched live run: listed already, but no first row written yet
     $("traincards").innerHTML = "";
     $("traincharts").innerHTML = "";
     $("trainempty").textContent = `${selectedRun} — waiting for the first metrics row…`;
@@ -354,8 +456,6 @@ async function renderRunCharts() {
     return;
   }
   $("trainempty").classList.add("hidden");
-  // last *reported* value: the final iterations of a run can complete no
-  // episode, and "–" beats reporting their absence as a 0
   const last = (k) => {
     const col = c[k] || [];
     for (let i = col.length - 1; i >= 0; i--) if (col[i] != null) return col[i];
@@ -368,32 +468,34 @@ async function renderRunCharts() {
     "episode return|" + fmt(last("ep_return")),
     "steps / sec|" + num(last("sps"))]
     .map((s) => { const [k, v] = s.split("|"); return `<div class="card stat"><div class="v">${v}</div><div class="k">${k}</div></div>`; }).join("");
+  /* categorical slots are assigned by role, in fixed order (never cycled) */
+  const S1 = "#3987e5", S2 = "#d95926", S3 = "#199e70", S4 = "#c98500", S5 = "#d55181";
   const charts = [
-    ["episode return", [["ep_return", "#6fb3ff"]], { smooth: 9, zero: true }],
-    ["success rate (rolling 100 ep)", [["success_rate_rolling", "#4ade80"]], {}],
-    ["episode length", [["ep_length", "#ffd75e"]], { smooth: 9 }],
-    ["reward components / agent-step", [["comp_compliance", "#6fb3ff"], ["comp_report", "#ffd75e"], ["comp_command", "#4ade80"], ["comp_combat", "#ff8c42"], ["tx_per_agent_step", "#f472b6"]], { smooth: 15, zero: true, legend: true }],
-    ["policy entropy", [["entropy", "#c084fc"]], {}],
-    ["losses", [["policy_loss", "#6fb3ff"], ["value_loss", "#ff8c42"]], { legend: true, smooth: 9 }],
+    ["episode return", [["ep_return", S1]], { smooth: 9, zero: true }],
+    ["success rate (rolling 100 ep)", [["success_rate_rolling", S3]], {}],
+    ["episode length", [["ep_length", S4]], { smooth: 9 }],
+    ["reward components / agent-step", [["comp_compliance", S1], ["comp_report", S4], ["comp_command", S3], ["comp_combat", S2], ["tx_per_agent_step", S5]], { smooth: 15, zero: true }],
+    ["policy entropy", [["entropy", "#9085e9"]], {}],
+    ["losses", [["policy_loss", S1], ["value_loss", S2]], { smooth: 9 }],
   ];
   const holder = $("traincharts");
   if (holder.children.length !== charts.length) {
     holder.innerHTML = charts.map((ch, i) =>
       `<div class="card chart-card"><h3>${ch[0]}</h3><canvas id="tc${i}"></canvas></div>`).join("");
+    charts.forEach((_, i) => attachChartHover($(`tc${i}`), (px) => drawChart($(`tc${i}`), CHART_SERIES[i] || [], charts[i][2], px)));
   }
   charts.forEach((ch, i) => {
     const series = ch[1].filter(([k]) => c[k]).map(([k, color]) => {
-      // /api/metrics sends null for an iteration that completed no episode;
-      // those points are dropped (x and y together) rather than drawn as 0,
-      // which would invent a datum the run never produced
       const sx = [], raw = [];
       c[k].forEach((v, j) => { if (v != null) { sx.push(x[j]); raw.push(v); } });
       const y = ch[2].smooth ? smooth(raw, ch[2].smooth) : raw;
-      return { name: k.replace("comp_", ""), x: sx, y, color, raw, faint: !!ch[2].smooth };
+      return { name: k.replace("comp_", "").replace("tx_per_agent_step", "tx"), x: sx, y, color, raw, faint: !!ch[2].smooth };
     });
+    CHART_SERIES[i] = series;
     drawChart($(`tc${i}`), series, ch[2]);
   });
 }
+const CHART_SERIES = {};
 
 $("autorefresh").onchange = setupRefresh;
 function setupRefresh() {
@@ -407,24 +509,31 @@ setupRefresh();
 let EP = null, t = 0, playing = false, playTimer = null;
 let sel = null; // {type:'soldier'|'enemy'|'obj'|'cell', key}
 const TOGGLES = [
+  ["g1", "everyone", null],
   ["links", "C2 links", true], ["anchors", "mission anchors", true],
   ["hp", "health bars", true], ["ammo", "ammo bars", false],
-  ["vision", "vision + LOS (selected)", true], ["known", "known enemies", true],
-  ["comms", "comm flashes", true], ["labels", "callsigns", true],
-  ["grid", "grid", false], ["trails", "movement trails", false],
+  ["known", "team enemy picture", true], ["comms", "radio traffic", true],
+  ["labels", "callsigns", true], ["trails", "movement trails", false],
+  ["grid", "graticule", false],
+  ["g2", "selected station", null],
+  ["vision", "vision + LOS", true], ["rings", "weapon + net range", true],
+  ["cues", "acoustic cues", true], ["mates", "teammate memory", true],
+  ["picture", "own enemy picture", true],
 ];
-const toggles = Object.fromEntries(TOGGLES.map(([k, , v]) => [k, v]));
-$("toggles").innerHTML = TOGGLES.map(([k, label, v]) =>
-  `<label class="row"><input type="checkbox" data-t="${k}" ${v ? "checked" : ""}> ${label}</label>`).join("");
+const toggles = Object.fromEntries(TOGGLES.filter(([, , v]) => v !== null).map(([k, , v]) => [k, v]));
+$("toggles").innerHTML = TOGGLES.map(([k, label, v]) => v === null
+  ? `<div class="tgroup">${label}</div>`
+  : `<label class="row"><input type="checkbox" data-t="${k}" ${v ? "checked" : ""}> ${label}</label>`).join("");
 $("toggles").querySelectorAll("input").forEach((el) =>
   el.onchange = () => { toggles[el.dataset.t] = el.checked; drawMap(); });
 
 $("legend").innerHTML =
-  `<span style="color:${FRIEND_FILL}">▭</span> friendly (APP-6 frame + infantry saltire)<br>
-   echelon marks: <b>∅</b> team (TL) · <b>●</b> squad (SL) · <b>●●●</b> platoon (PL/PSG) · <b>|</b> company (CO/XO)<br>
-   <span style="color:${HUMAN_RING}">◯</span> human commander (gold ring)<br>
-   <span style="color:${HOSTILE_FILL}">◆</span> hostile &nbsp; <span style="color:${HOSTILE_FILL}">◇</span> reported contact (suspected, dashed) &nbsp; <span style="color:#ffd24d">▲</span> device (revealed trap)<br>
-   <span style="color:#5f8f5f">▦</span> forest &nbsp; <span style="color:#555">▩</span> wall`;
+  `<span style="color:${FRIEND_FILL}">▭</span> friendly (APP-6 frame + infantry saltire) &nbsp; <span style="color:${HUMAN_RING}">◯</span> human commander<br>
+   echelon: <b>∅</b> team · <b>●</b> squad · <b>●●●</b> platoon · <b>|</b> company<br>
+   <span style="color:${HOSTILE_FILL}">◆</span> hostile · <span style="color:${HOSTILE_FILL}">◇</span> reported contact (team picture) · <span style="color:${HUMAN_RING}">◇</span> own picture (selected)<br>
+   <span style="color:#e5a944">?</span> garbled order held · <span style="color:#e5a944">!</span> SAY AGAIN heard · <span style="color:${FRIEND_FILL}">▢</span> teammate last-known (ghost)<br>
+   sound wedges: <span style="color:#d95926">◠</span> weapon · <span style="color:#7fd4f2">◠</span> voice · <span style="color:#9aa7b8">◠</span> movement · <span style="color:#9085e9">◠</span> signal<br>
+   <span style="color:#5f8f5f">▦</span> forest (cover) · <span style="color:#666">▩</span> wall · <span style="color:#ffd24d">▲</span> revealed device`;
 
 const msgFilters = { orders: true, reports: true, events: true };
 $("msgfilters").innerHTML = Object.keys(KIND_GROUPS).map((k) =>
@@ -434,18 +543,11 @@ $("msgfilters").querySelectorAll(".chip").forEach((el) => el.onclick = () => {
   el.classList.toggle("on"); renderMsgs();
 });
 
-/* ---------- picking a policy: task -> echelon -> version ----------
-   A flat list of every run x every checkpoint ran to ~100 entries. The three
-   menus mirror how the work is actually organised: what the unit is ordered to
-   do, at what echelon, and which trained version of it. (task, echelon)
-   identifies a scenario uniquely -- the server derives both from the
-   ScenarioSpec, so this list never drifts from the scenarios that exist. */
-
+/* ---------- picking a policy: task -> echelon -> version ---------- */
 const ECHELON_ORDER = ["fireteam", "squad", "platoon"];
 
 function tasks() {
   const t = [...new Set(Object.values(STATE.scenarios).map((s) => s.task))];
-  // real tasks first, ablation arms last: they are research arms, not doctrine
   return t.sort((a, b) => (a.startsWith("Ablation") - b.startsWith("Ablation")) || a.localeCompare(b));
 }
 
@@ -461,7 +563,6 @@ function scenarioOf(prefix) {
   return hit ? hit[0] : null;
 }
 
-/* "squad_v4b" under scenario "squad" -> "v4b"; anything else keeps its name. */
 function versionLabel(runName, scenario) {
   return runName.startsWith(scenario + "_") ? runName.slice(scenario.length + 1) : runName;
 }
@@ -485,8 +586,6 @@ function fillEchelon(prefix) {
   fillVersion(prefix);
 }
 
-/* Versions of the resolved scenario, newest first, checkpoint folded in.
-   Default is the newest version -- the run you almost always want. */
 function fillVersion(prefix) {
   const sel = $(prefix + "-version"), cur = sel.value;
   const scenario = scenarioOf(prefix);
@@ -499,8 +598,6 @@ function fillVersion(prefix) {
   let opts = "";
   runs.forEach((r) => {
     r.checkpoints.forEach((c) => {
-      // a checkpoint this build cannot load is still viewable IF a trace was
-      // recorded at its own revision -- mark which, rather than hiding either
       const replay = !c.loadable && r.traces.some((t) => t.startsWith(`${scenario}_${c.kind}_`));
       const mark = c.loadable ? "" : (replay ? "▣ " : "⚠ ");
       const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M` : "";
@@ -539,9 +636,6 @@ function fillEpisodeSelectors() {
   loadBehavior();
 }
 
-/* Behavior card (B2): the behavioral metrics suite of the selected run's
-   last evaluation (runs/<run>/behavior.json), shown next to the episode
-   controls. Definitions: docs/metrics.md. */
 const BEHAVIOR_ROWS = [
   ["obedience_latency_mean", "obedience latency", (v) => fmt(v, 1) + " steps"],
   ["report_precision", "report precision", (v) => fmt(v, 2)],
@@ -590,7 +684,7 @@ async function generateEpisode() {
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
     stopAuto(); MODE = "replay";
-    EP = trace;
+    EP = trace; TERRAIN = null; VIEW = { z: 1, px: 0, py: 0 };
     t = 0; sel = null; playing = false; clearInterval(playTimer);
     $("pb-slider").max = EP.steps.length - 1;
     const badge = $("outbadge");
@@ -598,16 +692,35 @@ async function generateEpisode() {
     badge.textContent = EP.outcome.toUpperCase();
     badge.style.background = EP.outcome === "success" ? "#14532d" : EP.outcome === "defeat" ? "#7f1d1d" : "#57534e";
     badge.style.color = "#fff";
-    $("ep-info").innerHTML = `<b>${EP.outcome.toUpperCase()}</b> in ${EP.length} steps · ${EP.opord}<br>policy: ${EP.policy.split("/").pop()}`;
+    $("ep-info").innerHTML = `<b>${EP.outcome.toUpperCase()}</b> in ${EP.length} steps · ${esc(EP.opord)}<br>policy: ${esc(EP.policy.split("/").pop())}`;
     drawTimeline(); seek(0);
     $("status").textContent = "";
   } catch (e) {
-    // a failed generate used to leave the map blank with only a faint status
-    // line — say what went wrong where the controls are
     $("status").textContent = "episode failed";
-    $("ep-info").innerHTML = `<div class="errbox">could not simulate: ${e.message}</div>`;
+    $("ep-info").innerHTML = `<div class="errbox">could not simulate: ${esc(e.message)}</div>`;
   }
   $("ep-generate").disabled = false; $("ep-generate").textContent = "▶ Generate";
+}
+
+/* ---------- mission strip ---------- */
+function renderStripe() {
+  const el = $("stripe");
+  if (!EP || $("main-episode").classList.contains("hidden")) { el.classList.add("hidden"); return; }
+  el.classList.remove("hidden");
+  const st = EP.steps[t];
+  const alive = st.soldiers.filter((s) => s.alive).length;
+  const foe = st.enemies.filter((e) => e.alive).length;
+  const comms = commsOf();
+  const netLabel = { global: "NET GLOBAL", range: "NET RANGE", voice_only: "VOICE ONLY", jammed: "NET EW" }[comms.model] || comms.model;
+  const jammed = !!st.jammed;
+  const out = (MODE === "live" && !EP.outcome) ? "" : (EP.outcome || "");
+  const outColor = out === "success" ? "var(--good)" : out === "defeat" ? "var(--bad)" : "var(--dim)";
+  el.innerHTML =
+    `<span class="sti"><b>${esc(EP.scenario)}</b> · seed ${EP.seed}</span>` +
+    `<span class="sti">t <b>${st.t}</b>/${EP.max_steps}</span>` +
+    `<span class="sti">blue <b style="color:${alive ? "var(--friend)" : "var(--bad)"}">${alive}/${st.soldiers.length}</b> · red <b style="color:${foe ? "var(--hostile)" : "var(--good)"}">${foe}</b></span>` +
+    `<span class="sti ${jammed ? "net-jam" : ""}">${jammed ? "▓ JAMMED" : netLabel}${comms.sound === "tactical" ? " · SOUND" : ""}</span>` +
+    (out ? `<span class="sti" style="color:${outColor};font-weight:700">${out.toUpperCase()}</span>` : "");
 }
 
 /* ---------- playback ---------- */
@@ -616,7 +729,7 @@ function seek(nt) {
   t = Math.max(0, Math.min(EP.steps.length - 1, nt));
   $("pb-slider").value = t;
   $("pb-t").textContent = `t=${EP.steps[t].t}/${EP.length}`;
-  drawMap(); renderInspector(); renderCoC(); renderMsgs(); drawTimeline();
+  drawMap(); renderInspector(); renderCoC(); renderMsgs(); drawTimeline(); renderStripe();
 }
 function togglePlay(force) {
   playing = force !== undefined ? force : !playing;
@@ -640,15 +753,66 @@ document.addEventListener("keydown", (e) => {
   if (e.key === " ") { togglePlay(); e.preventDefault(); }
 });
 
-/* ---------- map ---------- */
+/* ---------- map: view transform (fit x zoom/pan) ---------- */
 const map = $("map");
+let VIEW = { z: 1, px: 0, py: 0 };
 function geom() {
   const W = map.clientWidth, H = map.clientHeight;
-  const cell = Math.min(W / EP.width, H / EP.height);
-  return { W, H, cell, ox: (W - cell * EP.width) / 2, oy: (H - cell * EP.height) / 2 };
+  const fit = Math.min(W / EP.width, H / EP.height);
+  const cell = fit * VIEW.z;
+  return {
+    W, H, cell,
+    ox: (W - fit * EP.width) / 2 * VIEW.z + VIEW.px,
+    oy: (H - fit * EP.height) / 2 * VIEW.z + VIEW.py,
+  };
 }
 const cx = (g, x) => g.ox + (x + 0.5) * g.cell;
 const cy = (g, y) => g.oy + (y + 0.5) * g.cell;
+
+/* ---------- terrain: cached offscreen render with per-cell texture ---------- */
+let TERRAIN = null; // {canvas, cell, ep}
+function jitter(x, y, k) {
+  let h = (x * 374761393 + y * 668265263 + k * 971) >>> 0;
+  h = ((h ^ (h >> 13)) * 1274126177) >>> 0;
+  return ((h ^ (h >> 16)) % 1000) / 1000;
+}
+function terrainCanvas(cellPx) {
+  const cell = Math.max(4, Math.min(30, Math.round(cellPx)));
+  if (TERRAIN && TERRAIN.cell === cell && TERRAIN.ep === EP) return TERRAIN.canvas;
+  const cv = document.createElement("canvas");
+  cv.width = EP.width * cell; cv.height = EP.height * cell;
+  const g = cv.getContext("2d");
+  for (let y = 0; y < EP.height; y++) for (let x = 0; x < EP.width; x++) {
+    const v = EP.grid[y][x], X = x * cell, Y = y * cell;
+    if (v === 2) {                       // wall: raised block with a lit top edge
+      g.fillStyle = `hsl(222, 12%, ${24 + jitter(x, y, 1) * 3}%)`;
+      g.fillRect(X, Y, cell, cell);
+      g.fillStyle = "#ffffff14"; g.fillRect(X, Y, cell, Math.max(1, cell * 0.14));
+      g.fillStyle = "#00000038"; g.fillRect(X, Y + cell - Math.max(1, cell * 0.16), cell, Math.max(1, cell * 0.16));
+    } else if (v === 1) {                // forest: mottled canopy
+      g.fillStyle = `hsl(142, 20%, ${10.5 + jitter(x, y, 2) * 3}%)`;
+      g.fillRect(X, Y, cell, cell);
+      if (cell >= 8) {
+        for (let d = 0; d < 3; d++) {
+          const jx = jitter(x, y, 3 + d), jy = jitter(x, y, 6 + d);
+          g.fillStyle = d === 2 ? "#3d5c4222" : "#0a140d55";
+          g.beginPath();
+          g.arc(X + cell * (0.2 + 0.6 * jx), Y + cell * (0.2 + 0.6 * jy), cell * (0.14 + 0.1 * jitter(x, y, 9 + d)), 0, 7);
+          g.fill();
+        }
+      }
+    } else {                             // open ground: quiet dark earth
+      g.fillStyle = `hsl(90, 7%, ${8 + jitter(x, y, 0) * 1.8}%)`;
+      g.fillRect(X, Y, cell, cell);
+    }
+  }
+  TERRAIN = { canvas: cv, cell, ep: EP };
+  return cv;
+}
+
+function selectedSoldier(st) {
+  return sel?.type === "soldier" ? st.soldiers.find((o) => o.cs === sel.key) : null;
+}
 
 function drawMap() {
   if (!EP) return;
@@ -657,42 +821,58 @@ function drawMap() {
   map.width = g0.W * dpr; map.height = g0.H * dpr;
   const g = map.getContext("2d"); g.scale(dpr, dpr);
   const st = EP.steps[t], cell = g0.cell;
-  // terrain
-  for (let y = 0; y < EP.height; y++) for (let x = 0; x < EP.width; x++) {
-    const v = EP.grid[y][x];
-    g.fillStyle = v === 2 ? "#3a3f47" : v === 1 ? "#22392a" : "#191c21";
-    g.fillRect(g0.ox + x * cell, g0.oy + y * cell, cell + 0.5, cell + 0.5);
-  }
+  const mapW = EP.width * cell, mapH = EP.height * cell;
+
+  // terrain (cached), clipped to the board
+  const terrain = terrainCanvas(cell);
+  g.imageSmoothingEnabled = cell < terrain.width / EP.width; // crisp when zoomed in
+  g.drawImage(terrain, g0.ox, g0.oy, mapW, mapH);
+  // board edge
+  g.strokeStyle = "#3a4556"; g.lineWidth = 1;
+  g.strokeRect(g0.ox - 0.5, g0.oy - 0.5, mapW + 1, mapH + 1);
+
   if (toggles.grid && cell > 7) {
-    g.strokeStyle = "#ffffff10"; g.lineWidth = 1; g.beginPath();
-    for (let x = 0; x <= EP.width; x++) { g.moveTo(g0.ox + x * cell, g0.oy); g.lineTo(g0.ox + x * cell, g0.oy + EP.height * cell); }
-    for (let y = 0; y <= EP.height; y++) { g.moveTo(g0.ox, g0.oy + y * cell); g.lineTo(g0.ox + EP.width * cell, g0.oy + y * cell); }
+    g.strokeStyle = "#ffffff0d"; g.lineWidth = 1; g.beginPath();
+    for (let x = 0; x <= EP.width; x++) { g.moveTo(g0.ox + x * cell, g0.oy); g.lineTo(g0.ox + x * cell, g0.oy + mapH); }
+    for (let y = 0; y <= EP.height; y++) { g.moveTo(g0.ox, g0.oy + y * cell); g.lineTo(g0.ox + mapW, g0.oy + y * cell); }
     g.stroke();
+    // 5-cell graticule with coordinates
+    g.strokeStyle = "#ffffff1c"; g.beginPath();
+    for (let x = 0; x <= EP.width; x += 5) { g.moveTo(g0.ox + x * cell, g0.oy); g.lineTo(g0.ox + x * cell, g0.oy + mapH); }
+    for (let y = 0; y <= EP.height; y += 5) { g.moveTo(g0.ox, g0.oy + y * cell); g.lineTo(g0.ox + mapW, g0.oy + y * cell); }
+    g.stroke();
+    g.fillStyle = "#5c6572"; g.font = `${Math.max(8, cell * 0.35)}px ${"ui-monospace, Menlo, monospace"}`; g.textAlign = "left";
+    for (let x = 0; x < EP.width; x += 5) g.fillText(String(x), g0.ox + x * cell + 2, g0.oy + 10);
+    for (let y = 5; y < EP.height; y += 5) g.fillText(String(y), g0.ox + 2, g0.oy + y * cell + 10);
   }
-  // objectives
+
+  // objectives: faint area fill + dashed ring
   EP.objectives.forEach((o) => {
+    g.fillStyle = "#8a8f9812";
+    g.beginPath(); g.arc(cx(g0, o.x), cy(g0, o.y), o.r * cell, 0, 7); g.fill();
     g.strokeStyle = "#8a8f98"; g.setLineDash([4, 4]); g.lineWidth = 1.2;
     g.beginPath(); g.arc(cx(g0, o.x), cy(g0, o.y), o.r * cell, 0, 7); g.stroke();
     g.setLineDash([]);
-    g.fillStyle = "#a8adb6"; g.font = `${Math.max(9, cell * 0.55)}px sans-serif`; g.textAlign = "center";
+    g.fillStyle = "#a8adb6"; g.font = `${Math.max(9, cell * 0.5)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
     g.fillText("OBJ " + o.name, cx(g0, o.x), cy(g0, o.y) - o.r * cell - 4);
   });
-  // control measures (A5): waypoints = small dashed diamonds, phase lines = thin dashed lines
+  // control measures (A5)
   (EP.waypoints || []).forEach((w) => {
     const X = cx(g0, w.x), Y = cy(g0, w.y), r = cell * 0.45;
     g.strokeStyle = "#9d8fc9"; g.lineWidth = 1.1; g.setLineDash([3, 3]);
     g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
     g.setLineDash([]);
-    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.5)}px sans-serif`; g.textAlign = "center";
-    g.fillText("WP " + w.name, X, Y + r + Math.max(9, cell * 0.55));
+    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.45)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
+    g.fillText("WP " + w.name, X, Y + r + Math.max(9, cell * 0.5));
   });
   (EP.phase_lines || []).forEach((p) => {
     g.strokeStyle = "#9d8fc9"; g.lineWidth = 1.1; g.setLineDash([6, 4]);
     g.beginPath(); g.moveTo(cx(g0, p.x1), cy(g0, p.y1)); g.lineTo(cx(g0, p.x2), cy(g0, p.y2)); g.stroke();
     g.setLineDash([]);
-    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.5)}px sans-serif`; g.textAlign = "center";
+    g.fillStyle = "#9d8fc9"; g.font = `${Math.max(8, cell * 0.45)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
     g.fillText("PL " + p.name, (cx(g0, p.x1) + cx(g0, p.x2)) / 2 + 4, (cy(g0, p.y1) + cy(g0, p.y2)) / 2 - 4);
   });
+
   // movement trails (last 12 steps)
   if (toggles.trails) {
     for (let dt = Math.max(0, t - 12); dt < t; dt++) {
@@ -704,21 +884,30 @@ function drawMap() {
       });
     }
   }
-  // reported enemy picture: dashed diamond = suspected (2525 anticipated frame)
+
+  const selS = selectedSoldier(st);
+
+  // team picture: dashed hostile diamond = reported contact (2525 anticipated)
   if (toggles.known) st.known.forEach(([x, y]) => {
-    g.strokeStyle = HOSTILE_FILL + "b0"; g.lineWidth = 1.4; g.setLineDash([3, 3]);
-    const X = cx(g0, x), Y = cy(g0, y), r = cell * 0.36;
-    g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
-    g.setLineDash([]);
+    drawSuspect(g, cx(g0, x), cy(g0, y), cell * 0.36, HOSTILE_FILL + "b0");
   });
+  // the SELECTED station's own picture (degraded nets): amber-dashed diamonds
+  if (toggles.picture && selS?.sensors?.known) selS.sensors.known.forEach(([x, y]) => {
+    drawSuspect(g, cx(g0, x), cy(g0, y), cell * 0.42, HUMAN_RING + "c0");
+  });
+
   // C2 links + anchors
   st.soldiers.forEach((s) => {
     if (!s.alive) return;
     if (toggles.links && s.leader) {
       const L = st.soldiers.find((o) => o.cs === s.leader);
       if (L && L.alive) {
-        g.strokeStyle = "#8a919c50"; g.lineWidth = 1;
+        // a broken visual link (cohesion sensor) draws warning-dashed
+        const broken = s.sensors?.link && !s.sensors.link.intact;
+        g.strokeStyle = broken ? "#e5544d70" : "#8b94a34d"; g.lineWidth = 1;
+        if (broken) g.setLineDash([3, 3]);
         g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y)); g.lineTo(cx(g0, L.x), cy(g0, L.y)); g.stroke();
+        g.setLineDash([]);
       }
     }
     if (toggles.anchors && s.mission) {
@@ -728,30 +917,73 @@ function drawMap() {
       g.setLineDash([]);
     }
   });
-  // vision + LOS for selected soldier
-  if (toggles.vision && sel?.type === "soldier") {
-    const s = st.soldiers.find((o) => o.cs === sel.key);
-    if (s && s.alive) {
-      g.strokeStyle = "#6fb3ff40"; g.lineWidth = 1.2;
-      g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), 10 * cell, 0, 7); g.stroke();
-      g.strokeStyle = "#6fb3ff25";
-      g.beginPath(); g.arc(cx(g0, s.x), cy(g0, s.y), 8 * cell, 0, 7); g.stroke(); // weapon range
-      s.sees.forEach((eid) => {
-        const e = st.enemies.find((o) => o.id === eid);
-        if (e) { g.strokeStyle = "#ff8c4290"; g.beginPath(); g.moveTo(cx(g0, s.x), cy(g0, s.y)); g.lineTo(cx(g0, e.x), cy(g0, e.y)); g.stroke(); }
-      });
+
+  // ---- selected-station sensor overlays ----
+  if (selS && selS.alive) {
+    const X = cx(g0, selS.x), Y = cy(g0, selS.y);
+    const combat = combatOf(), comms = commsOf();
+    if (toggles.vision) {
+      ring(g, X, Y, combat.vision * cell, "#7fd4f245", 1.4);           // vision
+      ring(g, X, Y, combat.forest_vision * cell, "#7fd4f222", 1);      // vision into forest
+    }
+    if (toggles.rings) {
+      ring(g, X, Y, combat.weapon * cell, "#d9592648", 1.2);           // weapon range
+      if (comms.model === "range") ring(g, X, Y, comms.range * cell, "#e5a94438", 1.2, [6, 5]);
+      if (comms.model === "voice_only") ring(g, X, Y, comms.voice_range * cell, "#e5a94445", 1.2, [3, 4]);
+    }
+    // LOS rays to seen enemies
+    if (toggles.vision) selS.sees.forEach((eid) => {
+      const e = st.enemies.find((o) => o.id === eid);
+      if (e) { g.strokeStyle = "#ff8c4290"; g.lineWidth = 1; g.beginPath(); g.moveTo(X, Y); g.lineTo(cx(g0, e.x), cy(g0, e.y)); g.stroke(); }
+    });
+    // acoustic cues: bearing-sector wedges (0=E, clockwise, y-down), radius by band
+    if (toggles.cues && selS.sensors?.cues) selS.sensors.cues.forEach((c) => {
+      const a0 = (c.brg * 45 - 22.5) * Math.PI / 180, a1 = (c.brg * 45 + 22.5) * Math.PI / 180;
+      const r = BAND_RADIUS[Math.min(2, c.band)] * cell;
+      const alpha = Math.max(0.25, c.ttl / 6);
+      g.fillStyle = (CUE_SIDE_COLOR[c.side] || "#9aa7b8") + "1c";
+      g.strokeStyle = CUE_KIND_COLOR[c.kind] || "#9aa7b8";
+      g.globalAlpha = alpha; g.lineWidth = 1.6;
+      g.beginPath(); g.moveTo(X, Y); g.arc(X, Y, r, a0, a1); g.closePath();
+      g.fill(); g.stroke();
+      g.globalAlpha = 1;
+      if (cell > 6) {
+        const am = c.brg * 45 * Math.PI / 180;
+        g.fillStyle = CUE_KIND_COLOR[c.kind] || "#9aa7b8";
+        g.font = `${Math.max(8, cell * 0.42)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
+        g.fillText(c.kind === "weapon_fire" ? "✷" : c.kind[0].toUpperCase(), X + Math.cos(am) * (r + cell * 0.4), Y + Math.sin(am) * (r + cell * 0.4) + 3);
+      }
+    });
+    // teammate memory (voice_only): ghost frames at last-known positions
+    if (toggles.mates && selS.sensors?.mates) {
+      for (const [mcs, m] of Object.entries(selS.sensors.mates)) {
+        const gx = cx(g0, m.x), gy = cy(g0, m.y);
+        g.strokeStyle = m.seen ? FRIEND_FILL + "b0" : FRIEND_FILL + "50";
+        g.lineWidth = 1.1; g.setLineDash(m.seen ? [] : [3, 3]);
+        g.strokeRect(gx - cell * 0.3, gy - cell * 0.22, cell * 0.6, cell * 0.44);
+        g.setLineDash([]);
+        if (cell > 7) {
+          g.fillStyle = FRIEND_TEXT + (m.seen ? "b0" : "60"); g.font = `${Math.max(8, cell * 0.34)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
+          g.fillText(m.seen ? mcs : `${mcs}·${m.age}`, gx, gy + cell * 0.55);
+        }
+      }
     }
   }
-  // comm flashes for this step
+
+  // radio traffic arcs, styled by medium (voice/gesture travel differently)
   if (toggles.comms) st.messages.forEach((m) => {
     const A = st.soldiers.find((o) => o.cs === m.from), B = st.soldiers.find((o) => o.cs === m.to);
     if (!A || !B) return;
     g.strokeStyle = (KIND_COLORS[m.kind] || "#888") + "b0"; g.lineWidth = 1.8;
+    if (m.medium === "voice") g.setLineDash([4, 3]);
+    else if (m.medium === "gesture" || m.medium === "signal") g.setLineDash([1.5, 3]);
     g.beginPath(); g.moveTo(cx(g0, A.x), cy(g0, A.y));
     const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2 - Math.abs(A.x - B.x) * 0.2 - 1;
     g.quadraticCurveTo(cx(g0, mx), cy(g0, my), cx(g0, B.x), cy(g0, B.y)); g.stroke();
+    g.setLineDash([]);
   });
-  // revealed traps (BRIQUE devices): hostile-edged warning triangle
+
+  // revealed traps (BRIQUE devices)
   (st.traps || []).forEach((tp) => {
     if (!tp.revealed) return;
     const X = cx(g0, tp.x), Y = cy(g0, tp.y), r = cell * 0.34;
@@ -759,7 +991,8 @@ function drawMap() {
     g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y + r * 0.85); g.lineTo(X - r, Y + r * 0.85); g.closePath();
     g.fill(); g.stroke();
   });
-  // enemies: APP-6 hostile = red diamond frame + infantry saltire
+
+  // enemies: APP-6 hostile diamond + infantry saltire
   st.enemies.forEach((e) => {
     const X = cx(g0, e.x), Y = cy(g0, e.y), r = cell * 0.42;
     const fill = e.alive ? HOSTILE_FILL : "#4a4a4a", line = e.alive ? HOSTILE_LINE : "#6a6f78";
@@ -771,7 +1004,8 @@ function drawMap() {
     if (sel?.type === "enemy" && sel.key === e.id) { g.strokeStyle = "#fff"; g.lineWidth = 1.4; g.beginPath(); g.arc(X, Y, r + 4, 0, 7); g.stroke(); }
     if (toggles.hp && e.alive && e.hp < 100) barAt(g, X, Y - r - 5, cell, e.hp / 100, HOSTILE_FILL);
   });
-  // soldiers: APP-6 friendly = blue rectangle frame + saltire + echelon mark
+
+  // soldiers: APP-6 friendly frame + saltire + echelon mark + sensor badges
   st.soldiers.forEach((s) => {
     const X = cx(g0, s.x), Y = cy(g0, s.y);
     if (!s.alive) {
@@ -795,16 +1029,42 @@ function drawMap() {
       g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(8, cell * 0.4)}px sans-serif`; g.textAlign = "center";
       g.fillText(mark, X, Y - h / 2 - 3);
     }
+    // comm-state badges from the sensor record: held garble ping (?), heard SAY AGAIN (!)
+    if (cell > 7 && s.sensors) {
+      g.font = `bold ${Math.max(9, cell * 0.45)}px ui-monospace, Menlo, monospace`;
+      if (s.sensors.garble?.pending) { g.fillStyle = HUMAN_RING; g.textAlign = "left"; g.fillText("?", X + w / 2 + 2, Y - h / 2 + 2); }
+      if (s.sensors.say_again) { g.fillStyle = HUMAN_RING; g.textAlign = "right"; g.fillText("!", X - w / 2 - 2, Y - h / 2 + 2); }
+    }
     if (sel?.type === "soldier" && sel.key === s.cs) {
       g.strokeStyle = "#ffffff"; g.lineWidth = 1.6; g.beginPath(); g.arc(X, Y, Math.max(w, h) * 0.85, 0, 7); g.stroke();
     }
-    if (toggles.hp) barAt(g, X, Y - h / 2 - (mark ? 12 : 5), cell, s.hp / 100, s.hp > 60 ? "#4ade80" : s.hp > 30 ? "#ffd75e" : "#ff5252");
-    if (toggles.ammo) barAt(g, X, Y + h / 2 + 3, cell, s.ammo / 30, "#6fb3ff");
+    if (toggles.hp) barAt(g, X, Y - h / 2 - (mark ? 12 : 5), cell, s.hp / 100, s.hp > 60 ? "#57c07f" : s.hp > 30 ? "#e5a944" : "#e5544d");
+    if (toggles.ammo) barAt(g, X, Y + h / 2 + 3, cell, s.ammo / 30, "#3987e5");
     if (toggles.labels && cell > 8) {
-      g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(9, cell * 0.4)}px sans-serif`; g.textAlign = "center";
+      g.fillStyle = FRIEND_TEXT; g.font = `bold ${Math.max(9, cell * 0.4)}px ui-monospace, Menlo, monospace`; g.textAlign = "center";
       g.fillText(s.cs, X, Y + h / 2 + (toggles.ammo ? 8 : 3) + Math.max(9, cell * 0.4));
     }
   });
+
+  // jammed step: banner across the top of the board
+  if (st.jammed) {
+    g.fillStyle = "#7f1d1dc8";
+    const bw = Math.min(220, mapW * 0.6);
+    g.fillRect(g0.ox + mapW / 2 - bw / 2, g0.oy + 6, bw, 20);
+    g.fillStyle = "#ffdddd"; g.font = "bold 11px ui-monospace, Menlo, monospace"; g.textAlign = "center";
+    g.fillText("▓▓ NET JAMMED — EW ACTIVE ▓▓", g0.ox + mapW / 2, g0.oy + 20);
+  }
+}
+function ring(g, X, Y, r, style, width, dash) {
+  g.strokeStyle = style; g.lineWidth = width;
+  if (dash) g.setLineDash(dash);
+  g.beginPath(); g.arc(X, Y, r, 0, 7); g.stroke();
+  g.setLineDash([]);
+}
+function drawSuspect(g, X, Y, r, style) {
+  g.strokeStyle = style; g.lineWidth = 1.4; g.setLineDash([3, 3]);
+  g.beginPath(); g.moveTo(X, Y - r); g.lineTo(X + r, Y); g.lineTo(X, Y + r); g.lineTo(X - r, Y); g.closePath(); g.stroke();
+  g.setLineDash([]);
 }
 function barAt(g, X, Y, cell, frac, color) {
   const w = cell * 0.9;
@@ -812,22 +1072,90 @@ function barAt(g, X, Y, cell, frac, color) {
   g.fillStyle = color; g.fillRect(X - w / 2, Y - 2, w * Math.max(0, Math.min(1, frac)), 3.4);
 }
 
-map.addEventListener("click", (e) => {
-  if (!EP) return;
-  const rect = map.getBoundingClientRect();
+/* ---------- map interaction: hover, click-select, pan, zoom ---------- */
+function hitTest(mx, my) {
   const g0 = geom();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const st = EP.steps[t];
   const near = (x, y, rad) => Math.hypot(cx(g0, x) - mx, cy(g0, y) - my) < rad;
   const soldier = st.soldiers.find((s) => near(s.x, s.y, g0.cell * 0.8));
-  if (soldier) { sel = { type: "soldier", key: soldier.cs }; drawMap(); renderInspector(); renderCoC(); return; }
+  if (soldier) return { type: "soldier", key: soldier.cs, obj: soldier };
   const enemy = st.enemies.find((en) => near(en.x, en.y, g0.cell * 0.8));
-  if (enemy) { sel = { type: "enemy", key: enemy.id }; drawMap(); renderInspector(); renderCoC(); return; }
+  if (enemy) return { type: "enemy", key: enemy.id, obj: enemy };
   const obj = EP.objectives.find((o) => near(o.x, o.y, o.r * g0.cell));
-  if (obj) { sel = { type: "obj", key: obj.name }; drawMap(); renderInspector(); renderCoC(); return; }
+  if (obj) return { type: "obj", key: obj.name, obj };
   const gx = Math.floor((mx - g0.ox) / g0.cell), gy = Math.floor((my - g0.oy) / g0.cell);
-  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) { sel = { type: "cell", key: [gx, gy] }; drawMap(); renderInspector(); renderCoC(); }
+  if (gx >= 0 && gy >= 0 && gx < EP.width && gy < EP.height) return { type: "cell", key: [gx, gy] };
+  return null;
+}
+
+let drag = null; // {x0,y0,px0,py0,moved}
+map.addEventListener("pointerdown", (e) => {
+  if (!EP) return;
+  drag = { x0: e.clientX, y0: e.clientY, px0: VIEW.px, py0: VIEW.py, moved: false };
+  map.setPointerCapture(e.pointerId);
 });
+map.addEventListener("pointermove", (e) => {
+  if (!EP) return;
+  const rect = map.getBoundingClientRect();
+  if (drag) {
+    const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+    if (Math.hypot(dx, dy) > 4) drag.moved = true;
+    if (drag.moved && VIEW.z > 1) {
+      VIEW.px = drag.px0 + dx; VIEW.py = drag.py0 + dy;
+      drawMap();
+    }
+    return;
+  }
+  const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+  const tip = $("maptip");
+  map.style.cursor = hit && hit.type !== "cell" ? "pointer" : "crosshair";
+  if (!hit) { tip.style.display = "none"; return; }
+  let text = null;
+  if (hit.type === "soldier") {
+    const s = hit.obj;
+    text = s.alive
+      ? `${s.cs} · ${RANK_TITLES[s.eff] || s.eff}\nHP ${s.hp}% · ammo ${s.ammo} · ${s.mission ? s.mission.type : "STANDBY"}`
+      : `${s.cs} — KIA`;
+  } else if (hit.type === "enemy") {
+    text = `OpFor #${hit.key}${hit.obj.alive ? ` · HP ${hit.obj.hp}%` : " — KIA"}`;
+  } else if (hit.type === "obj") {
+    text = `OBJ ${hit.key}`;
+  } else {
+    const [gx, gy] = hit.key, v = EP.grid[gy][gx];
+    text = `(${gx}, ${gy}) ${v === 2 ? "wall" : v === 1 ? "forest" : "open"}`;
+  }
+  tip.textContent = text;
+  tip.style.display = "block";
+  const wrap = $("mapwrap").getBoundingClientRect();
+  tip.style.left = Math.min(wrap.width - 170, e.clientX - wrap.left + 14) + "px";
+  tip.style.top = (e.clientY - wrap.top + 12) + "px";
+});
+map.addEventListener("pointerup", (e) => {
+  if (!EP || !drag) return;
+  const wasDrag = drag.moved; drag = null;
+  if (wasDrag) return;
+  const rect = map.getBoundingClientRect();
+  const hit = hitTest(e.clientX - rect.left, e.clientY - rect.top);
+  sel = hit ? { type: hit.type, key: hit.key } : null;
+  drawMap(); renderInspector(); renderCoC();
+});
+map.addEventListener("pointerleave", () => { $("maptip").style.display = "none"; });
+map.addEventListener("wheel", (e) => {
+  if (!EP) return;
+  e.preventDefault();
+  const rect = map.getBoundingClientRect();
+  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+  const z0 = VIEW.z;
+  const z1 = Math.max(1, Math.min(6, z0 * Math.exp(-e.deltaY * 0.0016)));
+  if (z1 === z0) return;
+  // keep the point under the cursor fixed
+  VIEW.px = mx - (mx - VIEW.px) * (z1 / z0);
+  VIEW.py = my - (my - VIEW.py) * (z1 / z0);
+  VIEW.z = z1;
+  if (z1 === 1) { VIEW.px = 0; VIEW.py = 0; }
+  drawMap();
+}, { passive: false });
+map.addEventListener("dblclick", () => { VIEW = { z: 1, px: 0, py: 0 }; drawMap(); });
 
 /* ---------- timeline ---------- */
 function drawTimeline() {
@@ -841,9 +1169,13 @@ function drawTimeline() {
   const mx = Math.max(1e-6, ...sums.map(Math.abs));
   const mid = H * 0.55;
   g.clearRect(0, 0, W, H);
+  // jammed steps: red wash behind everything
+  EP.steps.forEach((s, i) => {
+    if (s.jammed) { g.fillStyle = "#7f1d1d30"; g.fillRect(i * bw, 0, Math.max(1, bw), H); }
+  });
   sums.forEach((v, i) => {
     const h = (Math.abs(v) / mx) * (H * 0.4);
-    g.fillStyle = v >= 0 ? "#4ade8080" : "#ff525280";
+    g.fillStyle = v >= 0 ? "#57c07f80" : "#e5544d80";
     g.fillRect(i * bw, v >= 0 ? mid - h : mid, Math.max(1, bw - 0.4), Math.max(1, h));
   });
   EP.steps.forEach((s, i) => {
@@ -861,14 +1193,7 @@ $("timeline").addEventListener("click", (e) => {
   seek(Math.round((e.clientX - rect.left) / rect.width * (EP.steps.length - 1)));
 });
 
-/* ---------- inspector ---------- */
-/* ---------- chain of command ----------
-   The org chart as it stands AT THIS STEP, not as it was issued: succession
-   promotes people mid-episode, so the tree is rebuilt from each station's
-   current `leader` link. Shows what every station was actually ordered to do
-   and how much of it is left standing. Clicking a row selects that station,
-   exactly like clicking it on the map. */
-
+/* ---------- chain of command ---------- */
 function orderText(s) {
   if (!s.mission) return '<span class="standby">STANDBY — no orders</span>';
   const m = s.mission;
@@ -898,7 +1223,7 @@ function renderCoC() {
     const hp = Math.max(0, s.hp);
     const hpColor = hp > 60 ? "var(--good)" : hp > 30 ? "var(--warn)" : "var(--bad)";
     const acting = s.eff !== s.rank
-      ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff}</span>` : "";
+      ? ` <span class="badge" style="background:#3b2f12;color:#e5a944">acting ${s.eff}</span>` : "";
     const human = s.human
       ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
     const picked = sel && sel.type === "soldier" && sel.key === s.cs;
@@ -928,62 +1253,221 @@ function renderCoC() {
   });
 }
 
+/* ---------- inspector: sensor board (no selection) + sensor cards ---------- */
+function flag(label, cls, title) {
+  return `<span class="flag ${cls || ""}" ${title ? `title="${esc(title)}"` : ""}>${label}</span>`;
+}
+function microBar(frac, color) {
+  return `<div class="bar thin"><div style="width:${Math.max(0, Math.min(100, frac * 100))}%;background:${color}"></div></div>`;
+}
+
+function renderSensorBoard(st) {
+  const rows = st.soldiers.map((s) => {
+    if (!s.alive) {
+      return `<div class="sb-row dead" data-cs="${s.cs}">
+        <div class="sb-cs">✝ ${s.cs}</div><div></div><div></div>
+        <div class="sb-pips"><span class="pip">KIA</span></div></div>`;
+    }
+    const sen = s.sensors || {};
+    const pips = [];
+    pips.push(`<span class="pip ${s.sees.length ? "hot" : ""}" title="visual contacts">V${s.sees.length}</span>`);
+    if (sen.cues) pips.push(`<span class="pip ${sen.cues.length ? "hot" : ""}" title="acoustic cues held">C${sen.cues.length}</span>`);
+    if (sen.link) pips.push(`<span class="pip ${sen.link.intact ? "ok" : "err"}" title="element visual link${sen.link.intact ? "" : ` — broken ${sen.link.age} steps`}">L</span>`);
+    if (sen.garble?.pending) pips.push(`<span class="pip hot" title="holds a garbled order — SAY AGAIN available">?</span>`);
+    if (sen.say_again) pips.push(`<span class="pip hot" title="heard SAY AGAIN — should re-transmit">!</span>`);
+    if (sen.station) pips.push(`<span class="pip ${sen.station.ok ? "ok" : ""}" title="formation station${sen.station.ok ? " kept" : ` error ${fmt(sen.station.err, 2)}`}">F</span>`);
+    const hpColor = s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)";
+    return `<div class="sb-row" data-cs="${s.cs}">
+      <div class="sb-cs">${s.cs} <span class="rk">${s.eff}</span></div>
+      <div title="health ${s.hp}%">${microBar(s.hp / 100, hpColor)}</div>
+      <div title="ammo ${s.ammo}/30">${microBar(s.ammo / 30, "var(--s1)")}</div>
+      <div class="sb-pips">${pips.join("")}</div>
+    </div>`;
+  }).join("");
+  return `<h3 class="hd">Sensor board — all stations</h3>
+    <div style="display:grid;grid-template-columns:74px 1fr 1fr 108px;gap:8px;padding:0 5px 3px;color:var(--faint);font-size:9.5px;letter-spacing:.08em">
+      <span>STATION</span><span>HP</span><span>AMMO</span><span style="text-align:right">SENSES</span></div>
+    ${rows}
+    <div style="color:var(--faint);font-size:10.5px;margin-top:6px">V sees · C hears · L link · ? garbled order · ! say-again · F station — click a station for the full picture</div>`;
+}
+
+function soldierCards(s, st) {
+  const sen = s.sensors;
+  const comms = commsOf(), combat = combatOf();
+  const cumulative = EP.steps.slice(0, t + 1).reduce((acc, step) => {
+    const rec = step.soldiers.find((o) => o.cs === s.cs); return acc + (rec?.r || 0);
+  }, 0);
+  const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#e5a944">acting ${s.eff} ${GRADES[s.eff]}</span>` : "";
+  const humanBadge = s.human ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
+  let html = `
+    <h3 style="color:${FRIEND_FILL};font-size:14px;font-family:var(--mono)">${s.alive ? "" : "✝ "}${s.cs}
+      <span style="color:var(--dim);font-weight:400;font-family:inherit">${RANK_TITLES[s.rank] || s.rank} (${GRADES[s.rank] || "?"})</span>${acting}${humanBadge}</h3>
+    <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${s.hp}%</div>
+    <div class="bar"><div style="width:${s.hp}%;background:${s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)"}"></div></div>
+    <div style="color:var(--dim);font-size:11px">ammo ${s.ammo}/30</div>
+    <div class="bar"><div style="width:${(s.ammo / 30) * 100}%;background:var(--s1)"></div></div>`;
+
+  if (!s.alive) return html + `<div class="empty">killed in action</div>`;
+
+  // status line
+  html += `<div class="flagline">
+    ${flag(sen?.cover ? "IN COVER" : "EXPOSED", sen?.cover ? "good" : "", "standing on a cover cell")}
+    ${sen?.order_recent ? flag("ORDER RCVD", "warn", "received an order this step") : ""}
+    ${sen?.sync ? flag(sen.sync.pending ? "SYNC PENDING" : `SYNC ${fmt(sen.sync.window * 100, 0)}%`, "warn", "trinôme bound proposal / GO window") : ""}
+  </div>`;
+
+  // mission
+  html += `<div class="sc"><h4>Mission</h4><table class="kv">
+    <tr><td>position</td><td>(${s.x}, ${s.y})</td></tr>
+    <tr><td>reports to</td><td>${s.leader || "HQ"}</td></tr>
+    ${s.subs.length ? `<tr><td>commands</td><td>${s.subs.join(", ")}</td></tr>` : ""}
+    <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") + (s.mission.target ? " " + s.mission.target : "") : "STANDBY"}</td></tr>
+    ${s.mission ? `<tr><td>ordered at</td><td>t=${s.mission.since}</td></tr>` : ""}
+    ${s.formation ? `<tr><td>formation</td><td>${s.formation}</td></tr>` : ""}
+    <tr><td>action @t</td><td>${s.act || "—"}</td></tr>
+  </table></div>`;
+
+  // vision
+  const seesChips = s.sees.map((eid) => `<span class="sees-chip" data-eid="${eid}">#${eid}</span>`).join("") || '<span style="color:var(--dim)">no contacts</span>';
+  html += `<div class="sc"><h4>Vision <span class="st">${combat.vision}c open · ${combat.forest_vision}c forest</span></h4>
+    <div style="font-size:11px;color:var(--dim);margin-bottom:3px">weapon range ${combat.weapon}c</div>
+    <div>${seesChips}</div></div>`;
+
+  // hearing
+  if (sen && comms.sound === "tactical") {
+    const cueRows = (sen.cues || []).map((c) => `
+      <div class="cue-row">
+        <span style="color:${CUE_KIND_COLOR[c.kind] || "#9aa7b8"}" title="${c.kind}">${c.kind === "weapon_fire" ? "✷" : c.kind[0].toUpperCase()}</span>
+        <span style="color:${CUE_SIDE_COLOR[c.side]}">${c.side}</span>
+        <span class="brg" title="bearing sector">${CUE_ARROWS[c.brg % 8]}</span>
+        <span class="bd">${BAND_NAMES[Math.min(2, c.band)]}</span>
+        <div class="bar thin" style="margin:0"><div style="width:${c.str * 100}%;background:${CUE_KIND_COLOR[c.kind] || "#9aa7b8"}"></div></div>
+        <span class="bd" title="steps until the cue fades">${c.ttl}</span>
+      </div>`).join("") || '<div style="color:var(--dim);font-size:11px">nothing held</div>';
+    html += `<div class="sc"><h4>Hearing <span class="st">${(sen.cues || []).length}/4 cues</span></h4>
+      ${cueRows}
+      ${sen.own_sound ? `<div style="font-size:11px;color:var(--dim);margin-top:4px">own last sound: <b style="color:${CUE_KIND_COLOR[sen.own_sound.kind] || "#9aa7b8"}">${sen.own_sound.kind}</b> · r${fmt(sen.own_sound.radius, 0)} · ${sen.own_sound.age} steps ago</div>` : ""}
+      ${sen.reportable ? `<div class="flagline">${flag("REPORTABLE CUE", "warn", "holds an unreported non-friendly cue")}</div>` : ""}
+    </div>`;
+  }
+
+  // net / comms
+  if (sen) {
+    const netBits = [];
+    if (sen.garble) {
+      netBits.push(sen.garble.pending
+        ? flag(`GARBLED ORDER HELD · ${fmt(sen.garble.fresh * 100, 0)}%`, "warn", "a transmission arrived garbled — SAY AGAIN is available while fresh")
+        : flag("RX CLEAR", ""));
+      netBits.push(sen.say_again ? flag("SAY AGAIN HEARD", "warn", "a station this agent garbled asked for a repeat") : "");
+    }
+    if (sen.sitrep_due != null) {
+      netBits.push(flag(`SITREP ${fmt(sen.sitrep_due * 100, 0)}% due`, sen.sitrep_due >= 1 ? "bad" : sen.sitrep_due > 0.7 ? "warn" : ""));
+    }
+    const subRows = s.subs.length && (sen.rb_heard || sen.done_heard)
+      ? s.subs.map((cs) => {
+          const rb = sen.rb_heard?.[cs], dn = sen.done_heard?.[cs];
+          return `<div class="mate-row"><span class="cs">${cs}</span>
+            <span>${rb ? '<span class="pos">READBACK ✓</span>' : '<span style="color:var(--faint)">no read-back</span>'}</span>
+            <span>${dn ? '<span class="pos">DONE ✓</span>' : ""}</span></div>`;
+        }).join("")
+      : "";
+    html += `<div class="sc"><h4>Net <span class="st">${comms.model}${comms.model === "range" ? ` · r${comms.range}` : ""}${comms.model === "voice_only" ? ` · voice r${comms.voice_range}` : ""}</span></h4>
+      <div class="flagline">${netBits.join("")}</div>
+      ${subRows ? `<div style="font-size:10px;color:var(--faint);letter-spacing:.08em;margin:4px 0 2px">HEARD FROM SUBORDINATES (recent)</div>${subRows}` : ""}
+    </div>`;
+  }
+
+  // cohesion
+  if (sen && (sen.link || sen.station || sen.mates)) {
+    const mates = sen.mates ? Object.entries(sen.mates).map(([cs, m]) =>
+      `<div class="mate-row"><span class="cs">${cs}</span>
+        <span>${m.seen ? '<span class="pos">in sight</span>' : `last seen (${m.x}, ${m.y})`}</span>
+        <span style="text-align:right">${m.seen ? "now" : m.age + " ago"}</span></div>`).join("") : "";
+    html += `<div class="sc"><h4>Cohesion</h4>
+      <div class="flagline">
+        ${sen.link ? flag(sen.link.intact ? "LINK INTACT" : `LINK BROKEN ${sen.link.age}`, sen.link.intact ? "good" : "bad", "element visual link") : ""}
+        ${sen.station ? flag(sen.station.ok ? "ON STATION" : `OFF STATION ${fmt(sen.station.err, 2)}`, sen.station.ok ? "good" : "warn", "formation station under the governing stance") : ""}
+      </div>
+      ${mates ? `<div style="font-size:10px;color:var(--faint);letter-spacing:.08em;margin:4px 0 2px">TEAMMATE MEMORY (what this station knows)</div>${mates}` : ""}
+    </div>`;
+  }
+
+  // liaison
+  if (sen?.liaison) {
+    const li = sen.liaison;
+    html += `<div class="sc"><h4>Liaison</h4><table class="kv">
+      ${li.outbox ? `<tr><td>outbox</td><td>${li.outbox}</td></tr>` : ""}
+      ${li.carrying ? `<tr><td>carrying</td><td>${li.carrying} · TTL ${fmt(li.ttl * 100, 0)}%</td></tr>` : ""}
+      ${li.carrying ? `<tr><td>leg</td><td>${li.returning ? "return" : "outbound"}${li.can_deliver ? " · can deliver" : ""}</td></tr>` : ""}
+      ${li.receipt != null ? `<tr><td>receipt</td><td class="${li.receipt ? "pos" : "neg"}">${li.receipt ? "delivered" : "refused"}</td></tr>` : ""}
+      ${!li.outbox && !li.carrying && li.receipt == null ? `<tr><td>state</td><td>idle</td></tr>` : ""}
+    </table></div>`;
+  }
+
+  // own enemy picture (degraded nets)
+  if (sen?.known) {
+    html += `<div class="sc"><h4>Own enemy picture <span class="st">${sen.known.length} known</span></h4>
+      <div style="font-size:11px;color:var(--dim)">${sen.known.length
+        ? sen.known.map(([x, y]) => `(${x}, ${y})`).join(" · ")
+        : "no reported contacts reached this station"}</div></div>`;
+  }
+
+  // reward
+  const rows = Object.entries(s.rc).map(([k, v]) =>
+    `<tr><td>${k}</td><td class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${fmt(v, 3)}</td></tr>`).join("");
+  html += `<div class="sc"><h4>Reward</h4><table class="kv">
+    <tr><td>this step</td><td class="${(s.r || 0) >= 0 ? "pos" : "neg"}">${fmt(s.r, 3)}</td></tr>
+    <tr><td>cumulative</td><td class="${cumulative >= 0 ? "pos" : "neg"}">${fmt(cumulative, 2)}</td></tr>
+    ${rows}</table></div>`;
+
+  if (!sen) html += `<div style="color:var(--faint);font-size:11px">no sensor record — legacy trace, replayed from its own era</div>`;
+  return html;
+}
+
 function renderInspector() {
   const el = $("inspector");
-  if (!EP || !sel) { el.innerHTML = '<div class="empty">click something on the map</div>'; return; }
+  if (!EP) { el.innerHTML = '<div class="empty">nothing selected</div>'; return; }
   const st = EP.steps[t];
+  if (!sel) {
+    el.innerHTML = renderSensorBoard(st);
+    el.querySelectorAll(".sb-row").forEach((row) => {
+      row.onclick = () => { sel = { type: "soldier", key: row.dataset.cs }; drawMap(); renderInspector(); renderCoC(); };
+    });
+    return;
+  }
+  let back = `<div style="margin-bottom:6px"><button class="small" id="insp-back">← all stations</button></div>`;
   if (sel.type === "soldier") {
     const s = st.soldiers.find((o) => o.cs === sel.key);
-    if (!s) return;
-    const cumulative = EP.steps.slice(0, t + 1).reduce((acc, step) => {
-      const rec = step.soldiers.find((o) => o.cs === s.cs); return acc + (rec?.r || 0);
-    }, 0);
-    const acting = s.eff !== s.rank ? ` <span class="badge" style="background:#3b2f12;color:#ffd75e">acting ${s.eff} ${GRADES[s.eff]}</span>` : "";
-    const humanBadge = s.human ? ` <span class="badge" style="background:#3b2f12;color:${HUMAN_RING}">HUMAN</span>` : "";
-    const rows = Object.entries(s.rc).map(([k, v]) =>
-      `<tr><td>${k}</td><td class="${v >= 0 ? "pos" : "neg"}">${v >= 0 ? "+" : ""}${fmt(v, 3)}</td></tr>`).join("");
-    el.innerHTML = `
-      <h3 style="color:${FRIEND_FILL};font-size:14px">${s.alive ? "" : "✝ "}${s.cs}
-        <span style="color:var(--dim);font-weight:400">${RANK_TITLES[s.rank] || s.rank} (${GRADES[s.rank] || "?"})</span>${acting}${humanBadge}</h3>
-      <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${s.hp}%</div>
-      <div class="bar"><div style="width:${s.hp}%;background:${s.hp > 60 ? "var(--good)" : s.hp > 30 ? "var(--warn)" : "var(--bad)"}"></div></div>
-      <div style="color:var(--dim);font-size:11px">ammo ${s.ammo}/30</div>
-      <div class="bar"><div style="width:${(s.ammo / 30) * 100}%;background:var(--accent)"></div></div>
-      <table class="kv">
-        <tr><td>position</td><td>(${s.x}, ${s.y})</td></tr>
-        <tr><td>reports to</td><td>${s.leader || "HQ"}</td></tr>
-        ${s.subs.length ? `<tr><td>commands</td><td>${s.subs.join(", ")}</td></tr>` : ""}
-        <tr><td>mission</td><td>${s.mission ? s.mission.type + (s.mission.obj ? " OBJ " + s.mission.obj : "") + (s.mission.target ? " " + s.mission.target : "") : "STANDBY"}</td></tr>
-        ${s.mission ? `<tr><td>ordered at</td><td>t=${s.mission.since}</td></tr>` : ""}
-        <tr><td>action @t</td><td>${s.act || "—"}</td></tr>
-        <tr><td>sees</td><td>${s.sees.length} hostile${s.sees.length === 1 ? "" : "s"}</td></tr>
-        <tr><td>reward @t</td><td class="${(s.r || 0) >= 0 ? "pos" : "neg"}">${fmt(s.r, 3)}</td></tr>
-        <tr><td>cumulative</td><td class="${cumulative >= 0 ? "pos" : "neg"}">${fmt(cumulative, 2)}</td></tr>
-      </table>
-      ${rows ? `<h3 style="margin-top:8px">reward components @t</h3><table class="kv">${rows}</table>` : ""}`;
+    if (!s) { sel = null; renderInspector(); return; } // stale key: fall back to the board
+    el.innerHTML = back + soldierCards(s, st);
+    el.querySelectorAll(".sees-chip").forEach((chip) => {
+      chip.onclick = () => { sel = { type: "enemy", key: +chip.dataset.eid }; drawMap(); renderInspector(); renderCoC(); };
+    });
   } else if (sel.type === "enemy") {
     const e = st.enemies.find((o) => o.id === sel.key);
-    if (!e) return;
+    if (!e) { sel = null; renderInspector(); return; }
     const seenBy = st.soldiers.filter((s) => s.sees.includes(e.id)).map((s) => s.cs);
-    el.innerHTML = `<h3 style="color:var(--bad);font-size:14px">OpFor #${e.id} ${e.alive ? "" : "(KIA)"}</h3>
+    el.innerHTML = back + `<h3 style="color:var(--bad);font-size:14px;font-family:var(--mono)">OpFor #${e.id} ${e.alive ? "" : "(KIA)"}</h3>
       <div style="margin:6px 0 2px;color:var(--dim);font-size:11px">health ${e.hp}%</div>
       <div class="bar"><div style="width:${Math.max(0, e.hp)}%;background:var(--bad)"></div></div>
       <table class="kv"><tr><td>position</td><td>(${e.x}, ${e.y})</td></tr>
       <tr><td>spotted by</td><td>${seenBy.join(", ") || "nobody"}</td></tr>
-      <tr><td>reported</td><td>${st.known.some(([x, y]) => Math.hypot(x - e.x, y - e.y) < 3) ? "yes (on team picture)" : "no"}</td></tr></table>`;
+      <tr><td>on team picture</td><td>${st.known.some(([x, y]) => Math.hypot(x - e.x, y - e.y) < 3) ? "yes (reported)" : "no"}</td></tr></table>`;
   } else if (sel.type === "obj") {
     const o = EP.objectives.find((x) => x.name === sel.key);
     const inside = st.soldiers.filter((s) => s.alive && Math.hypot(s.x - o.x, s.y - o.y) <= o.r).map((s) => s.cs);
     const hostiles = st.enemies.filter((e) => e.alive && Math.hypot(e.x - o.x, e.y - o.y) <= o.r + 1).length;
-    el.innerHTML = `<h3 style="font-size:14px">OBJ ${o.name}</h3>
+    el.innerHTML = back + `<h3 style="font-size:14px;font-family:var(--mono)">OBJ ${o.name}</h3>
       <table class="kv"><tr><td>center</td><td>(${o.x}, ${o.y})</td></tr><tr><td>radius</td><td>${o.r}</td></tr>
       <tr><td>friendlies inside</td><td>${inside.join(", ") || "—"}</td></tr>
       <tr><td>hostiles inside</td><td class="${hostiles ? "neg" : "pos"}">${hostiles}</td></tr></table>`;
   } else if (sel.type === "cell") {
     const [x, y] = sel.key, v = EP.grid[y][x];
-    el.innerHTML = `<h3 style="font-size:14px">cell (${x}, ${y})</h3>
+    el.innerHTML = back + `<h3 style="font-size:14px;font-family:var(--mono)">cell (${x}, ${y})</h3>
       <table class="kv"><tr><td>terrain</td><td>${v === 2 ? "wall (blocks move + LOS)" : v === 1 ? "forest (cover, conceals)" : "open"}</td></tr></table>`;
   }
+  const backBtn = $("insp-back");
+  if (backBtn) backBtn.onclick = () => { sel = null; drawMap(); renderInspector(); renderCoC(); };
 }
 
 /* ---------- radio log ---------- */
@@ -998,9 +1482,10 @@ function renderMsgs() {
       lines.push({ i, m });
     });
   }
-  el.innerHTML = lines.slice(-250).map(({ i, m }) =>
-    `<div class="msg" data-i="${i}" style="color:${KIND_COLORS[m.kind] || "#d6d9de"}"><span class="t">[t=${String(EP.steps[i].t).padStart(3)}]</span> ${m.text}</div>`).join("")
-    || '<div class="empty">net silent</div>';
+  el.innerHTML = lines.slice(-250).map(({ i, m }) => {
+    const med = m.medium ? `<span class="med" title="medium: ${m.medium}${m.heard_by ? " · heard by " + m.heard_by.join(", ") : ""}">${MEDIUM_LETTER[m.medium] || m.medium[0].toUpperCase()}</span>` : " ";
+    return `<div class="msg" data-i="${i}" style="color:${KIND_COLORS[m.kind] || "#d8dce3"}"><span class="t">[t=${String(EP.steps[i].t).padStart(3)}]</span>${med}${esc(m.text)}</div>`;
+  }).join("") || '<div class="empty">net silent</div>';
   el.querySelectorAll(".msg").forEach((d) => d.onclick = () => seek(+d.dataset.i));
   el.scrollTop = el.scrollHeight;
 }
@@ -1011,7 +1496,6 @@ let liveAuto = null;      // interval id while auto-advancing
 
 function fillLiveSelectors() {
   fillTask("lv");
-  // mirror the Episode tab's choice on fill, so the two tabs agree
   ["task", "echelon"].forEach((k) => {
     const v = $("ep-" + k).value;
     if (v && [...$("lv-" + k).options].some((o) => o.value === v)) $("lv-" + k).value = v;
@@ -1031,17 +1515,17 @@ async function liveStart() {
   try {
     const snap = await api(`/api/live/start?scenario=${scenarioOf("lv")}` +
       `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
-    EP = snap; MODE = "live";
+    EP = snap; MODE = "live"; TERRAIN = null; VIEW = { z: 1, px: 0, py: 0 };
     epRequest++;                       // invalidate any in-flight replay fetch
     $("pb-slider").max = EP.steps.length - 1;
     $("outbadge").style.display = "none";
     $("lv-issuer").innerHTML = (snap.commanders || ["HQ"]).map((c) => `<option>${c}</option>`).join("");
-    $("lv-info").innerHTML = `${snap.opord}<br>policy: ${String(snap.policy).split("/").pop()}`;
+    $("lv-info").innerHTML = `${esc(snap.opord)}<br>policy: ${esc(String(snap.policy).split("/").pop())}`;
     sel = null; seek(EP.steps.length - 1);
     $("lv-orderstatus").textContent = "";
   } catch (e) {
     $("status").textContent = "live session failed";
-    $("lv-info").innerHTML = `<div class="errbox">could not start: ${e.message}</div>`;
+    $("lv-info").innerHTML = `<div class="errbox">could not start: ${esc(e.message)}</div>`;
   }
   $("lv-start").disabled = false; $("lv-start").textContent = "⚑ Start session";
 }
@@ -1057,16 +1541,18 @@ async function liveAdvance(n) {
     const contact = r.steps.some((s) => s.messages.some((m) => m.kind === "contact"));
     if (r.outcome) {
       stopAuto();
+      EP.outcome = r.outcome;
       const badge = $("outbadge");
       badge.style.display = "block";
       badge.textContent = r.outcome.toUpperCase();
       badge.style.background = r.outcome === "success" ? "#14532d" : r.outcome === "defeat" ? "#7f1d1d" : "#57534e";
       $("lv-info").innerHTML = `<b>${r.outcome.toUpperCase()}</b> after ${r.length} steps`;
+      renderStripe();
     } else if (contact && $("lv-pausecontact").checked && liveAuto) {
       stopAuto();
       $("lv-orderstatus").innerHTML = '<span style="color:var(--warn)">⏸ CONTACT on the net — auto paused</span>';
     }
-  } catch (e) { $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">${e.message}</span>`; }
+  } catch (e) { $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">${esc(e.message)}</span>`; }
 }
 
 async function liveOrder() {
@@ -1078,10 +1564,10 @@ async function liveOrder() {
       `&issuer=${encodeURIComponent($("lv-issuer").value)}`);
     (r.messages || []).forEach((m) => EP.steps[EP.steps.length - 1].messages.push(m));
     renderMsgs(); drawMap();
-    $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${r.messages?.[0]?.text || "transmitted"}</span>`;
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${esc(r.messages?.[0]?.text || "transmitted")}</span>`;
     $("lv-order").value = "";
   } catch (e) {
-    $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">✗ ${e.message}</span>`;
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message)}</span>`;
   }
 }
 
@@ -1114,10 +1600,10 @@ function setTab(name) {
   $("side-episode").classList.toggle("hidden", name !== "episode");
   $("side-command").classList.toggle("hidden", !command);
   ["main-episode", "right-episode"].forEach((id) => $(id).classList.toggle("hidden", training));
-  if (training) { if (selectedRun) loadRunCharts(); }
+  if (training) { $("stripe").classList.add("hidden"); if (selectedRun) loadRunCharts(); }
   else {
     if (command) fillLiveSelectors();
-    drawMap(); drawTimeline();
+    drawMap(); drawTimeline(); renderStripe();
   }
 }
 $("tab-training").onclick = () => setTab("training");
@@ -1128,8 +1614,24 @@ window.addEventListener("resize", () => { drawMap(); drawTimeline(); if (selecte
 (async () => {
   try {
     await loadState();
-    // open on a run that is training now, if there is one — that is the run
-    // you came to look at; otherwise the first run as before
+    // deep link: ?scenario=…[&policy=run:name:best][&seed=N][&t=N][&sel=CS]
+    // opens the Episode tab and generates that exact episode on load
+    const q = new URLSearchParams(location.search);
+    const scn = q.get("scenario");
+    if (scn && STATE.scenarios[scn]) {
+      setTab("episode");
+      const fac = STATE.scenarios[scn];
+      $("ep-task").value = fac.task; fillEchelon("ep");
+      $("ep-echelon").value = fac.echelon; fillVersion("ep");
+      const pol = q.get("policy");
+      if (pol && [...$("ep-version").options].some((o) => o.value === pol)) $("ep-version").value = pol;
+      else if (!pol) $("ep-version").value = "random";
+      if (q.get("seed")) $("ep-seed").value = q.get("seed");
+      await generateEpisode();
+      if (EP && q.get("sel")) sel = { type: "soldier", key: q.get("sel") };
+      if (EP) seek(q.get("t") ? +q.get("t") : 0);
+      return;
+    }
     if (STATE.runs.length) {
       selectedRun = (STATE.runs.find((r) => r.job && r.job.live) || STATE.runs[0]).name;
       renderRunList(); loadRunCharts();

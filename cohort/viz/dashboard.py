@@ -17,7 +17,14 @@ Endpoints:
 The episode trace records everything the frontend needs for debugging:
 per-step positions, health/ammo, missions and anchors, actions taken,
 per-agent reward component breakdowns, visibility, the team's known-enemy
-picture, radio messages, and the evolving chain of command.
+picture, radio messages, the evolving chain of command — and, per agent, the
+full sensor suite the observation builder consumes (acoustic cues, cohesion
+and link state, garble / read-back state, liaison, teammate memory, the
+agent's own enemy picture), taken from the same ``AgentView`` the policy sees.
+
+Deep links: ``/?scenario=S[&policy=run:NAME:best][&seed=N][&t=N][&sel=CS]``
+opens the Episode tab and generates that exact episode on load, so a specific
+moment of a specific seed can be shared as a URL.
 """
 
 from __future__ import annotations
@@ -51,6 +58,74 @@ MISSION_NAMES = [m.name for m in MissionType]
 # ---------------------------------------------------------------------- #
 
 
+def _sensors_rec(env: CohortEnv, s, view) -> dict:
+    """Everything this agent's senses hold right now, straight from the same
+    AgentView the observation builder consumes — the dashboard shows what the
+    policy was actually given, not a reconstruction of it."""
+    sen: dict = {
+        "cover": bool(env.world.cover_at(s.pos)),
+        "order_recent": view.step - s.last_order_step <= 1,
+    }
+    if view.sitrep_due is not None:
+        sen["sitrep_due"] = round(float(view.sitrep_due), 2)
+    if view.sync_pending or view.sync_active:
+        sen["sync"] = {"pending": view.sync_pending, "window": round(float(view.sync_active), 2)}
+    if view.sound_on:
+        sen["cues"] = [
+            {
+                "kind": c.kind,
+                "side": c.side,
+                "brg": c.bearing,
+                "band": c.distance_band,
+                "str": round(float(c.strength), 2),
+                "ttl": max(0, c.ttl_remaining(view.step)),
+            }
+            for c in view.cues
+        ]
+        if view.own_sound is not None:
+            kind, radius, at = view.own_sound
+            sen["own_sound"] = {"kind": kind, "radius": float(radius), "age": view.step - at}
+        if view.has_reportable_cue:
+            sen["reportable"] = True
+    if view.link_intact is not None:
+        sen["link"] = {"intact": bool(view.link_intact), "age": view.link_break_age}
+    if view.station is not None:
+        sen["station"] = {"ok": bool(view.station), "err": round(float(view.formation_error), 3)}
+    if view.friendly_state is not None:
+        sen["mates"] = {
+            env.roster.by_id[oid].callsign: {
+                "seen": bool(seen), "x": pos[0], "y": pos[1], "age": age,
+            }
+            for oid, (seen, pos, age) in view.friendly_state.items()
+        }
+    if view.liaison is not None:
+        li = view.liaison
+        sen["liaison"] = {
+            "outbox": li.get("outbox_kind"),
+            "carrying": li.get("carry_kind"),
+            "ttl": round(float(li.get("ttl", 0.0)), 2),
+            "returning": bool(li.get("returning")),
+            "can_deliver": bool(li.get("can_deliver")),
+            "receipt": li.get("receipt"),
+        }
+    if env.spec_cfg.comm_model == "range":
+        sen["garble"] = {"pending": view.garble_pending, "fresh": round(float(view.garble_freshness), 2)}
+        sen["say_again"] = view.say_again_pending
+    subs = s.living_subordinates(env.roster)[: len(view.readback_correct_heard)]
+    if subs:
+        sen["rb_heard"] = {
+            sub.callsign: bool(h) for sub, h in zip(subs, view.readback_correct_heard, strict=False)
+        }
+        sen["done_heard"] = {
+            sub.callsign: bool(h) for sub, h in zip(subs, view.done_heard, strict=False)
+        }
+    if env._local_pictures:
+        # this agent's OWN enemy picture — under a degraded net the pictures
+        # diverge, and that divergence is exactly what is worth seeing
+        sen["known"] = [[round(x, 1), round(y, 1)] for x, y in view.known_enemies]
+    return sen
+
+
 def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | None, components: dict | None) -> dict:
     mission = None
     if s.mission is not None:
@@ -79,7 +154,8 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
             "anchor": [float(anchor[0]), float(anchor[1])],
             "since": s.mission.step_assigned,
         }
-    visible = [e.id for e in env._visible_enemies(s)] if s.alive else []
+    view = env._make_view(s) if s.alive else None
+    visible = [e.id for e in view.visible_enemies] if view is not None else []
     return {
         "cs": s.callsign,
         "x": s.pos[0],
@@ -98,6 +174,7 @@ def _soldier_rec(env: CohortEnv, s, action_name: str | None, reward: float | Non
         "r": None if reward is None else round(float(reward), 4),
         "rc": {k: round(v, 4) for k, v in components.items() if v} if components else {},
         "sees": visible,
+        "sensors": _sensors_rec(env, s, view) if view is not None else None,
     }
 
 
@@ -106,6 +183,55 @@ def _callsign_of(env: CohortEnv, agent_id: int) -> str:
         return "HQ"
     soldier = env.roster.by_id.get(agent_id)
     return soldier.callsign if soldier is not None else f"#{agent_id}"
+
+
+def _static_of(env: CohortEnv, scenario: str, policy_path: str | None, seed: int) -> dict:
+    """Everything about an episode that does not change step to step.
+
+    ``combat`` and ``comms`` carry the env's real sensor parameters — vision,
+    weapon and radio ranges — so the frontend draws the rings the policy
+    actually perceives instead of hard-coded guesses.
+    """
+    spec = env.spec_cfg
+    return {
+        "scenario": scenario,
+        "description": SCENARIOS[scenario].description,
+        "width": env.world.width,
+        "height": env.world.height,
+        "grid": env.world.grid.tolist(),
+        "objectives": [
+            {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius} for o in env.world.objectives
+        ],
+        "waypoints": [
+            {"name": w.name, "x": w.pos[0], "y": w.pos[1], "r": w.radius}
+            for w in env.world.waypoints
+        ],
+        "phase_lines": [
+            {"name": p.name, "x1": p.a[0], "y1": p.a[1], "x2": p.b[0], "y2": p.b[1]}
+            for p in env.world.phase_lines
+        ],
+        "max_steps": spec.max_steps,
+        "opord": env.transcript.messages[0].text if env.transcript.messages else "",
+        "roster": [
+            {"cs": s.callsign, "rank": s.rank.name, "id": s.id, "human": s.human}
+            for s in env.roster.soldiers
+        ],
+        "policy": policy_path or "random (masked)",
+        "seed": seed,
+        "missions": MISSION_NAMES,
+        "combat": {
+            "vision": spec.combat.vision_range,
+            "forest_vision": spec.combat.forest_vision_range,
+            "weapon": spec.combat.weapon_range,
+        },
+        "comms": {
+            "model": spec.comm_model,
+            "range": spec.comm_range,
+            "voice_range": spec.voice_range,
+            "sound": spec.sound_model,
+            "liaison": bool(spec.liaison_enabled),
+        },
+    }
 
 
 def record_episode(
@@ -132,33 +258,7 @@ def record_episode(
     rng = np.random.default_rng(seed)
     obs, _ = env.reset(seed=seed)
 
-    static = {
-        "scenario": scenario,
-        "description": SCENARIOS[scenario].description,
-        "width": env.world.width,
-        "height": env.world.height,
-        "grid": env.world.grid.tolist(),
-        "objectives": [
-            {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius} for o in env.world.objectives
-        ],
-        "waypoints": [
-            {"name": w.name, "x": w.pos[0], "y": w.pos[1], "r": w.radius}
-            for w in env.world.waypoints
-        ],
-        "phase_lines": [
-            {"name": p.name, "x1": p.a[0], "y1": p.a[1], "x2": p.b[0], "y2": p.b[1]}
-            for p in env.world.phase_lines
-        ],
-        "max_steps": env.spec_cfg.max_steps,
-        "opord": env.transcript.messages[0].text if env.transcript.messages else "",
-        "roster": [
-            {"cs": s.callsign, "rank": s.rank.name, "id": s.id, "human": s.human}
-            for s in env.roster.soldiers
-        ],
-        "policy": policy_path or "random (masked)",
-        "seed": seed,
-        "missions": MISSION_NAMES,
-    }
+    static = _static_of(env, scenario, policy_path, seed)
 
     steps = [_initial_record(env)]
 
@@ -197,32 +297,7 @@ class LiveSession:
         self.rng = np.random.default_rng(seed)
         self.obs, _ = self.env.reset(seed=seed)
         self.static = {
-            "scenario": scenario,
-            "description": SCENARIOS[scenario].description,
-            "width": self.env.world.width,
-            "height": self.env.world.height,
-            "grid": self.env.world.grid.tolist(),
-            "objectives": [
-                {"name": o.name, "x": o.pos[0], "y": o.pos[1], "r": o.radius}
-                for o in self.env.world.objectives
-            ],
-            "waypoints": [
-                {"name": w.name, "x": w.pos[0], "y": w.pos[1], "r": w.radius}
-                for w in self.env.world.waypoints
-            ],
-            "phase_lines": [
-                {"name": p.name, "x1": p.a[0], "y1": p.a[1], "x2": p.b[0], "y2": p.b[1]}
-                for p in self.env.world.phase_lines
-            ],
-            "max_steps": self.env.spec_cfg.max_steps,
-            "opord": self.env.transcript.messages[0].text if self.env.transcript.messages else "",
-            "roster": [
-                {"cs": s.callsign, "rank": s.rank.name, "id": s.id, "human": s.human}
-                for s in self.env.roster.soldiers
-            ],
-            "policy": policy_path or "random (masked)",
-            "seed": seed,
-            "missions": MISSION_NAMES,
+            **_static_of(self.env, scenario, policy_path, seed),
             "commanders": ["HQ"] + [
                 s.callsign for s in self.env.roster.soldiers if s.effective_authority > 0
             ],
@@ -301,7 +376,7 @@ def _traps_of(env: CohortEnv) -> list[dict]:
 
 
 def _initial_record(env: CohortEnv) -> dict:
-    return {
+    rec = {
         "t": 0,
         "soldiers": [_soldier_rec(env, s, None, None, None) for s in env.roster.soldiers],
         "enemies": _enemies_of(env),
@@ -309,10 +384,13 @@ def _initial_record(env: CohortEnv) -> dict:
         "messages": _messages_of(env, env.transcript.messages),
         "known": [],
     }
+    if env._jammed_net:
+        rec["jammed"] = bool(env._net_jammed)
+    return rec
 
 
 def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) -> dict:
-    return {
+    rec = {
         "t": env._step_count,
         "soldiers": [
             _soldier_rec(
@@ -329,6 +407,11 @@ def _step_record(env: CohortEnv, act_names: dict, rewards: dict, infos: dict) ->
         "messages": _messages_of(env, env.last_messages),
         "known": [[round(x, 1), round(y, 1)] for (x, y, _t) in env._known_enemies.values()],
     }
+    if env._jammed_net:
+        # umpire view, like enemies and traps: the net being down is invisible
+        # to the agents by design, but the monitoring view is entitled to it
+        rec["jammed"] = bool(env._net_jammed)
+    return rec
 
 
 # ---------------------------------------------------------------------- #

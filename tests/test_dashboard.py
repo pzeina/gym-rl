@@ -27,16 +27,59 @@ def test_episode_trace_structure():
     assert trace["steps"], "trace must contain steps"
     assert trace["steps"][0]["t"] == 0
 
+    # the env's real sensor parameters ride in the static payload, so the
+    # frontend never hard-codes a range the env has moved away from
+    assert trace["combat"]["vision"] > 0 and trace["combat"]["weapon"] > 0
+    assert trace["comms"]["model"] == "global"
+
     step = trace["steps"][1]
     assert len(step["soldiers"]) == 4
     soldier = step["soldiers"][0]
-    for key in ("cs", "x", "y", "hp", "ammo", "alive", "rank", "eff", "mission", "act", "r", "rc", "sees"):
+    for key in ("cs", "x", "y", "hp", "ammo", "alive", "rank", "eff", "mission", "act", "r", "rc", "sees", "sensors"):
         assert key in soldier
     assert soldier["act"] is not None, "actions taken must be recorded"
+    assert soldier["sensors"] is not None and "cover" in soldier["sensors"]
     # the OPORD must be on the net at t=0
     assert any(m["kind"] == "opord" for m in trace["steps"][0]["messages"])
     # traces must be JSON-serializable end to end
     json.dumps(trace)
+
+
+def test_trace_sensors_follow_the_comm_model():
+    """The sensor record mirrors what the observation builder is given.
+
+    Acoustic cues exist only under sound_model="tactical"; garble / say-again
+    state only under comm_model="range"; local friendly perception only under
+    voice_only; per-agent enemy pictures only when pictures are local. A
+    global-net trace stays lean — absent sensors are absent, not zero-filled.
+    """
+    tr = record_episode("squad_range_control", None, seed=3, max_steps=10)
+    sen = tr["steps"][2]["soldiers"][0]["sensors"]
+    assert "cues" in sen and "garble" in sen and "say_again" in sen and "known" in sen
+    for c in sen["cues"]:
+        assert c["kind"] and 0 <= c["brg"] <= 7 and c["band"] in (0, 1, 2)
+    assert tr["comms"] == {
+        "model": "range", "range": 12.0, "voice_range": 6.0,
+        "sound": "tactical", "liaison": False,
+    }
+
+    tr = record_episode("squad_voice_direct", None, seed=3, max_steps=10)
+    sen = tr["steps"][2]["soldiers"][0]["sensors"]
+    assert "mates" in sen and "garble" not in sen
+    for rec in sen["mates"].values():
+        assert set(rec) == {"seen", "x", "y", "age"}
+
+    tr = record_episode("squad_jammed_control", None, seed=3, max_steps=10)
+    assert "jammed" in tr["steps"][2], "jam state is umpire-view step data"
+
+    tr = record_episode("fireteam", None, seed=3, max_steps=10)
+    sen = tr["steps"][2]["soldiers"][0]["sensors"]
+    assert "cues" not in sen and "garble" not in sen and "mates" not in sen
+    # dead soldiers carry no sensors (nothing senses)
+    assert all(
+        s["sensors"] is not None or not s["alive"]
+        for st in tr["steps"] for s in st["soldiers"]
+    )
 
 
 def test_episode_trace_reproducible():
