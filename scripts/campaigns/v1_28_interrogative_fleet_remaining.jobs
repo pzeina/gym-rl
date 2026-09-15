@@ -1,0 +1,51 @@
+# v1.28 FLEET RETRAIN — the interrogative cycle (docs/interrogative-cycle.md), a BREAK.
+#
+# WHY. Owner chose route (i) 2026-09-14 after information (DONE-heard: unused
+# at every price), price (root_done_false=-0.1: buys formation, not the mode)
+# and drag were each measured to their end. Four commits on multi-agent-dev
+# (46bb775 vocabulary, ebe3228 exchange, e00846d observations, 10211a7 read
+# machinery; 00a2372 smoke) changed both spaces: OBS_DIM 357 -> 361 (+4
+# status-COMPLETE-heard, appended) and N_ACTIONS 239 -> 240 (REQUEST_STATUS
+# appended). Every v1.27-tree checkpoint is orphaned, stated in the spec
+# before the build.
+#
+# WHAT THE CYCLE SHIPS. One non-penalized interrogative: a leader broadcasts
+# REPORT STATUS, its living direct subordinates auto-answer their own mission
+# state (is_complete on their own context — never the root's success
+# condition), and COMPLETE answers light a 10-step obs window. Priced at
+# transmission_cost + an 8-step cooldown; no verdict, no stake. No reward
+# term added or changed.
+#
+# THE READ IS PRE-REGISTERED: docs/interrogative-cycle.md §"The read" —
+# scored by scripts/interrogative_read.py, thresholds pinned by test BEFORE
+# this file launches. Usage gates first; spam is named SPAM.
+#
+# cohort/ is FROZEN from the first launch below until the last job lands.
+# REMAINING 23 jobs — fireteam_v24_seed12 launched 01:39 by the original queue
+# (still training, untouched); this file resumes the sequence after the
+# original runner was retired: its open read-offset into the jobs file was
+# invalidated by an overwrite, and a misaligned reader mid-campaign is a
+# worse risk than a second queue. Same 24-job campaign, same frozen tree.
+fireteam_v25_seed13        --scenario fireteam        --total-steps 3500000 --seed 13
+fireteam_v26_seed14        --scenario fireteam        --total-steps 3500000 --seed 14
+fireteam_v27_seed15        --scenario fireteam        --total-steps 3500000 --seed 15
+squad_v42_seed12           --scenario squad           --total-steps 3000000 --seed 12
+squad_v43_seed13           --scenario squad           --total-steps 3000000 --seed 13
+squad_v44_seed14           --scenario squad           --total-steps 3000000 --seed 14
+squad_v45_seed15           --scenario squad           --total-steps 3000000 --seed 15
+patrol_brique_v58_seed12   --scenario patrol_brique   --total-steps 3000000 --seed 12
+patrol_brique_v59_seed13   --scenario patrol_brique   --total-steps 3000000 --seed 13
+patrol_brique_v60_seed14   --scenario patrol_brique   --total-steps 3000000 --seed 14
+patrol_brique_v61_seed15   --scenario patrol_brique   --total-steps 3000000 --seed 15
+platoon_v27_seed12         --scenario platoon         --total-steps 3000000 --seed 12
+platoon_v28_seed13         --scenario platoon         --total-steps 3000000 --seed 13
+platoon_v29_seed14         --scenario platoon         --total-steps 3000000 --seed 14
+platoon_v30_seed15         --scenario platoon         --total-steps 3000000 --seed 15
+platoon_hard_v20_seed12    --scenario platoon_hard    --total-steps 3000000 --seed 12
+platoon_hard_v21_seed13    --scenario platoon_hard    --total-steps 3000000 --seed 13
+platoon_hard_v22_seed14    --scenario platoon_hard    --total-steps 3000000 --seed 14
+platoon_hard_v23_seed15    --scenario platoon_hard    --total-steps 3000000 --seed 15
+fireteam_defend_v29        --scenario fireteam_defend --total-steps 3500000 --seed 12
+squad_recon_v17            --scenario squad_recon     --total-steps 3000000 --seed 12
+squad_screen_v23           --scenario squad_screen    --total-steps 2500000 --seed 12
+defend_brique_v23          --scenario defend_brique   --total-steps 3000000 --seed 12

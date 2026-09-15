@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. The interrogative cycle is SPECCED (`docs/interrogative-cycle.md`, owner chose route (i) 2026-09-14 night): REQUEST STATUS broadcast, auto-answered element state, +4 obs slots, read pre-registered — BUILD AWAITS THE OWNER'S WORD, and it orphans every v1.27-tree checkpoint. The v1.27 seal is still open too. The SEIZE collapse is DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
+## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. The interrogative cycle is BUILT (five commits, OBS_DIM 357→361, N_ACTIONS 239→240, v1.27 checkpoints orphaned) and the 24-job v1.28 campaign is RUNNING (2026-09-15; one run under the original queue + 23 under the _remaining queue after a jobs-file overwrite incident, logged honestly). `scripts/interrogative_read.py` scores the pre-registered verdict when it lands. The v1.27 seal is still open too. The SEIZE collapse is DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
@@ -10955,6 +10955,36 @@ deliberately deferred (`docs/vision.md` §2c).
   its verdict semantics (e.g. an interrogative, non-penalized "REQUEST
   SITREP ON OBJ" the root can ask before claiming). Nothing changed in
   this pass: diagnosis only, probe promoted, no reward touched.
+
+- **2026-09-15** — **The interrogative cycle is BUILT and the v1.28 fleet
+  campaign is RUNNING.** Five commits on `multi-agent-dev`, full suite +
+  ruff green each: `46bb775` vocabulary (REQUEST_STATUS / STATUS_REPLY,
+  round-trips pinned), `ebe3228` the exchange (broadcast ask, living
+  direct subordinates auto-answer their own `is_complete` state in slot
+  order, audibility both ways, 8-step cooldown, transmission-cost priced,
+  never the root's success condition), `e00846d` observations (+4
+  status-COMPLETE-heard slots, **OBS_DIM 357 → 361, N_ACTIONS 239 → 240,
+  every v1.27-tree checkpoint orphaned**), `10211a7` read machinery
+  (root_evidence_probe gains the fresh-status-COMPLETE column;
+  `scripts/interrogative_read.py` scores the six pre-registered checks,
+  thresholds pinned before job 1), `00a2372` smoke (the ask→answer→flag
+  chain works end-to-end on transcript and obs; the 300k smoke's 40%
+  rolling was short-horizon, not breakage — the first full campaign job
+  reads 93% rolling at 50%). The owner's three add-on requests were
+  REWOUND before the build (addendum reverted, `76a8696`); the campaign
+  is the plain 24-job fleet shape. **Stated plainly, an operational
+  wound, self-inflicted**: the build agent launched the campaign at
+  01:39 but died to an API error before committing its jobs file; the
+  main session, believing phase 6 unlaunched, overwrote that uncommitted
+  file — invalidating the live queue runner's open read-offset. The
+  training run itself was never at risk (its own nohup); the stale
+  runner was retired and the remaining 23 jobs relaunched as
+  `v1_28_interrogative_fleet_remaining.jobs` (14:28). Lesson for the
+  next campaign: a queue's jobs file is LOAD-BEARING while the queue
+  lives — never rewrite one without checking for a live runner.
+  `docs/interrogative-cycle.md` §"The read" governs the verdict when the
+  ~24 jobs land (~overnight); the v1.27 seal question remains open and
+  unaffected.
 
 - **2026-09-14 (night)** — **The cheap-root-claim arms are SCORED: the
   economics half of the prediction is CONFIRMED, the rear-claiming half is
