@@ -126,8 +126,10 @@
   .compat { color: var(--warn); background: #2a2411; border: 1px solid #4a3f1a; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-bottom: 7px; }
   .errbox { color: var(--bad); background: #2a1414; border: 1px solid #4a1f1f; border-radius: 6px; padding: 5px 7px; font-size: 11px; margin-top: 8px; white-space: pre-wrap; }
 
-  /* chain of command */
-  #coc { display: flex; flex-direction: column; gap: 2px; }
+  /* chain of command — capped so the map's wheel-zoom never strands its
+     bottom rows below the fold; the roster scrolls inside the card */
+  #cocpanel { flex: none; display: flex; flex-direction: column; max-height: 36vh; min-height: 92px; }
+  #coc { display: flex; flex-direction: column; gap: 2px; overflow-y: auto; min-height: 0; }
   .coc-row { display: grid; grid-template-columns: minmax(150px, 1.1fr) minmax(120px, 1.6fr) 74px; gap: 10px; align-items: center; padding: 3px 6px; border-radius: 5px; cursor: pointer; border: 1px solid transparent; }
   .coc-row:hover { background: var(--panel2); border-color: var(--line); }
   .coc-row.sel { border-color: var(--accent); background: var(--panel2); }
@@ -1314,12 +1316,12 @@ map.addEventListener("pointerup", (e) => {
 map.addEventListener("pointerleave", () => { $("maptip").style.display = "none"; });
 map.addEventListener("wheel", (e) => {
   if (!EP) return;
-  e.preventDefault();
   const rect = map.getBoundingClientRect();
   const mx = e.clientX - rect.left, my = e.clientY - rect.top;
   const z0 = VIEW.z;
   const z1 = Math.max(1, Math.min(6, z0 * Math.exp(-e.deltaY * 0.0016)));
-  if (z1 === z0) return;
+  if (z1 === z0) return; // clamped no-op: let the column scroll instead
+  e.preventDefault();
   // keep the point under the cursor fixed
   VIEW.px = mx - (mx - VIEW.px) * (z1 / z0);
   VIEW.py = my - (my - VIEW.py) * (z1 / z0);
