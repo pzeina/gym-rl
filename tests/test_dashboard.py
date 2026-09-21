@@ -324,3 +324,57 @@ def test_recorded_trace_serves_a_legacy_checkpoint(tmp_path):
                current / "ckpt_best.pt")
     (current / "traces" / "fireteam_best_seed1.json").write_text('{"outcome": "x"}')
     assert handler._recorded_trace("run:current_v1:best", "fireteam", 1) is None
+
+def test_live_order_form_speaks_the_doctrine():
+    """The Command tab's order composer offers only lines the net accepts.
+
+    The form's admissibility must mirror inject_order's (direct subordination,
+    per-mission minimum authority), and every line composed from its templates
+    must round-trip through the real parser to the same recipient and mission
+    — the composer and the radio share one formatter, so this is the drift
+    alarm.
+    """
+    import cohort.core.language as lang
+    from cohort.core.missions import MissionType
+    from cohort.viz.dashboard import LiveSession
+
+    s = LiveSession("squad", None, seed=1)
+    form = s.order_form("HQ")
+    all_cs = {r["cs"] for r in form["recipients"]}
+    assert "SL1" in all_cs and any(cs.startswith("RFN") for cs in all_cs)
+    sl = next(r for r in form["recipients"] if r["cs"] == "SL1")
+    rfn = next(r for r in form["recipients"] if r["cs"].startswith("RFN"))
+    assert "DENY" in sl["missions"], "DENY is a section mission — SL holds it"
+    assert "DENY" not in rfn["missions"], "a rifleman can never hold DENY"
+    assert sl["leads"] and not rfn["leads"]
+
+    # a team leader may only address its own direct subordinates
+    tl_form = s.order_form("TL1")
+    tl_cs = {r["cs"] for r in tl_form["recipients"]}
+    assert tl_cs and all(cs.startswith("RFN") for cs in tl_cs)
+
+    # every composable line parses back to exactly what the dropdowns said
+    targets_of = {
+        "objective": form["objectives"],
+        "control": form["controls"],
+        "unit": form["support_targets"],
+        None: [None],
+    }
+    composed = 0
+    for r in form["recipients"]:
+        for mname in r["missions"]:
+            t = form["templates"][mname]
+            targets = [x for x in targets_of[t["target"]] if x != r["cs"]]
+            if not targets:
+                continue
+            phrase = t["phrase"].replace("{T}", targets[0]) if targets[0] else t["phrase"]
+            parsed = lang.parse_order(f"{r['cs']}, {phrase} AT T PLUS 3")
+            assert parsed.recipient_callsign == r["cs"]
+            assert parsed.mission is MissionType[mname]
+            assert parsed.delay == 3
+            composed += 1
+    assert composed >= len(form["recipients"]) * 5, "the sweep must actually cover the grid"
+
+    # EXECUTE lands on the trace like any other traffic
+    out = s.execute("HQ")
+    assert out["ok"] and out["messages"], "EXECUTE must appear on the net"

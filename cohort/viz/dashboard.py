@@ -44,8 +44,14 @@ from urllib.parse import parse_qs, urlparse
 import numpy as np
 
 from cohort.config import SCENARIOS
-from cohort.core.language import OrderParseError
-from cohort.core.missions import MissionType
+from cohort.core.language import OrderParseError, control_phrase, mission_phrase
+from cohort.core.missions import (
+    NEEDS_CONTROL,
+    NEEDS_OBJECTIVE,
+    Formation,
+    MissionType,
+    min_hold_authority,
+)
 from cohort.env.actions import CATALOG, N_ACTIONS
 from cohort.env.cohort_env import CohortEnv, make_env
 from cohort.env.observations import OBS_DIM
@@ -344,6 +350,79 @@ class LiveSession:
         injected = _messages_of(self.env, self.env.transcript.since(before))
         self.steps[-1]["messages"].extend(injected)
         return {"ok": True, "messages": injected}
+
+    def execute(self, issuer: str) -> dict:
+        """EXECUTE broadcast (A5-2): release the issuer's pending
+        AT-MY-COMMAND orders; the traffic lands on the trace like an order."""
+        before = len(self.env.transcript)
+        self.env.inject_execute(issuer=issuer)
+        injected = _messages_of(self.env, self.env.transcript.since(before))
+        self.steps[-1]["messages"].extend(injected)
+        return {"ok": True, "messages": injected}
+
+    def order_form(self, issuer: str) -> dict:
+        """The order composer's vocabulary for ``issuer``, right now.
+
+        Derived from the same doctrine ``inject_order`` enforces — direct
+        subordination, outranking, per-mission minimum authority — so the
+        dropdowns can never offer a line the net would refuse. The spoken
+        phrase templates come from ``mission_phrase`` itself: the composed
+        text and the radio form share one formatter and cannot drift.
+        """
+        env = self.env
+        issuer = issuer.upper()
+        if issuer == "HQ" and env._voice_only:
+            return {
+                "error": "voice_only: there is no remote HQ station — "
+                "command as the embodied root callsign"
+            }
+        if issuer == "HQ":
+            candidates = list(env.roster.living)
+        else:
+            issuing = env.roster.by_callsign.get(issuer)
+            if issuing is None or not issuing.alive:
+                return {"error": f"no living station {issuer} on the net"}
+            candidates = [
+                s
+                for s in issuing.living_subordinates(env.roster)
+                if issuing.effective_authority > s.effective_authority
+            ]
+        recipients = [
+            {
+                "cs": s.callsign,
+                "missions": [
+                    m.name
+                    for m in MissionType
+                    if s.effective_authority >= min_hold_authority(m)
+                ],
+                "leads": bool(s.living_subordinates(env.roster)),
+            }
+            for s in candidates
+        ]
+        templates = {}
+        for m in MissionType:
+            if m in NEEDS_CONTROL:
+                # mission_phrase speaks control_phrase(target); the controls
+                # list below is already spoken, so the template takes it raw
+                templates[m.name] = {"phrase": "ADVANCE TO {T}", "target": "control"}
+            elif m is MissionType.SUPPORT:
+                templates[m.name] = {"phrase": mission_phrase(m, "{T}"), "target": "unit"}
+            elif m in NEEDS_OBJECTIVE:
+                templates[m.name] = {"phrase": mission_phrase(m, "{T}"), "target": "objective"}
+            else:
+                templates[m.name] = {"phrase": mission_phrase(m, None), "target": None}
+        return {
+            "issuer": issuer,
+            "recipients": recipients,
+            "templates": templates,
+            "objectives": [o.name for o in env.world.objectives],
+            "controls": [
+                control_phrase(c.name)
+                for c in [*env.world.waypoints, *env.world.phase_lines]
+            ],
+            "support_targets": [s.callsign for s in env.roster.living],
+            "formations": [f.name for f in Formation],
+        }
 
 
 def _messages_of(env: CohortEnv, messages) -> list[dict]:
@@ -775,6 +854,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                             self._json(
                                 session.order(query["text"], query.get("issuer", "HQ"))
                             )
+                        except (OrderParseError, PermissionError) as exc:
+                            self._json({"error": str(exc)}, 400)
+                    elif url.path == "/api/live/orderform":
+                        self._json(session.order_form(query.get("issuer", "HQ")))
+                    elif url.path == "/api/live/execute":
+                        try:
+                            self._json(session.execute(query.get("issuer", "HQ")))
                         except (OrderParseError, PermissionError) as exc:
                             self._json({"error": str(exc)}, 400)
                     elif url.path == "/api/live/state":

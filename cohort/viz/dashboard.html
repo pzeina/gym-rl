@@ -240,9 +240,21 @@
     </div>
     <div class="card"><h3>Command the net</h3>
       <div class="field"><span>speak as</span><select id="lv-issuer"><option>HQ</option></select></div>
-      <div class="field"><span>order (command language)</span>
+      <div class="field"><span>to</span><select id="lv-to"></select></div>
+      <div class="field"><span>order</span><select id="lv-verb"></select></div>
+      <div class="field hidden" id="lv-targetrow"><span id="lv-targetlabel">target</span><select id="lv-target"></select></div>
+      <div class="field" id="lv-timingrow"><span>timing</span>
+        <div style="display:flex;gap:6px"><select id="lv-timing" style="flex:1">
+          <option value="">immediate</option>
+          <option value="tplus">AT T PLUS n</option>
+          <option value="amc">AT MY COMMAND</option>
+        </select><input type="number" id="lv-tplus" value="5" min="1" style="width:64px" class="hidden"></div></div>
+      <div class="field"><span>as transmitted (editable)</span>
         <input type="text" id="lv-order" placeholder="TL1, seize obj bravo" autocomplete="off"></div>
-      <button id="lv-send">📡 Transmit</button>
+      <div style="display:flex;gap:6px">
+        <button id="lv-send" style="flex:1">📡 Transmit</button>
+        <button id="lv-exec" style="width:auto" title="release this issuer's pending AT-MY-COMMAND orders">EXECUTE</button>
+      </div>
       <div id="lv-orderstatus" style="margin-top:6px;font-size:11px;min-height:14px"></div>
     </div>
     <div class="card"><h3>Advance</h3>
@@ -1724,6 +1736,91 @@ $("lv-task").onchange = () => fillEchelon("lv");
 $("lv-echelon").onchange = () => fillVersion("lv");
 $("lv-version").onchange = () => showVersionNote("lv");
 
+/* ---------- order composer: doctrine-driven dropdowns ----------
+   The vocabulary comes from /api/live/orderform — the same admissibility
+   inject_order enforces — and every change writes the composed line into the
+   free-text input, which stays editable: the parser remains the gate. */
+let ORDERFORM = null;
+async function loadOrderForm() {
+  if (MODE !== "live") { ORDERFORM = null; fillComposer(); return; }
+  try {
+    ORDERFORM = await api(`/api/live/orderform?issuer=${encodeURIComponent($("lv-issuer").value)}`);
+  } catch (e) { ORDERFORM = { error: e.message }; }
+  fillComposer();
+}
+function keepValue(sel, html) {
+  const cur = sel.value;
+  sel.innerHTML = html;
+  if (cur && [...sel.options].some((o) => o.value === cur)) sel.value = cur;
+}
+function fillComposer() {
+  const to = $("lv-to");
+  if (!ORDERFORM || ORDERFORM.error || !ORDERFORM.recipients?.length) {
+    to.innerHTML = '<option value="">—</option>'; $("lv-verb").innerHTML = "";
+    $("lv-targetrow").classList.add("hidden");
+    if (ORDERFORM?.error) $("lv-orderstatus").innerHTML = `<span style="color:var(--warn)">${esc(ORDERFORM.error)}</span>`;
+    return;
+  }
+  keepValue(to, ORDERFORM.recipients.map((r) => `<option>${r.cs}</option>`).join(""));
+  fillVerbs();
+}
+function fillVerbs() {
+  const r = ORDERFORM?.recipients?.find((x) => x.cs === $("lv-to").value);
+  if (!r) return;
+  let html = r.missions.map((m) => `<option>${m}</option>`).join("");
+  if (r.leads) html += "<option>FORMATION</option>"; // stance: ordered to a leader
+  keepValue($("lv-verb"), html);
+  fillTargets();
+}
+function fillTargets() {
+  const verb = $("lv-verb").value, row = $("lv-targetrow");
+  let list = null, label = "target";
+  if (verb === "FORMATION") { list = ORDERFORM.formations; label = "formation"; }
+  else {
+    const t = ORDERFORM.templates[verb];
+    if (t?.target === "objective") { list = ORDERFORM.objectives; label = "objective"; }
+    else if (t?.target === "control") { list = ORDERFORM.controls; label = "control"; }
+    else if (t?.target === "unit") { list = ORDERFORM.support_targets.filter((cs) => cs !== $("lv-to").value); label = "support"; }
+  }
+  // a mission whose required target class is empty on this map cannot be
+  // composed — leave the row hidden and the line untouched
+  if (!list || !list.length) { row.classList.add("hidden"); if (verb === "ADVANCE" || verb === "SUPPORT") return; }
+  else {
+    row.classList.remove("hidden");
+    $("lv-targetlabel").textContent = label;
+    keepValue($("lv-target"), list.map((o) => `<option>${o}</option>`).join(""));
+  }
+  composeOrder();
+}
+function composeOrder() {
+  const to = $("lv-to").value, verb = $("lv-verb").value;
+  if (!to || !verb || !ORDERFORM) return;
+  let phrase;
+  if (verb === "FORMATION") phrase = `FORMATION ${$("lv-target").value}`;
+  else {
+    phrase = ORDERFORM.templates[verb]?.phrase || verb;
+    if (phrase.includes("{T}")) phrase = phrase.replace("{T}", $("lv-target").value);
+  }
+  let timing = "";
+  if (verb !== "FORMATION") { // a stance order carries no timing clause
+    const tm = $("lv-timing").value;
+    if (tm === "tplus") timing = ` AT T PLUS ${Math.max(1, +$("lv-tplus").value || 1)}`;
+    else if (tm === "amc") timing = " AT MY COMMAND";
+  }
+  $("lv-order").value = `${to}, ${phrase}${timing}`;
+}
+async function liveExecute() {
+  if (MODE !== "live") { $("lv-orderstatus").innerHTML = '<span style="color:var(--bad)">start a session first</span>'; return; }
+  try {
+    const r = await api(`/api/live/execute?issuer=${encodeURIComponent($("lv-issuer").value)}`);
+    (r.messages || []).forEach((m) => EP.steps[EP.steps.length - 1].messages.push(m));
+    renderMsgs(); drawMap();
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${esc(r.messages?.[0]?.text || "EXECUTE sent")}</span>`;
+  } catch (e) {
+    $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message)}</span>`;
+  }
+}
+
 async function liveStart() {
   stopAuto();
   $("lv-start").disabled = true; $("lv-start").textContent = "⏳ starting…";
@@ -1738,6 +1835,7 @@ async function liveStart() {
     $("lv-info").innerHTML = `${esc(snap.opord)}<br>policy: ${esc(String(snap.policy).split("/").pop())}`;
     sel = null; seek(EP.steps.length - 1);
     $("lv-orderstatus").textContent = "";
+    loadOrderForm();
   } catch (e) {
     $("status").textContent = "live session failed";
     $("lv-info").innerHTML = `<div class="errbox">could not start: ${esc(e.message)}</div>`;
@@ -1754,6 +1852,8 @@ async function liveAdvance(n) {
     $("pb-slider").max = EP.steps.length - 1;
     seek(EP.steps.length - 1);
     const contact = r.steps.some((s) => s.messages.some((m) => m.kind === "contact"));
+    if (r.steps.some((s) => s.messages.some((m) => m.kind === "casualty" || m.kind === "taking_command")))
+      loadOrderForm(); // a death or succession changes who may order whom
     if (r.outcome) {
       stopAuto();
       EP.outcome = r.outcome;
@@ -1800,6 +1900,13 @@ function toggleAuto() {
 $("lv-start").onclick = liveStart;
 $("lv-dice").onclick = () => { $("lv-seed").value = Math.floor(Math.random() * 100000); };
 $("lv-send").onclick = liveOrder;
+$("lv-exec").onclick = liveExecute;
+$("lv-issuer").onchange = loadOrderForm;
+$("lv-to").onchange = fillVerbs;
+$("lv-verb").onchange = fillTargets;
+$("lv-target").onchange = composeOrder;
+$("lv-timing").onchange = () => { $("lv-tplus").classList.toggle("hidden", $("lv-timing").value !== "tplus"); composeOrder(); };
+$("lv-tplus").oninput = composeOrder;
 $("lv-order").addEventListener("keydown", (e) => { if (e.key === "Enter") liveOrder(); });
 $("lv-s1").onclick = () => liveAdvance(1);
 $("lv-s5").onclick = () => liveAdvance(5);
