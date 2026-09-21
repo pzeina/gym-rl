@@ -688,7 +688,8 @@ function fillVersion(prefix) {
   runs.forEach((r) => {
     r.checkpoints.forEach((c) => {
       const replay = !c.loadable && r.traces.some((t) => t.startsWith(`${scenario}_${c.kind}_`));
-      const mark = c.loadable ? "" : (replay ? "▣ " : "⚠ ");
+      if (!c.loadable && !replay) return; // unloadable and no recorded trace: nothing it can show
+      const mark = c.loadable ? "" : "▣ ";
       const steps = c.env_steps ? ` · ${(c.env_steps / 1e6).toFixed(2)}M` : "";
       opts += `<option value="run:${r.name}:${c.kind}">${mark}${versionLabel(r.name, scenario)} · ${c.kind}${steps}</option>`;
     });
@@ -710,11 +711,7 @@ function showVersionNote(prefix) {
   const el = $(prefix + "-compat");
   const sel = selectedCheckpoint(prefix);
   if (!sel || !sel.ckpt || sel.ckpt.loadable) { el.classList.add("hidden"); el.textContent = ""; return; }
-  const scenario = scenarioOf(prefix);
-  const replay = sel.run.traces.some((t) => t.startsWith(`${scenario}_${sel.ckpt.kind}_`));
-  el.textContent = replay
-    ? "▣ Recorded replay — this checkpoint predates the current spaces, so it plays back from a trace captured at its own code revision."
-    : "⚠ " + sel.ckpt.reason;
+  el.textContent = "▣ Recorded replay — this checkpoint predates the current spaces, so it plays back from a trace captured at its own code revision.";
   el.classList.remove("hidden");
 }
 
