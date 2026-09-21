@@ -782,7 +782,7 @@ async function generateEpisode() {
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
     stopAuto(); MODE = "replay";
-    EP = trace; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; VIEW = { z: 1, px: 0, py: 0 };
+    EP = trace; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; HQR_CACHE = { t: -1, data: null }; VIEW = { z: 1, px: 0, py: 0 };
     t = 0; sel = null; playing = false; clearInterval(playTimer);
     $("pb-slider").max = EP.steps.length - 1;
     const badge = $("outbadge");
@@ -942,6 +942,86 @@ function heardPicture(cs, upto) {
   }
   HP_CACHE = { key, data: { bySender, contacts, casualties } };
   return HP_CACHE.data;
+}
+
+/* HQ's operational picture at step `upto`: only what the HQ net carried —
+   the up-channel (lines addressed to HQ), HQ's own transmissions, and the
+   ALL-STATIONS broadcasts. Ground truth never enters: this is the operation
+   as HQ would brief it. */
+let HQR_CACHE = { t: -1, data: null };
+function hqPicture(upto) {
+  if (HQR_CACHE.t === upto) return HQR_CACHE.data;
+  const d = { opord: null, root: null, rootLast: null, upCount: 0,
+              contacts: [], casualties: [], traps: [], succession: [],
+              claims: [], endex: null };
+  for (let i = 0; i <= upto; i++) {
+    for (const m of EP.steps[i].messages || []) {
+      if (m.kind === "opord") {
+        if (!d.opord) { d.opord = { text: m.text, t: i }; d.root = m.to; }
+      } else if (m.kind === "casualty") {
+        const cs = (m.text.match(/:\s*([A-Z]+\d+) IS DOWN/) || [])[1];
+        if (cs) d.casualties.push({ cs, t: i });
+      } else if (m.kind === "trap") {
+        d.traps.push({ t: i });
+      } else if (m.kind === "taking_command") {
+        const mm = m.text.match(/THIS IS ([A-Z]+\d+): ([A-Z]+\d+) IS DOWN/);
+        if (mm) {
+          d.succession.push({ cs: mm[1], dead: mm[2], t: i });
+          if (mm[2] === d.root) d.root = mm[1]; // HQ's up-channel moves with succession
+        }
+      } else if (m.to === "HQ") {
+        d.upCount++;
+        d.rootLast = { kind: m.kind, from: m.from, t: i };
+        if (m.kind === "contact") {
+          const c = m.text.match(/CONTACT,\s*GRID\s*(\d{2})(\d{2}),\s*(\d+)\s*x\s*ENEMY/i);
+          d.contacts.push({ x: c ? +c[1] : null, y: c ? +c[2] : null, n: c ? +c[3] : 1, t: i });
+        } else if (m.kind === "done") {
+          d.claims.push({ from: m.from, t: i, verdict: null });
+        }
+      } else if (m.from === "HQ") {
+        const open = d.claims.find((cl) => cl.verdict === null);
+        if (m.kind === "done_confirm" && open) open.verdict = "CONFIRMED";
+        else if (m.kind === "done_reject" && open) open.verdict = "REJECTED";
+        else if (m.kind === "endex") d.endex = i;
+      }
+    }
+  }
+  HQR_CACHE = { t: upto, data: d };
+  return d;
+}
+
+function hqReportCard() {
+  const q = hqPicture(t);
+  const dim = (s) => `<span style="color:var(--dim)">${s}</span>`;
+  const row = (label, body) => `<div style="display:flex;gap:8px;font-size:11.5px;padding:2px 0">
+    <span style="color:var(--faint);letter-spacing:.06em;font-size:10px;min-width:64px;padding-top:1px">${label}</span>
+    <span style="flex:1;min-width:0">${body}</span></div>`;
+  const vo = EP.comms?.model === "voice_only";
+  let rows = "";
+  rows += row("TASKING", q.opord
+    ? `<b style="color:var(--friend);font-family:var(--mono)">${esc(q.root)}</b> ${dim("·")} <span style="font-family:var(--mono);font-size:10.5px">${esc(q.opord.text.length > 110 ? q.opord.text.slice(0, 110) + "…" : q.opord.text)}</span>`
+    : dim("no OPORD heard"));
+  const claims = q.claims.map((cl) =>
+    `MISSION COMPLETE claimed by ${cl.from} t=${cl.t} → ${cl.verdict === "CONFIRMED" ? '<span class="pos">CONFIRMED</span>' : cl.verdict === "REJECTED" ? '<span class="neg">REJECTED — CONTINUE MISSION</span>' : dim("awaiting verdict")}`)
+    .join("<br>");
+  rows += row("MISSION", (claims || dim("no completion claim heard"))
+    + (q.endex != null ? `<br><span class="pos">ENDEX transmitted t=${q.endex}</span>` : ""));
+  rows += row("UP-CHANNEL", q.rootLast
+    ? `last: <b>${esc(q.rootLast.kind)}</b> from ${q.rootLast.from} ${dim(`· ${t - q.rootLast.t} ago · ${q.upCount} lines total`)}`
+    : dim(vo ? "no HQ station after the briefing (voice-only net)" : "nothing heard up-channel yet"));
+  const hostiles = q.contacts.reduce((a, c) => a + c.n, 0);
+  const lastC = q.contacts[q.contacts.length - 1];
+  rows += row("ENEMY", q.contacts.length
+    ? `${hostiles} hostiles over ${q.contacts.length} report${q.contacts.length > 1 ? "s" : ""} ${dim(`· freshest ${t - lastC.t} ago${lastC.x != null ? ` · GRID ${String(lastC.x).padStart(2, "0")}${String(lastC.y).padStart(2, "0")}` : ""}`)}`
+    : dim("no enemy reported to HQ"));
+  const up = EP.roster.length - q.casualties.length;
+  rows += row("FORCE", `<span class="${q.casualties.length ? "neg" : "pos"}">${up}/${EP.roster.length} up</span> ${dim("(as announced)")}`
+    + (q.casualties.length ? ` ${dim("·")} ✝ ${q.casualties.map((c) => `${c.cs} t=${c.t}`).join(", ")}` : "")
+    + (q.traps.length ? ` ${dim(`· ${q.traps.length} device strike${q.traps.length > 1 ? "s" : ""}`)}` : ""));
+  if (q.succession.length) rows += row("COMMAND", q.succession.map((s2) =>
+    `<span style="color:#c084fc">${s2.cs} assumed command</span> ${dim(`for ${s2.dead} t=${s2.t}`)}`).join("<br>"));
+  return `<h3 class="hd">HQ — operational picture <span style="color:var(--faint);text-transform:none;letter-spacing:0">as carried on the HQ net, t=${t}</span></h3>
+    <div class="card" style="margin-bottom:10px">${rows}</div>`;
 }
 
 /* ---------- terrain: cached offscreen render with per-cell texture ---------- */
@@ -1656,7 +1736,7 @@ function renderInspector() {
   if (!EP) { el.innerHTML = '<div class="empty">nothing selected</div>'; return; }
   const st = EP.steps[t];
   if (!sel) {
-    el.innerHTML = renderSensorBoard(st);
+    el.innerHTML = hqReportCard() + renderSensorBoard(st);
     el.querySelectorAll(".sb-row").forEach((row) => {
       row.onclick = () => { sel = { type: "soldier", key: row.dataset.cs }; drawMap(); renderInspector(); renderCoC(); };
     });
@@ -1814,7 +1894,8 @@ async function liveExecute() {
   try {
     const r = await api(`/api/live/execute?issuer=${encodeURIComponent($("lv-issuer").value)}`);
     (r.messages || []).forEach((m) => EP.steps[EP.steps.length - 1].messages.push(m));
-    renderMsgs(); drawMap();
+    HQR_CACHE = { t: -1, data: null }; HP_CACHE = { key: null, data: null };
+    renderMsgs(); drawMap(); renderInspector();
     $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${esc(r.messages?.[0]?.text || "EXECUTE sent")}</span>`;
   } catch (e) {
     $("lv-orderstatus").innerHTML = `<span style="color:var(--bad)">✗ ${esc(e.message)}</span>`;
@@ -1827,7 +1908,7 @@ async function liveStart() {
   try {
     const snap = await api(`/api/live/start?scenario=${scenarioOf("lv")}` +
       `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
-    EP = snap; MODE = "live"; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; VIEW = { z: 1, px: 0, py: 0 };
+    EP = snap; MODE = "live"; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; HQR_CACHE = { t: -1, data: null }; VIEW = { z: 1, px: 0, py: 0 };
     epRequest++;                       // invalidate any in-flight replay fetch
     $("pb-slider").max = EP.steps.length - 1;
     $("outbadge").style.display = "none";
@@ -1878,7 +1959,8 @@ async function liveOrder() {
     const r = await api(`/api/live/order?text=${encodeURIComponent(text)}` +
       `&issuer=${encodeURIComponent($("lv-issuer").value)}`);
     (r.messages || []).forEach((m) => EP.steps[EP.steps.length - 1].messages.push(m));
-    renderMsgs(); drawMap();
+    HQR_CACHE = { t: -1, data: null }; HP_CACHE = { key: null, data: null }; // injected traffic lands on the current step
+    renderMsgs(); drawMap(); renderInspector();
     $("lv-orderstatus").innerHTML = `<span style="color:var(--good)">✓ ${esc(r.messages?.[0]?.text || "transmitted")}</span>`;
     $("lv-order").value = "";
   } catch (e) {
