@@ -563,6 +563,9 @@ const TOGGLES = [
   ["known", "team enemy picture", true,
     swx('<path d="M10 1 L18 6 L10 11 L2 6 Z" fill="none" stroke="#ff8484" stroke-dasharray="2 2"/>'),
     "reported contacts on the shared picture — only what somebody put on the net"],
+  ["teamsight", "team viewshed", false,
+    swx('<circle cx="7" cy="6" r="4.5" fill="#7fd4f229"/><circle cx="13" cy="6" r="4.5" fill="#7fd4f229"/>'),
+    "union of every living friendly's viewshed — what the ELEMENT collectively sees; the gap between this and a commander's own viewshed is sight the element holds that its commander does not"],
   ["comms", "radio traffic", true,
     swx('<path d="M2 10 Q10 0 18 10" fill="none" stroke="#e5a944" stroke-width="1.4"/>'),
     "this step's transmissions as arcs, colored by message kind; dashed = voice, dotted = signal/gesture"],
@@ -576,9 +579,9 @@ const TOGGLES = [
     swx('<path d="M6 1V11 M13 1V11 M1 4H19 M1 8H19" stroke="#8b94a3" stroke-width=".7" opacity=".6"/>'),
     "cell grid with a labeled 5-cell graticule"],
   ["g2", "selected station"],
-  ["vision", "vision + LOS", true,
-    swx('<circle cx="10" cy="6" r="5" fill="none" stroke="#7fd4f2"/>'),
-    "what the selected station can SEE: vision ring (solid), forest vision (faint), lines of sight to each spotted hostile"],
+  ["vision", "viewshed + LOS", true,
+    swx('<circle cx="10" cy="6" r="5" fill="#7fd4f233" stroke="#7fd4f2"/>'),
+    "what the selected station can actually SEE, cell by cell, computed with the env's own spotting rule (walls shadow, forest conceals beyond the short range) — plus LOS rays to spotted hostiles; the faint ring is open-ground max range"],
   ["rings", "weapon + net range", true,
     swx('<circle cx="6" cy="6" r="4.5" fill="none" stroke="#d95926"/><circle cx="14" cy="6" r="4.5" fill="none" stroke="#e5a944" stroke-dasharray="2 2"/>'),
     "weapon range (orange) and, on degraded nets, radio/voice reach (amber dashed) — the env's real parameters"],
@@ -613,6 +616,8 @@ $("legend").innerHTML = `<div class="lg">
   <div class="lg-row">V sees n · C hears n · L visual link · ? garbled · ! say-again · F on station</div>
   <div class="lgh">Radio media tags</div>
   <div class="lg-row">B briefing · R radio · V voice · S signal · G gesture · E umpire</div>
+  <div class="lgh">Sight</div>
+  <div class="lg-row"><span style="color:#7fd4f2">▧</span> viewshed = cells the env's spotting rule actually reaches (walls shadow, forest short-range) · faint ring = open-ground max</div>
   <div class="lgh">Terrain</div>
   <div class="lg-row"><span style="color:#5f8f5f">▦</span> forest (cover, conceals) · <span style="color:#8a8f98">▩</span> wall (blocks move + LOS)</div>
 </div>`;
@@ -766,7 +771,7 @@ async function generateEpisode() {
       `&seed=${+$("ep-seed").value}&greedy=${$("ep-greedy").checked ? 1 : 0}`);
     if (myRequest !== epRequest) return; // a newer request superseded this one
     stopAuto(); MODE = "replay";
-    EP = trace; TERRAIN = null; VIEW = { z: 1, px: 0, py: 0 };
+    EP = trace; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; VIEW = { z: 1, px: 0, py: 0 };
     t = 0; sel = null; playing = false; clearInterval(playTimer);
     $("pb-slider").max = EP.steps.length - 1;
     const badge = $("outbadge");
@@ -860,6 +865,73 @@ function geom() {
 }
 const cx = (g, x) => g.ox + (x + 0.5) * g.cell;
 const cy = (g, y) => g.oy + (y + 0.5) * g.cell;
+
+/* ---------- sight: mirrors cohort/core/world.py exactly ---------- */
+function losClear(x0, y0, x1, y1) {
+  /* Bresenham; walls block, endpoints never block */
+  const grid = EP.grid, dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+  const sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  let err = dx - dy, x = x0, y = y0;
+  while (x !== x1 || y !== y1) {
+    if ((x !== x0 || y !== y0) && grid[y][x] === 2) return false;
+    const e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+  return true;
+}
+function canSpot(ox, oy, tx, ty) {
+  /* range is target-side: a target standing in forest is spottable only
+     within the SHORT range — the asymmetry a plain circle cannot draw */
+  const c = combatOf();
+  const limit = EP.grid[ty][tx] === 1 ? c.forest_vision : c.vision;
+  return Math.hypot(tx - ox, ty - oy) <= limit && losClear(ox, oy, tx, ty);
+}
+const VS_CACHE = new Map(); /* `${t}|${key}` -> Uint8Array over cells */
+function viewshed(key, observers) {
+  const k = `${t}|${key}`;
+  let cells = VS_CACHE.get(k);
+  if (cells) return cells;
+  if (VS_CACHE.size > 600) VS_CACHE.clear();
+  cells = new Uint8Array(EP.width * EP.height);
+  for (const [ox, oy] of observers)
+    for (let ty = 0; ty < EP.height; ty++)
+      for (let tx = 0; tx < EP.width; tx++) {
+        const i = ty * EP.width + tx;
+        if (!cells[i] && canSpot(ox, oy, tx, ty)) cells[i] = 1;
+      }
+  VS_CACHE.set(k, cells);
+  return cells;
+}
+function paintViewshed(g, g0, cells, color, alpha) {
+  g.fillStyle = color; g.globalAlpha = alpha; g.beginPath();
+  for (let y = 0; y < EP.height; y++)
+    for (let x = 0; x < EP.width; x++)
+      if (cells[y * EP.width + x]) g.rect(g0.ox + x * g0.cell, g0.oy + y * g0.cell, g0.cell, g0.cell);
+  g.fill(); g.globalAlpha = 1;
+}
+
+/* commander's heard picture: everything this callsign RECEIVED on the net up
+   to step `upto` — reconstructed from the trace's heard_by audit metadata, so
+   it is what actually landed, not what was transmitted */
+let HP_CACHE = { key: null, data: null };
+function heardPicture(cs, upto) {
+  const key = `${cs}|${upto}`;
+  if (HP_CACHE.key === key) return HP_CACHE.data;
+  const bySender = {}, contacts = [], casualties = [];
+  for (let i = 0; i <= upto; i++) {
+    for (const m of EP.steps[i].messages || []) {
+      if (m.from === cs) continue;
+      const heard = m.heard_by ? m.heard_by.includes(cs) : (m.to === cs || m.to === "ALL");
+      if (!heard) continue;
+      bySender[m.from] = { kind: m.kind, t: i };
+      if (m.kind === "contact") contacts.push({ from: m.from, t: i });
+      if (m.kind === "casualty") casualties.push({ from: m.from, t: i });
+    }
+  }
+  HP_CACHE = { key, data: { bySender, contacts, casualties } };
+  return HP_CACHE.data;
+}
 
 /* ---------- terrain: cached offscreen render with per-cell texture ---------- */
 let TERRAIN = null; // {canvas, cell, ep}
@@ -979,6 +1051,12 @@ function drawMap() {
 
   const selS = selectedSoldier(st);
 
+  // team viewshed: what the ELEMENT collectively sees (exact rule, union)
+  if (toggles.teamsight) {
+    const obs = st.soldiers.filter((s) => s.alive).map((s) => [s.x, s.y]);
+    if (obs.length) paintViewshed(g, g0, viewshed("TEAM", obs), "#7fd4f2", 0.05);
+  }
+
   // team picture: dashed hostile diamond = reported contact (2525 anticipated)
   if (toggles.known) st.known.forEach(([x, y]) => {
     drawSuspect(g, cx(g0, x), cy(g0, y), cell * 0.36, HOSTILE_FILL + "b0");
@@ -1015,8 +1093,10 @@ function drawMap() {
     const X = cx(g0, selS.x), Y = cy(g0, selS.y);
     const combat = combatOf(), comms = commsOf();
     if (toggles.vision) {
-      ring(g, X, Y, combat.vision * cell, "#7fd4f245", 1.4);           // vision
-      ring(g, X, Y, combat.forest_vision * cell, "#7fd4f222", 1);      // vision into forest
+      // exact viewshed (the env's can_spot per cell), not a circle: walls
+      // shadow, forest cells drop out beyond the short range
+      paintViewshed(g, g0, viewshed(selS.cs, [[selS.x, selS.y]]), "#7fd4f2", 0.12);
+      ring(g, X, Y, combat.vision * cell, "#7fd4f230", 1);             // open-ground max range
     }
     if (toggles.rings) {
       ring(g, X, Y, combat.weapon * cell, "#d9592648", 1.2);           // weapon range
@@ -1457,16 +1537,60 @@ function soldierCards(s, st) {
     }
     const subRows = s.subs.length && (sen.rb_heard || sen.done_heard)
       ? s.subs.map((cs) => {
-          const rb = sen.rb_heard?.[cs], dn = sen.done_heard?.[cs];
+          const rb = sen.rb_heard?.[cs], dn = sen.done_heard?.[cs], stq = sen.status_heard?.[cs];
           return `<div class="mate-row"><span class="cs">${cs}</span>
             <span>${rb ? '<span class="pos">READBACK ✓</span>' : '<span style="color:var(--faint)">no read-back</span>'}</span>
-            <span>${dn ? '<span class="pos">DONE ✓</span>' : ""}</span></div>`;
+            <span>${dn ? '<span class="pos">DONE ✓</span> ' : ""}${stq ? '<span class="pos">STATUS ✓</span>' : ""}</span></div>`;
         }).join("")
       : "";
     html += `<div class="sc"><h4>Net <span class="st">${comms.model}${comms.model === "range" ? ` · r${comms.range}` : ""}${comms.model === "voice_only" ? ` · voice r${comms.voice_range}` : ""}</span></h4>
       <div class="flagline">${netBits.join("")}</div>
       ${subRows ? `<div style="font-size:10px;color:var(--faint);letter-spacing:.08em;margin:4px 0 2px">HEARD FROM SUBORDINATES (recent)</div>${subRows}` : ""}
     </div>`;
+  }
+
+  // commander's picture: what this station KNOWS from traffic it actually
+  // received (heard_by audit metadata) + its own sight — never ground truth.
+  // This is the root-evidence story made visible: own sight of the objective
+  // vs a fresh subordinate DONE / STATUS in hand at the moment of a claim.
+  if (s.subs.length) {
+    const hp = heardPicture(s.cs, t);
+    const heardRows = s.subs.map((cs) => {
+      const last = hp.bySender[cs];
+      const age = last ? t - last.t : null;
+      const ageCls = age == null ? "" : age <= 5 ? "pos" : age <= 15 ? "" : "neg";
+      const badges = [
+        sen?.done_heard?.[cs] ? '<span class="pos">DONE</span>' : "",
+        sen?.status_heard?.[cs] ? '<span class="pos">STATUS</span>' : "",
+        sen?.rb_heard?.[cs] ? '<span class="pos">RB</span>' : "",
+      ].filter(Boolean).join(" ");
+      return `<div class="mate-row"><span class="cs">${cs}</span>
+        <span>${last ? `${last.kind} <span class="${ageCls}">· ${age} ago</span>` : '<span style="color:var(--faint)">nothing heard yet</span>'}</span>
+        <span style="text-align:right">${badges}</span></div>`;
+    }).join("");
+    const objRows = EP.objectives.map((o) => {
+      const seen = canSpot(s.x, s.y, o.x, o.y);
+      return `<div class="mate-row"><span class="cs">OBJ ${o.name}</span>
+        <span>${seen ? '<span class="pos">IN OWN SIGHT</span>' : '<span style="color:var(--faint)">not in sight</span>'}</span>
+        <span style="text-align:right">d=${fmt(Math.hypot(s.x - o.x, s.y - o.y), 1)}</span></div>`;
+    }).join("");
+    const cFresh = hp.contacts.length ? t - hp.contacts[hp.contacts.length - 1].t : null;
+    const claiming = (st.messages || []).some((m) => m.from === s.cs && m.kind === "done");
+    const anyDone = Object.values(sen?.done_heard || {}).some(Boolean);
+    const anyStatus = Object.values(sen?.status_heard || {}).some(Boolean);
+    const ownSight = EP.objectives.some((o) => canSpot(s.x, s.y, o.x, o.y));
+    const claim = claiming ? `<div class="flagline" style="margin-top:4px">
+      ${flag("CLAIMING NOW", "warn", "this station transmitted a completion claim this step — the flags beside it are the evidence in hand at this instant")}
+      ${flag(`own sight ${ownSight ? "✓" : "✗"}`, ownSight ? "good" : "bad", "an objective is inside this station's own viewshed")}
+      ${flag(`sub DONE ${anyDone ? "✓" : "✗"}`, anyDone ? "good" : "bad", "a subordinate DONE was heard recently (env heard-window)")}
+      ${flag(`status ${anyStatus ? "✓" : "✗"}`, anyStatus ? "good" : "bad", "a STATUS_REPLY saying COMPLETE was heard recently (env heard-window)")}
+    </div>` : "";
+    html += `<div class="sc"><h4>Commander's picture <span class="st">heard on the net — not ground truth</span></h4>
+      ${objRows}
+      <div style="font-size:10px;color:var(--faint);letter-spacing:.08em;margin:4px 0 2px">LAST HEARD FROM EACH SUBORDINATE</div>
+      ${heardRows}
+      <div style="font-size:11px;color:var(--dim);margin-top:4px">contacts heard ${hp.contacts.length}${cFresh != null ? ` (freshest ${cFresh} ago)` : ""} · casualties heard ${hp.casualties.length}</div>
+      ${claim}</div>`;
   }
 
   // cohesion
@@ -1607,7 +1731,7 @@ async function liveStart() {
   try {
     const snap = await api(`/api/live/start?scenario=${scenarioOf("lv")}` +
       `&policy=${encodeURIComponent(policyValue("lv"))}&seed=${+$("lv-seed").value}`);
-    EP = snap; MODE = "live"; TERRAIN = null; VIEW = { z: 1, px: 0, py: 0 };
+    EP = snap; MODE = "live"; TERRAIN = null; VS_CACHE.clear(); HP_CACHE = { key: null, data: null }; VIEW = { z: 1, px: 0, py: 0 };
     epRequest++;                       // invalidate any in-flight replay fetch
     $("pb-slider").max = EP.steps.length - 1;
     $("outbadge").style.display = "none";

@@ -119,6 +119,10 @@ def _sensors_rec(env: CohortEnv, s, view) -> dict:
         sen["done_heard"] = {
             sub.callsign: bool(h) for sub, h in zip(subs, view.done_heard, strict=False)
         }
+        sen["status_heard"] = {
+            sub.callsign: bool(h)
+            for sub, h in zip(subs, view.status_complete_heard, strict=False)
+        }
     if env._local_pictures:
         # this agent's OWN enemy picture — under a degraded net the pictures
         # diverge, and that divergence is exactly what is worth seeing

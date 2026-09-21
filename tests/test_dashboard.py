@@ -39,6 +39,14 @@ def test_episode_trace_structure():
         assert key in soldier
     assert soldier["act"] is not None, "actions taken must be recorded"
     assert soldier["sensors"] is not None and "cover" in soldier["sensors"]
+    # leader-side heard-window slots (read-back / DONE / interrogative STATUS)
+    # are keyed per direct-subordinate callsign — the commander's-picture
+    # panel and its claim-evidence stamp read exactly these
+    leader = next(s for s in step["soldiers"] if s["subs"])
+    for key in ("rb_heard", "done_heard", "status_heard"):
+        heard = leader["sensors"][key]
+        assert heard and set(heard) <= set(leader["subs"])
+        assert all(isinstance(v, bool) for v in heard.values())
     # the OPORD must be on the net at t=0
     assert any(m["kind"] == "opord" for m in trace["steps"][0]["messages"])
     # traces must be JSON-serializable end to end
