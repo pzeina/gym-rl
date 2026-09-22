@@ -1,50 +1,5 @@
 # Roadmap
 
-## ⟳ Night watch ledger — 2026-09-21→22 (symmetric-enemy self-play cycle; read the 2026-09-14 handoff below for the multi-agent-dev state, which this night did NOT touch)
-
-Owner's overnight commission: a separate-branch cycle making the enemy a
-learning cohort via symmetric self-play (symmetric warfare, not guerrilla),
-trained and evaluated toward a maximally capable enemy. **Delivered — the
-verdict SEPARATES.** Everything lives on branch `enemy-symmetric-selfplay`
-(5 commits, LOCAL ONLY — the push permission classifier blocked pushing a
-new branch; `git push -u origin enemy-symmetric-selfplay` is the one command
-the morning needs). Contract: `docs/night-orders-2026-09-21.md` (on this
-branch); full ledger with every judgement call:
-`docs/night-ledger-2026-09-21.md` (on the cycle branch).
-
-- **Built** (suite green + ruff per commit; existing scenarios, OBS_DIM 361,
-  N_ACTIONS 240, scripted OpFor all UNTOUCHED): `SymmetricCohortEnv` — two
-  composed CohortEnvs, opposing soldiers seen as Enemy-proxy records through
-  the existing `visible_enemies` seam, per-side nets/succession/rewards,
-  blue-frame outcome mapping (`cf48b56`, 17 tests); shared-policy self-play
-  in the trainer + `--opponent-checkpoint <path|random>` frozen-red mode +
-  `--checkpoint-at` mid rung + draw/casualty metrics, collapse-rescue
-  neutralized on mirror scenarios (`3359905`, 5 tests); ledgers `570e412`,
-  `387bbd4`; verdict + all six runs' artifacts `8edc3f0`.
-- **Ran** (all landed): smoke 200k (gate PASS); `fireteam_symmetric_v1_seed12`
-  3M (final 0.47/0.21/0.32 blue/red/draw — near-symmetric);
-  `fireteam_symmetric_v1_seed13` 3M (settled red-dominant, blue-win 0.28 —
-  side specialization under the shared policy, judged not-a-collapse; no
-  adjustment spent, honest-DoD intact); exploitability ladder
-  `br_random`/`br_mid`/`br_final`, 1M best-response each vs frozen seed12
-  rungs.
-- **The number**: best-response blue reaches 0.89 (peak 0.99) against a
-  random-init red, 0.40 against the 1.5M rung, **0.06 (peak 0.21) against
-  the 3.0M final red** — monotone at every reading (peak window, last
-  window, final-decile mean 0.60/0.48/0.12), margins several CIs wide,
-  combat fully joined at the top rung. Self-play made the enemy genuinely
-  harder the longer it trained.
-- **Open for the owner** (details in the ledger): (1) `evaluate()` has no
-  opponent seam, so behavior.json on BR runs reads 1.00 self-play — the
-  ladder is read from training curves, caveat prominent; (2) seed13
-  red-dominance → league/opponent-pool or mirrored-frame obs is the named
-  next knob (design call); (3) run_report's COLLAPSED banner misreads
-  self-play oscillation (cosmetic); (4) simultaneous-arrival draws from
-  one-tick-stale success checks (semantics call); (5) boards PUBLISH
-  PENDING (pre-existing) → `/boards`; (6) pre-existing v1.28
-  draw-declaration test failure on this base tree — the suite's only red,
-  present before the night began.
-
 ## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. The interrogative cycle is BUILT (five commits, OBS_DIM 357→361, N_ACTIONS 239→240, v1.27 checkpoints orphaned) and the 24-job v1.28 campaign is RUNNING (2026-09-15; one run under the original queue + 23 under the _remaining queue after a jobs-file overwrite incident, logged honestly). `scripts/interrogative_read.py` scores the pre-registered verdict when it lands. The v1.27 seal is still open too. The SEIZE collapse is DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
