@@ -1,6 +1,6 @@
 # Roadmap
 
-## ⟳ Session handoff — resume here (2026-09-14, **the v1.27 campaign is LANDED and SCORED against the pre-registered read: fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. ON THE OWNER'S DESK: the v1.27 seal — forced in the v1.26 sense (the old fleet cannot load on this tree), but member selection under a fireteam MISS and the reporting collapse is a claims judgement. The interrogative cycle is BUILT (five commits, OBS_DIM 357→361, N_ACTIONS 239→240, v1.27 checkpoints orphaned) and the 24-job v1.28 campaign is RUNNING (2026-09-15; one run under the original queue + 23 under the _remaining queue after a jobs-file overwrite incident, logged honestly). `scripts/interrogative_read.py` scores the pre-registered verdict when it lands. The v1.27 seal is still open too. The SEIZE collapse is DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
+## ⟳ Session handoff — resume here (2026-09-23, **the v1.28 interrogative campaign is LANDED (`8dc34c6`) and its pre-registered read is COMPLETE and SCORED — full verdict in the 2026-09-23 progress-log entry, raw output re-runnable via `scripts/interrogative_read.py` with the `--usage`/`--evidence` figures recorded there. The headline: the exchange is USED (6 of 9 reporting draws ask 3.4–9.2 times per won episode), but the answers never become closing evidence — fresh status-COMPLETE at confirmed claims 0.00–0.09 vs the 0.50 bar in every scoreable SEIZE scenario while own-sight stays pinned at 1.00, which is the pre-registration's stated refutation. Fireteam repair NOT MET a third time (reporting draws at root death 0.26–0.27, the root-safe draw is SPAM at 0.645 false-complete); platoon formation PARTIALLY returns (1-of-4 vs 0-of-8 on v1.27, but its reporting draw pays 0.340 root death at 0.471 false-complete); patrol_brique stays MUTE 0-of-4; fleet guard CLEAN (9/9 non-inferior under Holm). WHAT THREE CYCLES NOW AGREE ON: information was never the binding constraint — v1.27's DONE-heard channel went unused, v1.28's asked-for answers are heard and ignored as evidence, and the root still closes only from its own sight and dies there. The remaining lever is claim economics (`root_done_false` −0.5), already measured by the cheap-root-claim arms (2026-09-14 night entry: formation returns at −0.1 in both platoon seeds, rear-claiming REFUTED, cost measured) — a reward decision, the owner's. ON THE OWNER'S DESK, in order: (1) the claim-economics fork — reprice `root_done_false` (recommended next cycle, with the v1.28 read as its baseline) or accept own-sight closing as doctrine and keep stating the root-death cost; (2) the v1.28 seal + member selection — forced in the v1.26 sense (nothing older loads on this tree), fleet guard clean, but fireteam/platoon member choice trades reporting against root death and SPAM; (3) the v1.27 seal question, now largely mooted by (2); (4) the price-dispersion cycle (owner-chosen 2026-08-26, specced in `docs/next-cycles.md`, still unstarted) as the alternative next cycle if (1) waits.** Prior state (2026-09-14, kept for the mechanism chain): the v1.27 campaign scored — fireteam NO-REPAIR on every draw (root death 0.190/0.150/0.080 vs the 0.05 bar; the DONE-heard channel built and NOT used, probe 0.02/0.26/0.10 vs >0.29; seed 15 buys 0.080 by rear claim-SPAM, named not celebrated), fleet guard CLEAN (all 8 non-inferior under Holm), and one unpriced discovery: SEIZE-family root reporting COLLAPSED (squad 0.908→0.366, patrol_brique 0.798→0.000, platoon 0.737→0.000; 0-of-8 reporting draws at patrol/platoon). Full verdict: the 2026-09-14 progress-log entry; scorer `scripts/readback_read.py`. The interrogative cycle followed (five commits, OBS_DIM 357→361, N_ACTIONS 239→240, v1.27 checkpoints orphaned; the 24-job campaign ran 2026-09-15→23, one run under the original queue + 23 under the _remaining queue after a jobs-file overwrite incident, logged honestly). The SEIZE collapse is DIAGNOSED (2026-09-14 later entry): the fireteam own-sight/root-death mechanism at fleet scale — formation drag from the new actions/obs delays the reporting mode past where the unfixed death tax kills it (platoon_v24: mode forms d5, human death 0.01→0.35, both die). Exploration parity and price parity are MEASURED (`scripts/explore_ledger_probe.py`); the binding constraint is claim economics (done_false -0.5 makes learning rear-claims expensive), and that lever is the owner's.** Prior state: cycle built 2026-09-09 (OBS_DIM 346→357, N_ACTIONS 237→239, every pre-cycle checkpoint orphaned), spec in `docs/readback-cycle.md`.)
 
 ### What landed (4 commits on `multi-agent-dev`, suite 1318 green per commit)
 
@@ -11077,3 +11077,47 @@ deliberately deferred (`docs/vision.md` §2c).
   must rise above 0.29/0.15; root death ≤ 0.05 at N≥100 while reporting
   holds; PARTIAL and NO EFFECT outcomes pre-defined) and the fleet CI guard
   are the pre-registered read's — not this session's to improvise.
+
+- **2026-09-23** — **The v1.28 interrogative read is COMPLETE and scored:
+  the exchange is USED, the answers do NOT become closing evidence, the
+  fireteam repair is NOT MET a third time, platoon formation partially
+  returns, and the fleet guard is CLEAN.** The landing commit (`8dc34c6`)
+  had left the read unscorable — 12 of 24 runs still at N=20 and checks
+  1–2 unmeasured — so a detached sweep took the 12 to N=100
+  (`publish_baseline.py`, named-run mode), rolled the new usage probe
+  (`scripts/interrogative_usage_probe.py`, `d4ce2db`) and the extended
+  `root_evidence_probe` at 50 episodes over the 9 reporting draws, then
+  scored `scripts/interrogative_read.py` with every input. By check:
+  **(1) USED, 6 of 9** — requests/won-episode fireteam_v24 3.42,
+  squad_v42 5.02, platoon_v27 4.40, defend_brique_v23 6.60,
+  fireteam_defend_v29 9.24, squad_recon_v17 3.52; below the bar
+  fireteam_v25 0.06, fireteam_v26 0.61, squad_screen_v23 0.88. Not a NO
+  EFFECT: most reporting policies pay the transmission price to ask.
+  **(2) FLAGS DARK in all three scoreable SEIZE scenarios** — fresh
+  status-COMPLETE in hand at confirmed claims 0.09/0.00/0.03 (fireteam
+  v24/v25/v26), 0.00 (squad_v42), 0.00 (platoon_v27) against the 0.50
+  bar, while own-sight at confirmed claims stays pinned at 1.00
+  (squad_v42 median claim distance 2.24 cells) — exactly the
+  pre-registration's refutation: the root asks, hears COMPLETE, and
+  still walks in to see for itself. **(3) fireteam repair NOT MET** —
+  reporting draws report at 0.859/0.926/0.806 but die at
+  0.270/0.260/0.060, and the one root-safe draw (v26) is SPAM at 0.645
+  false-complete; platoon_v27 reports 0.745 at 0.340 root death, 0.471
+  false-complete. **(4)** platoon FORMED (1-of-4 vs 0-of-8 on the v1.27
+  tree); patrol_brique NOT FORMED (0-of-4, all MUTE at root death
+  0.05–0.14). **(5)** the precision guard fired on v26 (0.645) and
+  platoon_v27 (0.471); v25 sits at 0.358, just over. **(6) CLEAN** —
+  all nine scenarios non-inferior to their v1.27-read candidates
+  (one-sided Fisher, Holm as one family; best draws 95–100/100).
+  **What three cycles now agree on**: information was never the binding
+  constraint. v1.27 built the DONE-heard channel and the policy did not
+  use it; v1.28 made the root ask and the answers arrive — used as
+  traffic, ignored as evidence; the root still closes only from its own
+  sight of the objective and pays for the walk in death or spam. The
+  remaining lever is claim economics (`root_done_false` −0.5), the one
+  the cheap-root-claim arms already measured (2026-09-14 night entry:
+  reporting forms at −0.1 in both platoon seeds; rear-claiming refuted;
+  precision cost measured) — a reward decision, the owner's, with the
+  alternative of accepting own-sight closing as doctrine and continuing
+  to state its cost. The N=100 artifacts are committed with this entry;
+  the probe figures echoed above are the durable record of the sweep.
